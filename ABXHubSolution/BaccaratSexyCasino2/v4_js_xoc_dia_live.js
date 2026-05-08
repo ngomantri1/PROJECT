@@ -13,7 +13,7 @@
     var CW_FALLBACK_PANEL_ID = '__cw_wait_panel';
     var CW_PANEL_VISIBLE_KEY = 'abx.canvasWatch.visible';
     var CW_PANEL_VISIBLE_DEFAULT_KEY = 'abx.canvasWatch.visible.default';
-    var CW_PANEL_VISIBLE_DEFAULT = true; // false = hidden by default; set true to show Canvas Watch by default.
+    var CW_PANEL_VISIBLE_DEFAULT = false; // false = hidden by default; set true to show Canvas Watch by default.
     try { window.__abx_canvas_watch_default = CW_PANEL_VISIBLE_DEFAULT ? 1 : 0; } catch (_) {}
     function __cw_flagToBool(v, fallback) {
         try {

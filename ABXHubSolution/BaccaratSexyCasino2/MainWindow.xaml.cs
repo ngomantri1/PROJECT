@@ -601,6 +601,7 @@ namespace BaccaratSexyCasino2
             public int WinnerCode { get; set; } = -1;
             public int BankerValue { get; set; } = -1;
             public int PlayerValue { get; set; } = -1;
+            public string BootstrapPrefixDisplay { get; set; } = "";
             public string EventType { get; set; } = "";
             public string OwnerTag { get; set; } = "";
             public string Url { get; set; } = "";
@@ -1083,7 +1084,11 @@ Ví dụ không hợp lệ:
             public long IssuedObservedRound { get; set; }
             public string IssuedSeqSource { get; set; } = "";
             public bool SawClosedAfterIssue { get; set; }
+            public bool AwaitingFinalWinnerAfterShoeReset { get; set; }
             public DateTime LastAwaitFinalWinnerKeepLogUtc { get; set; } = DateTime.MinValue;
+            public long SettleTargetTableId { get; set; }
+            public long SettleTargetShoe { get; set; }
+            public long SettleTargetRound { get; set; }
         }
 
         public static class SharedIcons
@@ -4958,15 +4963,22 @@ try{
                                                 double balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
                                                 if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
                                                 {
-                                                    FinalizeLastBet(
-                                                        "TIE",
-                                                        balanceAfter,
-                                                        new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-                                                        "TIE",
-                                                        seqDisplay,
-                                                        settleSeqVersion,
-                                                        settleSeqEvent,
-                                                        "tick-tail-change");
+                                                    if (IsNetworkWinnerSeqEvent(settleSeqEvent))
+                                                    {
+                                                        Log($"[BET][HIST][SETTLE-SKIP] reason=same-source-owned-by-network-winner | src=tick-tail-change | curVer={settleSeqVersion} | curEvt={settleSeqEvent} | pending={_pendingRows.Count}");
+                                                    }
+                                                    else
+                                                    {
+                                                        FinalizeLastBet(
+                                                            "TIE",
+                                                            balanceAfter,
+                                                            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                                                            "TIE",
+                                                            seqDisplay,
+                                                            settleSeqVersion,
+                                                            settleSeqEvent,
+                                                            "tick-tail-change");
+                                                    }
                                                 }
 
                                                 _lockMajorMinorUpdates = false;
@@ -4989,15 +5001,22 @@ try{
                                                 double balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
                                                 if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
                                                 {
-                                                    FinalizeLastBet(
-                                                        winIsBanker ? "BANKER" : "PLAYER",
-                                                        balanceAfter,
-                                                        null,
-                                                        null,
-                                                        seqDisplay,
-                                                        settleSeqVersion,
-                                                        settleSeqEvent,
-                                                        "tick-tail-change");
+                                                    if (IsNetworkWinnerSeqEvent(settleSeqEvent))
+                                                    {
+                                                        Log($"[BET][HIST][SETTLE-SKIP] reason=same-source-owned-by-network-winner | src=tick-tail-change | curVer={settleSeqVersion} | curEvt={settleSeqEvent} | pending={_pendingRows.Count}");
+                                                    }
+                                                    else
+                                                    {
+                                                        FinalizeLastBet(
+                                                            winIsBanker ? "BANKER" : "PLAYER",
+                                                            balanceAfter,
+                                                            null,
+                                                            null,
+                                                            seqDisplay,
+                                                            settleSeqVersion,
+                                                            settleSeqEvent,
+                                                            "tick-tail-change");
+                                                    }
                                                 }
 
                                                 _lockMajorMinorUpdates = false;
@@ -7369,6 +7388,87 @@ try{
             };
         }
 
+        private static bool TryBuildDeterministicRoadInfoBootstrapPrefix(NetworkRoadInfoCountsPacket packet, out string prefixDisplay)
+        {
+            prefixDisplay = "";
+            if (packet == null || packet.GameRound <= 0)
+                return false;
+
+            var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
+            if (!latestChar.HasValue)
+                return false;
+
+            int banker = Math.Max(0, packet.BankerCount);
+            int player = Math.Max(0, packet.PlayerCount);
+            int tie = Math.Max(0, packet.TieCount);
+
+            switch (latestChar.Value)
+            {
+                case 'B':
+                    banker--;
+                    break;
+                case 'P':
+                    player--;
+                    break;
+                case 'T':
+                    tie--;
+                    break;
+            }
+
+            if (banker < 0 || player < 0 || tie < 0)
+                return false;
+
+            int prefixLen = (int)Math.Max(0, packet.GameRound - 1);
+            int remaining = banker + player + tie;
+            if (remaining != prefixLen)
+                return false;
+
+            if (remaining == 0)
+            {
+                prefixDisplay = "";
+                return true;
+            }
+
+            int activeDoors = (banker > 0 ? 1 : 0) + (player > 0 ? 1 : 0) + (tie > 0 ? 1 : 0);
+            if (activeDoors != 1)
+                return false;
+
+            char prefixChar = banker > 0 ? 'B' : (player > 0 ? 'P' : 'T');
+            prefixDisplay = new string(prefixChar, remaining);
+            return true;
+        }
+
+        private static bool TryBuildDeterministicRoadInfoShuffleResetPrefix(NetworkRoadInfoCountsPacket packet, out string prefixDisplay)
+        {
+            prefixDisplay = "";
+            if (packet == null)
+                return false;
+
+            var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
+            if (!latestChar.HasValue)
+                return false;
+
+            int banker = Math.Max(0, packet.BankerCount);
+            int player = Math.Max(0, packet.PlayerCount);
+            int tie = Math.Max(0, packet.TieCount);
+            int total = banker + player + tie;
+            if (total <= 0 || total > 6)
+                return false;
+
+            int activeDoors = (banker > 0 ? 1 : 0) + (player > 0 ? 1 : 0) + (tie > 0 ? 1 : 0);
+            if (activeDoors != 1)
+                return false;
+
+            char onlyDoor = banker > 0 ? 'B' : (player > 0 ? 'P' : 'T');
+            if (onlyDoor != latestChar.Value)
+                return false;
+
+            prefixDisplay = total > 1
+                ? new string(onlyDoor, total - 1)
+                : "";
+            return true;
+        }
+
         private static List<string> BuildNetworkJsonCandidates(string rawText)
         {
             var candidates = new List<string>();
@@ -7679,7 +7779,35 @@ try{
             if (activeShoe > 0 && packet.GameShoe > 0 && packet.GameShoe != activeShoe)
             {
                 ArmDomShoeSwitchLocked(packet.TableId, packet.GameShoe, packet.GameRound, "roadinfo-shoe-change", packet.OwnerTag);
+                MarkPendingRowsAwaitFinalWinnerForReset("roadinfo-shoe-change", packet.TableId, packet.GameShoe, packet.GameRound);
                 ResetRoadInfoCountsCacheLocked("roadinfo-shoe-change");
+                var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
+                string deterministicPrefix = "";
+                bool canRebuildFromNewShoeFirstRoadInfo =
+                    latestChar.HasValue &&
+                    TryBuildDeterministicRoadInfoBootstrapPrefix(packet, out deterministicPrefix);
+
+                if (canRebuildFromNewShoeFirstRoadInfo)
+                {
+                    var firstWinnerChar = latestChar.GetValueOrDefault();
+                    SeedRoadInfoCountsCacheLocked(packet, "new-shoe-rebuild-baseline");
+                    Log($"[NETSEQ][ROADINFO-WINNER] src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={firstWinnerChar} | count=1 | prevRound=- | prev=-/-/- | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | delta=new-shoe-first-roadinfo-rebuild | prefixLen={deterministicPrefix.Length} | prefix={(string.IsNullOrWhiteSpace(deterministicPrefix) ? "-" : deterministicPrefix)}");
+                    winners.Add(new NetworkWinnerPacket
+                    {
+                        TableId = packet.TableId,
+                        GameShoe = packet.GameShoe,
+                        GameRound = packet.GameRound,
+                        WinnerCode = packet.LatestWinnerCode,
+                        BankerValue = -1,
+                        PlayerValue = -1,
+                        BootstrapPrefixDisplay = deterministicPrefix,
+                        EventType = "ROADINFO_WINCOUNTS_FIRST",
+                        OwnerTag = "cdp-roadinfo/" + (packet.OwnerTag ?? ""),
+                        Url = packet.Url ?? ""
+                    });
+                    return winners;
+                }
+
                 SeedRoadInfoCountsCacheLocked(packet, "new-shoe-baseline");
                 return winners;
             }
@@ -7698,11 +7826,25 @@ try{
             {
                 var currentSeq = FilterResultDisplaySeqWindow(_netSeqDisplay);
                 var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
+                var waitingForBootstrap =
+                    string.IsNullOrWhiteSpace(currentSeq) &&
+                    (
+                        _tableSwitchRebaseArmed ||
+                        _initialTableEnterArmed ||
+                        IsShoeSwitchRebaseArmed() ||
+                        IsWaitingBoardBootstrapSeqEvent(_netSeqEvent) ||
+                        IsWaitingBoardBootstrapSeqEvent(_netSeqSource)
+                    );
+                string deterministicPrefix = "";
                 var canAppendLatestFromFirstRoadInfo =
                     currentSeq.Length > 0 &&
                     latestChar.HasValue &&
                     packet.GameRound > 0 &&
                     packet.GameRound > currentSeq.Length;
+                var canRebuildFirstRoadInfoFromCounts =
+                    latestChar.HasValue &&
+                    waitingForBootstrap &&
+                    TryBuildDeterministicRoadInfoBootstrapPrefix(packet, out deterministicPrefix);
 
                 if (canAppendLatestFromFirstRoadInfo)
                 {
@@ -7731,6 +7873,34 @@ try{
                     return winners;
                 }
 
+                if (canRebuildFirstRoadInfoFromCounts)
+                {
+                    var firstWinnerChar = latestChar.GetValueOrDefault();
+                    if (_netSeqGameShoe <= 0 && packet.GameShoe > 0)
+                        _netSeqGameShoe = packet.GameShoe;
+                    if (_activeGameShoe <= 0 && packet.GameShoe > 0)
+                        _activeGameShoe = packet.GameShoe;
+                    if (_netObservedGameShoe <= 0 && packet.GameShoe > 0)
+                        _netObservedGameShoe = packet.GameShoe;
+
+                    SeedRoadInfoCountsCacheLocked(packet, "first-roadinfo-rebuild-baseline");
+                    Log($"[NETSEQ][ROADINFO-WINNER] src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={firstWinnerChar} | count=1 | prevRound=- | prev=-/-/- | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | delta=first-roadinfo-rebuild | prefixLen={deterministicPrefix.Length} | prefix={(string.IsNullOrWhiteSpace(deterministicPrefix) ? "-" : deterministicPrefix)}");
+                    winners.Add(new NetworkWinnerPacket
+                    {
+                        TableId = packet.TableId,
+                        GameShoe = packet.GameShoe,
+                        GameRound = packet.GameRound,
+                        WinnerCode = packet.LatestWinnerCode,
+                        BankerValue = -1,
+                        PlayerValue = -1,
+                        BootstrapPrefixDisplay = deterministicPrefix,
+                        EventType = "ROADINFO_WINCOUNTS_FIRST",
+                        OwnerTag = "cdp-roadinfo/" + (packet.OwnerTag ?? ""),
+                        Url = packet.Url ?? ""
+                    });
+                    return winners;
+                }
+
                 SeedRoadInfoCountsCacheLocked(packet, "first-baseline");
                 return winners;
             }
@@ -7741,6 +7911,37 @@ try{
                 packet.TieCount < _roadInfoCountsT ||
                 sum < prevSum)
             {
+                var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
+                string deterministicResetPrefix = "";
+                bool canRebuildSameShoeShuffleReset =
+                    latestChar.HasValue &&
+                    TryBuildDeterministicRoadInfoShuffleResetPrefix(packet, out deterministicResetPrefix);
+
+                if (canRebuildSameShoeShuffleReset)
+                {
+                    var resetWinnerChar = latestChar.GetValueOrDefault();
+                    ArmDomShoeSwitchLocked(packet.TableId, packet.GameShoe, packet.GameRound, "roadinfo-same-shoe-reset", packet.OwnerTag);
+                    MarkPendingRowsAwaitFinalWinnerForReset("roadinfo-same-shoe-reset", packet.TableId, packet.GameShoe, packet.GameRound);
+                    ResetRoadInfoCountsCacheLocked("wincounts-decrease-or-shuffle");
+                    SeedRoadInfoCountsCacheLocked(packet, "after-decrease-rebuild-baseline");
+                    Log($"[NETSEQ][ROADINFO-WINNER] src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={resetWinnerChar} | count=1 | prevRound=- | prev=-/-/- | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | delta=same-shoe-shuffle-rebuild | prefixLen={deterministicResetPrefix.Length} | prefix={(string.IsNullOrWhiteSpace(deterministicResetPrefix) ? "-" : deterministicResetPrefix)}");
+                    winners.Add(new NetworkWinnerPacket
+                    {
+                        TableId = packet.TableId,
+                        GameShoe = packet.GameShoe,
+                        GameRound = packet.GameRound,
+                        WinnerCode = packet.LatestWinnerCode,
+                        BankerValue = -1,
+                        PlayerValue = -1,
+                        BootstrapPrefixDisplay = deterministicResetPrefix,
+                        EventType = "ROADINFO_WINCOUNTS_FIRST",
+                        OwnerTag = "cdp-roadinfo/" + (packet.OwnerTag ?? ""),
+                        Url = packet.Url ?? ""
+                    });
+                    return winners;
+                }
+
+                MarkPendingRowsAwaitFinalWinnerForReset("roadinfo-same-shoe-reset", packet.TableId, packet.GameShoe, packet.GameRound);
                 ResetRoadInfoCountsCacheLocked("wincounts-decrease-or-shuffle");
                 SeedRoadInfoCountsCacheLocked(packet, "after-decrease-baseline");
                 return winners;
@@ -10933,6 +11134,9 @@ try{
             _activeTableId = tableId;
             _activeGameShoe = newShoe;
             _activeGameRound = newRound;
+
+            DropPendingRowsForSeqRebaseReset(reason, true, out _);
+
             _activeContextSource = "cdp-observed-shoe";
             _activeContextUpdatedAtUtc = DateTime.UtcNow;
             _netLastWinnerKey = "";
@@ -10962,6 +11166,16 @@ try{
 
         private void ObserveDomAuthorityContextLocked(CwSnapshot? snap, string source, string boardSeqEvent, string statusRaw)
         {
+            if (!IsFrameSingleBacAuthoritySnapshot(snap, source))
+            {
+                if ((DateTime.UtcNow - _lastJsRawBootstrapLogUtc) > TimeSpan.FromSeconds(2))
+                {
+                    _lastJsRawBootstrapLogUtc = DateTime.UtcNow;
+                    Log($"[CTX][DOM-TABLE-SKIP] reason=non-singlebac-seq-source | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | href={(string.IsNullOrWhiteSpace(snap?.href) ? "-" : Shrink(snap!.href!, 96))} | table={(string.IsNullOrWhiteSpace(GetTableNameFromSnapshot(snap)) ? "-" : Shrink(GetTableNameFromSnapshot(snap), 48))} | seqTable={(string.IsNullOrWhiteSpace(GetSeqTableNameFromSnapshot(snap)) ? "-" : Shrink(GetSeqTableNameFromSnapshot(snap), 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
+                }
+                return;
+            }
+
             if (!TryResolveDomAuthorityTableContext(snap, source, out var tableId, out var tableName, out var tableSource, out var usedSeqTable))
                 return;
 
@@ -11158,6 +11372,8 @@ try{
             string eventKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
             string prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
             long prevVersion = _netSeqVersion;
+            string bootstrapPrefixDisplay = FilterResultDisplaySeqWindow(packet.BootstrapPrefixDisplay);
+            bool bootstrapPrefixApplied = false;
 
             result.PrevSeq = prevDisplay;
             result.NextSeq = prevDisplay;
@@ -11222,6 +11438,7 @@ try{
                 var oldShoe = _netSeqGameShoe;
                 var oldRound = _netSeqLastRound;
                 ArmDomShoeSwitchLocked(packet.TableId, packet.GameShoe, packet.GameRound, "winner-shoe-change", packet.OwnerTag);
+                MarkPendingRowsAwaitFinalWinnerForReset("winner-shoe-change", packet.TableId, packet.GameShoe, packet.GameRound);
                 result.Action = "wait-dom-bootstrap";
                 result.NextSeq = "";
                 result.NextVersion = _netSeqVersion;
@@ -11230,6 +11447,30 @@ try{
                 Log($"[NETSEQ][SEED-BLOCK] reason=cdp-winner-new-shoe | action=wait-dom-bootstrap | table={packet.TableId} | oldShoe={oldShoe} | newShoe={packet.GameShoe} | oldRound={oldRound} | newRound={packet.GameRound} | winner={winnerChar.Value} | oldLen={prevDisplay.Length} | oldVer={prevVersion} | policy=dom-bootstrap-cdp-append");
                 return result;
             }
+
+            bool canApplyBootstrapPrefix =
+                string.IsNullOrWhiteSpace(prevDisplay) &&
+                !string.IsNullOrWhiteSpace(bootstrapPrefixDisplay) &&
+                packet.GameRound == (bootstrapPrefixDisplay.Length + 1) &&
+                (
+                    _tableSwitchRebaseArmed ||
+                    _initialTableEnterArmed ||
+                    IsShoeSwitchRebaseArmed() ||
+                    IsWaitingBoardBootstrapSeqEvent(_netSeqEvent) ||
+                    IsWaitingBoardBootstrapSeqEvent(_netSeqSource)
+                );
+            if (canApplyBootstrapPrefix)
+            {
+                prevDisplay = bootstrapPrefixDisplay;
+                prevVersion = ComputeNextSyncSeqVersion(prevVersion, "", prevDisplay, Math.Max(prevVersion, prevDisplay.Length));
+                bootstrapPrefixApplied = true;
+                Log($"[NETSEQ][SEED-REBUILD] reason=roadinfo-deterministic-prefix | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | prefixLen={prevDisplay.Length} | prefix={prevDisplay} | winner={winnerChar.Value} | oldVer={_netSeqVersion} | seedVer={prevVersion}");
+            }
+
+            result.PrevSeq = prevDisplay;
+            result.NextSeq = prevDisplay;
+            result.PrevVersion = prevVersion;
+            result.NextVersion = prevVersion;
 
             bool roundAlreadySeen =
                 !contextReset &&
@@ -11278,7 +11519,11 @@ try{
             long nextVersion = ComputeNextSyncSeqVersion(prevVersion, prevDisplay, nextDisplay, prevVersion + 1);
             string action = contextReset
                 ? "reset-table-append"
-                : (shoeChanged ? "shoe-keep-append" : (result.HadGap ? "append-gap-" + seqSource : "append-" + seqSource));
+                : (shoeChanged
+                    ? "shoe-keep-append"
+                    : (bootstrapPrefixApplied
+                        ? "append-rebuild-" + seqSource
+                        : (result.HadGap ? "append-gap-" + seqSource : "append-" + seqSource)));
 
             result.Changed = true;
             result.Appended = true;
@@ -11327,6 +11572,14 @@ try{
 
         private void ProcessNetworkWinnerPacket(NetworkWinnerPacket packet, CwSnapshot? currentSnap)
         {
+            // Reset count when receiving a shuffle signal from CDP
+            if (packet.EventType != null && packet.EventType.Contains("shuffle", StringComparison.OrdinalIgnoreCase))
+            {
+                _roadInfoCountsB = 0;
+                _roadInfoCountsP = 0;
+                _roadInfoCountsT = 0;
+                Log($"[CDP] Count reset due to shuffle signal: B={_roadInfoCountsB}, P={_roadInfoCountsP}, T={_roadInfoCountsT}");
+            }
             Interlocked.Increment(ref _cdpDiagWinnerPackets);
             Interlocked.Exchange(ref _cdpDiagLastWinnerTicksUtc, DateTime.UtcNow.Ticks);
 
@@ -11345,19 +11598,23 @@ try{
                         applied = ApplyNetworkWinnerLocked(packet, currentSnap);
                         if (string.IsNullOrWhiteSpace(applied.ResultText))
                             return;
+                        
+                        // Finalize pending bets even if not appended, as long as we have a valid winner
                         if (!applied.Appended && !applied.Replaced)
                         {
-                            if (_pendingRows.Count > 0 &&
-                                !HasJackpotMultiSideRunning() &&
-                                IsLateContextWinnerAction(applied.Action) &&
-                                HasPendingWinnerCandidate(packet.TableId, packet.GameShoe, packet.GameRound))
+                            // Always try to finalize pending when we have a valid winner result
+                            if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
                             {
                                 double lateBalanceAfter = ResolveHistoryBalance(currentSnap?.totals?.A);
                                 long lateSettleVersion = packet.GameRound > 0
                                     ? packet.GameRound
                                     : Math.Max(applied.NextVersion, applied.PrevVersion + 1);
 
-                                Log($"[BET][HIST][LATE-WINNER] action={applied.Action} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | pending={_pendingRows.Count} | settleVer={lateSettleVersion} | reason=settle-without-seq-append");
+                                string finalizeReason = IsLateContextWinnerAction(applied.Action) 
+                                    ? "late-context-winner" 
+                                    : $"winner-no-append-{applied.Action}";
+
+                                Log($"[BET][HIST][FINALIZE-NO-APPEND] action={applied.Action} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | pending={_pendingRows.Count} | settleVer={lateSettleVersion} | reason={finalizeReason}");
 
                                 if (applied.ResultChar == 'T')
                                 {
@@ -11720,7 +11977,33 @@ try{
             _lastDomAppendFallbackFirstSeenUtc = DateTime.MinValue;
         }
 
-        private bool IsTrustedInitialJsRawBootstrap(CwSnapshot snap, string rawDisplay, string statusRaw, string boardSeqEvent, out string reason)
+        private bool IsTrustedTableAlignedFallbackRawBootstrapLocked(
+            CwSnapshot snap,
+            string source,
+            string rawDisplay,
+            string statusRaw,
+            string boardSeqEvent)
+        {
+            if (snap == null)
+                return false;
+            if (string.IsNullOrWhiteSpace(rawDisplay) || rawDisplay.Length < 8)
+                return false;
+            if (!IsFrameSingleBacAuthoritySnapshot(snap, source))
+                return false;
+
+            var activeTableId = ResolveActiveTableIdLocked();
+            var snapSeqTableId = GetSeqTableIdFromSnapshot(snap);
+            var snapTableId = GetTableIdFromSnapshot(snap);
+            var candidateTableId = snapSeqTableId > 0 ? snapSeqTableId : snapTableId;
+            if (activeTableId > 0 && candidateTableId > 0 && candidateTableId != activeTableId)
+                return false;
+            if (activeTableId > 0 && candidateTableId <= 0)
+                return false;
+
+            return IsTrustedRawBoardSnapshotSeq(snap.seq, rawDisplay, statusRaw, boardSeqEvent);
+        }
+
+        private bool IsTrustedInitialJsRawBootstrap(CwSnapshot snap, string source, string rawDisplay, string statusRaw, string boardSeqEvent, out string reason)
         {
             reason = "";
             if (snap == null)
@@ -11759,8 +12042,11 @@ try{
                 which.IndexOf("managed-hold", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 which.IndexOf("fallback", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                reason = "untrusted-seq-which";
-                return false;
+                if (!IsTrustedTableAlignedFallbackRawBootstrapLocked(snap, source, rawDisplay, statusRaw, boardSeqEvent))
+                {
+                    reason = "untrusted-seq-which";
+                    return false;
+                }
             }
 
             if (_netObservedGameRound > 0 && rawDisplay.Length > (_netObservedGameRound + 1))
@@ -11799,7 +12085,7 @@ try{
                 return false;
 
             var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
-            if (!IsTrustedInitialJsRawBootstrap(snap, rawDisplay, statusRaw, boardSeqEvent, out var rejectReason))
+            if (!IsTrustedInitialJsRawBootstrap(snap, source, rawDisplay, statusRaw, boardSeqEvent, out var rejectReason))
             {
                 if ((DateTime.UtcNow - _lastJsRawBootstrapLogUtc) > TimeSpan.FromSeconds(2))
                 {
@@ -11881,8 +12167,6 @@ try{
         {
             if (!UseDomBootstrapCdpAppendSeq || snap == null)
                 return false;
-            if (_tableSwitchRebaseArmed || _initialTableEnterArmed || _shoeChangeRebaseArmed)
-                return false;
 
             var prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
             if (prevDisplay.Length <= 0 || prevDisplay.Length > 3)
@@ -11892,6 +12176,12 @@ try{
 
             var jsDisplay = FilterResultDisplaySeqWindow(boardDisplay);
             var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+            bool contextArmed = _tableSwitchRebaseArmed || _initialTableEnterArmed || _shoeChangeRebaseArmed;
+            if (contextArmed &&
+                !IsTrustedTableAlignedFallbackRawBootstrapLocked(snap, source, rawDisplay, statusRaw, boardSeqEvent))
+            {
+                return false;
+            }
             if (rawDisplay.Length < 8)
                 return false;
             if (!IsTrustedRawBoardSnapshotSeq(jsDisplay, rawDisplay, statusRaw, boardSeqEvent))
@@ -16671,7 +16961,8 @@ try{
                 IssuedGameShoe = issuedGameShoe,
                 IssuedObservedRound = issuedObservedRound,
                 IssuedSeqSource = issuedSeqSource,
-                SawClosedAfterIssue = false
+                SawClosedAfterIssue = false,
+                AwaitingFinalWinnerAfterShoeReset = false
             };
 
             char issueTail = issuedSeqDisplay.Length > 0 ? issuedSeqDisplay[^1] : '-';
@@ -19161,12 +19452,41 @@ try{
 
         private void LogPendingKeepAwaitFinalWinner(BetRow row, string source, long tableId, long gameShoe, long gameRound, double ageSec)
         {
+            row.AwaitingFinalWinnerAfterShoeReset = true;
+            if (tableId > 0)
+                row.SettleTargetTableId = tableId;
+            if (gameShoe > 0)
+                row.SettleTargetShoe = gameShoe;
+            if (gameRound > 0)
+                row.SettleTargetRound = gameRound;
+            else if (row.SettleTargetRound <= 0)
+                row.SettleTargetRound = 1;
             var nowUtc = DateTime.UtcNow;
             if ((nowUtc - row.LastAwaitFinalWinnerKeepLogUtc).TotalSeconds < 5)
                 return;
 
             row.LastAwaitFinalWinnerKeepLogUtc = nowUtc;
-            Log($"[BET][HIST][KEEP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | newTable={(tableId > 0 ? tableId.ToString() : "-")} | newShoe={(gameShoe > 0 ? gameShoe.ToString() : "-")} | newRound={(gameRound > 0 ? gameRound.ToString() : "-")} | ageSec={ageSec:0} | reason=await-final-winner-after-shoe-reset | source={source}");
+            Log($"[BET][HIST][KEEP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | newTable={(tableId > 0 ? tableId.ToString() : "-")} | newShoe={(gameShoe > 0 ? gameShoe.ToString() : "-")} | newRound={(gameRound > 0 ? gameRound.ToString() : "-")} | targetTable={(row.SettleTargetTableId > 0 ? row.SettleTargetTableId.ToString() : "-")} | targetShoe={(row.SettleTargetShoe > 0 ? row.SettleTargetShoe.ToString() : "-")} | targetRound={(row.SettleTargetRound > 0 ? row.SettleTargetRound.ToString() : "-")} | ageSec={ageSec:0} | reason=await-final-winner-after-shoe-reset | source={source}");
+        }
+
+        private int MarkPendingRowsAwaitFinalWinnerForReset(string source, long tableId, long gameShoe, long gameRound)
+        {
+            if (_pendingRows.Count == 0)
+                return 0;
+
+            int keptCount = 0;
+            foreach (var row in _pendingRows.ToList())
+            {
+                if (tableId > 0 && row.IssuedTableId > 0 && row.IssuedTableId != tableId)
+                    continue;
+                if (!IsAwaitingFinalWinnerCandidate(row, out var ageSec))
+                    continue;
+
+                keptCount++;
+                LogPendingKeepAwaitFinalWinner(row, source, tableId, gameShoe, gameRound, ageSec);
+            }
+
+            return keptCount;
         }
 
         private bool IsShoeSwitchRebaseArmed()
@@ -19254,6 +19574,15 @@ try{
                    string.Equals(action, "context-mismatch", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(action, "dup-round", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(action, "dup-event", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsNetworkWinnerSeqEvent(string? seqEventRaw)
+        {
+            var evt = (seqEventRaw ?? "").Trim();
+            if (evt.Length == 0)
+                return false;
+
+            return evt.IndexOf("net-roadinfo-wincounts", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void InvalidatePendingRowsForContextReset(long tableId, long gameShoe, long gameRound)
@@ -19385,9 +19714,57 @@ try{
             bool hasSettleShoe = settleGameShoe > 0;
             char settleTail = settleDisplay.Length > 0 ? settleDisplay[^1] : '-';
             bool advFallbackLogged = false;
+            bool resetCarryFallbackLogged = false;
             bool isNetworkWinnerSettle =
                 string.Equals(settleReason, "net-roadinfo-wincounts", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(settleSeqEvent, "net-roadinfo-wincounts", StringComparison.OrdinalIgnoreCase);
+
+            bool IsFirstWinnerAfterShoeReset(BetRow row)
+            {
+                if (!isNetworkWinnerSettle || row == null || !row.AwaitingFinalWinnerAfterShoeReset)
+                    return false;
+
+                if (row.SettleTargetTableId > 0)
+                {
+                    if (!hasSettleTable || settleTableId != row.SettleTargetTableId)
+                        return false;
+                }
+
+                if (row.SettleTargetShoe > 0)
+                {
+                    if (!hasSettleShoe || settleGameShoe != row.SettleTargetShoe)
+                        return false;
+                }
+
+                if (row.SettleTargetRound > 0)
+                {
+                    if (settleGameRound > 0 && settleGameRound == row.SettleTargetRound)
+                        return true;
+
+                    if (settleGameRound > row.SettleTargetRound && row.SettleTargetRound <= 1)
+                    {
+                        row.SettleTargetRound = settleGameRound;
+                        Log($"[BET][HIST][TARGET-RETARGET] id={BetIdForLog(row)} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | targetTable={(row.SettleTargetTableId > 0 ? row.SettleTargetTableId.ToString() : "-")} | targetShoe={(row.SettleTargetShoe > 0 ? row.SettleTargetShoe.ToString() : "-")} | newTargetRound={settleGameRound} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | reason=late-first-winner-after-reset");
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                if (!hasSettleTable || settleTableId <= 0)
+                    return false;
+                if (row.IssuedTableId > 0 && row.IssuedTableId != settleTableId)
+                    return false;
+
+                long settleVer = settleSeqVersion ?? 0;
+                bool firstResetWinner =
+                    settleVer == 1 ||
+                    settleGameRound == 1;
+                if (!firstResetWinner)
+                    return false;
+
+                return true;
+            }
 
             bool IsRowContextMatch(BetRow row)
             {
@@ -19396,7 +19773,11 @@ try{
                 if (hasSettleTable && row.IssuedTableId > 0 && row.IssuedTableId != settleTableId)
                     return false;
                 if (hasSettleShoe && row.IssuedGameShoe > 0 && row.IssuedGameShoe != settleGameShoe)
+                {
+                    if (IsFirstWinnerAfterShoeReset(row))
+                        return true;
                     return false;
+                }
                 return true;
             }
 
@@ -19411,25 +19792,42 @@ try{
             bool IsRowSeqAdvanced(BetRow row)
             {
                 if (!hasSettleContext) return true;
-                if (isNetworkWinnerSettle &&
-                    settleGameRound > 0 &&
-                    IsRowContextMatch(row) &&
-                    IsNetworkWinnerRoundMatch(row, settleGameRound, settleSeqVersion))
-                {
-                    if (!advFallbackLogged)
-                    {
-                        string advReason =
-                            row.IssuedObservedRound > 0 && row.IssuedObservedRound == settleGameRound
-                                ? "winner-round-confirmed"
-                                : (row.IssuedRoundId > 0 && row.IssuedRoundId + 1 == settleGameRound
-                                    ? "winner-round-plus-one"
-                                    : "winner-version-plus-one");
-                        advFallbackLogged = true;
-                        Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason={advReason} | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
-                    }
-                    return true;
-                }
                 bool displayAdvanced = !string.Equals(settleDisplay, row.IssuedSeqDisplay ?? "", StringComparison.Ordinal);
+                if (isNetworkWinnerSettle && settleGameRound > 0)
+                {
+                    if (IsFirstWinnerAfterShoeReset(row))
+                    {
+                        if (!resetCarryFallbackLogged)
+                        {
+                            resetCarryFallbackLogged = true;
+                            Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason=winner-after-shoe-reset | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | issueShoe={row.IssuedGameShoe} | settleRound={settleGameRound} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
+                        }
+                        return true;
+                    }
+
+                    if (!IsRowContextMatch(row))
+                        return false;
+
+                    if (IsNetworkWinnerRoundMatch(row, settleGameRound, settleSeqVersion))
+                    {
+                        if (!advFallbackLogged)
+                        {
+                            string advReason =
+                                row.IssuedObservedRound > 0 && row.IssuedObservedRound == settleGameRound
+                                    ? "winner-round-confirmed"
+                                    : (row.IssuedRoundId > 0 && row.IssuedRoundId + 1 == settleGameRound
+                                        ? "winner-round-plus-one"
+                                        : "winner-version-plus-one");
+                            advFallbackLogged = true;
+                            Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason={advReason} | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
+                        }
+                        return true;
+                    }
+
+                    Log($"[BET][HIST][ADV-BLOCK] id={BetIdForLog(row)} | reason=network-round-mismatch | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
+                    return false;
+                }
+
                 if (isNetworkWinnerSettle &&
                     displayAdvanced &&
                     IsSingleDisplayAppend(row))
@@ -19521,16 +19919,12 @@ try{
                 var orderedMatches = rowsToFinalize
                     .OrderBy(row => row.At)
                     .ToList();
-                var duplicateMatches = orderedMatches.Skip(1).ToList();
-                if (duplicateMatches.Count > 0)
+                var heldMatches = orderedMatches.Skip(1).ToList();
+                if (heldMatches.Count > 0)
                 {
-                    foreach (var row in duplicateMatches)
+                    foreach (var row in heldMatches)
                     {
-                        row.Result = "RESET-DUP";
-                        row.WinLose = "Bỏ qua";
-                        row.Account = balanceAfter;
-                        Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=multi-match-guard");
-                        _pendingRows.Remove(row);
+                        Log($"[BET][HIST][HOLD-AMBIGUOUS] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=multi-match-guard-keep-pending");
                     }
                 }
                 rowsToFinalize = orderedMatches.Take(1).ToList();
@@ -19569,6 +19963,7 @@ try{
 
             foreach (var row in rowsToFinalize)
             {
+                row.AwaitingFinalWinnerAfterShoeReset = false;
                 row.Result = resultText;
                 bool win = !isTieResult && winSet.Contains(row.Side);
                 row.WinLose = isTieResult ? "Hòa" : (win ? "Thắng" : "Thua");

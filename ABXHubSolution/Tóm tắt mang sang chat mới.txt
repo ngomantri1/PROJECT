@@ -1,12 +1,65 @@
-Hãy đọc toàn bộ lịch sử hội thoại và code đã thảo luận trong chat này.
-Viết cho mình một bản tóm tắt cô đọng nhưng đủ chi tiết để mình dùng mở một chat mới.
-Đầu ra yêu cầu theo format:
-Mục tiêu chính của project / bug
-Tech stack (ngôn ngữ, framework, DB…)
-Các file / module quan trọng đang liên quan
-Logic chính đã thiết kế (tên hàm, class, luồng xử lý)
-Những lỗi đã gặp & nguyên nhân chính
-Các giải pháp đã thử, giải pháp hiện tại đang dùng
-Việc còn dang dở / TODO
-Viết ở dạng block markdown có tiêu đề rõ ràng, tối đa khoảng 150–200 dòng để mình dễ copy.
-Đây là “context tóm tắt cho chat mới”, không cần giải thích thêm.
+Hãy phân tích toàn bộ project hiện tại và tự động tạo các file context chuẩn cho AI coding.
+
+Tạo các file sau:
+
+- PROJECT_CONTEXT.md
+- ARCHITECTURE.md
+- TODO.md
+- BUGS.md
+
+Yêu cầu chi tiết:
+
+# PROJECT_CONTEXT.md
+Bao gồm:
+- mô tả tổng quan project
+- công nghệ sử dụng
+- flow hoạt động chính
+- coding rules
+- naming rules
+- các rule quan trọng
+- websocket flow
+- pending flow
+- threading/UI rules
+- những điều tuyệt đối không được phá
+
+# ARCHITECTURE.md
+Bao gồm:
+- cấu trúc project
+- module chính
+- dependency giữa các module
+- file nào phụ trách gì
+- data flow
+- websocket packet flow
+- UI update flow
+- OCR/canvas flow nếu có
+
+# TODO.md
+Bao gồm:
+- task đang làm
+- task chưa hoàn thành
+- task cần refactor
+- task ưu tiên cao
+- task cần test lại
+
+# BUGS.md
+Bao gồm:
+- bug hiện tại
+- bug đã fix
+- bug chưa fix
+- nguyên nhân bug
+- workaround tạm thời
+- vùng code dễ lỗi
+
+Yêu cầu quan trọng:
+- Không rewrite code.
+- Chỉ đọc và phân tích project.
+- Tóm tắt ngắn gọn nhưng đầy đủ.
+- Format markdown sạch đẹp.
+- Có heading rõ ràng.
+- Có bullet list rõ ràng.
+- Ưu tiên thông tin quan trọng cho AI coding.
+- Giảm tối đa token thừa.
+- Chỉ tập trung vào logic quan trọng.
+
+Sau khi tạo xong:
+- lưu trực tiếp các file markdown vào project.
