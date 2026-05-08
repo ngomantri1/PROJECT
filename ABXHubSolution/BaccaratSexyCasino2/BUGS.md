@@ -1,47 +1,57 @@
 # Bugs
 
 ## Current Bugs
-- Pending row đôi lúc không được cập nhật `Kết quả` và `Thắng/Thua` ở ván đầu sau shuffle/reset.
-- Một số reset path vẫn có thể append seq đúng nhưng pending settle không chạy vì row cũ không được mark đúng.
+- No new confirmed bug is open after today s patch set, but runtime retest is still required.
 
 ## Recently Fixed
-- `gamehall.jsp` không còn được quyền DOM bootstrap/rebase seq authority.
-- Lúc đầu vào bàn không còn chỉ giữ bead nhỏ `B` nếu full raw board đúng active table đã có.
-- Ván đầu sau `gameShoe` đổi:
-  - `roadInfo` deterministic rebuild có thể append ngay.
-- Ván đầu sau same-shoe shuffle reset:
-  - `roadInfo` deterministic reset có thể append ngay.
-- Pending không còn chặn bet pipe:
-  - `_pendingRows` chỉ là history/chờ settle, không gate send.
-- Canvas chỉ hiển thị 1 authority panel thay vì nháy top/frame sai nguồn.
+- `gamehall.jsp` can no longer bootstrap/rebase real game sequence authority.
+- Initial table entry no longer gets stuck with only tiny bead `B` when valid full raw board exists.
+- First hand after `gameShoe` change can append via deterministic `roadInfo` rebuild.
+- First hand after same-shoe shuffle reset can append via deterministic `roadInfo` reset.
+- Pending rows no longer block the bet pipe.
+- Canvas now keeps one authority panel instead of flickering top/frame source.
+- These reset paths now mark pending rows immediately at real reset time:
+  - `roadinfo-shoe-change`
+  - `roadinfo-same-shoe-reset`
+  - `winner-shoe-change`
+- Kept pending rows now carry:
+  - `SettleTargetTableId`
+  - `SettleTargetShoe`
+  - `SettleTargetRound`
+- `FinalizeLastBet(...)` now settles reset cases using the stored target instead of only `round == 1`.
+- Late first winner after reset can retarget to the real round via `TARGET-RETARGET`.
+- `multi-match-guard` no longer writes wrong history rows as `RESET-DUP/B o qua`; ambiguous extra rows stay pending and log `HOLD-AMBIGUOUS`.
 
 ## Not Fully Fixed Yet
-- Settle pending sau reset vẫn chưa bền ở mọi ca.
-- Có ca `roadInfo` append seq thành công nhưng history row cũ vẫn `Đang chờ`.
-- Ca late network packet / context reset có thể làm `ctxMatch=False` nếu row không được keep đúng lúc.
+- Need runtime confirmation that settle after reset is now stable in all real cases.
+- Need root-cause analysis for rare cases where more than one pending row still passes the same settle gate.
 
 ## Root Causes
-- Reset context xảy ra ở nhiều nhánh:
-  - observed reset,
-  - roadInfo shoe change,
-  - same-shoe shuffle reset,
-  - winner shoe change.
-- Không phải nhánh nào cũng đang mark pending cũ bằng cùng một cơ chế.
-- Fallback settle sau reset hiện phụ thuộc mạnh vào round/version gating.
-- Wrapper nhiều frame khiến lobby/game table dễ tranh quyền context nếu guard không đủ chặt.
+- Reset context can happen in multiple branches:
+  - observed reset
+  - roadInfo shoe change
+  - same-shoe shuffle reset
+  - winner shoe change
+- Before today s patch, not every branch marked old pending rows with the same mechanism.
+- Before today s patch, reset fallback settle depended too much on round/version gating.
+- Old `multi-match-guard` treated every multi-match case as a true duplicate and wrote wrong history state.
+- Multi-frame wrapper still makes lobby/game-table context competition fragile if guards loosen.
 
 ## Temporary Workarounds
-- Luôn ưu tiên chạy bản Release mới nhất.
-- Khi nghi ngờ miss settle, soi log:
+- Use the latest Release build.
+- When settle looks suspicious, inspect logs:
   - `[CTX][SHOE-ARM]`
   - `[NETSEQ][ROADINFO-WINNER]`
   - `[BET][HIST][KEEP]`
+  - `[BET][HIST][TARGET-RETARGET]`
   - `[BET][HIST][CHECK]`
   - `[BET][HIST][FINAL]`
-- Nếu seq đã append nhưng history chưa update:
-  - kiểm tra `ctxMatch`
-  - kiểm tra `settleShoe/settleRound`
-  - kiểm tra row có `reason=await-final-winner-after-shoe-reset` hay chưa.
+  - `[BET][HIST][HOLD-AMBIGUOUS]`
+- If sequence appended but history did not update:
+  - check `ctxMatch`
+  - check `settleShoe/settleRound`
+  - check `await-final-winner-after-shoe-reset`
+  - check `targetTable/targetShoe/targetRound`
 
 ## Fragile Code Areas
 - `MainWindow.xaml.cs`
@@ -53,14 +63,16 @@
   - `TryRepairTinyDomBootstrapLocked(...)`
   - `FinalizeLastBet(...)`
   - `InvalidatePendingRowsForContextReset(...)`
+  - `MarkPendingRowsAwaitFinalWinnerForReset(...)`
 - `v4_js_xoc_dia_live.js`
-  - authority visibility / single panel enforcement,
-  - DOM board bootstrap waiting states,
-  - `net_probe` extraction for `roadInfo`.
+  - authority visibility / single panel enforcement
+  - DOM board bootstrap waiting states
+  - `net_probe` extraction for `roadInfo`
 
 ## Symptoms To Watch
-- `seqLen` tăng nhưng history row vẫn `Đang chờ`.
-- `ctxSkip > 0` trong `[BET][HIST][CHECK]`.
+- `seqLen` increases but history row is still waiting.
+- `ctxSkip > 0` in `[BET][HIST][CHECK]`.
 - `pending-not-settled | reason=context-mismatch`.
-- `DOM-BOOTSTRAP-BLOCK` khi active table đúng nhưng full board vẫn bị reject.
-- `ROADINFO-SEED` xuất hiện nhưng không có `ROADINFO-WINNER` ở ca đáng ra phải append.
+- `matched > 1` or `[BET][HIST][HOLD-AMBIGUOUS]` appears.
+- `DOM-BOOTSTRAP-BLOCK` when active table is correct but full board is still rejected.
+- `ROADINFO-SEED` appears but expected `ROADINFO-WINNER` does not follow.

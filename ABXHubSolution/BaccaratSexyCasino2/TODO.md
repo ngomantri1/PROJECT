@@ -1,61 +1,73 @@
 # TODO
 
 ## Current Work
-- Ổn định hoàn toàn pending settle cho ván đầu tiên sau shuffle / shoe reset.
-- Xác nhận mọi reset path network đều mark pending cũ sang trạng thái chờ final winner đầu.
+- Keep pending settle stable for the first hand after shuffle / shoe reset.
+- Verify all network reset paths mark old pending rows into wait-for-final-winner state.
+- Verify ambiguous multi-match rows no longer become `RESET-DUP/B o qua`.
 
 ## High Priority
-- Rà soát và vá dứt điểm:
+- Retest these reset paths:
   - `roadinfo-shoe-change`
   - `roadinfo-same-shoe-reset`
   - `winner-shoe-change`
-  để pending row không bị `context-mismatch`.
-- Chuẩn hóa fallback settle sau reset:
-  - dùng target `table/shoe/round` của reset thật,
-  - không chỉ dựa vào `settleRound == 1`.
+- Retest reset settle using real target `table/shoe/round`, not only `settleRound == 1`.
+- Retest `TARGET-RETARGET` when the first winner after reset arrives later than the default target round.
+- Find why rare cases can still produce more than one pending row passing the same settle gate.
 
 ## Need To Finish
-- Xác nhận `AwaitingFinalWinnerAfterShoeReset` được set ở mọi đường reset thật.
-- Xác nhận winner đầu sau reset:
-  - append seq,
-  - cập nhật ô kết quả,
-  - cập nhật thắng/thua,
-  - remove pending row.
+- Confirm `AwaitingFinalWinnerAfterShoeReset` is set on every real reset path.
+- Confirm `SettleTargetTableId/Shoe/Round` is set correctly on every kept row.
+- Confirm first winner after reset:
+  - appends sequence,
+  - updates result cell,
+  - updates win/loss,
+  - removes the correct pending row.
+- Confirm `multi-match-guard` now:
+  - finalizes only one row,
+  - keeps the rest pending,
+  - never writes `RESET-DUP/B o qua`.
+
+## Need Retest
+- First app open into table:
+  - full DOM bootstrap must be correct, not only tiny `B`.
+- Table switching:
+  - must not flicker between lobby and game table.
+- First hand after shoe reset:
+  - sequence appends correctly,
+  - pending settles correctly.
+- First hand after same-shoe shuffle reset:
+  - sequence appends correctly,
+  - pending settles correctly.
+- Late first winner after reset:
+  - waiting row retargets to real round,
+  - no `ctxMatch=False`.
+- Rare multi-match case:
+  - history does not show `RESET-DUP`,
+  - secondary row remains pending.
+- Tie result:
+  - append `T`,
+  - history row shows `Hoa`.
 
 ## Refactor Candidates
-- Tách logic reset/settle khỏi `MainWindow.xaml.cs` sang module riêng:
+- Split reset/settle logic out of `MainWindow.xaml.cs`:
   - authority/context reset
   - roadInfo count state
-  - pending history settle.
-- Gom helper cho reset:
+  - pending history settle
+- Group reset helpers:
   - shoe change
   - same-shoe shuffle reset
   - table switch reset
 
-## Need Retest
-- Lần đầu mở app vào bàn:
-  - full DOM bootstrap phải đúng, không chỉ `B`.
-- Chuyển bàn qua lại:
-  - không nháy giữa lobby/game table.
-- Ván đầu sau shoe reset:
-  - seq append đúng ngay ván 1.
-  - pending settle đúng ngay ván 1.
-- Ván đầu sau same-shoe shuffle reset:
-  - seq append đúng.
-  - pending settle đúng.
-- Tie result:
-  - append `T`,
-  - history row ra `Hòa`.
-
 ## Secondary Tasks
-- Rà lại `pending network history cache` vì có thể ảnh hưởng bootstrap/rebase.
-- Rà log throttle cho `pending-not-settled` để vẫn đủ diagnostic nhưng không spam.
-- Chuẩn hóa docs/log marker cho các nhánh:
+- Recheck `pending network history cache` because it may affect bootstrap/rebase.
+- Recheck throttle for `pending-not-settled` logs.
+- Standardize docs/log markers for:
   - bootstrap
   - repair
   - rebuild
   - keep-await-final-winner
+  - hold-ambiguous
 
 ## Low Priority
-- Tiếp tục chia nhỏ `MainWindow.xaml.cs`.
-- Dọn các devtool JS probe không còn dùng thường xuyên.
+- Continue splitting `MainWindow.xaml.cs`.
+- Clean up JS devtool probes not used regularly.
