@@ -369,7 +369,7 @@ namespace XocDiaB52
         // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
         private int _stakeLevelIndexForUi = -1;
 
-        private const int DecisionSecondsDefault = 10;
+        private const int DecisionSecondsDefault = 5;
         private const int DecisionSecondsMin = 1;
         private const int DecisionSecondsMax = 60;
         private double _decisionSeconds = DecisionSecondsDefault;
@@ -1378,8 +1378,7 @@ Ví dụ không hợp lệ:
                 return 0;
 
             seconds = Math.Max(0, Math.Min(CountdownMaxHardCapSec, seconds));
-            if (seconds > _countdownMaxSec)
-                _countdownMaxSec = seconds;
+            _countdownMaxSec = CountdownMaxDefaultSec;
 
             return (_countdownMaxSec > 0) ? Math.Max(0, Math.Min(1, seconds / _countdownMaxSec)) : 0;
         }
@@ -1446,6 +1445,7 @@ Ví dụ không hợp lệ:
 
         private void ResetCountdownDisplayState()
         {
+            _countdownMaxSec = CountdownMaxDefaultSec;
             _lastCountdownDisplaySec = null;
             _lastCountdownRawSec = null;
             _lastCountdownDisplayRatio = null;
@@ -2420,7 +2420,7 @@ Ví dụ không hợp lệ:
                                                     // Chiến lược 17 tự finalize nhiều cửa theo winners
                                                     if (!HasJackpotMultiSideRunning())
                                                     {
-                                        FinalizeLastBet(kqStr, accNow2.Value);
+                                                     FinalizeLastBet(kqStr, accNow2.Value);
                                                     }
                                                 }
 

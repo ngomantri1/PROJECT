@@ -1329,12 +1329,28 @@
         opt = opt || {};
         var allowOutsideGame = !!opt.allowOutsideGame;
         var tailNeedle = String(opt.tailNeedle || '').toLowerCase();
+        var tailNeedles = Array.isArray(opt.tailNeedles) ? opt.tailNeedles.map(function (x) {
+                return String(x || '').toLowerCase();
+            }).filter(function (x) {
+                return !!x;
+            }) : null;
         var out = [];
         walkNodes(function (n) {
             if (!allowOutsideGame && !nodeInGame(n))
                 return;
             var full = fullPath(n, 200);
             var fullL = String(full || '').toLowerCase();
+            if (tailNeedles && tailNeedles.length) {
+                var anyHit = false;
+                for (var ti = 0; ti < tailNeedles.length; ti++) {
+                    if (fullL.indexOf(tailNeedles[ti]) !== -1) {
+                        anyHit = true;
+                        break;
+                    }
+                }
+                if (!anyHit)
+                    return;
+            }
             if (tailNeedle && fullL.indexOf(tailNeedle) === -1)
                 return;
             var btns = getComps(n, cc.Button);
@@ -1364,7 +1380,7 @@
     function buildBetRectsForMap() {
         var raw = collectButtons({
             allowOutsideGame: true,
-            tailNeedle: 'betnode'
+            tailNeedles: ['/ld_bg/btnchan/', '/ld_bg/btnle/', '/ld_bg/btn3white/', '/ld_bg/btn3red/', '/ld_bg/btn4white/', '/ld_bg/btn4red/']
         });
         var out = [];
         var st = {
@@ -2505,25 +2521,15 @@
         var TAIL_3DO = 'sede/Canvas/mainPlay/midNode/betNode/gate3/lblCashBet';
         var TAIL_TUDO = 'sede/Canvas/mainPlay/midNode/betNode/gate6/lblCashBet';
 
-        var TAIL_ACC = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_money';
+        var TAIL_ACC = 'MainXocDia/Canvas/MainUIParent/RoomScene/FooterRoomUi/Left/avatar/moneyLabel';
 
         var X_ACC = 303;
 
-        var TAIL_USER_NAME = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_name';
-        var TAIL_PROFILE_USER_NAME = 'HomeScene/Canvas/AccountLogin/Header/nodeInfoPlayer/info/lblAccName';
-        var TAIL_PROFILE_ACCOUNT = 'HomeScene/Canvas/AccountLogin/Header/nodeInfoPlayer/gold/lblCoin';
-        var TAIL_PROFILE_USER_NAME_INGAME = 'sede/Canvas/GateHeaderInGame/info/lblAccName';
-        var TAIL_PROFILE_ACCOUNT_INGAME_1 = 'sede/Canvas/GateHeaderInGame/gold/lblCoin';
-        var TAIL_PROFILE_ACCOUNT_INGAME_2 = 'sede/Canvas/GateHeaderInGame/info/lblCoin';
+        var TAIL_USER_NAME = 'MainXocDia/Canvas/MainUIParent/RoomScene/FooterRoomUi/Left/avatar/NameUser';
         var USERNAME_TAILS_EXACT = [
-            TAIL_PROFILE_USER_NAME,
-            TAIL_PROFILE_USER_NAME_INGAME,
             TAIL_USER_NAME
         ];
         var ACCOUNT_TAILS_EXACT = [
-            TAIL_PROFILE_ACCOUNT,
-            TAIL_PROFILE_ACCOUNT_INGAME_1,
-            TAIL_PROFILE_ACCOUNT_INGAME_2,
             TAIL_ACC
         ];
 
@@ -3464,7 +3470,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -3845,7 +3851,7 @@
                     chipMap = window.__cw_last_chip_map;
                 if ((!chipMap || !Object.keys(chipMap).length) && typeof window.cwScanChips === 'function')
                     chipMap = window.cwScanChips() || {};
-                var order = (typeof CHIP_SCAN_ORDER !== 'undefined' && CHIP_SCAN_ORDER && CHIP_SCAN_ORDER.slice) ? CHIP_SCAN_ORDER.slice() : [1000, 5000, 10000, 50000, 200000, 1000000, 5000000];
+                var order = (typeof CHIP_SCAN_ORDER !== 'undefined' && CHIP_SCAN_ORDER && CHIP_SCAN_ORDER.slice) ? CHIP_SCAN_ORDER.slice() : [100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000, 5000000, 10000000];
                 var fromChipMap = 0;
                 for (var oi = 0; oi < order.length; oi++) {
                     var dv = Math.floor(+order[oi] || 0);
@@ -4192,7 +4198,7 @@
     CHIP BETTING CORE (compat)
     ===================================================== */
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
-    var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
+    var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000, 500, 100];
     var cfgBet = {
         delayPick: 220,
         delayTap: 260,
@@ -4473,6 +4479,8 @@
 
     /* ---------------- cwBet classic ---------------- */
     var ALLOWED_SET = {
+        '100': 1,
+        '500': 1,
         '1000': 1,
         '5000': 1,
         '10000': 1,
@@ -4488,16 +4496,20 @@
         '100000000': 1,
         '500000000': 1
     };
-    var DENOMS = [500000000, 100000000, 50000000, 20000000, 10000000, 5000000, 1000000, 500000, 200000, 100000, 50000, 10000, 5000, 1000];
-    var CHIP_SCAN_ORDER = [1000, 5000, 10000, 50000, 200000, 1000000, 5000000];
+    var DENOMS = [500000000, 100000000, 50000000, 20000000, 10000000, 5000000, 1000000, 500000, 200000, 100000, 50000, 10000, 5000, 1000, 500, 100];
+    var CHIP_SCAN_ORDER = [100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000, 5000000, 10000000];
     var CHIP_SCAN_SET = {
+        '100': 1,
+        '500': 1,
         '1000': 1,
         '5000': 1,
         '10000': 1,
         '50000': 1,
-        '200000': 1,
+        '100000': 1,
+        '500000': 1,
         '1000000': 1,
-        '5000000': 1
+        '5000000': 1,
+        '10000000': 1
     };
 
     function active(n) {
@@ -4795,37 +4807,35 @@
         TU_DO: /(TU\s*DO|4\s*DO|4R|TUDO)/i
     };
     var BET_TAILS = {
-        CHAN: 'sede/Canvas/mainPlay/midNode/betNode/gatebig',
-        LE: 'sede/Canvas/mainPlay/midNode/betNode/gatesmall',
-        SAP_DOI: 'sede/Canvas/mainPlay/midNode/betNode/gate4',
-        TRANG3_DO1: 'sede/Canvas/mainPlay/midNode/betNode/gate2',
-        DO3_TRANG1: 'sede/Canvas/mainPlay/midNode/betNode/gate3',
-        TU_TRANG: 'sede/Canvas/mainPlay/midNode/betNode/gate5',
-        TU_DO: 'sede/Canvas/mainPlay/midNode/betNode/gate6'
+        CHAN: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChan/btn1',
+        LE: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnLe/btn1',
+        SAP_DOI: '',
+        TRANG3_DO1: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/Btn3White/btn1',
+        DO3_TRANG1: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/Btn3Red/btn1',
+        TU_TRANG: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/Btn4White/btn1',
+        TU_DO: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/Btn4Red/btn1'
     };
     var BET_LABEL_TAILS = {
-        CHAN: 'sede/Canvas/mainPlay/midNode/betNode/gatebig/lblCashBet',
-        LE: 'sede/Canvas/mainPlay/midNode/betNode/gatesmall/lblCashBet',
-        SAP_DOI: 'sede/Canvas/mainPlay/midNode/betNode/gate4/lblCashBet',
-        TRANG3_DO1: 'sede/Canvas/mainPlay/midNode/betNode/gate2/lblCashBet',
-        DO3_TRANG1: 'sede/Canvas/mainPlay/midNode/betNode/gate3/lblCashBet',
-        TU_TRANG: 'sede/Canvas/mainPlay/midNode/betNode/gate5/lblCashBet',
-        TU_DO: 'sede/Canvas/mainPlay/midNode/betNode/gate6/lblCashBet'
+        CHAN: '',
+        LE: '',
+        SAP_DOI: '',
+        TRANG3_DO1: '',
+        DO3_TRANG1: '',
+        TU_TRANG: '',
+        TU_DO: ''
     };
     var CHIP_TAILS = {
-        '500000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
-        '100000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value6',
-        '50000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value10',
-        '20000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value9',
-        '10000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value8',
-        '5000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
-        '1000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value6',
-        '500000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value5',
-        '100000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value4',
-        '50000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value3',
-        '10000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value2',
-        '5000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value1',
-        '1000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value0'
+        '100': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_1/btn1/LabelMB',
+        '500': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_2/btn1/LabelMB',
+        '1000': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_3/btn1/LabelMB',
+        '5000': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_4/btn1/LabelMB',
+        '10000': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_5/btn1/LabelMB',
+        '50000': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_6/btn1/LabelMB',
+        '100000': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_7/btn1/LabelMB',
+        '500000': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_8/btn1/LabelMB',
+        '1000000': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_9/btn1/LabelMB',
+        '5000000': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_10/btn1/LabelMB',
+        '10000000': 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_11/btn1/LabelMB'
     };
     function tailMatch(full, tail) {
         if (!full || !tail)
@@ -5092,7 +5102,7 @@
         m = s.match(/(?:^|[^0-9])(\d{1,3}(?:[.,\s]\d{3})+|\d{4,9})(?=$|[^0-9])/);
         if (m) {
             var v2 = parseInt(m[1].replace(/[^\d]/g, ''), 10);
-            if (v2 % 1000 === 0 && ALLOWED_SET[String(v2)])
+            if (v2 % 100 === 0 && ALLOWED_SET[String(v2)])
                 return v2;
         }
         return null;
@@ -5165,7 +5175,7 @@
                     score += 6;
                 if (/sede\/canvas\/mainplay/.test(path))
                     score += 4;
-                if (/chip|chips|chipnode|chip_panel|bet_panel|betnode|coin|chon|choose|phinh|menh/.test(path))
+                if (/chip|chips|chipnode|chip_panel|bet_panel|betnode|btnchosecoin|entry_|coin|chon|choose|phinh|menh/.test(path))
                     score += 5;
                 if (/playernode|soicau|jackpot|tophu|notice|chat/.test(path))
                     score -= 4;
@@ -5372,14 +5382,16 @@
         return null;
     }
     var CASHBET_CHIP_LABEL_RE = /\/cashbetnode\/(c[1-6])\/textimg$/i;
+    var BTN_CHOOSE_COIN_LABEL_RE = /\/btnchosecoin\/new node\/zcontent\/entry_\d+\/btn1\/labelmb$/i;
     function scanCashBetNodeExact() {
         var out = {};
         walkNodes(function (n) {
             if (!n || !active(n))
                 return;
             var path = String(fullPath(n, 180) || '');
-            var m = path.match(CASHBET_CHIP_LABEL_RE);
-            if (!m)
+            var cashbetMatch = path.match(CASHBET_CHIP_LABEL_RE);
+            var btnChooseCoinMatch = BTN_CHOOSE_COIN_LABEL_RE.test(path);
+            if (!cashbetMatch && !btnChooseCoinMatch)
                 return;
             var val = null;
             try {
@@ -5403,7 +5415,11 @@
             if (!val)
                 return;
             var root = n.parent || n._parent || null;
-            var owner = root || n;
+            var owner = null;
+            if (btnChooseCoinMatch)
+                owner = clickableOf(n, 8) || root || n;
+            else
+                owner = root || n;
             var rr = screenRect(rectFromNodeCompat(owner) || rectFromNodeScreen(owner) || rectFromNodeCompat(n) || rectFromNodeScreen(n));
             if (!rr)
                 return;
@@ -5765,7 +5781,7 @@
         return /playernode|soicau|jackpot|chat|minigame|gift|waittingroom|lblcashbet|lblcountbet|gatebig|gatesmall|gate[0-9]/.test(p);
     }
     function chipPathPreferred(p) {
-        return /mainplay|midnode|nodetophu|tabs100110k|cashbetnode|chip|coin|chipnode|bet_panel/.test(p);
+        return /mainplay|midnode|nodetophu|tabs100110k|cashbetnode|btnchosecoin|entry_|chip|coin|chipnode|bet_panel/.test(p);
     }
     function chipNodePathOk(p) {
         var s = String(p || '').toLowerCase();
@@ -5785,7 +5801,7 @@
         if (!parts.length)
             return '';
         var last = String(parts[parts.length - 1] || '').toLowerCase();
-        if (/^(1k|5k|10k|50k|100|200k|1m|5m)$/.test(last) || /^lbl/i.test(last))
+        if (/^(100|500|1k|5k|10k|50k|100k|200k|500k|1m|5m|10m)$/.test(last) || /^lbl/i.test(last))
             parts.pop();
         if (!parts.length)
             return '';
@@ -6041,7 +6057,7 @@
                 return;
             var p = String(fullPath(hit, 180) || '').toLowerCase();
             var score = 0;
-            if (/chip|chips|chipnode|bet_panel|coin|tabs100110k/.test(p))
+            if (/chip|chips|chipnode|bet_panel|btnchosecoin|entry_|coin|tabs100110k/.test(p))
                 score += 7;
             if (/sede\/canvas\/mainplay|midnode|mainplay|nodetophu/.test(p))
                 score += 3;
@@ -6284,7 +6300,7 @@
             if (/gateheaderingame|layoutlistgame|itemheader/.test(p))
                 return;
             var score = 0;
-            if (/chip|chips|chipnode|bet_panel|coin|tabs100110k|mainplay|midnode|nodetophu/.test(p))
+            if (/chip|chips|chipnode|bet_panel|btnchosecoin|entry_|coin|tabs100110k|mainplay|midnode|nodetophu/.test(p))
                 score += 9;
             if (/chat|minigame|gift|soicau|waitting|playernode|lblcashbet|lblcountbet/.test(p))
                 score -= 6;
@@ -6590,7 +6606,6 @@
         return rows;
     };
 
-    var old_cwBet = (typeof window.cwBet === 'function') ? window.cwBet.bind(window) : null;
     var LOCK = (window.__cwBetLockFix = window.__cwBetLockFix || {
             busy: false
         });
@@ -6637,8 +6652,6 @@
     window.cwBet = async function (side, amount) {
         side = normalizeSide(side);
         if (amount == null || isNaN(amount)) {
-            if (old_cwBet)
-                return old_cwBet(side);
             var tgt0 = findBetTarget(side);
             if (!tgt0 || (!tgt0.node && !tgt0.rect)) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
@@ -6654,7 +6667,7 @@
             console.warn('[cwBet++] amount=0');
             return false;
         }
-        var X = raw - (raw % 1000);
+        var X = raw - (raw % 100);
 
         return withLock(async function () {
             var tgt = findBetTarget(side);
@@ -7253,7 +7266,7 @@
 
     panel.querySelector('#bBetC').addEventListener('click', async function () {
         var n = parseFloat(document.getElementById('iStake').value || '1');
-        var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1))) * 1000;
+        var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1))) * 100;
         try {
             window.chrome && window.chrome.webview && window.chrome.webview.postMessage && window.chrome.webview.postMessage(JSON.stringify({
                     abx: 'cwBet',
@@ -7268,7 +7281,7 @@
     }, true);
     panel.querySelector('#bBetL').addEventListener('click', async function () {
         var n = parseFloat(document.getElementById('iStake').value || '1');
-        var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1))) * 1000;
+        var amount = Math.max(0, Math.floor((isFinite(n) ? n : 1))) * 100;
         try {
             window.chrome && window.chrome.webview && window.chrome.webview.postMessage && window.chrome.webview.postMessage(JSON.stringify({
                     abx: 'cwBet',

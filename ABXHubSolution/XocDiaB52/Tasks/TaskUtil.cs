@@ -90,13 +90,28 @@ namespace XocDiaB52.Tasks
             currentSeq ??= string.Empty;
             lastDigit = '\0';
 
-            if (currentSeq.Length <= baseSeq.Length)
-                return false;
-            if (!currentSeq.StartsWith(baseSeq, StringComparison.Ordinal))
+            if (string.IsNullOrEmpty(currentSeq) || string.Equals(baseSeq, currentSeq, StringComparison.Ordinal))
                 return false;
 
-            lastDigit = currentSeq[^1];
-            return lastDigit != '\0';
+            if (currentSeq.Length > baseSeq.Length &&
+                currentSeq.StartsWith(baseSeq, StringComparison.Ordinal))
+            {
+                lastDigit = currentSeq[^1];
+                return lastDigit != '\0';
+            }
+
+            // B52 result board hiện có thể là "cửa sổ trượt" độ dài cố định:
+            // chuỗi đổi nội dung sau mỗi ván nhưng không tăng chiều dài.
+            // Nhận diện dạng: base[1..] == current[..^1] => có 1 kết quả mới.
+            if (baseSeq.Length >= 2 &&
+                currentSeq.Length == baseSeq.Length &&
+                string.CompareOrdinal(baseSeq, 1, currentSeq, 0, currentSeq.Length - 1) == 0)
+            {
+                lastDigit = currentSeq[^1];
+                return lastDigit != '\0';
+            }
+
+            return false;
         }
 
         public static bool IsSeqResetOrRebuilt(string? baseSeq, string? currentSeq)
@@ -108,6 +123,13 @@ namespace XocDiaB52.Tasks
                 return false;
             if (string.Equals(baseSeq, currentSeq, StringComparison.Ordinal))
                 return false;
+
+            if (baseSeq.Length >= 2 &&
+                currentSeq.Length == baseSeq.Length &&
+                string.CompareOrdinal(baseSeq, 1, currentSeq, 0, currentSeq.Length - 1) == 0)
+            {
+                return false;
+            }
             if (currentSeq.Length < baseSeq.Length)
                 return true;
 
@@ -199,7 +221,7 @@ namespace XocDiaB52.Tasks
                     }
                 }
 
-                if (roundChanged && remainingSeconds <= ctx.DecisionSeconds && remainingSeconds > 0)
+                if (roundChanged && remainingSeconds > 0)
                     break;
 
                 if (remainingSeconds >= 0)
@@ -245,8 +267,6 @@ namespace XocDiaB52.Tasks
                 " var intent = { tabId: '" + tabKey + "', roundId: " + roundId + ", side: '" + side + "', amount: " + amount + " };" +
                 " if (typeof window.__cw_bet_enqueue==='function'){" +
                 "   return String(await window.__cw_bet_enqueue(intent));" +
-                " } else if (typeof window.__cw_bet==='function'){" +
-                "   return String(await window.__cw_bet('" + side + "', " + amount + "));" +
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
