@@ -111,6 +111,13 @@
   - `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_*`
   - `Entry_1 = 100`, `Entry_2 = 500`, `Entry_3 = 1000`, ... `Entry_11 = 10000000`
 
+## Current Profile DOM
+- Username exact path hien tai:
+  - `MainXocDia/Canvas/MainUIParent/RoomScene/FooterRoomUi/Left/avatar/NameUser`
+- Account exact path hien tai:
+  - `MainXocDia/Canvas/MainUIParent/RoomScene/FooterRoomUi/Left/avatar/moneyLabel`
+- Profile scan hien tai da doi sang exact-tail only, khong con fallback ve `HomeScene/*`, `GateHeaderInGame/*` hay `dual/*` cho username/account.
+
 ## Data Flow
 - Web page / game frame
 - JS inject scan scene
@@ -126,6 +133,15 @@
 - C# tao pending row
 - `seq` advance / slide 1 buoc
 - finalize bet row / update stats
+
+## Countdown Behavior
+- `snap.prog` van la so giay con lai cua cua dat cuoc do JS doc tu countdown bar.
+- Countdown UI C# co smoothing cho text va ratio.
+- Thanh progress countdown hien su dung thang co dinh `20s`; khong con tu hoc max countdown runtime tu cac gia tri `prog` lon hon `20`.
+
+## Wait Behavior
+- Cac strategy dung `TaskUtil.WaitUntilNewRoundStart()` hien dat ngay khi helper nhan ra vong moi va `prog > 0`.
+- Cac strategy dung `TaskUtil.WaitUntilBetWindow()` van la nhom vao muon theo `DecisionSeconds`.
 
 ## Seq Window Behavior
 - Result board B52 hien co the tra `seq` dang cua so truot do dai co dinh.
@@ -150,3 +166,4 @@
 - Bridge logic dang ton tai o ca `MainWindow` va `WebView2LiveBridge`.
 - `v4_js_xoc_dia_live.js` rat lon, de regression khi sua selector.
 - Cac task va pending-finalize phu thuoc manh vao chat luong `seq`.
+- Pending finalize generic trong `MainWindow` van dang phu thuoc vao du lieu `tick` (`seq`, `totals.A`) thay vi mot event ket qua rieng.

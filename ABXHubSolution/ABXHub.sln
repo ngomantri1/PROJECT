@@ -4,17 +4,19 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XocDiaB52", "XocDiaB52\XocDiaB52.csproj", "{324D2884-9AC0-4743-9F01-2D8848A9D133}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaccaratViVoGaming", "BaccaratViVoGaming\BaccaratViVoGaming.csproj", "{59EED8C7-4448-4158-8037-0E010D374B1B}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaiXiuLiveSun", "TaiXiuLiveSun\TaiXiuLiveSun.csproj", "{F93AF1DA-4990-4FD6-9888-3263BE8EE729}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AviatorHit", "AviatorHit\AviatorHit.csproj", "{C7341CE8-10F0-49FA-AEA2-00B024AFF432}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaccaratViVoGaming", "BaccaratViVoGaming\BaccaratViVoGaming.csproj", "{59EED8C7-4448-4158-8037-0E010D374B1B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaccaratWM", "BaccaratWM\BaccaratWM.csproj", "{0E35714C-339C-4329-B65E-C6BEC9BDAE32}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaccaratSexyCasino2", "BaccaratSexyCasino2\BaccaratSexyCasino2.csproj", "{2BD2ABF1-B3CD-430E-A141-F37FA08C6961}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaccaratSexyCasino", "BaccaratSexyCasino\BaccaratSexyCasino.csproj", "{84ED1F4F-9478-4D8E-AD1C-74F6825EDE7E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaccaratEzugiCasino", "BaccaratEzugiCasino\BaccaratEzugiCasino.csproj", "{00E53E4B-718D-47A2-A8E6-FF4DA6C3124D}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XocDiaB29", "XocDiaB29\XocDiaB29.csproj", "{92FE0479-6AA8-4809-9235-11D16B8CABE4}"
 EndProject
@@ -46,10 +48,6 @@ Global
 		{324D2884-9AC0-4743-9F01-2D8848A9D133}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{324D2884-9AC0-4743-9F01-2D8848A9D133}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{324D2884-9AC0-4743-9F01-2D8848A9D133}.Release|Any CPU.Build.0 = Release|Any CPU
-		{59EED8C7-4448-4158-8037-0E010D374B1B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{59EED8C7-4448-4158-8037-0E010D374B1B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{59EED8C7-4448-4158-8037-0E010D374B1B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{59EED8C7-4448-4158-8037-0E010D374B1B}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F93AF1DA-4990-4FD6-9888-3263BE8EE729}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F93AF1DA-4990-4FD6-9888-3263BE8EE729}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F93AF1DA-4990-4FD6-9888-3263BE8EE729}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -58,6 +56,10 @@ Global
 		{C7341CE8-10F0-49FA-AEA2-00B024AFF432}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C7341CE8-10F0-49FA-AEA2-00B024AFF432}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C7341CE8-10F0-49FA-AEA2-00B024AFF432}.Release|Any CPU.Build.0 = Release|Any CPU
+		{59EED8C7-4448-4158-8037-0E010D374B1B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{59EED8C7-4448-4158-8037-0E010D374B1B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{59EED8C7-4448-4158-8037-0E010D374B1B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{59EED8C7-4448-4158-8037-0E010D374B1B}.Release|Any CPU.Build.0 = Release|Any CPU
 		{0E35714C-339C-4329-B65E-C6BEC9BDAE32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{0E35714C-339C-4329-B65E-C6BEC9BDAE32}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0E35714C-339C-4329-B65E-C6BEC9BDAE32}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -70,6 +72,10 @@ Global
 		{84ED1F4F-9478-4D8E-AD1C-74F6825EDE7E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{84ED1F4F-9478-4D8E-AD1C-74F6825EDE7E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{84ED1F4F-9478-4D8E-AD1C-74F6825EDE7E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00E53E4B-718D-47A2-A8E6-FF4DA6C3124D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00E53E4B-718D-47A2-A8E6-FF4DA6C3124D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00E53E4B-718D-47A2-A8E6-FF4DA6C3124D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00E53E4B-718D-47A2-A8E6-FF4DA6C3124D}.Release|Any CPU.Build.0 = Release|Any CPU
 		{92FE0479-6AA8-4809-9235-11D16B8CABE4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{92FE0479-6AA8-4809-9235-11D16B8CABE4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{92FE0479-6AA8-4809-9235-11D16B8CABE4}.Release|Any CPU.ActiveCfg = Release|Any CPU

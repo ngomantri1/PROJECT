@@ -64,6 +64,13 @@
 - Root chip hien tai:
   - `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_*`
 
+## Current Profile Tails
+- Exact tail ten nhan vat ingame hien tai:
+  - `MainXocDia/Canvas/MainUIParent/RoomScene/FooterRoomUi/Left/avatar/NameUser`
+- Exact tail tai khoan ingame hien tai:
+  - `MainXocDia/Canvas/MainUIParent/RoomScene/FooterRoomUi/Left/avatar/moneyLabel`
+- Da bo fallback ve cac tail profile/home/game cu cho username va account; JS hien chi doc exact tail layout moi.
+
 ## Seq Behavior
 - B52 hien co the tra `seq` dang "sliding window" do dai co dinh, khong phai luc nao cung append dai dan.
 - `TaskUtil.TryGetSeqAdvance()` da duoc sua de nhan ca 2 truong hop:
@@ -88,9 +95,14 @@
 - `tick` snapshot la nguon du lieu game chinh cho task engine.
 - Status UI dang dua vao JS `status` field; JS hien suy ra theo `prog`.
 - Countdown UI co smoothing o C#; khong revert ve hien thi raw gay nhay so.
+- Countdown progress bar hien phai chia theo thang co dinh `20s`; khong duoc tu dong phong max theo gia tri `prog` lon nhat tung thay.
 - Start strategy phai cho `__cw_bet`, Cocos scene, va it nhat mot `tick`.
 - Home/Game frame injection phai idempotent.
 - Menh gia chip toi thieu hien tai la `100`, khong con `1000`.
+
+## Wait Rules
+- `TaskUtil.WaitUntilNewRoundStart()` hien chi can nhan ra da sang vong moi va `prog > 0` de cho dat cuoc ngay.
+- `DecisionSeconds` van con tac dung voi cac task di qua `WaitUntilBetWindow()`.
 
 ## Absolute Do-Not-Break Rules
 - Khong doi contract `abx:*` neu chua sua dong bo ca hai dau.

@@ -45,6 +45,18 @@
 - He qua:
   - neu textbox lech voi username thuc te tu Home, lease/license co the khong bam dung account dang choi
 
+## 7. Pending Finalize Generic Van Nhay Cam Voi `totals.A`
+- Luong finalize generic trong `MainWindow.xaml.cs` chi goi `FinalizeLastBet()` khi co `seq` moi va `snap.totals.A` co gia tri.
+- Trieu chung da gap tren layout moi:
+  - pending row them thanh cong
+  - `Ket qua` / `Thang-Thua` dung `-`
+  - `Tai khoan` bang `0` hoac `-`
+- Nguyen nhan da thay:
+  - tail account cu khong con dung tren layout moi nen `totals.A` null
+- Trang thai:
+  - da doi exact tail account sang `MainXocDia/Canvas/MainUIParent/RoomScene/FooterRoomUi/Left/avatar/moneyLabel`
+  - can verify lai runtime xem pending finalize da on dinh chua
+
 ## Fixed / Mitigated Bugs Seen In Current Code
 
 ## 1. Countdown UI Jump / Clamp
@@ -52,6 +64,9 @@
   - `GetStableCountdownDisplaySec`
   - `GetStableCountdownDisplayRatio`
   - hard cap `CountdownMaxHardCapSec`
+- Update moi nhat:
+  - countdown progress bar da quay ve thang co dinh `20s`
+  - khong con tu tang max runtime theo `prog` lon nhat tung thay
 
 ## 2. Bet Finalize Sai Thoi Diem
 - Finalize khong con phu thuoc timer tho
@@ -61,6 +76,9 @@
   - `TaskUtil.TryGetSeqAdvance()` da fix cho `seq` dang sliding window do dai co dinh
   - trieu chung cu: task dat duoc 1 van roi treo mai trong `WaitRoundFinishAndJudge()`
   - log dien hinh: `reset/rebuild detected while waiting result: baseLen=32, curLen=32`
+- Update moi nhat:
+  - `TaskUtil.WaitUntilNewRoundStart()` da bo gate `remainingSeconds <= DecisionSeconds`
+  - voi nhom strategy dung helper nay, he thong vao lenh ngay khi nhan ra vong moi va `prog > 0`
 
 ## 3. Race Khi Start Strategy
 - Co `WaitForBridgeAndGameDataAsync`
@@ -85,6 +103,15 @@
 - Exact DOM moi da xac thuc cho:
   - `CHAN`, `LE`, `TRANG3_DO1`, `DO3_TRANG1`, `TU_TRANG`, `TU_DO`
 
+## 7. Profile Tail Cu Khong Con Dung
+- Tail cu cho username/account (`HomeScene/*`, `GateHeaderInGame/*`, `dual/*`) khong con phu hop voi layout Xoc Dia hien tai.
+- Da xac thuc exact tail moi bang probe/log:
+  - username -> `MainXocDia/Canvas/MainUIParent/RoomScene/FooterRoomUi/Left/avatar/NameUser`
+  - account -> `MainXocDia/Canvas/MainUIParent/RoomScene/FooterRoomUi/Left/avatar/moneyLabel`
+- Trang thai:
+  - da bo fallback cu
+  - JS profile reader hien chi doc exact tail moi
+
 ## Root Causes
 - Game B52 thay scene/node/tail thuong xuyen
 - Project phu thuoc nang vao WebView2 + JS inject + frame timing
@@ -99,6 +126,7 @@
 - Dung fallback C# click/navigation khi Home JS khong san
 - Giu CDP tap de debug network khi can, du chua log full payload
 - Dung probe exact DOM tren DevTools de xac thuc `ld_bg/btn*` truoc khi chot selector trong JS
+- Dung probe text/tail trong DevTools de xac thuc exact path username/account truoc khi khoa tail trong JS
 
 ## Easy-To-Break Zones
 - `MainWindow.xaml.cs`

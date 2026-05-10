@@ -5,6 +5,10 @@
 - Verify lai flow dat cuoc tren layout moi
 - Verify multi-round betting sau fix `seq` sliding window
 - Theo doi runtime sau khi bo fallback dat cuoc va selector cu cho layout moi
+- Verify lai profile ingame exact tail moi cho:
+  - ten nhan vat `.../NameUser`
+  - tai khoan `.../moneyLabel`
+- Verify countdown progress bar sau khi khoa thang co dinh `20s`
 
 ## High Priority
 - Verify thuc chien 6 cua exact DOM moi:
@@ -21,6 +25,8 @@
 - Khoi phuc hoac bo sung `js_home_v2.js` vao project/embed resource neu Home auto flow van can
 - Giam duplicate bridge giua `MainWindow.xaml.cs` va `WebView2LiveBridge.cs`
 - Giam compiler warnings hien co, dac biet nullability va unreachable code
+- Xac nhan pending rows da finalize lai dung sau khi account tail moi tra `totals.A` on dinh
+- Xac nhan cac strategy dung `WaitUntilNewRoundStart()` khong vao nham van khi da bo gate `DecisionSeconds`
 
 ## Incomplete / Fragile Areas
 - Home flow dang co dependency vao Home JS nhung file nguon khong nam trong tree hien tai
@@ -45,12 +51,15 @@
 - Strategy chi start khi `__cw_bet`, Cocos va `tick` deu san sang
 - Task dat duoc nhieu van lien tiep, khong chi 1 van roi treo cho `seq`
 - Pending row khong bi duplicate hoac finalize sai van
+- Pending row cap nhat duoc `Ket qua` / `Thang-Thua` / `Tai khoan` sau khi co ket qua moi
 - Betting amount `100`, `500`, `600`, `1100` deu tach plan dung
 - 6 cua exact DOM moi deu click dung sau khi chuyen layout/trang
 - `JackpotMultiSideTask` finalize winners dung cho multi-side
 - `MultiChain` va `WinUpLoseKeep` update step dung sau win/loss lien tiep
 - Plugin mode va standalone mode cung hien thi resource/icon dung
 - DevTools shortcut `F12` va `Ctrl+Shift+I` con hoat dong sau embed mode
+- Username/account UI khop exact tail moi tren layout `RoomScene/FooterRoomUi/Left/avatar/*`
+- Countdown bar day tu dau round theo thang `20s`, khong bi hut do max runtime > 20
 
 ## Lower Priority
 - Don comment/debug cu trong JS inject
