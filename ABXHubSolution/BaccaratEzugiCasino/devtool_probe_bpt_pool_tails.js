@@ -6,6 +6,9 @@
     PLAYER: "div#main-bets > div.css-1or1crx:nth-of-type(1)",
     TIE: "div#statistics > div.users-amount-container > div.statistics-amount-container:nth-of-type(2)"
   };
+  const TIE_ALT_TAILS = [
+    "div#main-bets > div:nth-of-type(2)"
+  ];
 
   function parseMoneyToken(tok) {
     const t = String(tok || "").trim().toUpperCase();
@@ -42,8 +45,7 @@
     return best ? { token: best.token, value: best.value } : null;
   }
 
-  function readSide(side) {
-    const selector = TAILS[side];
+  function readSideBySelector(side, selector) {
     if (!selector) return null;
     let el = null;
     try { el = document.querySelector(selector); } catch (_) { el = null; }
@@ -67,12 +69,20 @@
     }
     if (!stake || stake.value == null) return null;
 
-    return {
-      side,
-      value: stake.value,
-      raw: stake.token,
-      tail: selector
-    };
+    return { side, value: stake.value, raw: stake.token, tail: selector };
+  }
+
+  function readSide(side) {
+    if (side !== "TIE") return readSideBySelector(side, TAILS[side]);
+
+    const picks = [TAILS.TIE, ...TIE_ALT_TAILS]
+      .filter(Boolean)
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .map((sel) => readSideBySelector("TIE", sel))
+      .filter(Boolean);
+
+    if (!picks.length) return null;
+    return picks[0];
   }
 
   function scanOnce() {
@@ -81,6 +91,16 @@
       PLAYER: readSide("PLAYER"),
       TIE: readSide("TIE")
     };
+
+    if (bySide.TIE && bySide.PLAYER && bySide.TIE.value === bySide.PLAYER.value) {
+      for (const sel of TIE_ALT_TAILS) {
+        const alt = readSideBySelector("TIE", sel);
+        if (alt && alt.value != null && alt.value !== bySide.PLAYER.value) {
+          bySide.TIE = alt;
+          break;
+        }
+      }
+    }
 
     const out = {
       ok: !!(bySide.BANKER && bySide.PLAYER && bySide.TIE),

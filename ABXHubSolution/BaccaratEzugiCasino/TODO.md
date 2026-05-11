@@ -1,109 +1,55 @@
 # TODO
 
-Ghi chu nay la TODO suy ra tu code hien tai, log guard va cau truc project; khong phai issue tracker chinh thuc.
+## Da xong hom nay (2026-05-10)
 
-## Task dang lam
+- [x] Tat emergency HTTP/CDP tap de giam tai runtime (`DisableHttpAndCdpTaps = true`).
+- [x] Doi logic status theo `Prog`:
+  - `Prog > 0` => `Cho phép đặt cược` (xanh).
+  - `Prog <= 0/null` => `Đợi kết quả` (do).
+- [x] Bo fallback cu cho tong cuoc B/P/T.
+- [x] Chot nguon doc tong cuoc theo 3 selector tail co dinh (`preferred-tail-only`).
+- [x] Cap nhat probe script `devtool_probe_bpt_pool_tails.js` theo cung logic selector co dinh.
 
-- On dinh `authority frame` de chi nhan dung tick tu game frame that.
-- Giu `DOM bootstrap + CDP append` khong lam lech chuoi ket qua khi doi ban/doi shoe.
-- On dinh route `main web -> popup web` cho cac provider launch flow khac nhau.
-- Giam truong hop `pending` khong settle do thieu context hoac seq chua advance dung.
-- Hoan thien smoothing countdown de UX di dung tung nhip `12,11,10...0` tren:
-  - canvas panel
-  - thanh/timer WPF ben phai
-- Chan doan va chot nguyen nhan runtime "khong thay doi" countdown:
-  - xac nhan host da nap DLL moi (embedded JS) sau rebuild/restart
-  - xac nhan log countdown da ra lien tuc theo display cadence
+## Da xong hom nay (2026-05-11)
 
-## Task chua hoan thanh
+- [x] Chuyen dong bo chuoi ket qua sang huong DOM board authority (full board scan + raw seq).
+- [x] Them pha `waiting-board-bootstrap` khi vao/switch ban de tranh lock chuoi sai.
+- [x] Don gian hoa authority switch theo nghiep vu:
+  - doi ban -> nhan context moi ngay (bo gate reject weak-pull).
+  - co incoming seq cua ban moi -> cap nhat ngay.
+- [x] Giam flash waiting:
+  - delay `waiting-board-bootstrap` 600ms sau switch.
+  - chi show waiting toi da 1 lan moi switch.
+- [x] Giam spam log/state:
+  - dedup log `AUTH-KEEP-JS` theo state + heartbeat 4s.
+- [x] Rà log sau patch:
+  - `TABLE-SWITCH-REJECT = 0`,
+  - waiting giam ro, ket qua van dung.
 
-- Tach `MainWindow.xaml.cs` thanh nhieu partial/service nho hon.
-- Hop nhat logic bridge dang bi trung giua `MainWindow` va `WebView2LiveBridge.cs`.
-- Chuan hoa provider-specific launch flow dang con nhieu fallback cung.
-- Chot 1 display-countdown model dung cho ca JS va WPF thay vi moi ben tu noi suy rieng.
-- Bo sung test/manual checklist cho cac case:
-  - table switch
-  - shoe switch
-  - popup route
-  - network winner late
-  - pending late-bind
-  - countdown jump gap lon
-- Chot quy trinh deploy khi sua JS embedded:
-  - rebuild plugin DLL
-  - restart host AutoBetHub
-  - doi chieu sha256 script trong log bridge
+## Viec can tiep tuc
 
-## Task can refactor
+- [ ] Theo doi tinh on dinh selector B/P/T theo tung ban (provider co the doi class/tail).
+- [ ] Theo doi 24h log switch ban:
+  - giu `TABLE-SWITCH-REJECT = 0`.
+  - thoi gian vao ban moi -> co seq hop le trong muc cho phep.
+  - xac nhan waiting khong bi spam lai khi switch lien tuc.
+- [ ] Them canh bao log khi 1 trong 3 selector null qua nguong thoi gian.
+- [ ] Xac nhan lai countdown long-run (nhieu round lien tiep) de loai tru stall hiem.
+- [ ] Theo doi nguon `net seq` (hien tai thuong rong) de quyet dinh co can giam tan suat auth-keep-js state update nua hay khong.
+- [ ] Bo sung smoke test checklist sau rebuild:
+  - status mau/chu dung theo `Prog`,
+  - B/P/T len canvas deu,
+  - seq khong nhay nguoc ve chuoi cu khi switch ban/shuffle,
+  - app khong freeze sau khi vao game.
 
-- `MainWindow.xaml.cs` qua lon, kho reasoning va de regression.
-- Gom nhom state `_net*`, `_active*`, `_authority*` thanh model/service ro rang hon.
-- Tach history settlement khoi UI class.
-- Tach license/lease khoi `MainWindow`.
-- Tach parser CDP packet/history/bet-pool khoi orchestration UI.
-- Giam duplication giua strategy callbacks va update UI tab state.
+## Refactor uu tien
 
-## Task uu tien cao
+- [ ] Tach bot logic khoi `MainWindow.xaml.cs` (god object).
+- [ ] Chuan hoa service doc snapshot/status/totals de de test.
+- [ ] Giam logic heuristic cu con du trong nhung nhanh khong con su dung.
 
-- Bao ve `pending flow` khoi finalize sai context.
-- Bao ve `authority lost/switch` khoi nhan nham tick tu wrapper/about:blank frame.
-- Kiem tra moi duong vao bet deu di qua `__cw_bet_enqueue`.
-- Giu `GetBetWebView()` chon dung `PopupWeb` khi popup active.
-- Ra soat lai `context reset` de khong drop nham pending row van con cho final winner.
-- Sua countdown jump:
-  - khong duoc roi buoc lon `12 -> 6`, `4 -> 0`
-  - uu tien ra duoc chuoi so nguyen `12,11,10...0`
-  - neu nguon raw bi thua/tre thi display layer phai bu offset de van di tung giay
-- Dam bao log countdown dung du de ket luan:
-  - `[COUNTDOWN][UI][RAW]` phan biet raw source update
-  - `[COUNTDOWN][UI][DISPLAY]` va `[COUNTDOWN][TRACE]` phan biet repaint/display 1Hz
-  - `CWDBG COUNTDOWN raw/display` phia JS panel
+## Deploy checklist bat buoc
 
-## Task can test lai
-
-- `Play` ngay sau `VaoXocDia` khi bridge moi inject.
-- Game launch bang:
-  - click title thuong
-  - trusted click
-  - iframe reload
-  - popup route
-- Sequence khi:
-  - vao giua shoe
-  - doi shoe
-  - doi table
-  - late network winner
-- Lease/license:
-  - acquire
-  - heartbeat
-  - release
-  - recheck 5 phut/lan
-- Money strategy:
-  - `MultiChain`
-  - `Victor2`
-  - `WinUpLoseKeep`
-- `play.livetables.io/baccarat`:
-  - panel auto hien khi `CW_PANEL_VISIBLE_DEFAULT = true`
-  - balance len ca canvas va WPF
-  - countdown source `span.seconds`
-  - countdown UX co con jump gap lon hay khong
-  - countdown log co lien tuc khong:
-    - C#: `TRACE`/`DISPLAY` co xuong tung giay
-    - JS: `displayWhole` co di `12..0`
-- Deploy verify:
-  - check `[Bridge] Loaded JS from embedded` co hash moi
-  - neu hash cu: ket qua test countdown khong hop le vi chua nap code moi
-
-## Candidate improvements
-
-- Them tai lieu rieng cho provider matrix / launch quirks.
-- Them replay log hoac snapshot log compact cho bug settle.
-- Them test harness cho parser `winner/history/bet-pool`.
-- Them debug log rieng cho countdown:
-  - raw sec
-  - display sec
-  - drift/gap
-  - source tail
-  - source hash/embedded version de tranh "sua JS nhung host chay code cu"
-- Them smoke test cho JS API:
-  - `__cw_readSnapshot`
-  - `__cw_startPush`
-  - `__cw_bet_enqueue`
+- [ ] Rebuild plugin DLL.
+- [ ] Restart host `AutoBetHub`.
+- [ ] Doi chieu log hash: `[Bridge] Loaded JS from embedded ... sha256=...`.

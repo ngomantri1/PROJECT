@@ -457,7 +457,9 @@ namespace BaccaratEzugiCasino
         private string _lastNetworkBetPoolMergeKey = "";
         private DateTime _lastNetworkBetPoolMergeLogUtc = DateTime.MinValue;
         private string _lastCanvasAcceptedSeqKey = "";
+        private string _lastCanvasAcceptedSeqDisplay = "";
         private DateTime _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+        private long _lastWaitingBootstrapShownSwitchTicks = 0;
         private DateTime _lastCanvasDisplaySkipLogUtc = DateTime.MinValue;
         private string _lastCanvasPoolBlockKey = "";
         private DateTime _lastCanvasPoolBlockLogUtc = DateTime.MinValue;
@@ -466,6 +468,7 @@ namespace BaccaratEzugiCasino
         private string _lastCanvasPoolDecisionKey = "";
         private DateTime _lastCanvasPoolDecisionLogUtc = DateTime.MinValue;
         private CwTotals? _lastCanvasDisplayTotals;
+        private DateTime _lastCanvasDisplayFreshPoolUtc = DateTime.MinValue;
         private readonly ConcurrentDictionary<string, CanvasDisplayTargetState> _canvasDisplayTargetStates = new();
         private readonly ConcurrentDictionary<string, DateTime> _canvasDisplayDropLogUtc = new();
         private string _lastCanvasPrimaryTarget = "";
@@ -476,6 +479,11 @@ namespace BaccaratEzugiCasino
         private int _jsRawBootstrapStableCount = 0;
         private DateTime _lastJsRawBootstrapLogUtc = DateTime.MinValue;
         private DateTime _lastSeqWaitingBootstrapLogUtc = DateTime.MinValue;
+        private string _lastAuthKeepJsDisplay = "";
+        private long _lastAuthKeepJsVersion = -1;
+        private string _lastAuthKeepJsEvent = "";
+        private string _lastAuthKeepJsSource = "";
+        private DateTime _lastAuthKeepJsLogUtc = DateTime.MinValue;
         private int _shoeChangeStatusStreak = 0;
         private bool _shoeChangeRebaseArmed = false;
         private DateTime _shoeChangeLastSeenUtc = DateTime.MinValue;
@@ -494,6 +502,7 @@ namespace BaccaratEzugiCasino
         private string _tableSwitchToHref = "";
         private bool _initialTableEnterArmed = false;
         private DateTime _initialTableEnterArmedAtUtc = DateTime.MinValue;
+        private DateTime _lastAuthorityTableSwitchAtUtc = DateTime.MinValue;
         private DateTime _suppressNonFrameEmptyDisplayUntilUtc = DateTime.MinValue;
         private string _suppressNonFrameEmptyDisplayReason = "";
 
@@ -547,6 +556,9 @@ namespace BaccaratEzugiCasino
         private DateTime _lastTickRouteLogUtc = DateTime.MinValue;
         private string _lastTickRejectKey = "";
         private DateTime _lastAuthFilterLogUtc = DateTime.MinValue;
+        private long _weakPullSwitchCandidateTableId = 0;
+        private DateTime _weakPullSwitchCandidateFirstSeenUtc = DateTime.MinValue;
+        private int _weakPullSwitchCandidateHits = 0;
 
         // === License/Trial run state ===
 
@@ -726,7 +738,10 @@ namespace BaccaratEzugiCasino
         // Prog thường là số nguyên theo giây; tolerance cao để tránh bị "neo" đứng khi raw tick lặp lại cùng mốc.
         private const double UiCountdownResetUpToleranceSec = 1.25d;
         private const double UiCountdownForceZeroToleranceSec = 0.05d;
-        private static readonly TimeSpan CanvasDisplayPushMinInterval = TimeSpan.FromMilliseconds(420);
+        private static readonly TimeSpan CanvasDisplayPushMinInterval = TimeSpan.FromMilliseconds(260);
+        private static readonly TimeSpan WaitingBootstrapDisplayDelay = TimeSpan.FromMilliseconds(600);
+        private static readonly TimeSpan CanvasPoolCarryMaxAge = TimeSpan.FromMilliseconds(1200);
+        private static readonly TimeSpan AuthKeepJsLogHeartbeat = TimeSpan.FromSeconds(4);
         // Master switch: đặt false để bỏ qua kiểm tra Trial/License (không UI, không config, true kiểm tra bình thường)
         private bool CheckLicense = true;
 
@@ -2260,6 +2275,12 @@ try{
             var mode = string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode;
             var append = FilterResultDisplaySeq(seqAppend);
             Log($"[SEQ][RX] prog={progNow:0.###} | seqLen={len} | tail={tail} | seqVer={seqVersion} | seqEvt={evt} | seqMode={mode} | seqAppend={(string.IsNullOrWhiteSpace(append) ? "-" : append)} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | lockMajorMinor={(lockState ? 1 : 0)} | pending={pending} | status={statusRaw}");
+            var rawDisplayPreview = FilterResultDisplaySeqWindow(rawSeq);
+            if (len > 0 || rawDisplayPreview.Length > 0)
+            {
+                var src = string.IsNullOrWhiteSpace(source) ? "-" : source;
+                Log($"[SEQ][RX-DATA] src={src} | seq={Shrink(seqDisplay, 160)} | raw={Shrink(rawDisplayPreview, 160)}");
+            }
 
             bool hasAdvance = (prevVer > 0 && seqVersion > 0)
                 ? (seqVersion > prevVer)
@@ -5026,14 +5047,22 @@ try{
                         var isPullSource =
                             !string.IsNullOrWhiteSpace(source) &&
                             source.IndexOf("pull", StringComparison.OrdinalIgnoreCase) >= 0;
+                        var pullSeqLen = FilterResultDisplaySeqWindow(snap.seq).Length;
+                        var pullRawLen = FilterResultDisplaySeqWindow(snap.rawSeq).Length;
+                        bool pullHasSeqData = pullSeqLen > 0 || pullRawLen > 0;
+                        bool prevUiHasSeqData =
+                            FilterResultDisplaySeqWindow(prevUiSnap?.seq).Length > 0 ||
+                            FilterResultDisplaySeqWindow(prevUiSnap?.rawSeq).Length > 0;
                         if (!isPullSource && string.Equals(tickRouteReason, "authority", StringComparison.Ordinal))
                             _lastAuthorityMsgTickUtc = progNowUtc;
                         if (isPullSource &&
                             _lastAuthorityMsgTickUtc != DateTime.MinValue &&
-                            (progNowUtc - _lastAuthorityMsgTickUtc) <= TimeSpan.FromMilliseconds(1200))
+                            (progNowUtc - _lastAuthorityMsgTickUtc) <= TimeSpan.FromMilliseconds(1200) &&
+                            !string.Equals(tickRouteReason, "authority-table-switch-accept", StringComparison.Ordinal) &&
+                            !pullHasSeqData)
                         {
                             if (!HitLogThrottle("popup-pull-skip-fresh-authority-msg", 2200))
-                                Log($"[TICK][PULL-SKIP] reason=fresh-authority-msg | route={tickRouteReason} | ageMs={(long)(progNowUtc - _lastAuthorityMsgTickUtc).TotalMilliseconds} | prog={(progUi.HasValue ? progUi.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")}");
+                                Log($"[TICK][PULL-SKIP] reason=fresh-authority-msg | route={tickRouteReason} | ageMs={(long)(progNowUtc - _lastAuthorityMsgTickUtc).TotalMilliseconds} | prog={(progUi.HasValue ? progUi.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | pullSeqLen={pullSeqLen} | pullRawLen={pullRawLen} | prevSeq={(prevUiHasSeqData ? 1 : 0)}");
                             return;
                         }
                         if (prevUiFresh)
@@ -6199,6 +6228,18 @@ try{
                     bestTableId > 0 &&
                     bestTableId != lockedTableId &&
                     _lastAuthorityBestStable >= 2;
+                bool recentTableSwitchHold =
+                    _lastAuthorityTableSwitchAtUtc != DateTime.MinValue &&
+                    (now - _lastAuthorityTableSwitchAtUtc) <= TimeSpan.FromSeconds(8);
+                if (tableChangedSwitch && recentTableSwitchHold)
+                {
+                    if ((now - _lastAuthLogUtc) > TimeSpan.FromSeconds(2))
+                    {
+                        _lastAuthLogUtc = now;
+                        Log($"[AUTH][TABLE-SWITCH-HOLD] reason=recent-authority-switch | holdMs={(long)(now - _lastAuthorityTableSwitchAtUtc).TotalMilliseconds} | lockedTable={lockedTableId} | candTable={bestTableId} | score={best.Score} | stable={_lastAuthorityBestStable} | cand={Shrink(best.ContextId, 96)} | locked={Shrink(_authorityContextId, 96)}");
+                    }
+                    return;
+                }
                 bool betterSwitch = !noAuthority &&
                                     !string.Equals(_authorityContextId, best.ContextId, StringComparison.Ordinal) &&
                                     best.Score >= _authorityScore + 900 &&
@@ -6226,6 +6267,8 @@ try{
                 _authoritySignals = best.Signals;
                 _authorityLockedAtUtc = now;
                 _authorityLastSeenUtc = now;
+                if (tableChangedSwitch)
+                    _lastAuthorityTableSwitchAtUtc = now;
 
                 var tag = string.IsNullOrWhiteSpace(prev) ? "[AUTH][LOCK]" : (authorityLost ? "[AUTH][RELOCK]" : "[AUTH][SWITCH]");
                 if (tableChangedSwitch)
@@ -6380,31 +6423,22 @@ try{
                 if (tableSwitched &&
                     !string.Equals(key, _authorityContextId, StringComparison.Ordinal) &&
                     _authorityLastSeenUtc != DateTime.MinValue &&
-                    (now - _authorityLastSeenUtc) > TimeSpan.FromSeconds(2))
+                    (now - _authorityLastSeenUtc) > TimeSpan.FromSeconds(1))
                 {
-                    var isPullSource =
-                        !string.IsNullOrWhiteSpace(source) &&
-                        source.IndexOf("pull", StringComparison.OrdinalIgnoreCase) >= 0;
                     var score = (int)(snap.contextScore ?? 0);
                     var signals = snap.signals ?? "";
-                    bool hasStrongSignal =
-                        signals.IndexOf("canvas", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        signals.IndexOf("road", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        signals.IndexOf("bet", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        signals.IndexOf("zone", StringComparison.OrdinalIgnoreCase) >= 0;
-                    bool gameIdMismatch = lockedGameId > 0 && incomingGameId > 0 && lockedGameId != incomingGameId;
-                    bool weakContext = score < 80 && !hasStrongSignal;
-                    if (gameIdMismatch || (isPullSource && weakContext))
-                    {
-                        routeReason = gameIdMismatch ? "table-switch-gameid-mismatch-reject" : "table-switch-weak-pull-reject";
-                        if ((now - _lastTickRouteLogUtc) > TimeSpan.FromSeconds(2))
-                        {
-                            _lastTickRouteLogUtc = now;
-                            Log($"[AUTH][TABLE-SWITCH-REJECT] reason={routeReason} | oldTable={lockedTableId} | newTable={incomingTableId} | oldGame={lockedGameId} | newGame={incomingGameId} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | score={score} | signals={(string.IsNullOrWhiteSpace(signals) ? "-" : signals)} | oldCtx={Shrink(_authorityContextId, 96)} | newCtx={Shrink(key, 96)} | href={TrimHrefForLog(snap.href)}");
-                        }
-                        return false;
-                    }
-
+                    var seqLen = FilterResultDisplaySeqWindow(snap.seq).Length;
+                    var rawLen = FilterResultDisplaySeqWindow(snap.rawSeq).Length;
+                    var incomingSeqDisplay = FilterResultDisplaySeqWindow(snap.seq);
+                    var incomingRawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+                    var incomingSeqForTrust = SelectTrustedSeqDisplay(incomingSeqDisplay, incomingRawDisplay);
+                    bool hasIncomingSeq = seqLen > 0 || rawLen > 0;
+                    var currentAcceptedSeq = FilterResultDisplaySeqWindow(_lastCanvasAcceptedSeqDisplay);
+                    bool incomingDiffersCurrent = hasIncomingSeq &&
+                        !string.Equals(incomingSeqForTrust, currentAcceptedSeq, StringComparison.Ordinal);
+                    _weakPullSwitchCandidateTableId = 0;
+                    _weakPullSwitchCandidateFirstSeenUtc = DateTime.MinValue;
+                    _weakPullSwitchCandidateHits = 0;
                     var prev = _authorityContextId;
                     _authorityContextId = key;
                     _authorityToken = Guid.NewGuid().ToString("N");
@@ -6415,10 +6449,33 @@ try{
                     _authoritySignals = snap.signals ?? "";
                     _authorityLockedAtUtc = now;
                     _authorityLastSeenUtc = now;
+                    _lastAuthorityTableSwitchAtUtc = now;
+                    _weakPullSwitchCandidateTableId = 0;
+                    _weakPullSwitchCandidateFirstSeenUtc = DateTime.MinValue;
+                    _weakPullSwitchCandidateHits = 0;
+                    _frameAuthorityCandidates.Clear();
+                    _lastAuthorityBestKey = _authorityContextId;
+                    _lastAuthorityBestStable = 1;
                     routeReason = "authority-table-switch-accept";
+                    if (lockedGameId > 0 && incomingGameId > 0 && lockedGameId != incomingGameId)
+                    {
+                        Log($"[AUTH][TABLE-SWITCH-GAMEID-MISMATCH-ALLOW] oldTable={lockedTableId} | newTable={incomingTableId} | oldGame={lockedGameId} | newGame={incomingGameId} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | score={score} | signals={(string.IsNullOrWhiteSpace(signals) ? "-" : signals)}");
+                    }
                     Log($"[AUTH][TABLE-SWITCH-ACCEPT] oldTable={lockedTableId} | newTable={incomingTableId} | oldCtx={Shrink(prev, 96)} | newCtx={Shrink(key, 96)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | score={(snap.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | href={TrimHrefForLog(snap.href)}");
                     if (!string.Equals(prev, _authorityContextId, StringComparison.Ordinal))
-                        ClearAcceptedDisplayOnCanvas("authority-table-switch");
+                    {
+                        var hasIncomingDisplaySeq = seqLen > 0 || rawLen > 0;
+                        bool keepDisplayOnSwitch = hasIncomingDisplaySeq;
+                        if (keepDisplayOnSwitch)
+                        {
+                            Log($"[CANVAS][DISPLAY-CLEAR-SKIP] reason=authority-table-switch-seq-ready | seqLen={seqLen} | rawLen={rawLen} | incomingDiff={((incomingDiffersCurrent) ? 1 : 0)} | oldTable={lockedTableId} | newTable={incomingTableId} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)}");
+                        }
+                        else
+                        {
+                            Log($"[CANVAS][DISPLAY-CLEAR-ON-SWITCH] reason=no-incoming-seq | seqLen={seqLen} | rawLen={rawLen} | oldTable={lockedTableId} | newTable={incomingTableId} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)}");
+                            ClearAcceptedDisplayOnCanvas("authority-table-switch");
+                        }
+                    }
                     _ = StartAuthorityContextAsync(_authorityContextId, _authorityToken, "table-switch-tick");
                     return true;
                 }
@@ -8215,6 +8272,14 @@ try{
                    s.IndexOf("partial-incomplete", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool IsSyntheticDisplayPoolSource(string? source)
+        {
+            var s = (source ?? "").Trim();
+            return s.IndexOf("stable-hold/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("stable-partial/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("pool-blocked/", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static string StripStableHoldSourcePrefix(string? source)
         {
             var s = (source ?? "").Trim();
@@ -8311,6 +8376,8 @@ try{
 
             if (!HasPoolSideDecrease(incoming, prev))
                 return "";
+            if (IsPreferredTailDisplaySource(incoming.Source))
+                return "";
             if (LooksLikeNewBetRoundPoolReset(snap, incoming, prev))
                 return "";
 
@@ -8324,14 +8391,23 @@ try{
             if (incomingSum >= prevSum)
                 return "";
 
-            // Accept small aggregate dips to avoid Canvas bouncing back to stale values.
-            if (incomingSum >= (prevSum * 85 / 100))
+            // Accept moderate aggregate dips to reduce perceived lag on Canvas.
+            if (incomingSum >= (prevSum * 75 / 100))
                 return "";
 
             if (PoolValueCount(incoming) < PoolValueCount(prev))
                 return "pool-partial-regress";
 
             return IsCachedHostPoolSource(incoming.Source) ? "cached-pool-regress" : "pool-regress-same-round";
+        }
+
+        private static bool IsPreferredTailDisplaySource(string? source)
+        {
+            var s = (source ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(s))
+                return false;
+            return s.IndexOf("preferred-tail-direct", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("preferred-only", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool LooksLikeNewBetRoundPoolReset(CwSnapshot? snap, CwTotals incoming, CwTotals prev)
@@ -8392,10 +8468,12 @@ try{
             var s = (source ?? "").Trim();
             if (string.IsNullOrWhiteSpace(s))
                 return false;
-            if (IsUntrustedNetworkPoolSource(s) || IsTextFallbackPoolSource(s) || IsPartialBlockedPoolSource(s))
+            if (IsUntrustedNetworkPoolSource(s) || IsTextFallbackPoolSource(s) || IsPartialBlockedPoolSource(s) || IsSyntheticDisplayPoolSource(s))
                 return false;
+            if (s.Equals("top", StringComparison.OrdinalIgnoreCase) ||
+                s.StartsWith("top/", StringComparison.OrdinalIgnoreCase))
+                return true;
             return s.Contains("frame", StringComparison.OrdinalIgnoreCase) ||
-                   s.Equals("top", StringComparison.OrdinalIgnoreCase) ||
                    s.Contains("dom", StringComparison.OrdinalIgnoreCase) ||
                    s.Contains("betbox", StringComparison.OrdinalIgnoreCase) ||
                    s.Contains("zone", StringComparison.OrdinalIgnoreCase);
@@ -8437,6 +8515,9 @@ try{
             if (incoming == null)
                 return null;
 
+            if (HasAnyPoolValue(incoming) && IsSyntheticDisplayPoolSource(incoming.Source))
+                return BuildPoolBlockedTotals(incoming, source, "synthetic-display-source");
+
             if (HasAnyPoolValue(incoming) && IsTextFallbackPoolSource(incoming.Source))
                 return BuildPoolBlockedTotals(incoming, source, "text-fallback");
 
@@ -8457,6 +8538,7 @@ try{
 
         private CwTotals? BuildStableCanvasTotals(CwSnapshot snap, string source)
         {
+            var nowUtc = DateTime.UtcNow;
             var incomingRaw = snap?.totals;
             var incoming = incomingRaw;
             incoming = BuildCanvasDisplayIncomingTotals(incoming, source);
@@ -8466,6 +8548,10 @@ try{
             var prev = _lastCanvasDisplayTotals;
             var incomingHasPool = HasAnyPoolValue(incoming);
             var prevHasPool = HasAnyPoolValue(prev);
+            var prevPoolAge = nowUtc - _lastCanvasDisplayFreshPoolUtc;
+            var allowCarryPrevPool = prevHasPool &&
+                                     _lastCanvasDisplayFreshPoolUtc > DateTime.MinValue &&
+                                     prevPoolAge <= CanvasPoolCarryMaxAge;
             var decisionIncoming = incoming;
             var decision = incomingHasPool ? "accept" : (prevHasPool ? "carry-prev" : "no-pool");
             var decisionReason = incomingHasPool ? "incoming-pool" : "no-incoming-pool";
@@ -8474,7 +8560,7 @@ try{
                 incomingHasPool &&
                 PoolValueCount(incoming) < 3)
             {
-                if (prev != null && prevHasPool && IsSameDisplayTable(incoming, prev))
+                if (prev != null && allowCarryPrevPool && IsSameDisplayTable(incoming, prev))
                 {
                     decision = "hold";
                     decisionReason = "pool-partial-incomplete";
@@ -8492,6 +8578,7 @@ try{
 
             var holdReason = (incoming != null &&
                               prev != null &&
+                              allowCarryPrevPool &&
                               incomingHasPool &&
                               prevHasPool &&
                               IsSameDisplayTable(incoming, prev))
@@ -8499,6 +8586,7 @@ try{
                 : "";
             if (incoming != null &&
                 prev != null &&
+                allowCarryPrevPool &&
                 incomingHasPool &&
                 prevHasPool &&
                 IsSameDisplayTable(incoming, prev) &&
@@ -8511,14 +8599,17 @@ try{
                 incomingHasPool = HasAnyPoolValue(incoming);
             }
 
+            var carryPrevPool = !incomingHasPool && allowCarryPrevPool;
+            var dropPrevPool = !incomingHasPool && prevHasPool && !allowCarryPrevPool;
+
             var poolSource = incomingHasPool
                 ? (incoming?.Source ?? "")
-                : (prevHasPool ? (prev?.Source ?? "") : (incoming?.Source ?? prev?.Source ?? "csharp-stable"));
+                : (carryPrevPool ? (prev?.Source ?? "") : (incoming?.Source ?? prev?.Source ?? "csharp-stable"));
             var merged = new CwTotals
             {
-                B = incoming?.B ?? prev?.B,
-                P = incoming?.P ?? prev?.P,
-                T = incoming?.T ?? prev?.T,
+                B = incoming?.B ?? (carryPrevPool ? prev?.B : null),
+                P = incoming?.P ?? (carryPrevPool ? prev?.P : null),
+                T = incoming?.T ?? (carryPrevPool ? prev?.T : null),
                 A = incoming?.A ?? prev?.A,
                 N = !string.IsNullOrWhiteSpace(incoming?.N) ? incoming!.N : (prev?.N ?? ""),
                 SD = incoming?.SD ?? prev?.SD,
@@ -8533,11 +8624,16 @@ try{
                 Source = string.IsNullOrWhiteSpace(poolSource) ? "csharp-stable" : poolSource
             };
 
-            if (!incomingHasPool && prevHasPool)
+            if (carryPrevPool)
             {
                 decision = "carry-prev";
                 if (string.IsNullOrWhiteSpace(decisionReason) || string.Equals(decisionReason, "no-incoming-pool", StringComparison.OrdinalIgnoreCase))
                     decisionReason = "incoming-without-pool";
+            }
+            else if (dropPrevPool)
+            {
+                decision = "drop-prev";
+                decisionReason = "incoming-without-pool-stale";
             }
             LogPoolDisplayDecision(snap, source, decision, decisionReason, decisionIncoming, prev, merged);
 
@@ -8561,6 +8657,13 @@ try{
                 _lastCanvasDisplayTotals = CloneTotalsForTasks(merged);
             }
 
+            if (incomingHasPool &&
+                PoolValueCount(incoming) >= 3 &&
+                !IsSyntheticDisplayPoolSource(incoming?.Source))
+            {
+                _lastCanvasDisplayFreshPoolUtc = nowUtc;
+            }
+
             return merged;
         }
 
@@ -8569,8 +8672,11 @@ try{
             try
             {
                 _lastCanvasAcceptedSeqKey = "";
+                _lastCanvasAcceptedSeqDisplay = "";
                 _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+                _lastWaitingBootstrapShownSwitchTicks = 0;
                 _lastCanvasDisplayTotals = null;
+                _lastCanvasDisplayFreshPoolUtc = DateTime.MinValue;
 
                 var js =
                     "(function(){try{" +
@@ -8668,10 +8774,36 @@ try{
                 int progKey = snap.prog.HasValue
                     ? Math.Max(0, Math.Min((int)UiCountdownAbsoluteMaxSec, ToUiCountdownWholeSec(Math.Max(0, Math.Min(UiCountdownAbsoluteMaxSec, snap.prog.Value)))))
                     : -1;
-                var key = $"{seq}|{seqDisplayState}|{progKey}|{snap.seqVersion}|{snap.seqEvent}|{snap.seqSource}|{snap.status}|{snap.tableName}|{snap.tableId}|{snap.seqTableName}|{snap.seqTableId}|{totals?.B}|{totals?.P}|{totals?.T}|{totals?.A}|{totals?.N}|{totals?.TB}|{totals?.TA}|{totalsSource}|{snap.framePath}|{snap.dataFramePath}|{snap.dataMode}";
                 var now = DateTime.UtcNow;
+                var waitingCandidate = string.Equals(seqDisplayState, "waiting-board-bootstrap", StringComparison.OrdinalIgnoreCase);
+                if (waitingCandidate)
+                {
+                    var switchTicks = _lastAuthorityTableSwitchAtUtc == DateTime.MinValue ? 0L : _lastAuthorityTableSwitchAtUtc.Ticks;
+                    var switchAge = _lastAuthorityTableSwitchAtUtc == DateTime.MinValue
+                        ? TimeSpan.MaxValue
+                        : (now - _lastAuthorityTableSwitchAtUtc);
+                    bool suppressWaiting =
+                        (switchTicks > 0 && switchAge >= TimeSpan.Zero && switchAge < WaitingBootstrapDisplayDelay) ||
+                        (switchTicks > 0 && _lastWaitingBootstrapShownSwitchTicks == switchTicks);
+                    if (suppressWaiting)
+                    {
+                        seqDisplayState = "";
+                    }
+                    else if (switchTicks > 0)
+                    {
+                        _lastWaitingBootstrapShownSwitchTicks = switchTicks;
+                    }
+                }
+                var key = $"{seq}|{seqDisplayState}|{progKey}|{snap.seqVersion}|{snap.seqEvent}|{snap.seqSource}|{snap.status}|{snap.tableName}|{snap.tableId}|{snap.seqTableName}|{snap.seqTableId}|{totals?.B}|{totals?.P}|{totals?.T}|{totals?.A}|{totals?.N}|{totals?.TB}|{totals?.TA}|{totalsSource}|{snap.framePath}|{snap.dataFramePath}|{snap.dataMode}";
+                bool seqChanged = !string.Equals(seq, _lastCanvasAcceptedSeqDisplay, StringComparison.Ordinal);
+                bool forceImmediatePush =
+                    seqChanged ||
+                    string.Equals(seqDisplayState, "waiting-board-bootstrap", StringComparison.OrdinalIgnoreCase) ||
+                    IsWaitingBoardBootstrapSeqEvent(snap.seqEvent) ||
+                    IsWaitingBoardBootstrapSeqEvent(snap.seqSource);
                 Log($"[CANVAS][DISPLAY-PUSH-ENTER] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | seqLen={seq.Length} | seqState={(string.IsNullOrWhiteSpace(seqDisplayState) ? "-" : seqDisplayState)} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | table={(string.IsNullOrWhiteSpace(totals?.TB) ? "-" : Shrink(totals!.TB, 48))} | tableAmount={(totals?.TA?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
-                if (string.Equals(key, _lastCanvasAcceptedSeqKey, StringComparison.Ordinal) &&
+                if (!forceImmediatePush &&
+                    string.Equals(key, _lastCanvasAcceptedSeqKey, StringComparison.Ordinal) &&
                     (now - _lastCanvasAcceptedSeqPushUtc) < TimeSpan.FromSeconds(1.5))
                 {
                     if ((now - _lastCanvasDisplaySkipLogUtc) > TimeSpan.FromSeconds(3))
@@ -8682,7 +8814,8 @@ try{
                     return;
                 }
 
-                if ((now - _lastCanvasDisplayDispatchUtc) < CanvasDisplayPushMinInterval)
+                if (!forceImmediatePush &&
+                    (now - _lastCanvasDisplayDispatchUtc) < CanvasDisplayPushMinInterval)
                 {
                     if ((now - _lastCanvasDisplaySkipLogUtc) > TimeSpan.FromSeconds(3))
                     {
@@ -8693,6 +8826,7 @@ try{
                 }
 
                 _lastCanvasAcceptedSeqKey = key;
+                _lastCanvasAcceptedSeqDisplay = seq;
                 _lastCanvasAcceptedSeqPushUtc = now;
                 _lastCanvasDisplayDispatchUtc = now;
 
@@ -8871,21 +9005,7 @@ try{
         private bool ShouldSkipAcceptedDisplayPushLocked(CwSnapshot? snap, string source, out string reason)
         {
             reason = "";
-            if (!UseDomBootstrapCdpAppendSeq || snap == null)
-                return false;
-            if (SourceLooksFrameAuthority(source))
-                return false;
-            if (DateTime.UtcNow > _suppressNonFrameEmptyDisplayUntilUtc)
-                return false;
-
-            var seqLen = FilterResultDisplaySeqWindow(snap.seq).Length;
-            if (seqLen > 0)
-                return false;
-
-            reason = string.IsNullOrWhiteSpace(_suppressNonFrameEmptyDisplayReason)
-                ? "prefer-frame-after-context-switch"
-                : _suppressNonFrameEmptyDisplayReason;
-            return true;
+            return false;
         }
 
         private sealed class CanvasDisplayTargetState
@@ -10575,8 +10695,11 @@ try{
             ResetJsRawBootstrapProbeLocked();
             ClearShoeChangeRebaseArmLocked();
             _lastCanvasAcceptedSeqKey = "";
+            _lastCanvasAcceptedSeqDisplay = "";
             _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+            _lastWaitingBootstrapShownSwitchTicks = 0;
             _lastCanvasDisplayTotals = null;
+            _lastCanvasDisplayFreshPoolUtc = DateTime.MinValue;
 
             Log($"[CTX][SWITCH-ARM] reason=dom-table-change | prev={prevTableId} | next={newTableId} | table={Shrink(tableName, 48)} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
         }
@@ -10638,8 +10761,11 @@ try{
             ResetJsRawBootstrapProbeLocked();
             ClearShoeChangeRebaseArmLocked();
             _lastCanvasAcceptedSeqKey = "";
+            _lastCanvasAcceptedSeqDisplay = "";
             _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+            _lastWaitingBootstrapShownSwitchTicks = 0;
             _lastCanvasDisplayTotals = null;
+            _lastCanvasDisplayFreshPoolUtc = DateTime.MinValue;
 
             Log($"[CTX][SHOE-ARM] reason={reason} | table={tableId} | oldShoe={prevShoe} | newShoe={newShoe} | oldRound={prevRound} | newRound={newRound} | prevLen={prevLen} | prevVer={prevVer} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | action=wait-dom-bootstrap");
         }
@@ -11165,6 +11291,14 @@ try{
             return evt.IndexOf("waiting-board-bootstrap", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    evt.IndexOf("table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    IsNoBoardSeqEvent(evt);
+        }
+
+        private static string SelectTrustedSeqDisplay(string? seqDisplayRaw, string? rawDisplayRaw)
+        {
+            var seqDisplay = FilterResultDisplaySeqWindow(seqDisplayRaw);
+            if (!string.IsNullOrWhiteSpace(seqDisplay))
+                return seqDisplay;
+            return FilterResultDisplaySeqWindow(rawDisplayRaw);
         }
 
         private static string BuildCanvasSeqDisplayState(CwSnapshot? snap, string seqDisplay)
@@ -12629,18 +12763,75 @@ try{
             if (UseDomBootstrapCdpAppendSeq)
             {
                 var netDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                var incomingDisplay = FilterResultDisplaySeqWindow(snap.seq);
+                var incomingRawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+                var incomingDisplayEffective = SelectTrustedSeqDisplay(incomingDisplay, incomingRawDisplay);
                 var incomingSeqEvent = snap.seqEvent ?? "";
                 var incomingSeqSource = snap.seqSource ?? "";
+                var recentSwitchAge = _lastAuthorityTableSwitchAtUtc == DateTime.MinValue
+                    ? TimeSpan.MaxValue
+                    : (DateTime.UtcNow - _lastAuthorityTableSwitchAtUtc);
+                bool recentAuthorityTableSwitch =
+                    _lastAuthorityTableSwitchAtUtc != DateTime.MinValue &&
+                    recentSwitchAge <= TimeSpan.FromSeconds(3);
+                bool trustedIncomingAfterSwitch =
+                    recentAuthorityTableSwitch &&
+                    (
+                        IsTrustedRawBoardSnapshotSeq(incomingDisplayEffective, incomingRawDisplay, snap.status, incomingSeqEvent) ||
+                        IsTrustedNoChangeRawBootstrapSeq(incomingDisplayEffective, incomingRawDisplay, snap.status, incomingSeqEvent) ||
+                        IsTrustedBoardRawBootstrapSeq(incomingDisplayEffective, incomingRawDisplay, snap.status, incomingSeqEvent)
+                    );
+                if (trustedIncomingAfterSwitch)
+                    recentAuthorityTableSwitch = false;
+                bool inResetOrTableSwitchPhase =
+                    _tableSwitchRebaseArmed ||
+                    _initialTableEnterArmed ||
+                    recentAuthorityTableSwitch ||
+                    IsWaitingBoardBootstrapSeqEvent(incomingSeqEvent) ||
+                    IsWaitingBoardBootstrapSeqEvent(incomingSeqSource) ||
+                    incomingSeqEvent.IndexOf("shoe-reset-arm", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    incomingSeqEvent.IndexOf("table-switch", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    incomingSeqSource.IndexOf("table-switch", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (string.IsNullOrWhiteSpace(netDisplay) &&
+                    !string.IsNullOrWhiteSpace(incomingDisplayEffective))
+                {
+                    var normalizedIncomingSeqEvent = string.IsNullOrWhiteSpace(incomingSeqEvent) ? "dom-board-full-scan" : incomingSeqEvent;
+                    var normalizedIncomingSeqSource = string.IsNullOrWhiteSpace(incomingSeqSource) ? "dom-board-full-scan" : incomingSeqSource;
+                    snap.seq = incomingDisplayEffective;
+                    snap.rawSeq = !string.IsNullOrWhiteSpace(incomingRawDisplay) ? incomingRawDisplay : incomingDisplayEffective;
+                    snap.seqVersion = Math.Max(snap.seqVersion ?? 0, incomingDisplayEffective.Length);
+                    snap.seqEvent = normalizedIncomingSeqEvent;
+                    snap.seqSource = normalizedIncomingSeqSource;
+                    snap.niSeq = _niSeq.ToString();
+                    var keepJsVersion = snap.seqVersion ?? 0;
+                    bool keepJsChanged =
+                        !string.Equals(_lastAuthKeepJsDisplay, incomingDisplayEffective, StringComparison.Ordinal) ||
+                        _lastAuthKeepJsVersion != keepJsVersion ||
+                        !string.Equals(_lastAuthKeepJsEvent, normalizedIncomingSeqEvent, StringComparison.Ordinal) ||
+                        !string.Equals(_lastAuthKeepJsSource, normalizedIncomingSeqSource, StringComparison.Ordinal);
+                    _lastAuthKeepJsDisplay = incomingDisplayEffective;
+                    _lastAuthKeepJsVersion = keepJsVersion;
+                    _lastAuthKeepJsEvent = normalizedIncomingSeqEvent;
+                    _lastAuthKeepJsSource = normalizedIncomingSeqSource;
+                    if (keepJsChanged || (DateTime.UtcNow - _lastAuthKeepJsLogUtc) >= AuthKeepJsLogHeartbeat)
+                    {
+                        _lastAuthKeepJsLogUtc = DateTime.UtcNow;
+                        Log($"[NETSEQ][AUTH-KEEP-JS] reason=network-empty-keep-incoming | jsLen={incomingDisplayEffective.Length} | rawLen={(snap.rawSeq?.Length ?? 0)} | jsVer={(snap.seqVersion?.ToString(CultureInfo.InvariantCulture) ?? "-")} | jsEvt={(string.IsNullOrWhiteSpace(snap.seqEvent) ? "-" : snap.seqEvent)} | jsSrc={(string.IsNullOrWhiteSpace(snap.seqSource) ? "-" : snap.seqSource)} | netLen={netDisplay.Length} | netVer={_netSeqVersion} | inResetOrSwitch={(inResetOrTableSwitchPhase ? 1 : 0)} | recentAuthSwitch={(recentAuthorityTableSwitch ? 1 : 0)} | trustedAfterSwitch={(trustedIncomingAfterSwitch ? 1 : 0)} | switchAgeMs={(recentSwitchAge == TimeSpan.MaxValue ? -1 : (long)recentSwitchAge.TotalMilliseconds)} | changed={(keepJsChanged ? 1 : 0)}");
+                    }
+                    return;
+                }
                 bool waitingBoardBootstrap =
                     string.IsNullOrWhiteSpace(netDisplay) &&
                     (
                         _tableSwitchRebaseArmed ||
                         _initialTableEnterArmed ||
+                        recentAuthorityTableSwitch ||
                         IsWaitingBoardBootstrapSeqEvent(incomingSeqEvent) ||
                         IsWaitingBoardBootstrapSeqEvent(incomingSeqSource)
                     );
                 snap.seq = netDisplay;
-                snap.rawSeq = netDisplay;
+                snap.rawSeq = string.IsNullOrWhiteSpace(netDisplay) ? incomingRawDisplay : netDisplay;
                 snap.seqVersion = _netSeqVersion;
                 snap.seqEvent = waitingBoardBootstrap ? "waiting-board-bootstrap" : string.IsNullOrWhiteSpace(_netSeqEvent)
                     ? (string.IsNullOrWhiteSpace(netDisplay) ? "network-empty" : "network")
@@ -12650,7 +12841,7 @@ try{
                 if (waitingBoardBootstrap && (DateTime.UtcNow - _lastSeqWaitingBootstrapLogUtc) > TimeSpan.FromSeconds(2))
                 {
                     _lastSeqWaitingBootstrapLogUtc = DateTime.UtcNow;
-                    Log($"[NETSEQ][AUTH-WAIT-BOOTSTRAP] reason=empty-net-wait-board | netLen={netDisplay.Length} | netVer={_netSeqVersion} | incomingEvt={(string.IsNullOrWhiteSpace(incomingSeqEvent) ? "-" : incomingSeqEvent)} | incomingSrc={(string.IsNullOrWhiteSpace(incomingSeqSource) ? "-" : incomingSeqSource)} | tableSwitchArm={(_tableSwitchRebaseArmed ? 1 : 0)} | initialEnter={(_initialTableEnterArmed ? 1 : 0)}");
+                    Log($"[NETSEQ][AUTH-WAIT-BOOTSTRAP] reason=empty-net-wait-board | netLen={netDisplay.Length} | netVer={_netSeqVersion} | incomingEvt={(string.IsNullOrWhiteSpace(incomingSeqEvent) ? "-" : incomingSeqEvent)} | incomingSrc={(string.IsNullOrWhiteSpace(incomingSeqSource) ? "-" : incomingSeqSource)} | tableSwitchArm={(_tableSwitchRebaseArmed ? 1 : 0)} | initialEnter={(_initialTableEnterArmed ? 1 : 0)} | recentAuthSwitch={(recentAuthorityTableSwitch ? 1 : 0)} | trustedAfterSwitch={(trustedIncomingAfterSwitch ? 1 : 0)} | switchAgeMs={(recentSwitchAge == TimeSpan.MaxValue ? -1 : (long)recentSwitchAge.TotalMilliseconds)}");
                 }
                 return;
             }

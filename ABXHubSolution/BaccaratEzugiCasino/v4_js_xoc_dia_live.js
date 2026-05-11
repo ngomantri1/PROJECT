@@ -13,7 +13,7 @@
     var CW_FALLBACK_PANEL_ID = '__cw_wait_panel';
     var CW_PANEL_VISIBLE_KEY = 'abx.canvasWatch.visible';
     var CW_PANEL_VISIBLE_DEFAULT_KEY = 'abx.canvasWatch.visible.default';
-    var CW_PANEL_VISIBLE_DEFAULT = true; // false = hidden by default; set true to show Canvas Watch by default.
+    var CW_PANEL_VISIBLE_DEFAULT = false; // false = hidden by default; set true to show Canvas Watch by default.
     var CW_PANEL_VISIBLE_DEFAULT_REV = '20260509-show-default';
     try {
         window.__abx_canvas_watch_default = CW_PANEL_VISIBLE_DEFAULT ? 1 : 0;
@@ -705,8 +705,12 @@
                 if (okRoot) {
                     okRoot.setAttribute('data-abx-authority-context', '1');
                     okRoot.removeAttribute('data-abx-hidden-by-authority');
-                    okRoot.style.setProperty('display', 'block', 'important');
-                    okRoot.style.setProperty('visibility', 'visible', 'important');
+                    try {
+                        __cw_applyPanelDisplayOwner(okRoot);
+                    } catch (_) {
+                        if (!__cw_isCanvasWatchVisible())
+                            __cw_forceCanvasWatchRoot(okRoot, false);
+                    }
                 }
             } catch (_) {}
             __abxPost({
@@ -3111,6 +3115,9 @@
         PLAYER: 'div#main-bets > div.css-1or1crx:nth-of-type(1)',
         TIE: 'div#statistics > div.users-amount-container > div.statistics-amount-container:nth-of-type(2)'
     };
+    var DOM_POOL_TIE_ALT_TAILS = [
+        'div#main-bets > div:nth-of-type(2)'
+    ];
     function domPoolNormTail(t) {
         return String(t || '').toLowerCase().replace(/\s+/g, '');
     }
@@ -3135,6 +3142,89 @@
         } catch (_) {}
         return 0;
     }
+    function domPoolPreferredSideRegex(side) {
+        if (side === 'BANKER') return /(banker|nha\s*cai|nhacai|庄|莊)/i;
+        if (side === 'PLAYER') return /(player|tay\s*con|taycon|闲|閒)/i;
+        if (side === 'TIE') return /(tie|draw|hoa|hòa|和)/i;
+        return null;
+    }
+    function domPoolPreferredSelectors(side) {
+        var out = [];
+        var main = DOM_POOL_PREFERRED_TAILS[side];
+        if (main) out.push(String(main));
+        if (side === 'TIE') {
+            for (var i = 0; i < DOM_POOL_TIE_ALT_TAILS.length; i++) {
+                var alt = String(DOM_POOL_TIE_ALT_TAILS[i] || '');
+                if (!alt) continue;
+                if (out.indexOf(alt) < 0) out.push(alt);
+            }
+        }
+        return out;
+    }
+    function domReadPreferredPoolFromSelector(ctx, side, sel) {
+        try {
+            var doc = ctx && ctx.doc ? ctx.doc : null;
+            if (!doc || !doc.querySelector || !sel)
+                return null;
+            var el = null;
+            try { el = doc.querySelector(sel); } catch (_) { el = null; }
+            if (!el) return null;
+
+            var sideRe = domPoolPreferredSideRegex(side);
+            var hostText = domTextOf(el);
+            var hostSideHit = !!(sideRe && sideRe.test(String(hostText || '')));
+            var stake = null;
+            var score = 0;
+
+            if (hostText) {
+                stake = domExtractPoolStakeFromText(hostText);
+                if (stake && stake.value != null) {
+                    score += Math.min(9000, Math.round(Number(stake.value || 0)));
+                    if (/[KMB]/i.test(String(stake.token || ''))) score += 1400;
+                    if (hostSideHit) score += 1800;
+                }
+            }
+
+            if ((!stake || stake.value == null) && el.querySelectorAll) {
+                var leaves = [];
+                try { leaves = el.querySelectorAll('span,p,div,b,strong,label,small'); } catch (_) { leaves = []; }
+                var best = null;
+                for (var i = 0; i < leaves.length && i < 64; i++) {
+                    var leaf = leaves[i];
+                    if (!leaf) continue;
+                    var leafText = domTextOf(leaf);
+                    var st = domExtractPoolStakeFromText(leafText);
+                    if (!st || st.value == null) continue;
+                    var sc = Number(st.value || 0);
+                    if (/statistics|main-bets|amount|pool|stake|money|users-amount/i.test(String(domTailOf(leaf) || '')))
+                        sc += 1500;
+                    if (/[KMB]/i.test(String(st.token || ''))) sc += 1200;
+                    if (sideRe && sideRe.test(String(leafText || ''))) sc += 1600;
+                    if (!best || sc > best._score)
+                        best = { value: st.value, token: st.token, _score: sc };
+                }
+                if (best) {
+                    stake = { value: best.value, token: best.token };
+                    score += Number(best._score || 0);
+                }
+            }
+
+            if (!stake || stake.value == null) return null;
+            var tail = '';
+            try { tail = domTailOf(el); } catch (_) { tail = ''; }
+            score += domPoolPreferredTailBonus(side, tail || sel);
+            return {
+                amount: stake.value,
+                raw: stake.token,
+                tail: tail || sel,
+                source: String(ctx.source || 'top'),
+                score: score,
+                sideHit: hostSideHit ? 1 : 0
+            };
+        } catch (_) {
+            return null;
+        }
+    }
     function domReadPreferredPoolByTail(ctx) {
         try {
             var doc = ctx && ctx.doc ? ctx.doc : null;
@@ -3142,44 +3232,45 @@
                 return null;
             var bySide = {};
             function readSide(side) {
-                var sel = DOM_POOL_PREFERRED_TAILS[side];
-                if (!sel) return null;
-                var el = null;
-                try { el = doc.querySelector(sel); } catch (_) { el = null; }
-                if (!el) return null;
-                var stake = null;
-                var text = domTextOf(el);
-                if (text) stake = domExtractPoolStakeFromText(text);
-                if ((!stake || stake.value == null) && el.querySelectorAll) {
-                    var leaves = [];
-                    try { leaves = el.querySelectorAll('span,p,div,b,strong,label,small'); } catch (_) { leaves = []; }
-                    var best = null;
-                    for (var i = 0; i < leaves.length && i < 64; i++) {
-                        var leaf = leaves[i];
-                        if (!leaf) continue;
-                        var st = domExtractPoolStakeFromText(domTextOf(leaf));
-                        if (!st || st.value == null) continue;
-                        var sc = Number(st.value || 0);
-                        if (/statistics|main-bets|amount|pool|stake|money|users-amount/i.test(String(domTailOf(leaf) || '')))
-                            sc += 1500;
-                        if (!best || sc > best._score)
-                            best = { value: st.value, token: st.token, _score: sc };
-                    }
-                    if (best) stake = { value: best.value, token: best.token };
+                var sels = domPoolPreferredSelectors(side);
+                if (!sels || !sels.length) return null;
+                var best = null;
+                for (var si = 0; si < sels.length; si++) {
+                    var cand = domReadPreferredPoolFromSelector(ctx, side, sels[si]);
+                    if (!cand) continue;
+                    if (!best || Number(cand.score || 0) > Number(best.score || 0))
+                        best = cand;
                 }
-                if (!stake || stake.value == null) return null;
-                var tail = '';
-                try { tail = domTailOf(el); } catch (_) { tail = ''; }
-                return {
-                    amount: stake.value,
-                    raw: stake.token,
-                    tail: tail || sel,
-                    source: String(ctx.source || 'top')
-                };
+                return best;
             }
             bySide.BANKER = readSide('BANKER');
             bySide.PLAYER = readSide('PLAYER');
             bySide.TIE = readSide('TIE');
+            try {
+                if (bySide.TIE && bySide.PLAYER &&
+                    bySide.TIE.amount != null &&
+                    bySide.PLAYER.amount != null &&
+                    Number(bySide.TIE.amount) === Number(bySide.PLAYER.amount)) {
+                    var tieAlts = domPoolPreferredSelectors('TIE');
+                    for (var ai = 0; ai < tieAlts.length; ai++) {
+                        var altSel = tieAlts[ai];
+                        if (!altSel) continue;
+                        if (domPoolNormTail(altSel) === domPoolNormTail(bySide.TIE.tail))
+                            continue;
+                        var tieAlt = domReadPreferredPoolFromSelector(ctx, 'TIE', altSel);
+                        if (!tieAlt || tieAlt.amount == null)
+                            continue;
+                        if (Number(tieAlt.amount) === Number(bySide.PLAYER.amount))
+                            continue;
+                        if (Number(tieAlt.sideHit || 0) <= 0 &&
+                            Number(tieAlt.score || 0) < (Number(bySide.TIE.score || 0) + 1500))
+                            continue;
+                        tieAlt.source = String(tieAlt.source || ctx.source || 'top') + '/tie-dedup';
+                        bySide.TIE = tieAlt;
+                        break;
+                    }
+                }
+            } catch (_) {}
             var found = 0;
             if (bySide.BANKER) found++;
             if (bySide.PLAYER) found++;
@@ -5943,7 +6034,7 @@
         var mode = 'hold';
         if (/^append|dom-baccarat-extend|append-delta-queue|append-reconcile-bead/i.test(evt)) {
             mode = append ? 'append' : 'hold';
-        } else if (/table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init|count-guard-rebase/i.test(evt)) {
+        } else if (/table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init|count-guard-rebase|append-reset-seed/i.test(evt)) {
             mode = 'full-rebase';
         } else if (/table-switch-wait-bead|shoe-reset-arm|board-empty|no-board|post-reset-hold|reset-seed-wait|no-change|hold/i.test(evt)) {
             mode = 'hold';
@@ -5956,10 +6047,13 @@
         };
     }
     function brSeqEventIsFullRebase(seqEvent) {
-        return /table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init|count-guard-rebase/i.test(String(seqEvent || ''));
+        return /table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init|count-guard-rebase|append-reset-seed/i.test(String(seqEvent || ''));
     }
     function brSeqEventIsWaitingBoardBootstrap(seqEvent) {
-        return /waiting-board-bootstrap|table-switch-wait-bead/i.test(String(seqEvent || ''));
+        return /waiting-board-bootstrap|table-switch-wait-bead|shoe-reset-arm|board-empty|no-board|post-reset-hold|reset-seed-wait|short-board-bootstrap-wait/i.test(String(seqEvent || ''));
+    }
+    function brSeqEventForcesShorterOverride(seqEvent) {
+        return /append-reset-seed|table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init|count-guard-rebase/i.test(String(seqEvent || ''));
     }
     function brMergeManagedSeq(rawSeq) {
         var rawInput = String(rawSeq || '');
@@ -9698,24 +9792,40 @@
             base += '\n• Baccarat DOM cards:\n' + lines.join('\n');
         }
 
+        var selectedRawSeq = '';
         if (useCsharpSeqSnap) {
             S.seq = String(csharpSeqSnap.seq || '');
+            selectedRawSeq = String(csharpSeqSnap.rawSeq || '');
             S.seqVersion = Number(csharpSeqSnap.seqVersion != null ? csharpSeqSnap.seqVersion : (window.__cw_seq_version || 0)) || 0;
             S.seqEvent = waitingBoardBootstrap ? 'waiting-board-bootstrap' : String(csharpSeqSnap.seqEvent || (window.__cw_seq_event || ''));
         } else if (useAuthSnap) {
             S.seq = String(authSnap.seq || '');
+            selectedRawSeq = String(authSnap.rawSeq || '');
             S.seqVersion = Number(authSnap.seqVersion != null ? authSnap.seqVersion : (window.__cw_seq_version || 0)) || 0;
             S.seqEvent = waitingBoardBootstrap ? 'waiting-board-bootstrap' : String(authSnap.seqEvent || (window.__cw_seq_event || ''));
         } else if (waitingCsharpDisplay) {
             S.seq = '';
+            selectedRawSeq = '';
             S.seqVersion = Number(window.__cw_seq_version || 0) || 0;
             S.seqEvent = 'waiting-csharp-display';
         } else {
-            var tk = readTKSeq();
-            S.seq = tk.seq || '';
-            S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
-            S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
+            var tkSafe = readSeqStateSafe();
+            S.seq = tkSafe && tkSafe.seq ? String(tkSafe.seq || '') : '';
+            selectedRawSeq = tkSafe && tkSafe.rawSeq ? String(tkSafe.rawSeq || '') : '';
+            S.seqVersion = Number(tkSafe && tkSafe.seqVersion != null ? tkSafe.seqVersion : (window.__cw_seq_version || 0)) || 0;
+            S.seqEvent = String(tkSafe && tkSafe.seqEvent ? tkSafe.seqEvent : (window.__cw_seq_event || ''));
         }
+        var localBoardSeqState = null;
+        try { localBoardSeqState = readSeqStateSafe(); } catch (_) { localBoardSeqState = null; }
+        if (localBoardSeqState && localBoardSeqState.seq) {
+            S.seq = String(localBoardSeqState.seq || '');
+            selectedRawSeq = String(localBoardSeqState.rawSeq || '');
+            S.seqVersion = Number(localBoardSeqState.seqVersion != null ? localBoardSeqState.seqVersion : (window.__cw_seq_version || 0)) || 0;
+            S.seqEvent = String(localBoardSeqState.seqEvent || 'dom-board-full-scan');
+            if (waitingBoardBootstrap)
+                waitingBoardBootstrap = false;
+        }
+        S.rawSeq = selectedRawSeq || '';
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
         if (waitingBoardBootstrap) {
             seqHtml = 'Chuỗi kết quả : <i>waiting-board-bootstrap</i>';
@@ -9741,7 +9851,7 @@
                 statusSource: String(window.__cw_status_source || ''),
                 statusTail: String(window.__cw_status_tail || ''),
                 seq: String(S.seq || ''),
-                rawSeq: useCsharpSeqSnap ? String(csharpSeqSnap.rawSeq || '') : (useAuthSnap ? String(authSnap.rawSeq || '') : String(window.__cw_bead_raw_seq || '')),
+                rawSeq: String(S.rawSeq || window.__cw_bead_raw_seq || ''),
                 seqVersion: Number(S.seqVersion || 0),
                 seqEvent: String(S.seqEvent || ''),
                 seqDisplayState: String(seqDisplayState || ''),
@@ -9994,7 +10104,7 @@
     CHIP BETTING CORE (compat)
     ===================================================== */
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
-    var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
+    var DENOMS_DESC = [10000000, 5000000, 2500000, 1000000, 500000, 250000, 100000, 50000, 25000, 20000, 10000, 5000, 2000, 1000];
     var cfgBet = {
     delayPick: 70,
     delayTap: 55,
@@ -10347,10 +10457,13 @@
         '1000': 1,
         '5000': 1,
         '10000': 1,
+        '25000': 1,
         '50000': 1,
         '100000': 1,
+        '250000': 1,
         '500000': 1,
         '1000000': 1,
+        '2500000': 1,
         '5000000': 1,
         '10000000': 1,
         '20000000': 1,
@@ -11151,7 +11264,7 @@
         } catch (_) {
             raw = '';
         }
-        var m = NORM(raw).match(/(?:^|[_\-\s])(50K|20K|10K|5K|2K|1K|500|200|100|50|20|10)(?:$|[_\-\s])/i);
+        var m = NORM(raw).match(/(?:^|[_\-\s])(10M|5M|2[.,]?5M|1M|250K|100K|50K|25K|20K|10K|5K|2K|1K|500|200|100|50|20|10)(?:$|[_\-\s])/i);
         return m ? parseDomChipValue(m[1]) : null;
     }
     function domChipHostOf(el) {
@@ -11162,7 +11275,9 @@
             "[id^='iChips_']",
             ".list_select_chips3d > div",
             ".list_select_chips3d > li",
-            ".chips3d"
+            ".chips3d",
+            ".chip-selector__chip-container",
+            ".chip-selector__chip-container--selected"
         ];
         for (var i = 0; i < selectors.length; i++) {
             try {
@@ -11177,9 +11292,11 @@
         if (!txt)
             return null;
         var s = NORM(txt);
-        var m = s.match(/(\d+)\s*(K|M)\b/);
+        var m = s.match(/(\d+(?:[.,]\d+)?)\s*(K|M)\b/);
         if (m) {
-            var v = +m[1];
+            var v = parseFloat(String(m[1] || '').replace(',', '.'));
+            if (!isFinite(v))
+                return null;
             v *= (m[2] === 'K' ? 1e3 : 1e6);
             return normalizeDomChipValue(v);
         }
@@ -11236,7 +11353,7 @@
         var rows = [];
         if (!doc || !doc.querySelectorAll)
             return rows;
-        var nodes = doc.querySelectorAll(".list_select_chips3d > div, .list_select_chips3d > li, .chips3d");
+        var nodes = doc.querySelectorAll(".list_select_chips3d > div, .list_select_chips3d > li, .chips3d, .chip-selector__chip-container, .chip-selector__chip-container--selected");
         var byKey = {};
         for (var i = 0; i < nodes.length; i++) {
             var el = nodes[i];
@@ -11347,11 +11464,30 @@
         var s = NORM(text || '');
         if (!s)
             return null;
-        if (/PLAYER|TAY CON|\u95F2/.test(s))
+        if (/PLAYER|TAY CON|NGUOI CHOI|\u95F2/.test(s))
             return 'PLAYER';
         if (/BANKER|NHA CAI|\u5E84/.test(s))
             return 'BANKER';
         if (/TIE|HOA|\u548C/.test(s))
+            return 'TIE';
+        return null;
+    }
+    function domIsBetTargetTail(flatTail) {
+        return flatTail.indexOf('ZONE_BET_BOTTOM') !== -1 ||
+            flatTail.indexOf('BETBOX') !== -1 ||
+            flatTail.indexOf('MAIN-BETS') !== -1 ||
+            flatTail.indexOf('CSS-1OR1CRX') !== -1 ||
+            flatTail.indexOf('CSS-1O2WUMY') !== -1 ||
+            flatTail.indexOf('CSS-QSO31Z') !== -1;
+    }
+    function domBetSideOfTail(flatTail) {
+        if (!flatTail)
+            return null;
+        if (flatTail.indexOf('CSS-1OR1CRX') !== -1)
+            return 'PLAYER';
+        if (flatTail.indexOf('CSS-1O2WUMY') !== -1)
+            return 'BANKER';
+        if (flatTail.indexOf('CSS-QSO31Z') !== -1)
             return 'TIE';
         return null;
     }
@@ -11365,7 +11501,11 @@
             ".zone_bet_bottom > li",
             ".zone_bet_bottom li",
             ".zone_bet_bottom > div",
-            ".zone_bet_bottom div"
+            ".zone_bet_bottom div",
+            "div#main-bets > div.css-1or1crx",
+            "div#main-bets > div.css-1o2wumy",
+            "div#main-bets > div.css-qso31z",
+            "div#main-bets > div"
         ];
         for (var i = 0; i < selectors.length; i++) {
             var host = null;
@@ -11378,9 +11518,9 @@
                 continue;
             var hostText = domTextOf(host);
             var flatTail = NORM(domTailOf(host));
-            if (flatTail.indexOf('ZONE_BET_BOTTOM') === -1 && flatTail.indexOf('BETBOX') === -1)
+            if (!domIsBetTargetTail(flatTail))
                 continue;
-            if (domBetSideOfText(hostText) || ownSide)
+            if (domBetSideOfText(hostText) || ownSide || domBetSideOfTail(flatTail))
                 return host;
         }
         return null;
@@ -11398,7 +11538,9 @@
             if (!host || !domVisible(host))
                 continue;
             var txt = domTextOf(host) || domTextOf(el);
-            var side = domBetSideOfText(txt) || domBetSideOfText(domTextOf(el));
+            var tail = domTailOf(host);
+            var flatTail = NORM(tail);
+            var side = domBetSideOfText(txt) || domBetSideOfText(domTextOf(el)) || domBetSideOfTail(flatTail);
             if (!side)
                 continue;
             var rect = host.getBoundingClientRect();
@@ -11406,9 +11548,7 @@
                 continue;
             if (rect.width < 50 || rect.height < 30)
                 continue;
-            var tail = domTailOf(host);
-            var flatTail = NORM(tail);
-            if (flatTail.indexOf('ZONE_BET_BOTTOM') === -1 && flatTail.indexOf('BETBOX') === -1)
+            if (!domIsBetTargetTail(flatTail))
                 continue;
             var key = side + '|' + Math.round(rect.left / 8) + '|' + Math.round(rect.top / 8);
             rows.push({
@@ -11460,7 +11600,7 @@
                 score += c.source === 'top/frame[1]' ? 250 : 0;
                 score += c.y > ctx.win.innerHeight * 0.68 ? 200 : 0;
                 score += Math.min(c.w * c.h, 60000) / 400;
-                if (/zone_bet_bottom|betbox/i.test(c.tail))
+                if (/zone_bet_bottom|betbox|main-bets|css-1or1crx|css-1o2wumy|css-qso31z/i.test(c.tail))
                     score += 300;
                 if (/\b1:8\b/.test(c.text) && c.side === 'TIE')
                     score += 120;
@@ -11495,7 +11635,7 @@
     }
     function domLooksLikeConfirmText(text) {
         var s = NORM(text || '');
-        return s === 'XAC NHAN' || s === 'CONFIRM' || s === 'OK';
+        return s === 'XAC NHAN' || s === 'CONFIRM' || s === 'OK' || s === 'DAT CUOC' || s === 'PLACE BET';
     }
     function domContainsRepeatOrDoubleText(text) {
         var s = NORM(text || '');
@@ -12917,9 +13057,10 @@
         } catch (_) {}
         S._lastTotals = T;
 
-        // TK sequence
-        var tk = readTKSeq();
-        S.seq = tk.seq || '';
+        // TK sequence (full board scan authority when available)
+        var tk = readSeqStateSafe();
+        S.seq = tk && tk.seq ? String(tk.seq || '') : '';
+        S.rawSeq = tk && tk.rawSeq ? String(tk.rawSeq || '') : '';
         S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
         S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
 
@@ -13442,6 +13583,12 @@
             totalsAt: 0,
             seqState: null,
             seqAt: 0,
+            seqStable: '',
+            seqStableRaw: '',
+            seqStableVersion: 0,
+            seqStableEvent: '',
+            seqStableAt: 0,
+            seqStableTableId: 0,
             tableCtx: null,
             tableCtxAt: 0
         };
@@ -13598,6 +13745,34 @@
 
         function readSeqStateSafe() {
             try {
+                if (typeof abxScanResultBoardFull === 'function') {
+                    // Full-board DOM scan is the primary authority for Baccarat history.
+                    // Force a fresh scan on each read to avoid stale managed-seq fallback
+                    // when switching tables.
+                    var domFull = abxScanResultBoardFull({ maxAgeMs: 0, force: true });
+                    if (domFull && domFull.ok && domFull.seq) {
+                        return {
+                            seq: String(domFull.seq || ''),
+                            rawSeq: String(domFull.rawSeq || ''),
+                            which: String(domFull.which || 'dom-board-full-scan'),
+                            seqVersion: Number(domFull.seqVersion != null ? domFull.seqVersion : (window.__cw_seq_version || 0)) || 0,
+                            seqEvent: String(domFull.seqEvent || window.__cw_seq_event || ''),
+                            seqMode: 'full-board-dom',
+                            seqAppend: String(domFull.changed ? 'full-board-changed' : 'full-board-nochange')
+                        };
+                    }
+                    // Scanner exists but board is not ready yet.
+                    // Do not fallback to managed seq to prevent carrying old table history.
+                    return {
+                        seq: '',
+                        rawSeq: '',
+                        which: String(domFull && domFull.which ? domFull.which : 'dom-board-full-scan'),
+                        seqVersion: Number(domFull && domFull.seqVersion != null ? domFull.seqVersion : (window.__cw_seq_version || 0)) || 0,
+                        seqEvent: String(domFull && domFull.seqEvent ? domFull.seqEvent : (window.__cw_seq_event || 'board-scan-no-board')),
+                        seqMode: 'hold',
+                        seqAppend: ''
+                    };
+                }
                 if (typeof readTKSeq === 'function') {
                     var r = readTKSeq();
                     try {
@@ -13644,6 +13819,159 @@
             var r = readSeqStateSafe();
             return r && r.seq ? r.seq : '';
         }
+
+        function abxHashSeqFast(input) {
+            try {
+                var s = String(input || '');
+                var h = 2166136261 >>> 0; // FNV-1a 32-bit
+                for (var i = 0; i < s.length; i++) {
+                    h ^= s.charCodeAt(i);
+                    h = Math.imul(h, 16777619) >>> 0;
+                }
+                var hex = h.toString(16);
+                return ('00000000' + hex).slice(-8);
+            } catch (_) {
+                return '00000000';
+            }
+        }
+
+        function abxCompactCols(cols) {
+            try {
+                if (!cols || !cols.length)
+                    return '';
+                var out = [];
+                for (var i = 0; i < cols.length; i++) {
+                    var c = cols[i] || {};
+                    var n = c.items && c.items.length ? c.items.length : 0;
+                    out.push(String(n));
+                }
+                return out.join(',');
+            } catch (_) {
+                return '';
+            }
+        }
+
+        function abxScanResultBoardFull(opts) {
+            opts = opts || {};
+            var now = Date.now();
+            var maxAgeMs = Number(opts.maxAgeMs != null ? opts.maxAgeMs : 220);
+            if (!isFinite(maxAgeMs) || maxAgeMs < 0)
+                maxAgeMs = 220;
+            try {
+                var cached = window.__abx_result_board_scan_cache || null;
+                if (!opts.force && cached && cached.ts && (now - Number(cached.ts || 0)) >= 0 && (now - Number(cached.ts || 0)) <= maxAgeMs) {
+                    if (opts.debug === 1 || opts.debug === true) {
+                        cwDbg('SEQSCAN', 'board-full-scan-cache-hit', {
+                            ageMs: now - Number(cached.ts || 0),
+                            seqLen: Number(cached.seqLen || 0),
+                            rawLen: Number(cached.rawLen || 0),
+                            hash: String(cached.hash || ''),
+                            changed: Number(cached.changed || 0)
+                        }, 500, 'seqscan-cache|' + String(cached.hash || '') + '|' + String(cached.seqLen || 0));
+                    }
+                    return cached;
+                }
+            } catch (_) {}
+            var bead = null;
+            try {
+                bead = (typeof readDomBeadSeq === 'function') ? readDomBeadSeq() : null;
+            } catch (_) {
+                bead = null;
+            }
+
+            var rawSeq = '';
+            var managedSeq = '';
+            var cols = [];
+            var cells = [];
+            var seqVersion = 0;
+            var seqEvent = '';
+            var which = 'dom-bead';
+
+            try { rawSeq = brSanitizeSeq(bead && bead.rawSeq ? String(bead.rawSeq || '') : ''); } catch (_) { rawSeq = ''; }
+            try { managedSeq = brSanitizeSeq(bead && bead.seq ? String(bead.seq || '') : ''); } catch (_) { managedSeq = ''; }
+            try { cols = bead && bead.cols && bead.cols.length ? bead.cols : []; } catch (_) { cols = []; }
+            try { cells = bead && bead.cells && bead.cells.length ? bead.cells : []; } catch (_) { cells = []; }
+            try { seqVersion = Number(bead && bead.seqVersion != null ? bead.seqVersion : (window.__cw_seq_version || 0)) || 0; } catch (_) { seqVersion = 0; }
+            try { seqEvent = String(bead && bead.seqEvent ? bead.seqEvent : (window.__cw_seq_event || '')); } catch (_) { seqEvent = ''; }
+            try { which = String(bead && bead.which ? bead.which : 'dom-bead'); } catch (_) { which = 'dom-bead'; }
+
+            var hasBoard = !!(cells && cells.length && cols && cols.length);
+            var seq = '';
+            if (hasBoard)
+                seq = rawSeq || '';
+
+            var tableName = '';
+            try { tableName = String(_domLastActiveSeqTitle || _domLastActiveTitle || _domManagedTableTitle || '').trim(); } catch (_) { tableName = ''; }
+
+            var shape = abxCompactCols(cols);
+            var signature = [
+                'seq=' + String(seq || ''),
+                'raw=' + String(rawSeq || ''),
+                'cells=' + String(cells && cells.length ? cells.length : 0),
+                'cols=' + String(cols && cols.length ? cols.length : 0),
+                'shape=' + shape,
+                'table=' + tableName
+            ].join('|');
+            var sigHash = abxHashSeqFast(signature);
+
+            var prevHash = '';
+            try { prevHash = String(window.__abx_result_board_last_hash || ''); } catch (_) { prevHash = ''; }
+            var changed = !!(sigHash && sigHash !== prevHash);
+            try {
+                if (changed)
+                    window.__abx_result_board_last_hash = sigHash;
+            } catch (_) {}
+
+            var out = {
+                ok: hasBoard ? 1 : 0,
+                ts: now,
+                source: 'dom-board-full-scan',
+                tableName: tableName,
+                seq: seq || '',
+                rawSeq: rawSeq || '',
+                managedSeq: managedSeq || '',
+                seqLen: String(seq || '').length,
+                rawLen: String(rawSeq || '').length,
+                managedLen: String(managedSeq || '').length,
+                seqVersion: seqVersion,
+                seqEvent: seqEvent,
+                which: which,
+                colsLen: cols && cols.length ? cols.length : 0,
+                cellsLen: cells && cells.length ? cells.length : 0,
+                colShape: shape,
+                signature: signature,
+                hash: sigHash,
+                changed: changed ? 1 : 0
+            };
+
+            try {
+                if (opts.debug === 1 || opts.debug === true) {
+                    cwDbg('SEQSCAN', 'board-full-scan', {
+                        ok: out.ok,
+                        changed: out.changed,
+                        seqLen: out.seqLen,
+                        rawLen: out.rawLen,
+                        cols: out.colsLen,
+                        cells: out.cellsLen,
+                        shape: out.colShape,
+                        hash: out.hash,
+                        ver: out.seqVersion,
+                        evt: out.seqEvent,
+                        table: out.tableName
+                    }, 500, 'seqscan|' + out.hash + '|' + out.seqLen + '|' + out.seqVersion);
+                }
+            } catch (_) {}
+            try { window.__abx_result_board_scan_cache = out; } catch (_) {}
+            return out;
+        }
+
+        try {
+            window.__abx_scan_result_board_full = function (opts) { return abxScanResultBoardFull(opts || {}); };
+            window.__abx_get_result_board_seq = function () {
+                var r = abxScanResultBoardFull({});
+                return r && r.seq ? String(r.seq || '') : '';
+            };
+        } catch (_) {}
 
         function inferBaccaratTableIdFromName(name) {
             try {
@@ -13862,6 +14190,13 @@
             var allowPanelSnapshotFallback = buildSource !== 'push' && buildSource !== 'pull';
             var perfMode = isPerfMode();
             var nowTs = Date.now();
+            var seqHoldGraceMs = 1600;
+            var currentTableId = 0;
+            try {
+                var _mTable = /[?&]table_id=(\d{1,10})/i.exec(String(location && location.href || ''));
+                if (_mTable && _mTable[1])
+                    currentTableId = parseInt(_mTable[1], 10) || 0;
+            } catch (_) { currentTableId = 0; }
             var jsProgMs = 0, jsTotalsMs = 0, jsSeqMs = 0;
             _cwSnapshotBuildId = Number(_cwSnapshotBuildId || 0) + 1;
             _cwSnapshotBuildSource = buildSource;
@@ -13957,6 +14292,10 @@
                               buildSource === 'push' &&
                               _abxSnapCache.seqAt > 0 &&
                               (nowTs - _abxSnapCache.seqAt) < seqCacheMs;
+            // Keep result-board history reactive: always rescan seq on push ticks
+            // when full-board scanner is available.
+            if (buildSource === 'push' && typeof abxScanResultBoardFull === 'function')
+                useSeqCache = false;
             if (perfMode &&
                 buildSource === 'push' &&
                 !_forcePushOnce &&
@@ -14086,6 +14425,43 @@
                 seqTableSource = '';
             }
             if (brSeqEventIsWaitingBoardBootstrap(seqEvent)) {
+                var keepPrevSeqOnTransientWait = false;
+                try {
+                    var waitEvt = String(seqEvent || '');
+                    var hardResetWait = /append-reset-seed|shoe-reset-arm|table-switch-wait-bead|table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority/i.test(waitEvt);
+                    var stableTableId = Number(_abxSnapCache.seqStableTableId || 0) || 0;
+                    var sameTableForStableHold = !currentTableId || !stableTableId || currentTableId === stableTableId;
+                    var stableAgeMs = _abxSnapCache.seqStableAt > 0 ? (nowTs - Number(_abxSnapCache.seqStableAt || 0)) : 999999;
+                    keepPrevSeqOnTransientWait = !!(
+                        !hardResetWait &&
+                        sameTableForStableHold &&
+                        stableAgeMs >= 0 &&
+                        stableAgeMs <= seqHoldGraceMs &&
+                        ((seq && String(seq).length > 0) || (_abxSnapCache.seqStable && String(_abxSnapCache.seqStable).length > 0))
+                    );
+                    if (keepPrevSeqOnTransientWait && (!seq || !String(seq).length)) {
+                        seq = String(_abxSnapCache.seqStable || '');
+                        if (!rawSeq)
+                            rawSeq = String(_abxSnapCache.seqStableRaw || '');
+                        if (!seqVersion)
+                            seqVersion = Number(_abxSnapCache.seqStableVersion || 0) || 0;
+                        if (!seqEvent)
+                            seqEvent = String(_abxSnapCache.seqStableEvent || '');
+                    }
+                } catch (_) { keepPrevSeqOnTransientWait = false; }
+                if (keepPrevSeqOnTransientWait) {
+                    cwDbg('SEQFLOW', 'snapshot-wait-bootstrap-keep-prev', {
+                        buildId: buildId,
+                        source: buildSource,
+                        seqLen: String(seq || '').length,
+                        rawLen: String(rawSeq || '').length,
+                        seqVersion: Number(seqVersion || 0),
+                        seqEvent: String(seqEvent || ''),
+                        currentTableId: Number(currentTableId || 0),
+                        stableTableId: Number(_abxSnapCache.seqStableTableId || 0),
+                        stableAgeMs: (_abxSnapCache.seqStableAt > 0 ? (nowTs - Number(_abxSnapCache.seqStableAt || 0)) : -1)
+                    }, 0, 'snapshot-wait-keep-prev|' + buildSource + '|' + Number(seqVersion || 0) + '|' + String(seq || '').length);
+                } else
                 if (seq || rawSeq || seqFresh) {
                     cwDbg('SEQFLOW', 'snapshot-wait-bootstrap-clear-cache', {
                         buildId: buildId,
@@ -14098,8 +14474,10 @@
                         seqWhich: String(seqWhich || '')
                     }, 0, 'snapshot-wait-clear|' + buildSource + '|' + Number(seqVersion || 0) + '|' + String(seq || '').length + '|' + String(seqFresh || '').length);
                 }
-                seq = '';
-                rawSeq = '';
+                if (!keepPrevSeqOnTransientWait) {
+                    seq = '';
+                    rawSeq = '';
+                }
             } else if (seqFresh) {
                 var seqFreshIsRebase = brSeqEventIsFullRebase(seqEvent);
                 if (seqFreshIsRebase) {
@@ -14115,6 +14493,20 @@
                             seqWhich: String(seqWhich || '')
                         }, 0, 'snapshot-fresh-rebase|' + buildSource + '|' + Number(seqVersion || 0) + '|' + String(seq || '').length + '|' + String(seqFresh || '').length);
                     }
+                    seq = seqFresh;
+                } else if (seq &&
+                    seqFresh.length < seq.length &&
+                    brSeqEventForcesShorterOverride(seqEvent)) {
+                    cwDbg('SEQFLOW', 'snapshot-fresh-shrink-override', {
+                        buildId: buildId,
+                        source: buildSource,
+                        cachedLen: String(seq || '').length,
+                        freshLen: String(seqFresh || '').length,
+                        rawLen: String(rawSeq || '').length,
+                        seqVersion: Number(seqVersion || 0),
+                        seqEvent: String(seqEvent || ''),
+                        seqWhich: String(seqWhich || '')
+                    }, 0, 'snapshot-fresh-shrink|' + buildSource + '|' + Number(seqVersion || 0) + '|' + String(seq || '').length + '|' + String(seqFresh || '').length);
                     seq = seqFresh;
                 } else if (!seq ||
                     (seqFresh.length > seq.length && seqFresh.indexOf(seq) === 0) ||
@@ -14241,6 +14633,17 @@
                 }
             } catch (_) {}
 
+            try {
+                if (seq && String(seq).length > 0) {
+                    _abxSnapCache.seqStable = String(seq || '');
+                    _abxSnapCache.seqStableRaw = String(rawSeq || '');
+                    _abxSnapCache.seqStableVersion = Number(seqVersion || 0) || 0;
+                    _abxSnapCache.seqStableEvent = String(seqEvent || '');
+                    _abxSnapCache.seqStableAt = nowTs;
+                    if (currentTableId > 0)
+                        _abxSnapCache.seqStableTableId = currentTableId;
+                }
+            } catch (_) {}
             try {
                 if (!__cw_hasCocos() && domStatusImpliesClosed(st))
                     p = 0;
