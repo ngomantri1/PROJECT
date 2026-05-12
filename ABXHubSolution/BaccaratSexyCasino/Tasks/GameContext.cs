@@ -46,6 +46,8 @@ namespace BaccaratSexyCasino.Tasks
 
         // Ngưỡng % còn lại để ra quyết định
         public double DecisionPercent { get; init; }
+        public bool AutoResetStakeOnNonNegativeWin { get; init; } = false;
+        public Func<bool>? ConsumeAutoResetStakeRequest { get; init; }
 
         // Trạng thái chiến lược (lưu Step/PreferLarger/.)
         public DecisionState State { get; init; }

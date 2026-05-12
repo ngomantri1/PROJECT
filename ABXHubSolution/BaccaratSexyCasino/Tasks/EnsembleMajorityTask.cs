@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,15 +9,15 @@ using static BaccaratSexyCasino.Tasks.TaskUtil;
 namespace BaccaratSexyCasino.Tasks
 {
     /// <summary>
-    /// 10) Chuyên gia bỏ phiếu:
-    /// - 5 expert luôn dự đoán mỗi ván
-    /// - Chấm điểm theo rolling 10 ván gần nhất của từng expert
+    /// 10) ChuyÃªn gia bá» phiáº¿u:
+    /// - 5 expert luÃ´n dá»± Ä‘oÃ¡n má»—i vÃ¡n
+    /// - Cháº¥m Ä‘iá»ƒm theo rolling 10 vÃ¡n gáº§n nháº¥t cá»§a tá»«ng expert
     /// - Weighted vote theo base weight * performance weight * regime weight
-    /// - Vẫn đánh liên tục từng ván, không bỏ kèo
+    /// - Váº«n Ä‘Ã¡nh liÃªn tá»¥c tá»«ng vÃ¡n, khÃ´ng bá» kÃ¨o
     /// </summary>
     public sealed class EnsembleMajorityTask : IBetTask
     {
-        public string DisplayName => "10) Chuyên gia bỏ phiếu";
+        public string DisplayName => "10) ChuyÃªn gia bá» phiáº¿u";
         public string Id => "ensemble-majority";
 
         private const int RunLenT = 3;
@@ -374,31 +374,9 @@ namespace BaccaratSexyCasino.Tasks
                 }
 
                 var netDelta = CalcNetDelta(side, stake, win);
-                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
-                if (ctx.MoneyStrategyId == "MultiChain")
-                {
-                    int chainIndex = ctx.MoneyChainIndex;
-                    int chainStep = ctx.MoneyChainStep;
-                    double chainProfit = ctx.MoneyChainProfit;
-
-                    MoneyHelper.UpdateAfterRoundMultiChain(
-                        ctx.StakeChains,
-                        ctx.StakeChainTotals,
-                        ref chainIndex,
-                        ref chainStep,
-                        ref chainProfit,
-                        win,
-                        netDelta);
-
-                    ctx.MoneyChainIndex = chainIndex;
-                    ctx.MoneyChainStep = chainStep;
-                    ctx.MoneyChainProfit = chainProfit;
-                }
-                else
-                {
-                    money.OnRoundResult(win);
-                }
+                await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, win, netDelta, ct);
             }
         }
     }
 }
+
