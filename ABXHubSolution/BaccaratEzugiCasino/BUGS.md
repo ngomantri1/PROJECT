@@ -21,6 +21,15 @@
 - Spam log `AUTH-KEEP-JS`:
   - Da dedup log theo state + heartbeat 4s (khong doi nghiep vu tinh ket qua).
   - Van co the con nhieu `AUTH-KEEP-JS` neu net seq tiep tuc rong.
+- Bug lech tail vung dat cuoc DOM sau khi provider doi layout:
+  - Da fix bang map side theo `#main-bets` class (`css-1or1crx`/`css-1o2wumy`/`css-qso31z`).
+  - Da bo sung fallback map side theo tail khi text label khong on dinh.
+- Bug parse/quet chip DOM thieu menh gia `2.5M`:
+  - Da fix parser K/M (ho tro decimal) va mo rong allow-set (`25K`, `250K`, `2.5M`).
+  - Da bo sung chip selectors moi `.chip-selector__chip-container*`.
+- Bug Canvas Watch nhay hien roi moi an khi default hidden:
+  - Nguyen nhan: `__abxStartAuthority()` force `display:block` cho `#__cw_root_allin`.
+  - Da fix: dung `__cw_applyPanelDisplayOwner()` de ton trong `CW_PANEL_VISIBLE_DEFAULT=false`.
 
 ## Da fix / da giam ro
 
@@ -33,17 +42,20 @@
 
 ## Risk con lai
 
-- Selector class cua provider co the doi bat ky luc nao, gay null B/P/T.
+- Selector class cua provider co the doi bat ky luc nao, gay null B/P/T hoac sai target dat cuoc.
 - Khi selector doi, vi da bo fallback cu, pool se ve `--` ngay (dung theo thiet ke moi).
 - `MainWindow.xaml.cs` van lon, de phat sinh regression khi sua nhanh.
 - Van can theo doi them case hiem:
   - switch ban rat nhanh + source pull den truoc du lieu board day du, co the thay waiting ngan.
   - net seq rong keo dai lam nhieu tick di qua nhanh `AUTH-KEEP-JS` (du ket qua van dung).
+- Canvas Watch visible state co the bi anh huong boi localStorage cu neu doi default ma khong bump rev key.
 
 ## Dau hieu can theo doi trong log
 
 - `BETPOOL preferred-tail-only`:
   - theo doi `B/P/T/source/score/tailB/tailP/tailT`.
+- `cwBet` DOM:
+  - theo doi log fail `bet target not found`, `focus chip failed`, `confirm failed`.
 - Countdown trace:
   - C#: `[COUNTDOWN][UI][RAW]`, `[COUNTDOWN][UI][DISPLAY]`, `[COUNTDOWN][TRACE]`.
   - JS: `CWDBG COUNTDOWN raw/display`.
@@ -54,6 +66,9 @@
   - rebuild DLL,
   - restart host,
   - check log hash embedded JS.
-- Neu B/P/T ve `--`:
-  - check selector da doi tren ban hien tai,
-  - cap nhat lai 3 selector tail.
+- Neu B/P/T ve `--` hoac click nham cua:
+  - check selector/tail tren ban hien tai,
+  - cap nhat lai map tail cua bet target.
+- Neu Canvas Watch van hien trai y du da set default hidden:
+  - bump `CW_PANEL_VISIBLE_DEFAULT_REV`,
+  - rebuild + restart host.

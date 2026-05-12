@@ -16,7 +16,7 @@ namespace BaccaratSexyCasino2
         private IGameHostContext? _host;   // giữ lại để báo ngược về Hub
 
         public string Name => "Baccarat Sexy Casino Live";
-        public string Slug => "baccarat-sexy-casino";
+        public string Slug => "baccarat-sexy-casino2";
 
         public UserControl CreateView(IGameHostContext host)
         {

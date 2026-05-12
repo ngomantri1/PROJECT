@@ -38,6 +38,15 @@ BaccaratEzugiCasino/
   - incoming seq cua ban moi neu co thi push ngay len C# display.
   - `waiting-board-bootstrap` co delay ngan va chi hien 1 lan moi switch de giam flash.
   - log `AUTH-KEEP-JS` da dedup theo state + heartbeat de giam spam.
+- Bet DOM duoc cap nhat theo giao dien baccarat moi:
+  - nhan dien vung dat cuoc theo tail `#main-bets` (`css-1or1crx`/`css-1o2wumy`/`css-qso31z`).
+  - giu flow cu C# -> `cwBet` -> JS, chi doi heuristics DOM side/target.
+- Chip DOM duoc cap nhat theo toolbar moi:
+  - scan them `.chip-selector__chip-container`, `.chip-selector__chip-container--selected`.
+  - parse menh gia `2.5M` va bo sung allow-set `25K`, `250K`, `2.5M`.
+- Canvas Watch visibility policy duoc chuan hoa:
+  - khong con force `display:block` trong `__abxStartAuthority()` khi default dang la hidden.
+  - root panel luon theo `CW_PANEL_VISIBLE_DEFAULT` + localStorage override.
 
 ## Data flow (hien tai)
 
@@ -55,6 +64,14 @@ BaccaratEzugiCasino/
   - `waiting-board-bootstrap` duoc throttle de tranh spam UI.
 6. C# update UI status/progress/totals/seq theo snapshot authority.
 7. Strategy su dung `GameContext` de dat cuoc.
+
+## DOM bet flow (layout moi)
+
+1. `findBetTarget()` (DOM mode) lay candidates tu `domCollectBetTargetCandidates()`.
+2. Candidate duoc score theo tail/text/rect; uu tien host thuoc `#main-bets`.
+3. Side duoc map theo text; neu text yeu thi map theo tail class (`css-1or1crx`/`css-1o2wumy`/`css-qso31z`).
+4. Chip scan uu tien chip toolbar (`chip-selector__chip-container*`) va parse token K/M (co ho tro `2.5M`).
+5. Sau click cua cuoc, confirm step chap nhan them keyword `DAT CUOC`/`PLACE BET`.
 
 ## Countdown va status flow
 
@@ -77,3 +94,4 @@ BaccaratEzugiCasino/
 
 - JS la embedded resource trong DLL.
 - Bat buoc rebuild + restart host sau moi sua JS.
+- Neu doi default hidden/visible cua Canvas Watch ma runtime con nho state cu, can bump `CW_PANEL_VISIBLE_DEFAULT_REV`.

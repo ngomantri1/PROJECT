@@ -47,12 +47,26 @@ Tai lieu nay tom tat code hien tai de AI/dev tiep tuc sua dung huong.
   - `TABLE-SWITCH-REJECT = 0`,
   - `AUTH-WAIT-BOOTSTRAP` va `waiting-board-bootstrap` giam ro,
   - van con nhieu `AUTH-KEEP-JS` do nguon net seq dang rong nhung khong anh huong ket qua.
+- Da sua logic dat cuoc DOM de theo layout web moi (khong doi pipeline C# -> JS):
+  - bo sung nhan dien side dat cuoc theo tail `#main-bets`:
+    - `PLAYER` ~ `div.css-1or1crx`
+    - `BANKER` ~ `div.css-1o2wumy`
+    - `TIE` ~ `div.css-qso31z`
+  - bo sung fallback map side theo tail khi text tren host khong ro.
+- Da cap nhat scan/parse chip DOM theo thanh chip moi:
+  - selectors: `.chip-selector__chip-container`, `.chip-selector__chip-container--selected`.
+  - parse duoc menh gia co thap phan (`2.5M`).
+  - allow-set DOM bo sung: `25K`, `250K`, `2.5M` (tuong ung `25000`, `250000`, `2500000`).
+- Da fix bug Canvas Watch nhay 1 nhip luc moi vao khi de mac dinh an:
+  - nguyen nhan: `__abxStartAuthority()` tung force `#__cw_root_allin` -> `display:block`.
+  - fix: thay bang goi `__cw_applyPanelDisplayOwner(...)` de ton trong cau hinh `CW_PANEL_VISIBLE_DEFAULT=false`.
 
 ## Luu y deploy
 
 - `v4_js_xoc_dia_live.js` duoc nap tu `EmbeddedResource` trong DLL.
 - Sua file `.js` tren dia khong co hieu luc neu chua rebuild DLL va restart host.
 - Can doi chieu log `[Bridge] Loaded JS from embedded ... sha256=...` de chac chan da nap ban moi.
+- Neu thay panel van hien trai y do state cu, tang `CW_PANEL_VISIBLE_DEFAULT_REV` de reset localStorage visibility flag.
 
 ## Flow chinh
 
