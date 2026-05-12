@@ -1074,6 +1074,8 @@
                                         MaxHeight="120"
                                         Margin="{StaticResource ValueFieldMargin}"
                                         HorizontalAlignment="Stretch"
+                                        LostFocus="TxtDecisionSecond_LostFocus"
+                                        PreviewTextInput="TxtDecisionSecond_PreviewTextInput"
                                         Text="0" />
                                     <!--  CỬA ĐẶT &amp; TỈ LỆ  -->
                                     <Grid

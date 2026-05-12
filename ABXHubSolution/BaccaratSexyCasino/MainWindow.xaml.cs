@@ -838,16 +838,18 @@ Ví dụ không hợp lệ:
 • Ví dụ: 150000 (khi lỗ ≥ 150.000đ thì dừng).";
 
         const string TIP_DECISION_PERCENT_GENERAL =
-        @"ĐẶT KHI CÒN % THỜI GIAN
-• Nhập phần trăm (0–100). Hệ thống quy về 0.00–1.00 nội bộ.
-• Ý nghĩa: chỉ đặt cược khi thanh thời gian còn lại ≤ giá trị % này.
-• Ví dụ: 25 = đặt khi còn ~25% thời gian phiên.";
+        @"ĐẶT KHI CÒN (GIÂY)
+• Chỉ nhập số tự nhiên, không để trống.
+• Giá trị tối thiểu là 3 giây.
+• Task chỉ được phép đặt cược khi thời gian còn lại ≤ giá trị này.
+• Ví dụ: 10 = chỉ đặt khi còn 10 giây trở xuống.";
 
         const string TIP_DECISION_PERCENT_NI =
-        @"ĐẶT KHI CÒN % THỜI GIAN (khuyến nghị cho chiến lược Ít/Nhiều)
-• Nhập phần trăm (0–100), KHÔNG phải giây.
-• Nên để khoảng 15% để bám sát dòng tiền hai cửa.
-• Ví dụ: 15 = đặt khi còn ~15% thời gian phiên.";
+        @"ĐẶT KHI CÒN (GIÂY) (khuyến nghị cho chiến lược Ít/Nhiều)
+• Chỉ nhập số tự nhiên, không để trống.
+• Giá trị tối thiểu là 3 giây.
+• Task chỉ được phép đặt cược khi thời gian còn lại ≤ giá trị này.
+• Nên để khoảng 8–15 giây để bám sát dòng tiền hai cửa.";
 
         const string TIP_AUTO_RESET_STAKE_NONNEG =
         @"TIỀN THẮNG >= 0 TỰ QUAY VỀ MỨC ĐẦU
@@ -2373,6 +2375,24 @@ try{
         private static string T(TextBox tb, string def = "") => (tb?.Text ?? def).Trim();
         private static string P(PasswordBox? pb, string def = "") => pb?.Password ?? def;
         private static int I(string? s, int def = 0) => int.TryParse(s, out var n) ? n : def;
+        private static int NormalizeDecisionSeconds(int sec) => Math.Max(3, sec);
+
+        private int ReadDecisionSecondsFromUi(int fallback = 10)
+        {
+            var raw = T(TxtDecisionSecond, fallback.ToString(CultureInfo.InvariantCulture));
+            if (!int.TryParse(raw, out var sec))
+                sec = fallback;
+            return NormalizeDecisionSeconds(sec);
+        }
+
+        private void SyncDecisionSecondsFromConfig()
+        {
+            var sec = NormalizeDecisionSeconds(_cfg?.DecisionSeconds ?? 10);
+            _cfg.DecisionSeconds = sec;
+            _decisionPercent = sec;
+            if (TxtDecisionSecond != null)
+                TxtDecisionSecond.Text = sec.ToString(CultureInfo.InvariantCulture);
+        }
 
         // DPAPI
         private static string ProtectString(string? s)
@@ -2872,7 +2892,7 @@ try{
                 UpdateTooltips();
                 UpdateBetStrategyUi();
 
-                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
+                SyncDecisionSecondsFromConfig();
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();
                 if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
@@ -2928,7 +2948,8 @@ try{
         {
             cfg.Url = T(TxtUrl);
             cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
-            cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
+            cfg.DecisionSeconds = ReadDecisionSecondsFromUi(cfg.DecisionSeconds > 0 ? cfg.DecisionSeconds : 10);
+            _decisionPercent = cfg.DecisionSeconds;
             cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? cfg.BetStrategyIndex;
             cfg.BetSeq = T(TxtChuoiCau, cfg.BetSeq);
             cfg.BetPatterns = T(TxtTheCau, cfg.BetPatterns);
@@ -3969,6 +3990,12 @@ try{
                     if (TxtPass != null) TxtPass.PasswordChanged += TxtPass_PasswordChanged;
                     if (TxtStakeCsv != null) TxtStakeCsv.TextChanged += TxtStakeCsv_TextChanged;
                     if (TxtSideRatio != null) TxtSideRatio.TextChanged += TxtSideRatio_TextChanged;
+                    if (TxtDecisionSecond != null)
+                    {
+                        TxtDecisionSecond.LostFocus += TxtDecisionSecond_LostFocus;
+                        TxtDecisionSecond.PreviewTextInput += TxtDecisionSecond_PreviewTextInput;
+                        DataObject.AddPastingHandler(TxtDecisionSecond, TxtDecisionSecond_Pasting);
+                    }
                     if (CmbBetStrategy != null) CmbBetStrategy.SelectionChanged += CmbBetStrategy_SelectionChanged;
                     if (TxtChuoiCau != null) TxtChuoiCau.TextChanged += TxtChuoiCau_TextChanged;
                     if (TxtTheCau != null) TxtTheCau.TextChanged += TxtTheCau_TextChanged;
@@ -4143,6 +4170,47 @@ try{
             {
                 await SaveConfigAsync();
             });
+        }
+
+        private void TxtDecisionSecond_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            e.Handled = string.IsNullOrEmpty(e.Text) || e.Text.Any(ch => !char.IsDigit(ch));
+        }
+
+        private void TxtDecisionSecond_Pasting(object sender, DataObjectPastingEventArgs e)
+        {
+            try
+            {
+                if (!e.DataObject.GetDataPresent(DataFormats.Text))
+                {
+                    e.CancelCommand();
+                    return;
+                }
+
+                var text = (e.DataObject.GetData(DataFormats.Text) as string) ?? "";
+                if (string.IsNullOrWhiteSpace(text) || text.Any(ch => !char.IsDigit(ch)))
+                    e.CancelCommand();
+            }
+            catch
+            {
+                e.CancelCommand();
+            }
+        }
+
+        private async void TxtDecisionSecond_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (!_uiReady || _tabSwitching) return;
+
+            var sec = ReadDecisionSecondsFromUi(_cfg?.DecisionSeconds > 0 ? _cfg.DecisionSeconds : 10);
+            _decisionPercent = sec;
+            if (TxtDecisionSecond != null)
+                TxtDecisionSecond.Text = sec.ToString(CultureInfo.InvariantCulture);
+
+            if (_cfg.DecisionSeconds != sec)
+            {
+                _cfg.DecisionSeconds = sec;
+                await SaveConfigAsync();
+            }
         }
 
         private void ApplyMoneyStrategyToUI(string id)
@@ -15500,6 +15568,7 @@ try{
 
                 // Chuẩn bị & chạy Task chiến lược (giữ nguyên)
                 RebuildStakeSeq((TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim());
+                _decisionPercent = ReadDecisionSecondsFromUi(_cfg?.DecisionSeconds > 0 ? _cfg.DecisionSeconds : 10);
                 activeTab.RunStakeSeq = _stakeSeq.ToArray();
                 activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
                 activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();

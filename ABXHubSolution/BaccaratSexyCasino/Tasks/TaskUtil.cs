@@ -130,28 +130,38 @@ namespace BaccaratSexyCasino.Tasks
 
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
         {
-            // Quy ước: prog = phần trăm thời gian đã trôi/hoặc còn lại. Ở code bạn set LblProg = p*100,
-            // ta chọn ngưỡng “<= DecisionPercent” để vào tiền trễ (15% cuối).
+            // Quy ước: prog là số GIÂY còn lại (UI hiển thị dạng "Xs").
+            // Chỉ cho phép đặt cược khi thời gian còn lại <= ngưỡng giây cấu hình.
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
+                double p = s?.prog ?? double.NaN;
+                if (double.IsNaN(p) || double.IsInfinity(p))
+                {
+                    await Task.Delay(80, ct);
+                    continue;
+                }
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p <= ctx.DecisionPercent && p > 0) break;
                 await Task.Delay(80, ct);
             }
         }
 
-        // Chờ sang phiên mới rồi đặt NGAY khi mở cửa (đặt sớm, KHÔNG phụ thuộc DecisionPercent)
+        // Với logic GIÂY còn lại: điều kiện cho phép đặt giống WaitUntilBetWindow.
         public static async Task WaitUntilNewRoundStart(GameContext ctx, CancellationToken ct)
         {
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
-                if (p >= ctx.DecisionPercent && p <= 20) break;
+                double p = s?.prog ?? double.NaN;
+                if (double.IsNaN(p) || double.IsInfinity(p))
+                {
+                    await Task.Delay(80, ct);
+                    continue;
+                }
+                if (p <= ctx.DecisionPercent && p > 0) break;
                 await Task.Delay(80, ct);
             }
         }
