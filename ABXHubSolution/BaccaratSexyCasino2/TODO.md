@@ -1,11 +1,18 @@
 # TODO
 
 ## Current Work
-- Keep pending settle stable for the first hand after shuffle / shoe reset.
-- Verify all network reset paths mark old pending rows into wait-for-final-winner state.
-- Verify ambiguous multi-match rows no longer become `RESET-DUP/B o qua`.
+- Fix round-basis mismatch between C# and JS bet queue after shuffle.
+- Prevent `BETQ reason=stale` false drops when C# round resets to `1..n` but JS local read round is still old shoe length.
+- Stop creating pending/finalized history rows for bets that JS dropped before click execution.
 
 ## High Priority
+- Rework JS stale-check policy in `processBetQueue(...)`:
+  - keep stale protection for truly old jobs,
+  - bypass stale-drop during shuffle/bootstrap transitional events.
+- Align round basis used by C# `roundId` and JS `currentRound`:
+  - choose one source of truth for bet execution round.
+- Add C# correlation for JS `bet_dropped`:
+  - suppress/void pending row when dropped before real execution.
 - Retest these reset paths:
   - `roadinfo-shoe-change`
   - `roadinfo-same-shoe-reset`
@@ -15,6 +22,9 @@
 - Find why rare cases can still produce more than one pending row passing the same settle gate.
 
 ## Need To Finish
+- Confirm no sequence of:
+  - `[BET-SEND][OK]` then `[BETQ][DROP] reason=stale`
+  - followed by `[BET][HIST][FINAL]` for the dropped id.
 - Confirm `AwaitingFinalWinnerAfterShoeReset` is set on every real reset path.
 - Confirm `SettleTargetTableId/Shoe/Round` is set correctly on every kept row.
 - Confirm first winner after reset:
@@ -37,6 +47,7 @@
   - pending settles correctly.
 - First hand after same-shoe shuffle reset:
   - sequence appends correctly,
+  - bet is executed (not dropped stale),
   - pending settles correctly.
 - Late first winner after reset:
   - waiting row retargets to real round,

@@ -421,6 +421,7 @@ namespace XocDiaSoiVIP389
 
 
         private int _playStartInProgress = 0;// Ngăn PlayXocDia_Click chạy song song
+        private string _lastBridgeReadyDiag = "n/a";
 
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
         private readonly SemaphoreSlim _statsWriteGate = new(1, 1);
@@ -5178,12 +5179,12 @@ Ví dụ không hợp lệ:
                 var ready = await WaitForBridgeAndGameDataAsync(15000);
                 if (!ready)
                 {
-                    Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm.");
+                    Log("[DEC] Dữ liệu chưa sẵn sàng (bridge/cocos/tick). Thử gia hạn push & chờ thêm. " + _lastBridgeReadyDiag);
                     await Web.ExecuteScriptAsync("window.__cw_startPush && window.__cw_startPush(160);");
                     ready = await WaitForBridgeAndGameDataAsync(15000);
                     if (!ready)
                     {
-                        Log("[DEC] Vẫn chưa có dữ liệu, tạm hoãn khởi động chiến lược.");
+                        Log("[DEC] Vẫn chưa có dữ liệu, tạm hoãn khởi động chiến lược. " + _lastBridgeReadyDiag);
                         return;
                     }
                 }
@@ -6507,6 +6508,7 @@ Ví dụ không hợp lệ:
 
         private async Task<bool> WaitForBridgeAndGameDataAsync(int timeoutMs = 20000)
         {
+            _lastBridgeReadyDiag = "pending";
             var t0 = DateTime.UtcNow;
             while ((DateTime.UtcNow - t0).TotalMilliseconds < timeoutMs)
             {
@@ -6523,18 +6525,33 @@ Ví dụ không hợp lệ:
 
                     // 3) Đã có tick chưa (ít nhất 1 ký tự seq)
                     bool hasTick = false;
+                    int seqLen = 0;
                     lock (_snapLock)
                     {
-                        hasTick = _lastSnap?.seq != null && _lastSnap.seq.Length > 0;
+                        seqLen = _lastSnap?.seq?.Length ?? 0;
+                        hasTick = seqLen > 0;
                     }
 
-                    if (hasBet && hasCocos && hasTick)
+                    var tickAgeMs = _lastGameTickUtc == DateTime.MinValue
+                        ? -1
+                        : (int)Math.Max(0, (DateTime.UtcNow - _lastGameTickUtc).TotalMilliseconds);
+                    var betType = string.IsNullOrWhiteSpace(typeBet) ? "-" : typeBet;
+                    var cocosRaw = (cocosJson ?? "").Trim('"');
+                    if (cocosRaw.Length > 32) cocosRaw = cocosRaw.Substring(0, 32);
+                    _lastBridgeReadyDiag =
+                        $"hasBet={(hasBet ? 1 : 0)} hasCocos={(hasCocos ? 1 : 0)} hasTick={(hasTick ? 1 : 0)} typeBet={betType} cocosRaw={cocosRaw} seqLen={seqLen} tickAgeMs={(tickAgeMs >= 0 ? tickAgeMs.ToString() : "-")}";
+
+                    if (hasBet && hasTick)
                         return true;
                 }
-                catch { /* tiếp tục đợi */ }
+                catch (Exception ex)
+                {
+                    _lastBridgeReadyDiag = $"probe-ex={ex.GetType().Name}:{ex.Message}";
+                }
 
                 await Task.Delay(300);
             }
+            _lastBridgeReadyDiag = "timeout | " + _lastBridgeReadyDiag;
             return false;
         }
 

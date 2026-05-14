@@ -5324,8 +5324,10 @@ try{
                     var side2 = GetJsonStringLoose(root, "side") ?? "";
                     var amount2 = GetJsonLongLoose(root, "amount");
                     var round2 = GetJsonLongLoose(root, "roundId");
+                    var tabId2 = GetJsonStringLoose(root, "tabId") ?? "";
                     var queueLen = GetJsonLongLoose(root, "queueLen");
                     Log($"[BETQ][DROP] jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} reason={reason} side={side2} amount={(amount2.HasValue ? amount2.Value.ToString() : "-")} round={(round2.HasValue ? round2.Value.ToString() : "-")} queueLen={(queueLen.HasValue ? queueLen.Value.ToString() : "-")}");
+                    TryDropPendingRowForJsDrop(side2, amount2, round2, tabId2, reason, jobId);
                     return;
                 }
 
@@ -16114,6 +16116,25 @@ try{
             if (!hasSnapData)
                 return (false, "snap-empty");
 
+            var statusRaw = snap?.status ?? "";
+            if (IsChangingShoeStatus(statusRaw))
+                return (false, "status-blocked-changing-shoe");
+
+            var seqEventRaw = snap?.seqEvent ?? "";
+            var seqSourceRaw = snap?.seqSource ?? "";
+            if (IsWaitingBoardBootstrapSeqEvent(seqEventRaw) ||
+                IsWaitingBoardBootstrapSeqEvent(seqSourceRaw))
+            {
+                return (false, "seq-not-ready-bootstrap-wait");
+            }
+
+            if (snap?.prog.HasValue == true)
+            {
+                var p = snap.prog.Value;
+                if (!double.IsNaN(p) && !double.IsInfinity(p) && p > 0 && p < 3)
+                    return (false, $"prog-too-low p={p:0.###} (<3)");
+            }
+
             return (true, "ok");
         }
 
@@ -19561,6 +19582,46 @@ try{
         {
             var age = DateTime.Now - row.At;
             return Math.Max(0, age.TotalSeconds);
+        }
+
+        private void TryDropPendingRowForJsDrop(string sideRaw, long? amount, long? roundId, string tabId, string reason, long? jobId)
+        {
+            if (_pendingRows.Count == 0)
+                return;
+
+            var side = (sideRaw ?? "").Trim().ToUpperInvariant();
+            var now = DateTime.Now;
+
+            var candidates = _pendingRows
+                .Where(r => (now - r.At).TotalMinutes <= 10)
+                .Where(r => string.IsNullOrWhiteSpace(side) || string.Equals(r.Side, side, StringComparison.OrdinalIgnoreCase))
+                .Where(r => !amount.HasValue || amount.Value <= 0 || r.Stake == amount.Value)
+                .Where(r => !roundId.HasValue || roundId.Value <= 0 || r.IssuedRoundId == roundId.Value)
+                .OrderByDescending(r => r.At)
+                .ToList();
+
+            if (candidates.Count == 0)
+            {
+                Log($"[BET][HIST][DROP-MISS] reason=js-bet-dropped-no-match | jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} | tab={(string.IsNullOrWhiteSpace(tabId) ? "-" : tabId)} | side={(string.IsNullOrWhiteSpace(side) ? "-" : side)} | amount={(amount.HasValue ? amount.Value.ToString("N0", CultureInfo.InvariantCulture) : "-")} | round={(roundId.HasValue ? roundId.Value.ToString() : "-")} | dropReason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | pending={_pendingRows.Count}");
+                return;
+            }
+
+            var row = candidates[0];
+            var balance = ResolveHistoryBalance();
+            row.Result = "DROP-JS";
+            row.WinLose = "Bỏ qua";
+            row.Account = balance;
+            row.AwaitingFinalWinnerAfterShoeReset = false;
+            _pendingRows.Remove(row);
+
+            Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | reason=js-bet-dropped:{(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} | tab={(string.IsNullOrWhiteSpace(tabId) ? "-" : tabId)}");
+
+            if (_autoFollowNewest)
+                ShowFirstPage();
+            else
+                RefreshCurrentPage();
+
+            Log($"[BET][HIST][UI-REFRESH] reason=js-bet-dropped | dropped=1 | pending={_pendingRows.Count} | all={_betAll.Count} | autoFollow={(_autoFollowNewest ? 1 : 0)} | page={_pageIndex + 1}");
         }
 
         private static bool IsAwaitingFinalWinnerCandidate(BetRow row, out double ageSec)

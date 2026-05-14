@@ -28,6 +28,20 @@
    - then append from CDP/network `roadInfo.winCounts`.
 8. Task runtime gets `GameContext`, waits for bet window, sends bet via JS, records pending, waits for settle.
 
+## Latest Updates (2026-05-14)
+- Bet gate in C# now blocks send when phase is not playable:
+  - blocked status contains `Vui lòng đợi`, `xáo bài`, `changing shoe`,
+  - blocked sequence event contains `shoe-reset-arm-no-board`, `waiting-board-bootstrap`, `short-board-bootstrap-wait`, `table-switch-wait-bead`.
+- Bet gate now also requires `prog >= 5` before sending.
+- Added richer JS/C# bet diagnostics:
+  - `[BETQ][RUN]` includes `curRead/curPub/curDom` round diagnostics,
+  - `[BETQ][DROP]` includes `reason=stale` with `staleGap`,
+  - `[BETQ][DONE]` includes `rawErr/rawOkField`.
+- Confirmed open runtime issue after shuffle:
+  - C# sends `roundId` from network sequence (`seqVersion`),
+  - JS stale-check compares against local `readLen`,
+  - round mismatch can drop bet as stale.
+
 ## Coding Rules
 - Do not let JS local/fallback become authority when C# already has authority.
 - Do not use network/text fallback as pool authority for Canvas.
@@ -52,6 +66,7 @@
   - sequence authority must not jump to lobby,
   - valid pending rows must not be lost,
   - DOM fallback must not use wrong table.
+- Bet send and bet execution must use the same round basis. If round bases differ (network vs local DOM managed sequence), stale-drop can occur.
 
 ## WebSocket / Network Flow
 - JS captures WebSocket/XHR hints and sends `abx: net_probe`.

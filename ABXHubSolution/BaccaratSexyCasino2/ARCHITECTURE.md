@@ -95,3 +95,19 @@
   - update result/winlose/account,
   - persist CSV,
   - refresh history UI.
+
+## Bet Pipeline Notes (2026-05-14)
+- C# send path:
+  - `TaskUtil.PlaceBet(...)` builds `roundId` from snapshot `seqVersion` (fallback `seq.Length`),
+  - sends to JS via `window.__cw_bet_enqueue(intent)`.
+- JS queue path:
+  - `normalizeIntent(...)` keeps incoming `roundId`,
+  - `processBetQueue(...)` computes `currentRound` from `collectBetRoundDiag().readLen`,
+  - stale filter currently drops when `job.roundId < currentRound`.
+- Known mismatch pattern after shuffle:
+  - C# can reset to network round `1..n`,
+  - JS local managed sequence can still be `24..n`,
+  - stale filter drops (`reason=stale`) even when C# phase gate allowed send.
+- Diagnostics:
+  - C#: `[BET-SEND][CTX]`, `[BET-SEND][BEGIN]`, `[BET-SEND][OK]`, `[BETQ][DROP]`
+  - JS: `cwDbg('BETQ','drop-stale', ...)`, `bet_dropped`, `bet_exec_done`.
