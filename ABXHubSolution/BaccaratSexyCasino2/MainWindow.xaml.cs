@@ -16131,7 +16131,9 @@ try{
             if (snap?.prog.HasValue == true)
             {
                 var p = snap.prog.Value;
-                if (!double.IsNaN(p) && !double.IsInfinity(p) && p > 0 && p < 3)
+                if (double.IsNaN(p) || double.IsInfinity(p))
+                    return (false, "prog-invalid");
+                if (p < 3)
                     return (false, $"prog-too-low p={p:0.###} (<3)");
             }
 

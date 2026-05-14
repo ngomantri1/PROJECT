@@ -14959,20 +14959,6 @@
                         execHref: execCtx.href || "",
                         ts: Date.now()
                     });
-                    if (job.roundId && currentRound && job.roundId < currentRound) {
-                        safePost({
-                            abx: "bet_dropped",
-                            reason: "stale",
-                            jobId: job.jobId || 0,
-                            tabId: job.tabId,
-                            roundId: job.roundId,
-                            side: job.side,
-                            amount: job.amt,
-                            queueLen: BET_QUEUE.length,
-                            ts: Date.now()
-                        });
-                        continue;
-                    }
                     if (typeof cwBet !== "function") throw new Error("cwBet not found");
 
                     var before = readTotalsSafe() || {};

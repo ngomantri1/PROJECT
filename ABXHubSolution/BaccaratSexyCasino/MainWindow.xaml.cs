@@ -14390,6 +14390,27 @@ try{
             if (!hasSnapData)
                 return (false, "snap-empty");
 
+            var statusRaw = snap?.status ?? "";
+            if (IsChangingShoeStatus(statusRaw))
+                return (false, "status-blocked-changing-shoe");
+
+            var seqEventRaw = snap?.seqEvent ?? "";
+            var seqSourceRaw = snap?.seqSource ?? "";
+            if (IsWaitingBoardBootstrapSeqEvent(seqEventRaw) ||
+                IsWaitingBoardBootstrapSeqEvent(seqSourceRaw))
+            {
+                return (false, "seq-not-ready-bootstrap-wait");
+            }
+
+            if (snap?.prog.HasValue == true)
+            {
+                var p = snap.prog.Value;
+                if (double.IsNaN(p) || double.IsInfinity(p))
+                    return (false, "prog-invalid");
+                if (p < 3)
+                    return (false, $"prog-too-low p={p:0.###} (<3)");
+            }
+
             return (true, "ok");
         }
 
