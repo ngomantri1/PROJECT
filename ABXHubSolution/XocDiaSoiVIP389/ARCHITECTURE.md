@@ -3,82 +3,68 @@
 ## Cấu trúc project
 ```text
 XocDiaSoiVIP389/
-  App.xaml, App.xaml.cs
   MainWindow.xaml, MainWindow.xaml.cs
   MainWindow.Startup.cs
   MainWindow.EmbedMode.cs
   Models.cs
   WebView2LiveBridge.cs
-  XocDiaSoiVIP389Plugin.cs
-  PluginProbe.cs
-  Tasks/
-    IBetTask.cs
-    GameContext.cs
-    TaskUtil.cs
-    MoneyManager.cs
-    MoneyHelper.cs
-    ... 35 strategy tasks (CL + TX + AI + Jackpot)
-  Compat/PackRes.cs
-  Assets/
-  Views/PluginStubView.xaml(.cs)
+  Tasks/*
+  Assets/Seq/*.png
   v4_js_xoc_dia_live.js
-  ThirdParty/WebView2Fixed_win-x64.zip
+  PROJECT_CONTEXT.md, ARCHITECTURE.md, TODO.md, BUGS.md
 ```
 
 ## Module chính
 - `MainWindow`:
-- Orchestrator trung tâm: config, UI, WebView2 lifecycle, bridge, start/stop task, license/lease, history.
-- `Tasks/*`:
-- Engine chiến lược cược; mỗi task implement `IBetTask.RunAsync(GameContext, CancellationToken)`.
-- `TaskUtil` + `MoneyManager` + `MoneyHelper`:
-- Primitive dùng chung cho timing vào cược, place bet, chấm thắng/thua, quản lý vốn.
+- Orchestrator runtime: WebView2, bridge, UI, strategy tab, license, history.
 - `v4_js_xoc_dia_live.js`:
-- Scanner scene/canvas + push tick + bet queue + trace.
-- `XocDiaSoiVIP389Plugin`:
-- Adapter để chạy trong AutoBetHub.
+- Scanner + tick push + bet queue, hiện có nhánh `cc` và `no-cc`.
+- `Tasks/*`:
+- Chiến lược cược theo index.
+- `Assets/Seq/*`:
+- Icon hiển thị chuỗi kết quả.
 
 ## Dependency giữa các module
-- `MainWindow` -> `Tasks/*` qua `IBetTask` và `GameContext`.
-- `Tasks/*` -> `TaskUtil`, `MoneyManager`, `MoneyHelper`.
-- `MainWindow` <-> JS bridge (`v4_js_xoc_dia_live.js`) qua `WebView2.ExecuteScriptAsync` và `WebMessageReceived`.
-- Plugin mode: `XocDiaSoiVIP389Plugin` -> `MainWindow.RunStartupAsync(host)`.
-- Resource fallback: `PackRes`/`FallbackIcons` -> `Assets/*`.
+- `MainWindow` <-> JS bridge qua `ExecuteScriptAsync` + `WebMessageReceived`.
+- `MainWindow` -> `Tasks/*` qua `GameContext`/`IBetTask`.
+- `Tasks/*` -> snapshot từ `_lastSnap` (nguồn gốc JS tick).
+- UI chuỗi kết quả phụ thuộc `snap.seq` + `Assets/Seq/*.png`.
 
-## File nào phụ trách gì
-- `MainWindow.xaml.cs`: nghiệp vụ runtime gần như toàn bộ.
-- `MainWindow.Startup.cs`: startup sequence dùng chung standalone + hub.
-- `MainWindow.EmbedMode.cs`: tạo content để nhúng.
-- `Models.cs`: model snapshot/totals/decision state.
-- `Tasks/*Task.cs`: logic chọn cửa theo từng chiến lược.
-- `TaskUtil.cs`: wait window, place bet, judge round, apply money.
-- `v4_js_xoc_dia_live.js`: thu thập dữ liệu game + thực thi click cược.
-- `WebView2LiveBridge.cs`: bridge wrapper cũ/nhẹ (hiện logic bridge chính vẫn nằm trong `MainWindow`).
-- `XocDiaSoiVIP389.csproj`: build mode, resource embed, plugin copy step.
+## File phụ trách chính
+- `MainWindow.xaml.cs`: nhận `abx:*`, cập nhật UI, điều phối strategy.
+- `v4_js_xoc_dia_live.js`: đọc prog/totals/seq/status, push tick.
+- `Models.cs`: `CwSnapshot`, `CwTotals`.
+- `MainWindow.xaml`: template panel, `SeqIcons` ItemsControl, trạng thái/progress.
 
 ## Data flow
-- Input config:
-- `%LOCALAPPDATA%\XocDiaSoiVIP389\config.json` + `stats.json` + AI state files.
-- Runtime state:
-- JS tạo snapshot -> C# deserialize `CwSnapshot` -> lưu `_lastSnap` (lock) -> cập nhật UI và feed tasks.
-- Bet history:
-- Khi bet issue: add pending row `_pendingRows` + `_betAll`.
-- Khi có kết quả: finalize pending -> ghi `logs/bets-yyyyMMdd.csv`.
+- JS đọc game -> tạo `snap` -> `abx:tick`.
+- C# deserialize `CwSnapshot` -> lưu `_lastSnap` -> update UI -> task dùng.
+- Bet history: issue pending -> finalize khi có kết quả mới từ `seq`.
 
-## WebSocket packet flow
-- Mặc định: không parse packet WS thật ở C#.
-- Nguồn dữ liệu chính là JS tick (`abx:tick`) đã tổng hợp từ scene/canvas.
-- Optional debug:
-- C# bật CDP `Network.webSocket*` events khi `TXLS_CDP_TAP=1`.
-- URL WS map theo `requestId` và có sanitize preview trước log.
+## Websocket packet flow
+- Không dùng WS trực tiếp cho flow chính.
+- Optional CDP tap chỉ để điều tra packet.
+- Luồng chính luôn ưu tiên tick tổng hợp từ JS.
+
+## Websocket packet flow (bridge message)
+- JS post `abx:tick`, `abx:bet`, `abx:bet_error`, `abx:bet_trace`, `cw_page_probe`, `cw_js_error`.
+- C# router theo `abx` và cập nhật phần tương ứng.
 
 ## UI update flow
-- `WebMessageReceived` nhận `abx:*` -> parse -> `Dispatcher.BeginInvoke` cập nhật controls:
-- progress bar/time, trạng thái phiên, chuỗi kết quả, side/stake/winloss, số dư.
-- Strategy tab runtime state (`StrategyTabState`) là source of truth cho mini panel và stats.
-- Khi đổi tab: apply config + runtime state của tab đó vào UI.
+- Tick -> `Dispatcher.BeginInvoke` -> cập nhật:
+- Prog/time bar.
+- Status text + màu (`Đang cược` xanh, `Chờ kết quả` đỏ).
+- Tên nhân vật/tài khoản.
+- Chuỗi kết quả `SeqIcons`.
+- `home_tick` chỉ ghi đè khi dữ liệu không rỗng.
 
-## OCR/canvas flow (nếu có)
-- Không dùng thư viện OCR ngoài.
-- JS đọc trực tiếp Cocos scene/canvas text map (`buildTextRects`, `sampleTotalsNow`, `readTKSeq`).
-- Dùng `tail path + x/y` để nhận diện label/tổng tiền/kết quả.
-- Có `cw_page_probe` để xác nhận đúng frame/page game trước khi boot scanner.
+## OCR/canvas/DOM flow mới nhất
+- `TextMap` no-cc: `buildTextRectsDom()` đọc text node từ DOM.
+- Countdown no-cc:
+- Ưu tiên tail `countdown-box/countdown-time`.
+- Fallback selector count/timer/clock.
+- Seq no-cc:
+- `readTKSeqDomRoad()` lọc `cardroadtable-list1 span.cl_num`.
+- Ghép chuỗi theo cột trái->phải, mỗi cột trên->dưới, chỉ digit `0..4`.
+- Status:
+- Tính cứng theo prog, không fallback label cũ.

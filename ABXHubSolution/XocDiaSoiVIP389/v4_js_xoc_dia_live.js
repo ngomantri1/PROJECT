@@ -2024,9 +2024,110 @@
         return c;
     }
 
+    function readTKSeqDomRoad() {
+        try {
+            var texts = buildTextRectsDom();
+            if (!texts || !texts.length)
+                return {
+                    seq: '',
+                    which: 'dom_cardroad_empty',
+                    cols: [],
+                    cells: [],
+                    groups: [],
+                    seqGrouped: ''
+                };
+
+            var cells = [];
+            for (var i = 0; i < texts.length; i++) {
+                var t = texts[i] || {};
+                var s = String(t.text == null ? '' : t.text).trim();
+                if (!/^[0-4]$/.test(s))
+                    continue;
+                var tail = String(t.tail || '');
+                var tl = tail.toLowerCase();
+                if (tl.indexOf('cardroadtable-list1') === -1)
+                    continue;
+                if (tl.indexOf('span.cl_num') === -1)
+                    continue;
+                var cx = (Number(t.x) || 0) + (Number(t.w) || 0) / 2;
+                var cy = (Number(t.y) || 0) + (Number(t.h) || 0) / 2;
+                cells.push({
+                    v: s,
+                    x: cx,
+                    y: cy,
+                    w: Number(t.w) || 0,
+                    h: Number(t.h) || 0,
+                    sx: Number(t.sx) || Number(t.x) || 0,
+                    sy: Number(t.sy) || Number(t.y) || 0,
+                    sw: Number(t.sw) || Number(t.w) || 0,
+                    sh: Number(t.sh) || Number(t.h) || 0,
+                    tail: tail,
+                    fullTail: tail
+                });
+            }
+
+            if (!cells.length)
+                return {
+                    seq: '',
+                    which: 'dom_cardroad_no_digits',
+                    cols: [],
+                    cells: [],
+                    groups: [],
+                    seqGrouped: ''
+                };
+
+            var colsRaw = clusterByX(cells);
+            var cols = [];
+            var groups = [];
+            var seq = '';
+            for (var ci = 0; ci < colsRaw.length; ci++) {
+                var col = colsRaw[ci];
+                var items = (col.items || []).slice().sort(function (a, b) {
+                    return a.y - b.y; // DOM screen space: top -> bottom
+                });
+                if (!items.length)
+                    continue;
+                var g = '';
+                for (var ri = 0; ri < items.length; ri++) {
+                    var it = items[ri];
+                    g += String(it.v || '');
+                    it.col = ci;
+                    it.row = ri;
+                }
+                if (g) {
+                    groups.push(g);
+                    seq += g;
+                }
+                cols.push({
+                    cx: col.cx,
+                    items: items
+                });
+            }
+
+            seq = limitSeq52(seq);
+            return {
+                seq: seq,
+                which: 'dom_cardroad_list1',
+                cols: cols,
+                cells: cells,
+                groups: groups,
+                seqGrouped: groups.join(' ')
+            };
+        } catch (_) {
+            return {
+                seq: '',
+                which: 'dom_cardroad_err',
+                cols: [],
+                cells: [],
+                groups: [],
+                seqGrouped: ''
+            };
+        }
+    }
+
     function readTKSeq() {
         if (!__cw_hasCcScene())
-            return { seq: '', which: 'no_cc', cols: [], cells: [], groups: [], seqGrouped: '' };
+            return readTKSeqDomRoad();
         try {
             return readTKSeqLastResult();
         } catch (_) {
