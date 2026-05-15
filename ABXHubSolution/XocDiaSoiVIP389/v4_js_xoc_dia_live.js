@@ -2139,13 +2139,13 @@
 
         /* ---------------- helpers for totals by (y, tail) ---------------- */
 
-        var TAIL_BET_CHAN = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_chan';
+        var TAIL_BET_CHAN = 'html/body.game_sedie.landscape/div#root/div#container.container.type7.closegr.on.noReturnUrl.tableStyle2.grouptype0.game108.group1.orgParentID49565.road2list/div.table_box/div#lightEven.table_item.mouse_pointer.bet_1.on/div.people_money_box/div.totalbet_money.df/span#moneyBoxEven.df/#text';
 
-        var TAIL_BET_LE = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_le';
+        var TAIL_BET_LE = 'html/body.game_sedie.landscape/div#root/div#container.container.type7.closegr.on.noReturnUrl.tableStyle2.grouptype0.game108.group1.orgParentID49565.road2list/div.table_box/div#lightOdd.table_item.mouse_pointer.bet_6.on/div.people_money_box/div.totalbet_money.df/span#moneyBoxOdd.df/#text';
 
-        var TAIL_BET_TAI = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_tai';
+        var TAIL_BET_TAI = 'html/body.game_sedie.landscape/div#root/div#container.container.type7.closegr.on.noReturnUrl.tableStyle2.grouptype0.game108.group1.orgParentID49565.road2list/div.table_box/div#lightBig.table_item.mouse_pointer.bet_7.on/div.people_money_box/div.totalbet_money.df/span#moneyBoxBig.df/#text';
 
-        var TAIL_BET_XIU = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_xiu';
+        var TAIL_BET_XIU = 'html/body.game_sedie.landscape/div#root/div#container.container.type7.closegr.on.noReturnUrl.tableStyle2.grouptype0.game108.group1.orgParentID49565.road2list/div.table_box/div#lightSmall.table_item.mouse_pointer.bet_8.on/div.people_money_box/div.totalbet_money.df/span#moneyBoxSmall.df/#text';
 
         var TAIL_ACC = 'html/body.game_sedie.landscape/div#root/div#container.container.type7.closegr.on.noReturnUrl.tableStyle2.grouptype0.game108.group1.orgParentID49565.road2list/header.header/div.id_gold_box/div.id_gold_item.gold_box/span#userBalanceBox/#text';
 

@@ -1,18 +1,28 @@
 # TODO
 
+## Done Today (2026-05-15)
+- Added strategy `18) Bám cầu trước nâng cao` as `SmartPrevAdvancedTask`.
+- Added strategy 18 option to UI combo list.
+- Added runtime map `BetStrategyIndex == 17` -> strategy 18.
+- Synced tooltip text for strategy index 17/18.
+
 ## Current Work
-- Fix round-basis mismatch between C# and JS bet queue after shuffle.
-- Prevent `BETQ reason=stale` false drops when C# round resets to `1..n` but JS local read round is still old shoe length.
-- Stop creating pending/finalized history rows for bets that JS dropped before click execution.
+- Validate post-fix behavior after removing JS stale-drop gate (`roundId < curRound`).
+- Enforce and monitor bet gate `prog >= 3` together with changing-shoe/bootstrap guards.
+- Investigate cases where UI still computes normally but JS does not place real chips.
+- Retest strategy 18 decision rule in live rounds:
+  - `seg3 == 1 && seg1 == 1` -> reverse
+  - `seg3 == 1 && seg1 > 1` -> follow
+  - `seg3 > 1` -> follow
 
 ## High Priority
-- Rework JS stale-check policy in `processBetQueue(...)`:
-  - keep stale protection for truly old jobs,
-  - bypass stale-drop during shuffle/bootstrap transitional events.
-- Align round basis used by C# `roundId` and JS `currentRound`:
-  - choose one source of truth for bet execution round.
-- Add C# correlation for JS `bet_dropped`:
-  - suppress/void pending row when dropped before real execution.
+- Add fail-safe for `bet_exec_done ok=0` or `deltaSide <= 0`:
+  - mark pending row as not-executed (or void),
+  - prevent virtual finalize from network winner on non-executed bets.
+- Add stronger correlation by `jobId` between:
+  - send/queue/run/done events,
+  - pending row lifecycle in C# history.
+- Keep stale-drop path disabled during current testing window.
 - Retest these reset paths:
   - `roadinfo-shoe-change`
   - `roadinfo-same-shoe-reset`
@@ -23,8 +33,11 @@
 
 ## Need To Finish
 - Confirm no sequence of:
-  - `[BET-SEND][OK]` then `[BETQ][DROP] reason=stale`
-  - followed by `[BET][HIST][FINAL]` for the dropped id.
+  - `[BETQ][DONE] ok=0`
+  - followed by `[BET][HIST][FINAL]` as if bet was really executed.
+- Confirm no sequence of:
+  - `[BET-SEND][OK]` and `[BETQ][ACK]`
+  - but `delta=0` repeatedly on the same side while history still finalizes.
 - Confirm `AwaitingFinalWinnerAfterShoeReset` is set on every real reset path.
 - Confirm `SettleTargetTableId/Shoe/Round` is set correctly on every kept row.
 - Confirm first winner after reset:
@@ -47,7 +60,7 @@
   - pending settles correctly.
 - First hand after same-shoe shuffle reset:
   - sequence appends correctly,
-  - bet is executed (not dropped stale),
+  - bet is executed (see `BETQ DONE ok=1` and `delta > 0`),
   - pending settles correctly.
 - Late first winner after reset:
   - waiting row retargets to real round,

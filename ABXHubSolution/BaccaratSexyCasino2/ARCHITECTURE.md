@@ -15,6 +15,7 @@
   - JS collector + canvas watch + DOM scan + net probe + click/bet executor.
 - `Tasks/*`
   - betting strategies, money management, shared runtime utilities.
+  - includes `SmartPrevTask` (strategy 5) and `SmartPrevAdvancedTask` (strategy 18).
 
 ## Main Modules
 - UI module: `MainWindow.xaml`
@@ -38,6 +39,19 @@
   - WebSocket/XHR probe,
   - Canvas Watch overlay,
   - JS-side bet enqueue/click logic.
+
+## Strategy Notes (2026-05-15)
+- Strategy 5 (`SmartPrevTask`):
+  - splits parity into `seg1/seg2/seg3` from right,
+  - uses `seg1 == seg3` vs `seg1 != seg3` to pick reverse/follow.
+- Strategy 18 (`SmartPrevAdvancedTask`):
+  - keeps the same task runtime pipeline as strategy 5,
+  - only decision rule differs:
+    - `seg3 == 1`: `seg1 == 1` -> reverse, `seg1 > 1` -> follow,
+    - `seg3 > 1`: always follow.
+- UI/runtime mapping:
+  - combo index `4` => strategy 5,
+  - combo index `17` => strategy 18.
 
 ## Data Flow
 1. JS builds snapshot / probe packet.
@@ -102,12 +116,15 @@
   - sends to JS via `window.__cw_bet_enqueue(intent)`.
 - JS queue path:
   - `normalizeIntent(...)` keeps incoming `roundId`,
-  - `processBetQueue(...)` computes `currentRound` from `collectBetRoundDiag().readLen`,
-  - stale filter currently drops when `job.roundId < currentRound`.
-- Known mismatch pattern after shuffle:
-  - C# can reset to network round `1..n`,
-  - JS local managed sequence can still be `24..n`,
-  - stale filter drops (`reason=stale`) even when C# phase gate allowed send.
+  - `processBetQueue(...)` computes `currentRound` from `getRoundIdSafe()`,
+  - stale filter `job.roundId < currentRound` has been removed.
+- C# bet gate now blocks send when:
+  - status is changing-shoe (`status-blocked-changing-shoe`),
+  - sequence is bootstrap-wait (`seq-not-ready-bootstrap-wait`),
+  - `prog` is invalid/too low (`prog-too-low ... (<3)`).
+- Pending/history behavior remains optimistic:
+  - `PlaceBet(...)` can create pending row before JS click confirmation,
+  - `bet_exec_done ok=0` is currently diagnostic, not a hard rollback.
 - Diagnostics:
-  - C#: `[BET-SEND][CTX]`, `[BET-SEND][BEGIN]`, `[BET-SEND][OK]`, `[BETQ][DROP]`
-  - JS: `cwDbg('BETQ','drop-stale', ...)`, `bet_dropped`, `bet_exec_done`.
+  - C#: `[BET-SEND][CTX]`, `[BET-SEND][BEGIN]`, `[BET-SEND][OK]`, `[BETQ][ENQ]`, `[BETQ][RUN]`, `[BETQ][DONE]`, `[BETQ][DROP]`
+  - JS: `bet_queued`, `bet_exec_begin`, `bet_exec_done`, `bet`.

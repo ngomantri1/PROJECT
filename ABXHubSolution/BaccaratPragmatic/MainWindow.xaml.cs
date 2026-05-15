@@ -13,8 +13,8 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using BaccaratSexyCasino2;
-using BaccaratSexyCasino2.Tasks;
+using BaccaratPragmatic;
+using BaccaratPragmatic.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Globalization;
@@ -31,7 +31,7 @@ using System.Linq;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Windows.Data;
-using static BaccaratSexyCasino2.MainWindow;
+using static BaccaratPragmatic.MainWindow;
 using System.Windows.Input;
 using Microsoft.Win32;
 using System.Net.NetworkInformation;
@@ -39,7 +39,7 @@ using System.Net.NetworkInformation;
 
 
 
-namespace BaccaratSexyCasino2
+namespace BaccaratPragmatic
 {
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
@@ -327,7 +327,7 @@ namespace BaccaratSexyCasino2
         private const double TabStripRightInset = 16;
 
 
-        private const string AppLocalDirName = "BaccaratSexyCasino2"; // đổi thành tên bạn muốn
+        private const string AppLocalDirName = "BaccaratPragmatic"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -356,8 +356,6 @@ namespace BaccaratSexyCasino2
         private readonly ConcurrentDictionary<string, string> _wsUrlByRequestId = new();
         private readonly ConcurrentDictionary<string, CdpHttpResponseCandidate> _httpResponseByRequestKey = new();
         private readonly ConcurrentDictionary<string, string> _pktLastPreviewByKey = new();
-        private readonly ConcurrentDictionary<string, int> _cdpProbeFrameCounts = new();
-        private readonly ConcurrentDictionary<string, string> _gameInfoDiagRoundBySourceTable = new();
         private readonly ConcurrentDictionary<string, byte> _recordedValidBetKeys = new();
         private readonly ConcurrentDictionary<string, byte> _bridgeProbeSeen = new();
         private long _cdpTapGenerationSeed = 0;
@@ -388,21 +386,12 @@ namespace BaccaratSexyCasino2
         private IBetTask _activeTask;
         private const int NiSeqMax = 50;
         private const int SeqWindowMax = 0; // 0 = no display cap; CDP history can contain the full shoe.
-        // Chuỗi nghiệp vụ: DOM authority rawSeq seed ban đầu; sau đó CDP roadInfo.winCounts append.
-        // markerRoads chỉ dùng để xác định ván mới đầu tiên khi chưa có baseline winCounts.
+        // Chuỗi nghiệp vụ: DOM authority rawSeq seed ban đầu; sau đó CDP GP_WINNER append.
+        // markerRoads là dữ liệu vẽ road map, không dùng làm nguồn authoritative.
         private static readonly bool UseDomBootstrapCdpAppendSeq = true;
-        // Policy: bootstrap/rebase from the DOM board, then append new rounds from CDP/WS only.
-        // DOM ahead after bootstrap is diagnostic only; it must not settle sequence/history.
-        private static readonly bool EnableDomRecoveryAfterMissingNetworkWinner = false;
-        private const int DomRecoveryMinStableTicks = 2;
-        private const int DomRecoveryMinAgeMs = 2500;
-        private const int DomRecoveryRecentWinnerBlockSeconds = 8;
         private static readonly bool UseMarkerRoadHistoryBootstrap = false;
-        private static readonly string[] StatusAuthorityTails =
-        {
-            "body/div#themeZone.game.scenes_default/div.game_main/div.main_center/div#processBar.info_status/p#processStatus",
-            "body/div#themeZone.game.baccarat_normal/div.game_main/div.main_center/div#processBar.info_status/p#processStatus"
-        };
+        // Emergency switch: disable all HTTP/CDP taps to reduce runtime pressure.
+        private static readonly bool DisableHttpAndCdpTaps = true;
         private readonly System.Text.StringBuilder _niSeq = new(NiSeqMax);
         private readonly object _roundStateLock = new();
 
@@ -444,20 +433,8 @@ namespace BaccaratSexyCasino2
         private readonly ConcurrentDictionary<long, HallRoundSnapshot> _hallRoundCache = new();
         private string _netLastWinnerKey = "";
         private DateTime _netLastWinnerAt = DateTime.MinValue;
-        private long _roadInfoCountsTableId = 0;
-        private long _roadInfoCountsGameShoe = 0;
-        private long _roadInfoCountsRound = 0;
-        private int _roadInfoCountsB = 0;
-        private int _roadInfoCountsP = 0;
-        private int _roadInfoCountsT = 0;
-        private DateTime _roadInfoCountsSeenUtc = DateTime.MinValue;
         private string _lastJsAppendFingerprint = "";
         private DateTime _lastJsAppendAppliedUtc = DateTime.MinValue;
-        private string _lastDomAppendFallbackKey = "";
-        private string _lastDomAppendFallbackDiagKey = "";
-        private int _lastDomAppendFallbackStableCount = 0;
-        private DateTime _lastDomAppendFallbackFirstSeenUtc = DateTime.MinValue;
-        private DateTime _lastDomAppendFallbackLogUtc = DateTime.MinValue;
         private DateTime _lastHistAlertUtc = DateTime.MinValue;
         private int _lastSeqRxLen = -1;
         private long _lastSeqRxVer = -1;
@@ -480,7 +457,9 @@ namespace BaccaratSexyCasino2
         private string _lastNetworkBetPoolMergeKey = "";
         private DateTime _lastNetworkBetPoolMergeLogUtc = DateTime.MinValue;
         private string _lastCanvasAcceptedSeqKey = "";
+        private string _lastCanvasAcceptedSeqDisplay = "";
         private DateTime _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+        private long _lastWaitingBootstrapShownSwitchTicks = 0;
         private DateTime _lastCanvasDisplaySkipLogUtc = DateTime.MinValue;
         private string _lastCanvasPoolBlockKey = "";
         private DateTime _lastCanvasPoolBlockLogUtc = DateTime.MinValue;
@@ -489,14 +468,22 @@ namespace BaccaratSexyCasino2
         private string _lastCanvasPoolDecisionKey = "";
         private DateTime _lastCanvasPoolDecisionLogUtc = DateTime.MinValue;
         private CwTotals? _lastCanvasDisplayTotals;
+        private DateTime _lastCanvasDisplayFreshPoolUtc = DateTime.MinValue;
         private readonly ConcurrentDictionary<string, CanvasDisplayTargetState> _canvasDisplayTargetStates = new();
         private readonly ConcurrentDictionary<string, DateTime> _canvasDisplayDropLogUtc = new();
         private string _lastCanvasPrimaryTarget = "";
+        private DateTime _lastCanvasDisplayDispatchUtc = DateTime.MinValue;
         private DateTime _lastCanvasDisplayFullFanoutUtc = DateTime.MinValue;
+        private bool? _lastMouseLockApplied = null;
         private string _jsRawBootstrapStableKey = "";
         private int _jsRawBootstrapStableCount = 0;
         private DateTime _lastJsRawBootstrapLogUtc = DateTime.MinValue;
         private DateTime _lastSeqWaitingBootstrapLogUtc = DateTime.MinValue;
+        private string _lastAuthKeepJsDisplay = "";
+        private long _lastAuthKeepJsVersion = -1;
+        private string _lastAuthKeepJsEvent = "";
+        private string _lastAuthKeepJsSource = "";
+        private DateTime _lastAuthKeepJsLogUtc = DateTime.MinValue;
         private int _shoeChangeStatusStreak = 0;
         private bool _shoeChangeRebaseArmed = false;
         private DateTime _shoeChangeLastSeenUtc = DateTime.MinValue;
@@ -515,6 +502,7 @@ namespace BaccaratSexyCasino2
         private string _tableSwitchToHref = "";
         private bool _initialTableEnterArmed = false;
         private DateTime _initialTableEnterArmedAtUtc = DateTime.MinValue;
+        private DateTime _lastAuthorityTableSwitchAtUtc = DateTime.MinValue;
         private DateTime _suppressNonFrameEmptyDisplayUntilUtc = DateTime.MinValue;
         private string _suppressNonFrameEmptyDisplayReason = "";
 
@@ -568,6 +556,9 @@ namespace BaccaratSexyCasino2
         private DateTime _lastTickRouteLogUtc = DateTime.MinValue;
         private string _lastTickRejectKey = "";
         private DateTime _lastAuthFilterLogUtc = DateTime.MinValue;
+        private long _weakPullSwitchCandidateTableId = 0;
+        private DateTime _weakPullSwitchCandidateFirstSeenUtc = DateTime.MinValue;
+        private int _weakPullSwitchCandidateHits = 0;
 
         // === License/Trial run state ===
 
@@ -601,38 +592,9 @@ namespace BaccaratSexyCasino2
             public int WinnerCode { get; set; } = -1;
             public int BankerValue { get; set; } = -1;
             public int PlayerValue { get; set; } = -1;
-            public string BootstrapPrefixDisplay { get; set; } = "";
             public string EventType { get; set; } = "";
             public string OwnerTag { get; set; } = "";
             public string Url { get; set; } = "";
-        }
-
-        private sealed class NetworkRoadInfoCountsPacket
-        {
-            public long TableId { get; set; }
-            public long GameShoe { get; set; }
-            public long GameRound { get; set; }
-            public int BankerCount { get; set; }
-            public int PlayerCount { get; set; }
-            public int TieCount { get; set; }
-            public int LatestWinnerCode { get; set; } = -1;
-            public string OwnerTag { get; set; } = "";
-            public string Url { get; set; } = "";
-        }
-
-        private sealed class GameInfoDiagnosticPacket
-        {
-            public string MessageType { get; set; } = "";
-            public long Handler { get; set; } = -1;
-            public long TableId { get; set; }
-            public long GameShoe { get; set; }
-            public long GameRound { get; set; }
-            public string EventType { get; set; } = "";
-            public char? WinnerChar { get; set; }
-            public int WinnerCode { get; set; } = -1;
-            public int BankerValue { get; set; } = -1;
-            public int PlayerValue { get; set; } = -1;
-            public string Status { get; set; } = "";
         }
 
         private sealed class FrameAuthorityCandidate
@@ -741,20 +703,45 @@ namespace BaccaratSexyCasino2
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private DateTime _lastTickDiagLogUtc = DateTime.MinValue;
-        private DateTime _lastStatusGuardLogUtc = DateTime.MinValue;
         private DateTime _lastStatusApplyLogUtc = DateTime.MinValue;
-        private DateTime _lastSyntheticStatusSkipLogUtc = DateTime.MinValue;
         private DateTime _lastGameHintDiagLogUtc = DateTime.MinValue;
         private bool _isGameUi = false;              // trạng thái UI hiện hành
         private System.Windows.Threading.DispatcherTimer? _uiModeTimer;
+        private System.Windows.Threading.DispatcherTimer? _uiCountdownTimer;
+        private System.Threading.Timer? _uiCountdownTraceTimer;
         private int _gameNavWatchdogGen = 0;         // phân thế hệ cho watchdog navigation
         private bool _wv2Resetting = false;
         private DateTime _lastWv2ResetUtc = DateTime.MinValue;
         private string? _lastGameUrl = null;
+        private double? _uiCountdownAnchorSec = null;
+        private DateTime _uiCountdownAnchorUtc = DateTime.MinValue;
+        private DateTime _uiCountdownLastRawUtc = DateTime.MinValue;
+        private int? _uiCountdownLastDisplayWholeSec = null;
+        private int? _uiCountdownLastRawWholeSec = null;
+        private int? _uiCountdownTraceLastWholeSec = null;
+        private double _uiCountdownRate = 1d;
+        private string _uiCountdownFallbackLabel = "-";
+        private double _uiCountdownCycleMaxSec = 0d;
+        private double? _lastUiProgAcceptedRawSec = null;
+        private DateTime _lastUiProgAcceptedRawUtc = DateTime.MinValue;
+        private DateTime _uiCountdownZeroCandidateUtc = DateTime.MinValue;
+        private double? _lastAuthorityMsgProgSec = null;
+        private DateTime _lastAuthorityMsgProgUtc = DateTime.MinValue;
+        private DateTime _lastAuthorityMsgTickUtc = DateTime.MinValue;
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
         private static readonly TimeSpan UiCountdownHoldFresh = TimeSpan.FromMilliseconds(1500);
+        private static readonly TimeSpan UiCountdownMissingGrace = TimeSpan.FromSeconds(22d);
+        private const double UiCountdownAbsoluteMaxSec = 45d;
+        private static readonly bool UiCountdownShowProgressBar = false;
+        // Prog thường là số nguyên theo giây; tolerance cao để tránh bị "neo" đứng khi raw tick lặp lại cùng mốc.
+        private const double UiCountdownResetUpToleranceSec = 1.25d;
+        private const double UiCountdownForceZeroToleranceSec = 0.05d;
+        private static readonly TimeSpan CanvasDisplayPushMinInterval = TimeSpan.FromMilliseconds(260);
+        private static readonly TimeSpan WaitingBootstrapDisplayDelay = TimeSpan.FromMilliseconds(600);
+        private static readonly TimeSpan CanvasPoolCarryMaxAge = TimeSpan.FromMilliseconds(1200);
+        private static readonly TimeSpan AuthKeepJsLogHeartbeat = TimeSpan.FromSeconds(4);
         // Master switch: đặt false để bỏ qua kiểm tra Trial/License (không UI, không config, true kiểm tra bình thường)
         private bool CheckLicense = true;
 
@@ -887,28 +874,20 @@ Ví dụ không hợp lệ:
 • Ví dụ: 150000 (khi lỗ ≥ 150.000đ thì dừng).";
 
         const string TIP_DECISION_PERCENT_GENERAL =
-        @"ĐẶT KHI CÒN (GIÂY)
-• Chỉ nhập số tự nhiên, không để trống.
-• Giá trị tối thiểu là 3 giây.
-• Task chỉ được phép đặt cược khi thời gian còn lại ≤ giá trị này.
-• Ví dụ: 10 = chỉ đặt khi còn 10 giây trở xuống.";
+        @"ĐẶT KHI CÒN % THỜI GIAN
+• Nhập phần trăm (0–100). Hệ thống quy về 0.00–1.00 nội bộ.
+• Ý nghĩa: chỉ đặt cược khi thanh thời gian còn lại ≤ giá trị % này.
+• Ví dụ: 25 = đặt khi còn ~25% thời gian phiên.";
 
         const string TIP_DECISION_PERCENT_NI =
-        @"ĐẶT KHI CÒN (GIÂY) (khuyến nghị cho chiến lược Ít/Nhiều)
-• Chỉ nhập số tự nhiên, không để trống.
-• Giá trị tối thiểu là 3 giây.
-• Task chỉ được phép đặt cược khi thời gian còn lại ≤ giá trị này.
-• Nên để khoảng 8–15 giây để bám sát dòng tiền hai cửa.";
-
-        const string TIP_AUTO_RESET_STAKE_NONNEG =
-        @"TIỀN THẮNG >= 0 TỰ QUAY VỀ MỨC ĐẦU
-• Mặc định tắt, không thay đổi nghiệp vụ hiện tại.
-• Khi bật: sau mỗi ván, nếu Tiền thắng đang hiển thị >= 0 thì reset Tiền thắng về 0 và mức cược về mức 1.
-• Áp dụng cho cả chuỗi tiền thường và quản lý vốn đa tầng.";
+        @"ĐẶT KHI CÒN % THỜI GIAN (khuyến nghị cho chiến lược Ít/Nhiều)
+• Nhập phần trăm (0–100), KHÔNG phải giây.
+• Nên để khoảng 15% để bám sát dòng tiền hai cửa.
+• Ví dụ: 15 = đặt khi còn ~15% thời gian phiên.";
 
         const string TIP_SIDE_RATIO =
         @"CỬA ĐẶT & TỈ LỆ
-- Logic nhiều cửa đã bị loại bỏ khỏi BaccaratSexyCasino2.
+- Logic nhiều cửa đã bị loại bỏ khỏi BaccaratPragmatic.
 - Trường này chỉ còn để tương thích cấu hình cũ và hiện không dùng trong Baccarat.";
         // =========================================================
 
@@ -947,7 +926,6 @@ Ví dụ không hợp lệ:
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
             public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
             public bool S7ResetOnProfit { get; set; } = true;
-            public bool AutoResetStakeOnNonNegativeWin { get; set; } = false;
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
             public string BetSeqBP { get; set; } = "";        // cho Chiến lược 1
@@ -1058,14 +1036,12 @@ Ví dụ không hợp lệ:
             public List<long[]> RunStakeChains { get; set; } = new();
             public long[] RunStakeChainTotals { get; set; } = Array.Empty<long>();
             public double RunDecisionPercent { get; set; } = 0;
-            public bool RunAutoResetStakeOnNonNegativeWin { get; set; } = false;
-            public bool AutoResetStakeRequested { get; set; } = false;
             public long RunId { get; set; } = 0;
             public bool CutStopTriggered { get; set; } = false;
 
             public CancellationTokenSource? TaskCts { get; set; }
             public Task? RunningTask { get; set; }
-            public BaccaratSexyCasino2.Tasks.IBetTask? ActiveTask { get; set; }
+            public BaccaratPragmatic.Tasks.IBetTask? ActiveTask { get; set; }
             public DecisionState DecisionState { get; set; } = new DecisionState();
             public bool Cooldown { get; set; } = false;
             public TabStats Stats { get; set; } = new TabStats();
@@ -1095,11 +1071,7 @@ Ví dụ không hợp lệ:
             public long IssuedObservedRound { get; set; }
             public string IssuedSeqSource { get; set; } = "";
             public bool SawClosedAfterIssue { get; set; }
-            public bool AwaitingFinalWinnerAfterShoeReset { get; set; }
             public DateTime LastAwaitFinalWinnerKeepLogUtc { get; set; } = DateTime.MinValue;
-            public long SettleTargetTableId { get; set; }
-            public long SettleTargetShoe { get; set; }
-            public long SettleTargetRound { get; set; }
         }
 
         public static class SharedIcons
@@ -1129,8 +1101,11 @@ Ví dụ không hợp lệ:
         private const int UI_FLUSH_MS = 300;
         private const bool COMPACT_RUNTIME_LOG = true;
         // Perf defaults: giảm tải bridge/network tap trong runtime bình thường.
-        private const int CW_PUSH_MS_DEFAULT = 360;
-        private const int CW_PUSH_MS_DEBUG_DEFAULT = 240;
+        private const int CW_PUSH_MS_DEFAULT = 180;
+        private const int CW_PUSH_MS_DEBUG_DEFAULT = 180;
+        private const int POPUP_PULL_FALLBACK_MS = 180;
+        private const int POPUP_PULL_STALE_TRIGGER_MS = 2500;
+        private const int UI_MODE_POLL_MS = 500;
         private bool _enableCdpNetworkTap = false;
         private bool _enableCdpObservedContextTap = true;
         private bool _enableHttpResponseBodyTap = false;
@@ -1139,6 +1114,13 @@ Ví dụ không hợp lệ:
         private bool _enablePerfTimingLog = true;
         private int _cwPushMs = CW_PUSH_MS_DEFAULT;
         private DateTime _lastPerfRuntimeLogUtc = DateTime.MinValue;
+        private readonly Stopwatch _startupPerfSw = Stopwatch.StartNew();
+        private CancellationTokenSource? _startupUiPerfCts;
+        private long _startupUiPerfSamples = 0;
+        private long _startupUiPerfSlowSamples = 0;
+        private long _startupUiPerfTotalQueueMs = 0;
+        private long _startupUiPerfMaxQueueMs = 0;
+        private int _startupUiPerfSummaryLogged = 0;
 
         // File
         private readonly ConcurrentQueue<string> _fileLogQueue = new();
@@ -1146,6 +1128,9 @@ Ví dụ không hợp lệ:
         private readonly ConcurrentQueue<string> _jsFileLogQueue = new();
         private const long JS_FILE_MAX_BYTES = 20L * 1024L * 1024L; // 20MB
         private const int JS_FILE_KEEP_ROTATED = 5;
+        private const int FILE_LOG_MAX_CHARS = 1800;
+        private const int JS_FILE_LOG_MAX_CHARS = 1400;
+        private const int PACKET_PREVIEW_MAX_CHARS = 260;
 
         // Pump
         private CancellationTokenSource? _logPumpCts;
@@ -1174,7 +1159,7 @@ Ví dụ không hợp lệ:
         private string _lastPlayerFlowGameUrl = "";
         private DateTime _lastPlayerFlowGameAtUtc = DateTime.MinValue;
         private string _lastPlayerFlowSourceHost = "";
-        private const string Wv2ZipResNameX64 = "BaccaratSexyCasino2.ThirdParty.WebView2Fixed_win-x64.zip";
+        private const string Wv2ZipResNameX64 = "BaccaratPragmatic.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -1211,10 +1196,18 @@ Ví dụ không hợp lệ:
       }catch(_){}
       return !!__abxCwVisibleDefaultFallback;
     }
+    function __abxCwDefaultToken(defaultVisible){
+      try{
+        var rev = '';
+        try{ rev = String(window.__abx_canvas_watch_default_rev || ''); }catch(_){ rev = ''; }
+        return (defaultVisible ? '1' : '0') + '|' + rev;
+      }catch(_){}
+      return defaultVisible ? '1|' : '0|';
+    }
     function __abxCwReadStoredVisible(defaultVisible){
       try{
         if (!window.localStorage) return null;
-        var currentDefault = defaultVisible ? '1' : '0';
+        var currentDefault = __abxCwDefaultToken(defaultVisible);
         var storedDefault = window.localStorage.getItem(__abxCwVisibleDefaultKey);
         if (storedDefault !== currentDefault){
           window.localStorage.setItem(__abxCwVisibleDefaultKey, currentDefault);
@@ -1242,7 +1235,7 @@ Ví dụ không hợp lệ:
       try{ window.__abx_canvas_watch_visible = visible ? 1 : 0; }catch(_){}
       try{
         if (window.localStorage){
-          window.localStorage.setItem(__abxCwVisibleDefaultKey, __abxCwDefaultVisible() ? '1' : '0');
+          window.localStorage.setItem(__abxCwVisibleDefaultKey, __abxCwDefaultToken(__abxCwDefaultVisible()));
           window.localStorage.setItem(__abxCwVisibleKey, visible ? '1' : '0');
         }
       }catch(_){}
@@ -1323,57 +1316,6 @@ Ví dụ không hợp lệ:
                /\bB\s*=\s*(?!\s*--)[\d.,KMB]+\s*\|\s*P\s*=\s*(?!\s*--)[\d.,KMB]+/i.test(t);
       }catch(_){ return false; }
     }
-    function __abxCwNormHudText(text){
-      try{ return String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
-      catch(_){ return String(text || '').toLowerCase(); }
-    }
-    function __abxCwExtractHudLine(text){
-      try{
-        var lines = String(text || '').split(/\r?\n/);
-        for (var i=0;i<lines.length;i++){
-          var n = __abxCwNormHudText(lines[i]);
-          if (n.indexOf('tai khoan') >= 0 && (n.indexOf('so du') >= 0 || n.indexOf('balance') >= 0))
-            return String(lines[i] || '').trim();
-        }
-      }catch(_){}
-      return '';
-    }
-    function __abxCwHudLineHasValue(line){
-      try{
-        var raw = String(line || '');
-        if (!raw) return false;
-        var n = __abxCwNormHudText(raw);
-        var acc = '';
-        var bal = '';
-        var ma = n.match(/tai\s*khoan\s*:\s*([^|\n]+)/);
-        var mb = n.match(/(?:so\s*du|balance)\s*:\s*([^|\n]+)/);
-        if (ma && ma[1]) acc = String(ma[1] || '').trim();
-        if (mb && mb[1]) bal = String(mb[1] || '').trim();
-        return (!!acc && acc !== '--') || (!!bal && bal !== '--');
-      }catch(_){ return false; }
-    }
-    function __abxCwEscHtml(text){
-      return String(text == null ? '' : text)
-        .replace(/&/g,'&amp;')
-        .replace(/</g,'&lt;')
-        .replace(/>/g,'&gt;')
-        .replace(/""/g,'&quot;')
-        .replace(/'/g,'&#39;');
-    }
-    function __abxCwReplaceHudLineHtml(html, hudLine){
-      try{
-        if (!__abxCwHudLineHasValue(hudLine)) return html;
-        var lines = String(html || '').split(/\n/);
-        for (var i=0;i<lines.length;i++){
-          var n = __abxCwNormHudText(lines[i]);
-          if (n.indexOf('tai khoan') >= 0 && (n.indexOf('so du') >= 0 || n.indexOf('balance') >= 0)){
-            lines[i] = __abxCwEscHtml(hudLine);
-            return lines.join('\n');
-          }
-        }
-      }catch(_){}
-      return html;
-    }
     function __abxCwMirrorPanel(host, source){
       try{
         if (!host || !source || !host.root || !source.root || host === source){
@@ -1385,14 +1327,7 @@ Ví dụ không hợp lệ:
         if (srcInfo && dstInfo){
           var txt = String(srcInfo.innerText || srcInfo.textContent || '').trim();
           var dstTxt = String(dstInfo.innerText || dstInfo.textContent || '').trim();
-          if (txt && (!__abxCwHasDisplayPoolText(dstTxt) || __abxCwHasDisplayPoolText(txt))) {
-            var nextHtml = srcInfo.innerHTML;
-            var keepHudLine = __abxCwExtractHudLine(dstTxt);
-            var srcHudLine = __abxCwExtractHudLine(txt);
-            if (__abxCwHudLineHasValue(keepHudLine) && !__abxCwHudLineHasValue(srcHudLine))
-              nextHtml = __abxCwReplaceHudLineHtml(nextHtml, keepHudLine);
-            dstInfo.innerHTML = nextHtml;
-          }
+          if (txt && (!__abxCwHasDisplayPoolText(dstTxt) || __abxCwHasDisplayPoolText(txt))) dstInfo.innerHTML = srcInfo.innerHTML;
         }
         var srcState = source.root.querySelector && source.root.querySelector('#cwState');
         var dstState = host.root.querySelector && host.root.querySelector('#cwState');
@@ -1649,7 +1584,7 @@ Ví dụ không hợp lệ:
     }
     function __abxPushMs(){
       var ms = Number(window.__abx_push_ms || 360);
-      if (!(ms >= 180 && ms <= 1000)) ms = 360;
+      if (!(ms >= 180 && ms <= 1000)) ms = 180;
       return ms;
     }
     var delay=300, tries=0;
@@ -1695,7 +1630,7 @@ Ví dụ không hợp lệ:
     }
     function __abxPushMs(){
       var ms = Number(window.__abx_push_ms || 360);
-      if (!(ms >= 180 && ms <= 1000)) ms = 360;
+      if (!(ms >= 180 && ms <= 1000)) ms = 180;
       return ms;
     }
   try{
@@ -1723,7 +1658,7 @@ Ví dụ không hợp lệ:
     window.__cw_popup_autostart_key = key;
     function __abxPushMs(){
       var ms = Number(window.__abx_push_ms || 360);
-      if (!(ms >= 180 && ms <= 1000)) ms = 360;
+      if (!(ms >= 180 && ms <= 1000)) ms = 180;
       return ms;
     }
     var delay=250, tries=0;
@@ -1764,7 +1699,7 @@ Ví dụ không hợp lệ:
 try{
   function __abxPushMs(){
     var ms = Number(window.__abx_push_ms || 360);
-    if (!(ms >= 180 && ms <= 1000)) ms = 360;
+    if (!(ms >= 180 && ms <= 1000)) ms = 180;
     return ms;
   }
   try{
@@ -2052,14 +1987,18 @@ try{
         }
         private void EnqueueFile(string line)
         {
+            if (string.IsNullOrWhiteSpace(line))
+                return;
+            if (line.Length > FILE_LOG_MAX_CHARS)
+                line = line.Substring(0, FILE_LOG_MAX_CHARS) + "...";
             _fileLogQueue.Enqueue(line);
         }
         private void EnqueueJsFile(string line)
         {
             if (string.IsNullOrWhiteSpace(line))
                 return;
-            if (line.Length > 3000)
-                line = line.Substring(0, 3000) + "...";
+            if (line.Length > JS_FILE_LOG_MAX_CHARS)
+                line = line.Substring(0, JS_FILE_LOG_MAX_CHARS) + "...";
             EnqueueFile(line);
         }
         private string GetJsLogFilePath()
@@ -2177,6 +2116,18 @@ try{
             _logPumpCts = null;
         }
 
+        private bool HitLogThrottle(string key, int ms)
+        {
+            if (string.IsNullOrWhiteSpace(key) || ms <= 0)
+                return false;
+            var now = Environment.TickCount64;
+            var last = _logThrottleLastMs.TryGetValue(key, out var v) ? v : 0;
+            if ((now - last) < ms)
+                return true;
+            _logThrottleLastMs[key] = now;
+            return false;
+        }
+
         private bool ShouldSkipNoisyLog(string msg)
         {
             if (string.IsNullOrWhiteSpace(msg))
@@ -2217,6 +2168,22 @@ try{
                     msg.StartsWith("[NETSEQ][BOOT]", StringComparison.Ordinal) ||
                     msg.StartsWith("[NETSEQ][JS-STALE]", StringComparison.Ordinal))
                     return HitThrottle("NETSEQ_NOISY", 8000);
+
+                if (msg.StartsWith("[JSLAYOUT][layout-snapshot-context]", StringComparison.Ordinal))
+                    return HitThrottle("JSLAYOUT_SNAPSHOT_CTX", 12000);
+                if (msg.StartsWith("[JSLAYOUT][layout-resize]", StringComparison.Ordinal) ||
+                    msg.StartsWith("[JSLAYOUT][layout-settle-", StringComparison.Ordinal))
+                    return HitThrottle("JSLAYOUT_RESIZE", 7000);
+                if (msg.StartsWith("[CANVAS][DISPLAY-PUSH-ENTER]", StringComparison.Ordinal))
+                    return HitThrottle("CANVAS_PUSH_ENTER", 900);
+                if (msg.StartsWith("[CANVAS][DISPLAY-PUSH-RESULT]", StringComparison.Ordinal))
+                    return HitThrottle("CANVAS_PUSH_RESULT", 1200);
+                if (msg.StartsWith("[CANVAS][DISPLAY-PUSH] ", StringComparison.Ordinal))
+                    return HitThrottle("CANVAS_PUSH", 1000);
+                if (msg.StartsWith("[POOL][DISPLAY-DECISION]", StringComparison.Ordinal))
+                    return HitThrottle("POOL_DISPLAY_DECISION", 900);
+                if (msg.StartsWith("[POOL][LOCK][DIAG]", StringComparison.Ordinal))
+                    return HitThrottle("POOL_LOCK_DIAG", 1200);
             }
 
             // Confirm diag: giữ lại after_click, bỏ ready/before để giảm spam.
@@ -2308,6 +2275,12 @@ try{
             var mode = string.IsNullOrWhiteSpace(seqMode) ? "-" : seqMode;
             var append = FilterResultDisplaySeq(seqAppend);
             Log($"[SEQ][RX] prog={progNow:0.###} | seqLen={len} | tail={tail} | seqVer={seqVersion} | seqEvt={evt} | seqMode={mode} | seqAppend={(string.IsNullOrWhiteSpace(append) ? "-" : append)} | baseLen={_baseSeqDisplay.Length} | baseVer={_baseSeqVersion} | lockMajorMinor={(lockState ? 1 : 0)} | pending={pending} | status={statusRaw}");
+            var rawDisplayPreview = FilterResultDisplaySeqWindow(rawSeq);
+            if (len > 0 || rawDisplayPreview.Length > 0)
+            {
+                var src = string.IsNullOrWhiteSpace(source) ? "-" : source;
+                Log($"[SEQ][RX-DATA] src={src} | seq={Shrink(seqDisplay, 160)} | raw={Shrink(rawDisplayPreview, 160)}");
+            }
 
             bool hasAdvance = (prevVer > 0 && seqVersion > 0)
                 ? (seqVersion > prevVer)
@@ -2391,7 +2364,7 @@ try{
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratSexyCasino22
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratPragmatic
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -2445,7 +2418,6 @@ try{
 
             // Nhóm Quản lý vốn
             if (CmbMoneyStrategy != null) CmbMoneyStrategy.IsEnabled = enabled; // KHÓA khi đang chạy (chỉ khóa chọn chiến lược vốn)
-            if (ChkAutoResetStakeOnNonNegativeWin != null) ChkAutoResetStakeOnNonNegativeWin.IsEnabled = enabled;
 
             // Các ô dưới đây LUÔN cho phép nhập (kể cả khi đang chạy)
             if (TxtStakeCsv != null) TxtStakeCsv.IsReadOnly = false; // Chuỗi tiền
@@ -2486,24 +2458,6 @@ try{
         private static string T(TextBox tb, string def = "") => (tb?.Text ?? def).Trim();
         private static string P(PasswordBox? pb, string def = "") => pb?.Password ?? def;
         private static int I(string? s, int def = 0) => int.TryParse(s, out var n) ? n : def;
-        private static int NormalizeDecisionSeconds(int sec) => Math.Max(3, sec);
-
-        private int ReadDecisionSecondsFromUi(int fallback = 10)
-        {
-            var raw = T(TxtDecisionSecond, fallback.ToString(CultureInfo.InvariantCulture));
-            if (!int.TryParse(raw, out var sec))
-                sec = fallback;
-            return NormalizeDecisionSeconds(sec);
-        }
-
-        private void SyncDecisionSecondsFromConfig()
-        {
-            var sec = NormalizeDecisionSeconds(_cfg?.DecisionSeconds ?? 10);
-            _cfg.DecisionSeconds = sec;
-            _decisionPercent = sec;
-            if (TxtDecisionSecond != null)
-                TxtDecisionSecond.Text = sec.ToString(CultureInfo.InvariantCulture);
-        }
 
         // DPAPI
         private static string ProtectString(string? s)
@@ -2758,6 +2712,8 @@ try{
 
         private bool ShouldAttachCdpNetworkTap()
         {
+            if (DisableHttpAndCdpTaps)
+                return false;
             return UseDomBootstrapCdpAppendSeq || _enableCdpObservedContextTap || _enableCdpNetworkTap;
         }
 
@@ -2850,15 +2806,19 @@ try{
             int desiredPush = _cfg.PushIntervalMs > 0
                 ? _cfg.PushIntervalMs
                 : (isDebug ? CW_PUSH_MS_DEBUG_DEFAULT : CW_PUSH_MS_DEFAULT);
+            // Migrate legacy defaults (360/240) to current 180ms baseline.
+            if (desiredPush == 360 || desiredPush == 240)
+                desiredPush = isDebug ? CW_PUSH_MS_DEBUG_DEFAULT : CW_PUSH_MS_DEFAULT;
             _cwPushMs = ClampPushIntervalMs(desiredPush);
             _cfg.PushIntervalMs = _cwPushMs;
 
-            _enableCdpNetworkTap = isDebug;
-            _enableCdpObservedContextTap = true;
-            _enableHttpResponseBodyTap = UseDomBootstrapCdpAppendSeq || isDebug;
-            _enableJsFileLog = true;
+            _enableCdpNetworkTap = !DisableHttpAndCdpTaps && isDebug;
+            _enableCdpObservedContextTap = !DisableHttpAndCdpTaps;
+            // HTTP response body tap is disabled in emergency mode.
+            _enableHttpResponseBodyTap = !DisableHttpAndCdpTaps && isDebug;
+            _enableJsFileLog = isDebug;
             _enableJsPushDebug = isDebug;
-            _enablePerfTimingLog = isDebug || _cfg.EnablePerfTimingLog;
+            _enablePerfTimingLog = isDebug;
 
             if (log)
             {
@@ -2943,6 +2903,11 @@ try{
             if (!_enablePerfTimingLog) return;
 
             var now = DateTime.UtcNow;
+            if (string.Equals(abx, "tick", StringComparison.OrdinalIgnoreCase))
+            {
+                if ((now - _lastPerfRuntimeLogUtc) < TimeSpan.FromMilliseconds(700))
+                    return;
+            }
             bool slow = totalMs >= 35 || parseMs >= 10 || jsBuildMs >= 80 || jsTotalsMs >= 35 || jsSeqMs >= 20;
             if (!slow && (now - _lastPerfRuntimeLogUtc) < TimeSpan.FromSeconds(8))
                 return;
@@ -2955,6 +2920,363 @@ try{
             var jsProg = jsProgMs >= 0 ? jsProgMs.ToString(CultureInfo.InvariantCulture) : "-";
             var jsMode = jsPerfMode >= 0 ? jsPerfMode.ToString(CultureInfo.InvariantCulture) : "-";
             Log($"[PERF][MSG] abx={abx} | src={source} | len={msgLen} | parseMs={parseMs} | totalMs={totalMs} | jsBuildMs={jsCost} | jsTotalsMs={jsTotals} | jsSeqMs={jsSeq} | jsProgMs={jsProg} | jsPerfMode={jsMode} | pushMs={_cwPushMs} | profile={profile}");
+        }
+
+        private static void UpdateInterlockedMax(ref long target, long value)
+        {
+            long current = Interlocked.Read(ref target);
+            while (value > current)
+            {
+                long prev = Interlocked.CompareExchange(ref target, value, current);
+                if (prev == current)
+                    return;
+                current = prev;
+            }
+        }
+
+        private void EnsureUiCountdownTimer()
+        {
+            if (_uiCountdownTimer != null)
+                return;
+
+            _uiCountdownTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(100)
+            };
+            _uiCountdownTimer.Tick += (_, __) =>
+            {
+                try { RenderUiCountdown(); } catch { }
+            };
+            _uiCountdownTimer.Start();
+
+            _uiCountdownTraceTimer?.Dispose();
+            _uiCountdownTraceTimer = new System.Threading.Timer(_ =>
+            {
+                try { TraceUiCountdownTick(); } catch { }
+            }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(220));
+        }
+
+        private void TraceUiCountdownTick()
+        {
+            var now = DateTime.UtcNow;
+            var sec = GetUiCountdownDerivedSec(now);
+            if (!sec.HasValue)
+            {
+                _uiCountdownTraceLastWholeSec = null;
+                return;
+            }
+
+            var wholeSec = ToUiCountdownWholeSec(sec.Value);
+            if (_uiCountdownTraceLastWholeSec == wholeSec)
+                return;
+            _uiCountdownTraceLastWholeSec = wholeSec;
+
+            var rawAgeMs = _uiCountdownLastRawUtc == DateTime.MinValue ? -1 : (long)(now - _uiCountdownLastRawUtc).TotalMilliseconds;
+            var anchorAgeMs = _uiCountdownAnchorUtc == DateTime.MinValue ? -1 : (long)(now - _uiCountdownAnchorUtc).TotalMilliseconds;
+            Log($"[COUNTDOWN][TRACE] sec={wholeSec} | smooth={sec.Value:0.###} | anchor={(_uiCountdownAnchorSec.HasValue ? _uiCountdownAnchorSec.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | rawAgeMs={rawAgeMs} | anchorAgeMs={anchorAgeMs}");
+        }
+
+        private double? GetUiCountdownDerivedSec(DateTime utcNow)
+        {
+            if (!_uiCountdownAnchorSec.HasValue || _uiCountdownAnchorUtc == DateTime.MinValue)
+                return null;
+
+            var elapsedSec = Math.Max(0, (utcNow - _uiCountdownAnchorUtc).TotalSeconds);
+            var rate = _uiCountdownRate <= 0 ? 1d : _uiCountdownRate;
+            var sec = _uiCountdownAnchorSec.Value - (elapsedSec * rate);
+            if (sec < 0)
+                sec = 0;
+            if (sec > UiCountdownAbsoluteMaxSec)
+                sec = UiCountdownAbsoluteMaxSec;
+            return sec;
+        }
+
+        private void ResetUiCountdownState()
+        {
+            _uiCountdownAnchorSec = null;
+            _uiCountdownAnchorUtc = DateTime.MinValue;
+            _uiCountdownLastRawUtc = DateTime.MinValue;
+            _uiCountdownLastDisplayWholeSec = null;
+            _uiCountdownLastRawWholeSec = null;
+            _uiCountdownTraceLastWholeSec = null;
+            _uiCountdownRate = 1d;
+            _uiCountdownCycleMaxSec = 0d;
+            _uiCountdownZeroCandidateUtc = DateTime.MinValue;
+            _lastUiProgAcceptedRawSec = null;
+            _lastUiProgAcceptedRawUtc = DateTime.MinValue;
+        }
+
+        private static int ToUiCountdownWholeSec(double sec)
+        {
+            if (sec <= UiCountdownForceZeroToleranceSec)
+                return 0;
+            return (int)Math.Ceiling(sec);
+        }
+
+        private void LogUiCountdownRaw(string action, double? incomingSec, double? predictedSec, DateTime now, string? statusUiDisplay)
+        {
+            try
+            {
+                int? wholeIncoming = incomingSec.HasValue
+                    ? Math.Max(0, Math.Min((int)UiCountdownAbsoluteMaxSec, ToUiCountdownWholeSec(incomingSec.Value)))
+                    : null;
+
+                if (wholeIncoming == _uiCountdownLastRawWholeSec &&
+                    !string.Equals(action, "hold-missing", StringComparison.Ordinal) &&
+                    !string.Equals(action, "reset-missing", StringComparison.Ordinal))
+                    return;
+
+                _uiCountdownLastRawWholeSec = wholeIncoming;
+                var rawAgeMs = _uiCountdownLastRawUtc == DateTime.MinValue ? -1 : (long)(now - _uiCountdownLastRawUtc).TotalMilliseconds;
+                var anchorAgeMs = _uiCountdownAnchorUtc == DateTime.MinValue ? -1 : (long)(now - _uiCountdownAnchorUtc).TotalMilliseconds;
+                Log($"[COUNTDOWN][UI][RAW] action={action} | in={(incomingSec.HasValue ? incomingSec.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | pred={(predictedSec.HasValue ? predictedSec.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | anchor={(_uiCountdownAnchorSec.HasValue ? _uiCountdownAnchorSec.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | rate={_uiCountdownRate:0.###} | rawAgeMs={rawAgeMs} | anchorAgeMs={anchorAgeMs} | status={(string.IsNullOrWhiteSpace(statusUiDisplay) ? "-" : Shrink(statusUiDisplay, 48))}");
+            }
+            catch { }
+        }
+
+        private void RenderUiCountdown(DateTime? utcNow = null)
+        {
+            var now = utcNow ?? DateTime.UtcNow;
+            var sec = GetUiCountdownDerivedSec(now);
+            if (sec.HasValue)
+            {
+                if (PrgBet != null)
+                {
+                    PrgBet.Minimum = 0;
+                    PrgBet.Maximum = 1;
+                    if (UiCountdownShowProgressBar)
+                    {
+                        var maxSec = _uiCountdownCycleMaxSec > 0.5
+                            ? _uiCountdownCycleMaxSec
+                            : Math.Max(1d, sec.Value);
+                        var ratio = Math.Max(0, Math.Min(1, sec.Value / maxSec));
+                        PrgBet.Value = ratio;
+                    }
+                    else
+                    {
+                        // Number-first mode: hide progress color to avoid wrong impression across tables.
+                        PrgBet.Value = 0;
+                    }
+                }
+                if (LblProg != null)
+                {
+                    var secText = sec.Value <= 0.0001 ? 0 : (int)Math.Ceiling(sec.Value);
+                    LblProg.Text = $"{secText}s";
+                }
+                var wholeSec = ToUiCountdownWholeSec(sec.Value);
+                if (_uiCountdownLastDisplayWholeSec != wholeSec)
+                {
+                    _uiCountdownLastDisplayWholeSec = wholeSec;
+                    var rawAgeMs = _uiCountdownLastRawUtc == DateTime.MinValue ? -1 : (long)(now - _uiCountdownLastRawUtc).TotalMilliseconds;
+                    var anchorAgeMs = _uiCountdownAnchorUtc == DateTime.MinValue ? -1 : (long)(now - _uiCountdownAnchorUtc).TotalMilliseconds;
+                    Log($"[COUNTDOWN][UI][DISPLAY] sec={wholeSec} | smooth={sec.Value:0.###} | anchor={(_uiCountdownAnchorSec.HasValue ? _uiCountdownAnchorSec.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | rawAgeMs={rawAgeMs} | anchorAgeMs={anchorAgeMs}");
+                }
+                return;
+            }
+
+            if (PrgBet != null)
+                PrgBet.Value = 0;
+            if (LblProg != null)
+                LblProg.Text = _uiCountdownFallbackLabel;
+            if (_uiCountdownLastDisplayWholeSec != null)
+            {
+                _uiCountdownLastDisplayWholeSec = null;
+                Log($"[COUNTDOWN][UI][DISPLAY] sec=- | smooth=- | anchor=- | rawAgeMs=- | anchorAgeMs=- | fallback={_uiCountdownFallbackLabel}");
+            }
+        }
+
+        private void UpdateUiCountdownState(double? incomingSec, string? statusUiDisplay)
+        {
+            var now = DateTime.UtcNow;
+            _uiCountdownFallbackLabel = !string.IsNullOrWhiteSpace(statusUiDisplay) ? "0s" : "-";
+            var predictedSec = GetUiCountdownDerivedSec(now);
+
+            if (!incomingSec.HasValue)
+            {
+                if (predictedSec.HasValue &&
+                    _uiCountdownAnchorUtc != DateTime.MinValue &&
+                    (now - _uiCountdownAnchorUtc) <= UiCountdownMissingGrace)
+                {
+                    LogUiCountdownRaw("hold-missing", null, predictedSec, now, statusUiDisplay);
+                    RenderUiCountdown(now);
+                    return;
+                }
+
+                LogUiCountdownRaw("reset-missing", null, predictedSec, now, statusUiDisplay);
+                ResetUiCountdownState();
+                RenderUiCountdown(now);
+                return;
+            }
+
+            var boundedSec = Math.Max(0, Math.Min(UiCountdownAbsoluteMaxSec, incomingSec.Value));
+            _uiCountdownLastRawUtc = now;
+            if (boundedSec > UiCountdownForceZeroToleranceSec)
+                _uiCountdownZeroCandidateUtc = DateTime.MinValue;
+            if (boundedSec > UiCountdownForceZeroToleranceSec)
+                _uiCountdownCycleMaxSec = Math.Max(_uiCountdownCycleMaxSec, boundedSec);
+            if (!predictedSec.HasValue)
+            {
+                _uiCountdownAnchorSec = boundedSec;
+                _uiCountdownAnchorUtc = now;
+                _uiCountdownRate = 1d;
+                _uiCountdownCycleMaxSec = Math.Max(_uiCountdownCycleMaxSec, boundedSec);
+                LogUiCountdownRaw("anchor-new", boundedSec, predictedSec, now, statusUiDisplay);
+            }
+            else if (boundedSec > predictedSec.Value + UiCountdownResetUpToleranceSec)
+            {
+                _uiCountdownAnchorSec = boundedSec;
+                _uiCountdownAnchorUtc = now;
+                _uiCountdownRate = 1d;
+                _uiCountdownCycleMaxSec = Math.Max(_uiCountdownCycleMaxSec, boundedSec);
+                LogUiCountdownRaw("anchor-reset-up", boundedSec, predictedSec, now, statusUiDisplay);
+            }
+            else if (boundedSec <= UiCountdownForceZeroToleranceSec)
+            {
+                if (predictedSec.Value > 1.15d)
+                {
+                    if (_uiCountdownZeroCandidateUtc == DateTime.MinValue)
+                        _uiCountdownZeroCandidateUtc = now;
+                    if ((now - _uiCountdownZeroCandidateUtc) < TimeSpan.FromMilliseconds(700))
+                    {
+                        _uiCountdownRate = 1d;
+                        LogUiCountdownRaw("keep-anchor-zero-debounce", boundedSec, predictedSec, now, statusUiDisplay);
+                        RenderUiCountdown(now);
+                        return;
+                    }
+                }
+                _uiCountdownAnchorSec = 0d;
+                _uiCountdownAnchorUtc = now;
+                _uiCountdownRate = 1d;
+                _uiCountdownCycleMaxSec = 0d;
+                LogUiCountdownRaw("force-zero", boundedSec, predictedSec, now, statusUiDisplay);
+            }
+            else
+            {
+                // Giữ cadence 1Hz ổn định; raw tick đến thưa vẫn để display tự trôi theo đồng hồ thật.
+                _uiCountdownRate = 1d;
+                LogUiCountdownRaw("keep-anchor", boundedSec, predictedSec, now, statusUiDisplay);
+            }
+
+            RenderUiCountdown(now);
+        }
+
+        private void LogStartupPerfPhase(string phase, Stopwatch phaseSw)
+        {
+            if (!_enablePerfTimingLog || phaseSw == null)
+                return;
+            Log($"[PERF][STARTUP] phase={phase} | phaseMs={phaseSw.ElapsedMilliseconds} | sinceCtorMs={_startupPerfSw.ElapsedMilliseconds}");
+        }
+
+        private void StartStartupUiPerfProbe()
+        {
+            if (!_enablePerfTimingLog)
+                return;
+            if (_startupUiPerfCts != null)
+                return;
+
+            Interlocked.Exchange(ref _startupUiPerfSamples, 0);
+            Interlocked.Exchange(ref _startupUiPerfSlowSamples, 0);
+            Interlocked.Exchange(ref _startupUiPerfTotalQueueMs, 0);
+            Interlocked.Exchange(ref _startupUiPerfMaxQueueMs, 0);
+            Interlocked.Exchange(ref _startupUiPerfSummaryLogged, 0);
+
+            var cts = new CancellationTokenSource();
+            _startupUiPerfCts = cts;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (!cts.IsCancellationRequested)
+                    {
+                        var postSw = Stopwatch.StartNew();
+                        try
+                        {
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                long queueMs = postSw.ElapsedMilliseconds;
+                                long sample = Interlocked.Increment(ref _startupUiPerfSamples);
+                                Interlocked.Add(ref _startupUiPerfTotalQueueMs, queueMs);
+                                UpdateInterlockedMax(ref _startupUiPerfMaxQueueMs, queueMs);
+                                if (queueMs >= 50)
+                                    Interlocked.Increment(ref _startupUiPerfSlowSamples);
+
+                                if (queueMs >= 80 || sample == 1 || sample % 12 == 0)
+                                {
+                                    long maxMs = Interlocked.Read(ref _startupUiPerfMaxQueueMs);
+                                    long slow = Interlocked.Read(ref _startupUiPerfSlowSamples);
+                                    Log($"[PERF][UI] scope=startup | queueMs={queueMs} | maxQueueMs={maxMs} | slow50={slow} | samples={sample} | sinceCtorMs={_startupPerfSw.ElapsedMilliseconds}");
+                                }
+                            }, System.Windows.Threading.DispatcherPriority.Background, cts.Token);
+                        }
+                        catch (TaskCanceledException)
+                        {
+                            break;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            break;
+                        }
+
+                        await Task.Delay(250, cts.Token);
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }, cts.Token);
+        }
+
+        private void StopStartupUiPerfProbe(string reason)
+        {
+            var cts = _startupUiPerfCts;
+            if (cts != null)
+            {
+                _startupUiPerfCts = null;
+                try { cts.Cancel(); } catch { }
+            }
+
+            if (!_enablePerfTimingLog)
+                return;
+            if (Interlocked.Exchange(ref _startupUiPerfSummaryLogged, 1) != 0)
+                return;
+
+            long samples = Interlocked.Read(ref _startupUiPerfSamples);
+            long totalQueueMs = Interlocked.Read(ref _startupUiPerfTotalQueueMs);
+            long maxQueueMs = Interlocked.Read(ref _startupUiPerfMaxQueueMs);
+            long slowSamples = Interlocked.Read(ref _startupUiPerfSlowSamples);
+            string avgQueueMs = samples > 0
+                ? (totalQueueMs / (double)samples).ToString("0.0", CultureInfo.InvariantCulture)
+                : "-";
+            Log($"[PERF][UI][STARTUP] reason={reason} | samples={samples} | avgQueueMs={avgQueueMs} | maxQueueMs={maxQueueMs} | slow50={slowSamples} | route={(HasLikelyActiveBetRoute() ? 1 : 0)} | gameTickFresh={(HasFreshGameTick() ? 1 : 0)} | totalStartupMs={_startupPerfSw.ElapsedMilliseconds}");
+        }
+
+        private void ArmStartupUiPerfProbeStop(int delayMs, string reason)
+        {
+            if (!_enablePerfTimingLog || delayMs <= 0)
+                return;
+
+            var cts = _startupUiPerfCts;
+            if (cts == null)
+                return;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(delayMs, cts.Token);
+                    await Dispatcher.InvokeAsync(() => StopStartupUiPerfProbe(reason), System.Windows.Threading.DispatcherPriority.Background);
+                }
+                catch (TaskCanceledException)
+                {
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }, cts.Token);
         }
 
         private void SyncGlobalFieldsFromActive()
@@ -3003,7 +3325,7 @@ try{
                 UpdateTooltips();
                 UpdateBetStrategyUi();
 
-                SyncDecisionSecondsFromConfig();
+                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();
                 if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
@@ -3020,8 +3342,6 @@ try{
 
                 if (ChkTrial != null) ChkTrial.IsChecked = IsTrialModeRequestedOrActive();
                 if (ChkLockMouse != null) ChkLockMouse.IsChecked = _cfg.LockMouse;
-                if (ChkAutoResetStakeOnNonNegativeWin != null)
-                    ChkAutoResetStakeOnNonNegativeWin.IsChecked = _cfg.AutoResetStakeOnNonNegativeWin;
 
                 ApplyCutUiFromConfig();
                 ApplyTabRuntimeToUi(_activeTab);
@@ -3059,8 +3379,7 @@ try{
         {
             cfg.Url = T(TxtUrl);
             cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
-            cfg.DecisionSeconds = ReadDecisionSecondsFromUi(cfg.DecisionSeconds > 0 ? cfg.DecisionSeconds : 10);
-            _decisionPercent = cfg.DecisionSeconds;
+            cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
             cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? cfg.BetStrategyIndex;
             cfg.BetSeq = T(TxtChuoiCau, cfg.BetSeq);
             cfg.BetPatterns = T(TxtTheCau, cfg.BetPatterns);
@@ -3082,8 +3401,6 @@ try{
             cfg.MoneyStrategy = GetMoneyStrategyFromUI();
             if (ChkS7ResetOnProfit != null)
                 cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
-            if (ChkAutoResetStakeOnNonNegativeWin != null)
-                cfg.AutoResetStakeOnNonNegativeWin = (ChkAutoResetStakeOnNonNegativeWin.IsChecked == true);
 
             cfg.RuntimeProfile = NormalizeRuntimeProfile(cfg.RuntimeProfile);
             cfg.PushIntervalMs = _cwPushMs;
@@ -3783,7 +4100,8 @@ try{
 
                 // Theo dõi điều hướng để đồng bộ nền/trạng thái
                 Web.NavigationCompleted += Web_NavigationCompleted;
-                Web.CoreWebView2.WebResourceResponseReceived += CoreWebView2_WebResourceResponseReceived;
+                if (!DisableHttpAndCdpTaps)
+                    Web.CoreWebView2.WebResourceResponseReceived += CoreWebView2_WebResourceResponseReceived;
 
                 // Bật CDP network tap (không cần await)
                 if (ShouldAttachCdpNetworkTap())
@@ -4075,6 +4393,8 @@ try{
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
             _uiReady = false;
+            var phaseSw = Stopwatch.StartNew();
+            StartStartupUiPerfProbe();
 
             try
             {
@@ -4092,21 +4412,14 @@ try{
                 // NEW: nạp chuỗi tiền theo “Quản lý vốn” hiện tại để UI hiển thị đúng ngay từ đầu
                 // (helper đã gửi: LoadStakeCsvForCurrentMoneyStrategy())
                 LoadStakeCsvForCurrentMoneyStrategy();
+                LogStartupPerfPhase("prep-ui-config", phaseSw);
+                phaseSw.Restart();
 
                 // gắn handler input như trước
                 if (!_inputEventsHooked)
                 {
-                    if (TxtUrl != null) TxtUrl.TextChanged += TxtUrl_TextChanged;
-                    if (TxtUser != null) TxtUser.TextChanged += TxtUser_TextChanged;
-                    if (TxtPass != null) TxtPass.PasswordChanged += TxtPass_PasswordChanged;
                     if (TxtStakeCsv != null) TxtStakeCsv.TextChanged += TxtStakeCsv_TextChanged;
                     if (TxtSideRatio != null) TxtSideRatio.TextChanged += TxtSideRatio_TextChanged;
-                    if (TxtDecisionSecond != null)
-                    {
-                        TxtDecisionSecond.LostFocus += TxtDecisionSecond_LostFocus;
-                        TxtDecisionSecond.PreviewTextInput += TxtDecisionSecond_PreviewTextInput;
-                        DataObject.AddPastingHandler(TxtDecisionSecond, TxtDecisionSecond_Pasting);
-                    }
                     if (CmbBetStrategy != null) CmbBetStrategy.SelectionChanged += CmbBetStrategy_SelectionChanged;
                     if (TxtChuoiCau != null) TxtChuoiCau.TextChanged += TxtChuoiCau_TextChanged;
                     if (TxtTheCau != null) TxtTheCau.TextChanged += TxtTheCau_TextChanged;
@@ -4118,17 +4431,19 @@ try{
 
                 if (ChkLockMouse != null)
                     ChkLockMouse.IsChecked = _cfg.LockMouse;
-                if (ChkAutoResetStakeOnNonNegativeWin != null)
-                    ChkAutoResetStakeOnNonNegativeWin.IsChecked = _cfg.AutoResetStakeOnNonNegativeWin;
 
                 // giữ nguyên 2 hàm cũ
                 await InitWebView2WithFixedRuntimeAsync();
                 await ApplyBackgroundForStateAsync();
+                LogStartupPerfPhase("webview-init", phaseSw);
+                phaseSw.Restart();
 
                 // WebView2 ready (giữ hook cũ của bạn)
                 await EnsureWebReadyAsync();
                 await EnsureBridgeRegisteredAsync();
                 await InjectOnNewDocAsync();
+                LogStartupPerfPhase("bridge-ready", phaseSw);
+                phaseSw.Restart();
 
                 //StartAutoLoginWatcher();
 
@@ -4140,6 +4455,8 @@ try{
 
                     await ApplyBackgroundForStateAsync(); // đúng hành vi cũ sau khi có URL
                 }
+                LogStartupPerfPhase("startup-nav", phaseSw);
+                phaseSw.Restart();
 
                 SetPlayButtonState(_activeTab?.IsRunning == true); // (nếu trong SetPlayButtonState có SetConfigEditable thì sẽ khóa/mở các ô)
                 ApplyMouseShieldFromCheck();
@@ -4149,7 +4466,7 @@ try{
                 {
                     _uiModeTimer = new System.Windows.Threading.DispatcherTimer
                     {
-                        Interval = TimeSpan.FromMilliseconds(300)
+                        Interval = TimeSpan.FromMilliseconds(UI_MODE_POLL_MS)
                     };
                     _uiModeTimer.Tick += (_, __) =>
                     {
@@ -4159,15 +4476,21 @@ try{
                     _uiModeTimer.Start();
                     RecomputeUiMode();
                 }
+                EnsureUiCountdownTimer();
+                LogStartupPerfPhase("finalize-ui", phaseSw);
+                phaseSw.Restart();
 
             }
             catch (Exception ex)
             {
                 Log("[Window_Loaded] " + ex);
+                StopStartupUiPerfProbe("window-loaded-ex");
             }
             finally
             {
                 _uiReady = true;
+                Log($"[PERF][STARTUP] phase=window-loaded-finally | phaseMs={phaseSw.ElapsedMilliseconds} | sinceCtorMs={_startupPerfSw.ElapsedMilliseconds}");
+                ArmStartupUiPerfProbeStop(12000, "loaded+12s");
             }
         }
 
@@ -4180,6 +4503,7 @@ try{
 
         private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            StopStartupUiPerfProbe("window-closing");
             try { await SaveConfigAsync(); } catch { }
             try { await DisableCdpNetworkTapAsync(); } catch { }
             StopLogPump();       // <-- tắt pump
@@ -4283,47 +4607,6 @@ try{
             });
         }
 
-        private void TxtDecisionSecond_PreviewTextInput(object sender, TextCompositionEventArgs e)
-        {
-            e.Handled = string.IsNullOrEmpty(e.Text) || e.Text.Any(ch => !char.IsDigit(ch));
-        }
-
-        private void TxtDecisionSecond_Pasting(object sender, DataObjectPastingEventArgs e)
-        {
-            try
-            {
-                if (!e.DataObject.GetDataPresent(DataFormats.Text))
-                {
-                    e.CancelCommand();
-                    return;
-                }
-
-                var text = (e.DataObject.GetData(DataFormats.Text) as string) ?? "";
-                if (string.IsNullOrWhiteSpace(text) || text.Any(ch => !char.IsDigit(ch)))
-                    e.CancelCommand();
-            }
-            catch
-            {
-                e.CancelCommand();
-            }
-        }
-
-        private async void TxtDecisionSecond_LostFocus(object sender, RoutedEventArgs e)
-        {
-            if (!_uiReady || _tabSwitching) return;
-
-            var sec = ReadDecisionSecondsFromUi(_cfg?.DecisionSeconds > 0 ? _cfg.DecisionSeconds : 10);
-            _decisionPercent = sec;
-            if (TxtDecisionSecond != null)
-                TxtDecisionSecond.Text = sec.ToString(CultureInfo.InvariantCulture);
-
-            if (_cfg.DecisionSeconds != sec)
-            {
-                _cfg.DecisionSeconds = sec;
-                await SaveConfigAsync();
-            }
-        }
-
         private void ApplyMoneyStrategyToUI(string id)
         {
             if (CmbMoneyStrategy == null) return;
@@ -4375,21 +4658,12 @@ try{
                 await SaveConfigAsync();
         }
 
-        private async void ChkAutoResetStakeOnNonNegativeWin_Changed(object sender, RoutedEventArgs e)
-        {
-            if (!_uiReady || _tabSwitching) return;
-
-            _cfg.AutoResetStakeOnNonNegativeWin = (ChkAutoResetStakeOnNonNegativeWin?.IsChecked == true);
-            Log($"[CFG][AUTO-RESET-NONNEG] enabled={(_cfg.AutoResetStakeOnNonNegativeWin ? 1 : 0)}");
-            await SaveConfigAsync();
-        }
-
         async void CmbMoneyStrategy_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!_uiReady || _tabSwitching) return;
             _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
             if (!IsAnyTabRunning() || IsActiveTabRunning())
-                BaccaratSexyCasino2.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
+                BaccaratPragmatic.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
             UpdateS7ResetOptionUI();
@@ -4411,7 +4685,6 @@ try{
             int idx = CmbBetStrategy?.SelectedIndex ?? 4;
             AttachTip(TxtDecisionSecond,
                 (idx == 2 || idx == 3) ? TIP_DECISION_PERCENT_NI : TIP_DECISION_PERCENT_GENERAL);
-            AttachTip(ChkAutoResetStakeOnNonNegativeWin, TIP_AUTO_RESET_STAKE_NONNEG);
 
             // Chuỗi/Thế cầu
             AttachTip(TxtChuoiCau,
@@ -4442,8 +4715,8 @@ try{
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
                 15 => "16) TOP10 TÍCH LŨY (khởi từ 50 B/P). Khởi tạo thống kê từ 50 kết quả đầu vào (B/P). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 'mới về'. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm >= hiện tại.",
-                16 => "17) Chuỗi cầu B/P hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
-                17 => "18) Bám cầu trước nâng cao: Nếu seg3=1 thì nhìn seg1 (seg1=1 đánh ngược, seg1>1 đánh theo); nếu seg3>1 thì luôn đánh theo kết quả vừa về.",
+                16 => "17) Logic nhiều cửa đã bị loại bỏ khỏi BaccaratPragmatic.",
+                17 => "18) Chuỗi cầu B/P hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
                 _ => "Chiến lược chưa xác định."
             };
 
@@ -4481,8 +4754,8 @@ try{
                 13 => "14) AI học tại chỗ (n-gram): Học dần từ kết quả thật; dùng tần suất có làm mịn + backoff; hòa → đảo 1–1; bộ nhớ cố định, không phình.",
                 14 => "15) Bỏ phiếu Top10 có điều kiện; Loss-Guard động; Hard-guard tự bật khi L≥5 và tự gỡ khi thắng 2 ván liên tục hoặc w20>55%; hòa 5–5 đánh ngẫu nhiên; 6–4 nhưng conf<0.60 thì fallback theo Regime (ZIGZAG=ZigFollow, còn lại=FollowPrev). Ưu tiên “ăn trend” khi guard ON. Re-seed sau mỗi ván (tối đa 50 tay)",
                 15 => "16) TOP10 TÍCH LŨY (khởi từ 50 B/P). Khởi tạo thống kê từ 50 kết quả đầu vào (B/P). Mỗi kết quả mới: cộng dồn cho chuỗi dài 10 'mới về'. Luôn đánh theo chuỗi có bộ đếm lớn nhất; chỉ chuyển chuỗi khi THẮNG và chuỗi mới có đếm >= hiện tại.",
-                16 => "17) Chuỗi cầu B/P hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
-                17 => "18) Bám cầu trước nâng cao: Nếu seg3=1 thì nhìn seg1 (seg1=1 đánh ngược, seg1>1 đánh theo); nếu seg3>1 thì luôn đánh theo kết quả vừa về.",
+                16 => "17) Logic nhiều cửa đã bị loại bỏ khỏi BaccaratPragmatic.",
+                17 => "18) Chuỗi cầu B/P hay về: Tự phân tích seq 52 ký tự, loại mẫu đã xuất hiện (theo quy tắc đảo); chọn ngẫu nhiên một mẫu còn lại để đánh; hết chuỗi thì tìm lại; không còn mẫu thì đánh ngẫu nhiên.",
                 _ => "Chiến lược chưa xác định."
             };
         }
@@ -4581,7 +4854,8 @@ try{
             if (!_popupWebMsgHooked)
             {
                 popupWeb.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
-                popupWeb.CoreWebView2.WebResourceResponseReceived += CoreWebView2_WebResourceResponseReceived;
+                if (!DisableHttpAndCdpTaps)
+                    popupWeb.CoreWebView2.WebResourceResponseReceived += CoreWebView2_WebResourceResponseReceived;
                 if (ShouldAttachCdpNetworkTap())
                     _ = EnableCdpNetworkTapAsync(popupWeb.CoreWebView2, "popup");
                 _popupWebMsgHooked = true;
@@ -4674,12 +4948,11 @@ try{
             bool isJsLogBatchRaw = msg.IndexOf("\"abx\":\"cwLogBatch\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isJsSeqDiagRaw = msg.IndexOf("\"abx\":\"seq_diag\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isJsConsoleRaw = msg.IndexOf("\"abx\":\"js_console\"", StringComparison.OrdinalIgnoreCase) >= 0;
-            bool isNetProbeRaw = msg.IndexOf("\"abx\":\"net_probe\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isTickRaw = msg.IndexOf("\"abx\":\"tick\"", StringComparison.OrdinalIgnoreCase) >= 0;
             bool isScoutRaw = msg.IndexOf("\"abx\":\"frame_scout\"", StringComparison.OrdinalIgnoreCase) >= 0 ||
                               msg.IndexOf("\"abx\":\"authority_started\"", StringComparison.OrdinalIgnoreCase) >= 0 ||
                               msg.IndexOf("\"abx\":\"authority_denied\"", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (!isJsLogBatchRaw && !isJsSeqDiagRaw && !isJsConsoleRaw && !isNetProbeRaw && !isTickRaw && !isScoutRaw)
+            if (!isJsLogBatchRaw && !isJsSeqDiagRaw && !isJsConsoleRaw && !isTickRaw && !isScoutRaw)
                 EnqueueUi($"[JS] {msg}"); // chỉ hiển thị UI, không ghi ra file
 
             try
@@ -4728,12 +5001,6 @@ try{
                     return;
                 }
 
-                if (abxStr == "net_probe")
-                {
-                    IngestJsNetProbe(root, source);
-                    return;
-                }
-
                 if (abxStr == "frame_scout")
                 {
                     var scout = ParseFrameScoutSnapshot(root);
@@ -4757,7 +5024,7 @@ try{
                     var snap = ParseCwSnapshotLoose(jrootTick);
                     if (snap == null)
                         return;
-                    if (!ShouldAcceptAuthorityTick(snap, source, out _))
+                    if (!ShouldAcceptAuthorityTick(snap, source, out var tickRouteReason))
                         return;
 
                     CwSnapshot? prevUiSnap;
@@ -4769,44 +5036,97 @@ try{
 
                     if (snap != null)
                     {
-                        string statusRaw = GetJsonStringLoose(jrootTick, "status") ?? "";
-                        string statusSourceRaw = snap.statusSource ?? GetJsonStringLoose(jrootTick, "statusSource") ?? "";
-                        string statusTailRaw = snap.statusTail ?? GetJsonStringLoose(jrootTick, "statusTail") ?? "";
-                        bool statusAuthorityMissing = IsStatusAuthorityMissing(statusSourceRaw);
-                        bool trustedStatusForUi = IsTrustedStatusForUi(statusRaw, statusSourceRaw, statusTailRaw);
-                        bool nonAuthorityStatus =
-                            !string.IsNullOrWhiteSpace(statusRaw) &&
-                            !trustedStatusForUi;
                         var boardSeqDisplay = FilterResultDisplaySeqWindow(snap.seq ?? "");
                         var boardSeqVersion = snap.seqVersion ?? 0;
                         var boardSeqEvent = snap.seqEvent ?? "";
-
-                        string statusUi = trustedStatusForUi ? BuildStatusUiText(statusRaw) : "";
-                        string statusUiDisplay = statusUi;
-                        string statusSourceForSnap = trustedStatusForUi ? statusSourceRaw : "";
-                        string statusTailForSnap = trustedStatusForUi ? statusTailRaw : "";
-                        bool syntheticDomStatus =
-                            statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
-                        if (syntheticDomStatus && (DateTime.UtcNow - _lastSyntheticStatusSkipLogUtc) > TimeSpan.FromSeconds(2))
-                        {
-                            _lastSyntheticStatusSkipLogUtc = DateTime.UtcNow;
-                            Log($"[STATUS][SYNTHETIC-SKIP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=baccarat-dom-fallback-not-ui | prog={(snap.prog.HasValue ? snap.prog.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | statusSrc={(string.IsNullOrWhiteSpace(statusSourceRaw) ? "-" : Shrink(statusSourceRaw, 64))} | statusTail={(string.IsNullOrWhiteSpace(statusTailRaw) ? "-" : Shrink(statusTailRaw, 128))} | status={Shrink(statusRaw, 72)}");
-                        }
+                        string statusUiDisplay = "";
+                        string statusSourceForSnap = "";
+                        string statusTailForSnap = "";
                         double? progUi = snap.prog;
+                        var progNowUtc = DateTime.UtcNow;
+                        var isPullSource =
+                            !string.IsNullOrWhiteSpace(source) &&
+                            source.IndexOf("pull", StringComparison.OrdinalIgnoreCase) >= 0;
+                        var pullSeqLen = FilterResultDisplaySeqWindow(snap.seq).Length;
+                        var pullRawLen = FilterResultDisplaySeqWindow(snap.rawSeq).Length;
+                        bool pullHasSeqData = pullSeqLen > 0 || pullRawLen > 0;
+                        bool prevUiHasSeqData =
+                            FilterResultDisplaySeqWindow(prevUiSnap?.seq).Length > 0 ||
+                            FilterResultDisplaySeqWindow(prevUiSnap?.rawSeq).Length > 0;
+                        if (!isPullSource && string.Equals(tickRouteReason, "authority", StringComparison.Ordinal))
+                            _lastAuthorityMsgTickUtc = progNowUtc;
+                        if (isPullSource &&
+                            _lastAuthorityMsgTickUtc != DateTime.MinValue &&
+                            (progNowUtc - _lastAuthorityMsgTickUtc) <= TimeSpan.FromMilliseconds(1200) &&
+                            !string.Equals(tickRouteReason, "authority-table-switch-accept", StringComparison.Ordinal) &&
+                            !pullHasSeqData)
+                        {
+                            if (!HitLogThrottle("popup-pull-skip-fresh-authority-msg", 2200))
+                                Log($"[TICK][PULL-SKIP] reason=fresh-authority-msg | route={tickRouteReason} | ageMs={(long)(progNowUtc - _lastAuthorityMsgTickUtc).TotalMilliseconds} | prog={(progUi.HasValue ? progUi.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | pullSeqLen={pullSeqLen} | pullRawLen={pullRawLen} | prevSeq={(prevUiHasSeqData ? 1 : 0)}");
+                            return;
+                        }
                         if (prevUiFresh)
                         {
                             if (!progUi.HasValue && prevUiSnap?.prog.HasValue == true)
                                 progUi = prevUiSnap.prog;
-                            if (statusAuthorityMissing &&
-                                string.IsNullOrWhiteSpace(statusUiDisplay) &&
-                                !string.IsNullOrWhiteSpace(prevUiSnap?.status))
-                            {
-                                statusUiDisplay = prevUiSnap.status ?? "";
-                                statusSourceForSnap = prevUiSnap.statusSource ?? statusSourceForSnap;
-                                statusTailForSnap = prevUiSnap.statusTail ?? statusTailForSnap;
-                            }
                         }
+
+                        // Guard: một số tick authority có thể trả prog=0 tức thời.
+                        // Nếu vừa có raw countdown hợp lệ rất gần đây, giữ nhịp từ tick tốt gần nhất để tránh đè UI/canvas về 0 giả.
+                        if (!isPullSource &&
+                            progUi.HasValue &&
+                            progUi.Value <= UiCountdownForceZeroToleranceSec &&
+                            _lastUiProgAcceptedRawSec.HasValue &&
+                            _lastUiProgAcceptedRawUtc != DateTime.MinValue &&
+                            (progNowUtc - _lastUiProgAcceptedRawUtc) <= TimeSpan.FromMilliseconds(1600) &&
+                            _lastUiProgAcceptedRawSec.Value > 0.8)
+                        {
+                            progUi = _lastUiProgAcceptedRawSec.Value;
+                            if (!HitLogThrottle("countdown-guard-status-missing-zero", 1800))
+                                Log($"[COUNTDOWN][GUARD] reason=prog-zero-hold | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | hold={progUi.Value:0.###} | rawAgeMs={(long)(progNowUtc - _lastUiProgAcceptedRawUtc).TotalMilliseconds}");
+                        }
+
+                        // Khi authority đã có rồi, tick "pull" đôi lúc trả prog=0 tạm thời.
+                        // Giữ nhịp theo tick msg gần nhất để tránh nhảy 0/12 giả và tránh đè canvas về 0.
+                        if (isPullSource &&
+                            progUi.HasValue &&
+                            progUi.Value <= UiCountdownForceZeroToleranceSec &&
+                            _lastAuthorityMsgProgSec.HasValue &&
+                            _lastAuthorityMsgProgUtc != DateTime.MinValue &&
+                            (DateTime.UtcNow - _lastAuthorityMsgProgUtc) <= TimeSpan.FromSeconds(2.5))
+                        {
+                            progUi = _lastAuthorityMsgProgSec.Value;
+                        }
+                        else if (!isPullSource &&
+                                 progUi.HasValue &&
+                                 progUi.Value > UiCountdownForceZeroToleranceSec)
+                        {
+                            _lastAuthorityMsgProgSec = progUi.Value;
+                            _lastAuthorityMsgProgUtc = DateTime.UtcNow;
+                        }
+
+                        if (progUi.HasValue)
+                        {
+                            if (_lastUiProgAcceptedRawSec.HasValue && _lastUiProgAcceptedRawUtc != DateTime.MinValue)
+                            {
+                                var dtMs = Math.Max(0, (progNowUtc - _lastUiProgAcceptedRawUtc).TotalMilliseconds);
+                                var prevRaw = _lastUiProgAcceptedRawSec.Value;
+                                if (dtMs < 350 && (prevRaw - progUi.Value) > 1.2)
+                                {
+                                    var allowedDrop = Math.Max(0.25, dtMs / 1000d * 1.25);
+                                    var floorRaw = Math.Max(0, prevRaw - allowedDrop);
+                                    if (progUi.Value < floorRaw)
+                                        progUi = floorRaw;
+                                }
+                            }
+                            _lastUiProgAcceptedRawSec = progUi.Value;
+                            _lastUiProgAcceptedRawUtc = progNowUtc;
+                        }
+
                         snap.prog = progUi;
+                        statusUiDisplay = BuildStatusFromProg(progUi);
+                        statusSourceForSnap = "prog-derived";
+                        statusTailForSnap = "";
                         string statusRawForLogic = statusUiDisplay;
                         snap.status = statusRawForLogic;
                         snap.statusSource = statusSourceForSnap;
@@ -4818,13 +5138,7 @@ try{
                             {
                                 ObserveDomAuthorityContextLocked(snap, source, boardSeqEvent, statusRawForLogic);
                                 var bootstrapped = TryApplyInitialJsRawBootstrapLocked(snap, source, statusRawForLogic, boardSeqVersion, boardSeqEvent);
-                                var repairedTinyBootstrap = false;
                                 if (!bootstrapped)
-                                    repairedTinyBootstrap = TryRepairTinyDomBootstrapLocked(snap, source, statusRawForLogic, boardSeqDisplay, boardSeqVersion, boardSeqEvent);
-                                var appendedFallback = false;
-                                if (!bootstrapped && !repairedTinyBootstrap)
-                                    appendedFallback = TryApplyDomAppendFallbackLocked(snap, source, statusRawForLogic, boardSeqVersion, boardSeqEvent);
-                                if (!bootstrapped && !repairedTinyBootstrap && !appendedFallback)
                                     LogDomSeqObservedIfNeeded(source, boardSeqDisplay, snap.rawSeq, boardSeqVersion, boardSeqEvent);
                                 ApplyNetworkSeqAuthorityLocked(snap);
                             }
@@ -4836,20 +5150,10 @@ try{
                                 SyncNetworkSeqFromSnapshot(snap, source, boardSeqDisplay, boardSeqVersion, boardSeqEvent, statusRawForLogic);
                             }
                         }
-                        if (statusAuthorityMissing && (DateTime.UtcNow - _lastStatusGuardLogUtc) > TimeSpan.FromSeconds(2))
-                        {
-                            _lastStatusGuardLogUtc = DateTime.UtcNow;
-                            Log($"[STATUS][SKIP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=authority-processStatus-missing | statusSrc={(string.IsNullOrWhiteSpace(statusSourceRaw) ? "-" : Shrink(statusSourceRaw, 64))} | statusTail={(string.IsNullOrWhiteSpace(statusTailRaw) ? "-" : Shrink(statusTailRaw, 128))} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
-                        }
-                        if (nonAuthorityStatus && (DateTime.UtcNow - _lastStatusGuardLogUtc) > TimeSpan.FromSeconds(2))
-                        {
-                            _lastStatusGuardLogUtc = DateTime.UtcNow;
-                            Log($"[STATUS][SKIP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=non-authority-status-ui-block | statusSrc={(string.IsNullOrWhiteSpace(statusSourceRaw) ? "-" : Shrink(statusSourceRaw, 64))} | statusTail={(string.IsNullOrWhiteSpace(statusTailRaw) ? "-" : Shrink(statusTailRaw, 128))} | status={Shrink(statusRaw, 48)}");
-                        }
-                        if (trustedStatusForUi && (DateTime.UtcNow - _lastStatusApplyLogUtc) > TimeSpan.FromSeconds(2))
+                        if ((DateTime.UtcNow - _lastStatusApplyLogUtc) > TimeSpan.FromSeconds(2))
                         {
                             _lastStatusApplyLogUtc = DateTime.UtcNow;
-                            Log($"[STATUS][APPLY] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=authority-processStatus | statusSrc={(string.IsNullOrWhiteSpace(statusSourceRaw) ? "-" : Shrink(statusSourceRaw, 64))} | statusTail={(string.IsNullOrWhiteSpace(statusTailRaw) ? "-" : Shrink(statusTailRaw, 128))} | status={Shrink(statusRaw, 48)}");
+                            Log($"[STATUS][PROG] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | prog={(progUi.HasValue ? progUi.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | status={statusUiDisplay}");
                         }
                         var seqDisplayRaw = snap.seq ?? "";
                         var totalsNow = snap.totals;
@@ -4861,41 +5165,12 @@ try{
                         bool hasHudData = totalsNow != null &&
                                           (!string.IsNullOrWhiteSpace(totalsNow.N) ||
                                            totalsNow.A.HasValue);
-                        bool hasProgressData = snap.prog.HasValue;
-                        bool isDomStatus = statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase);
-                        bool isDomWaitingStatus =
-                            isDomStatus &&
-                            statusRaw.IndexOf("waiting", StringComparison.OrdinalIgnoreCase) >= 0;
-                        bool hasMeaningfulStatus = !string.IsNullOrWhiteSpace(statusUi) &&
-                                                   !isDomStatus;
+                        bool hasProgressData =
+                            snap.prog.HasValue &&
+                            (snap.prog.Value > UiCountdownForceZeroToleranceSec || hasSeqData || hasHudData);
+                        bool hasMeaningfulStatus = !string.IsNullOrWhiteSpace(statusUiDisplay);
                         bool hasMeaningfulData = hasSeqData || hasHudData || hasProgressData || hasMeaningfulStatus;
-                        bool isPlaceholderDomTick =
-                            !hasSeqData &&
-                            !hasHudData &&
-                            !hasProgressData &&
-                            isDomStatus;
-                        bool isDomWaitingTick =
-                            !hasSeqData &&
-                            isDomWaitingStatus;
                         bool isEmptyTick = !hasMeaningfulData;
-                        if (isDomWaitingTick)
-                        {
-                            _ = Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                try
-                                {
-                                    if (LblStatusText != null)
-                                    {
-                                        LblStatusText.Text = "";
-                                        LblStatusText.Visibility = Visibility.Collapsed;
-                                    }
-                                }
-                                catch { }
-                            }));
-                            return;
-                        }
-                        if (isPlaceholderDomTick)
-                            return;
                         if (isEmptyTick)
                             return;
 
@@ -4930,7 +5205,7 @@ try{
                                 long currB = snap.totals?.B ?? 0;
                                 long currP = snap.totals?.P ?? 0;
                                 long currT = snap.totals?.T ?? 0;
-                                LogSeqRxIfChanged(seqDisplay, snap.rawSeq, seqVersionNow, seqEventNow, snap.seqMode, snap.seqAppend, progNow, statusRaw, source);
+                                LogSeqRxIfChanged(seqDisplay, snap.rawSeq, seqVersionNow, seqEventNow, snap.seqMode, snap.seqAppend, progNow, statusUiDisplay, source);
 
                                 bool seqVersionRegress =
                                     _lockMajorMinorUpdates &&
@@ -5057,22 +5332,15 @@ try{
                                                 double balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
                                                 if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
                                                 {
-                                                    if (IsNetworkWinnerSeqEvent(settleSeqEvent))
-                                                    {
-                                                        Log($"[BET][HIST][SETTLE-SKIP] reason=same-source-owned-by-network-winner | src=tick-tail-change | curVer={settleSeqVersion} | curEvt={settleSeqEvent} | pending={_pendingRows.Count}");
-                                                    }
-                                                    else
-                                                    {
-                                                        FinalizeLastBet(
-                                                            "TIE",
-                                                            balanceAfter,
-                                                            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-                                                            "TIE",
-                                                            seqDisplay,
-                                                            settleSeqVersion,
-                                                            settleSeqEvent,
-                                                            "tick-tail-change");
-                                                    }
+                                                    FinalizeLastBet(
+                                                        "TIE",
+                                                        balanceAfter,
+                                                        new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                                                        "TIE",
+                                                        seqDisplay,
+                                                        settleSeqVersion,
+                                                        settleSeqEvent,
+                                                        "tick-tail-change");
                                                 }
 
                                                 _lockMajorMinorUpdates = false;
@@ -5095,22 +5363,15 @@ try{
                                                 double balanceAfter = ResolveHistoryBalance(snap?.totals?.A);
                                                 if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
                                                 {
-                                                    if (IsNetworkWinnerSeqEvent(settleSeqEvent))
-                                                    {
-                                                        Log($"[BET][HIST][SETTLE-SKIP] reason=same-source-owned-by-network-winner | src=tick-tail-change | curVer={settleSeqVersion} | curEvt={settleSeqEvent} | pending={_pendingRows.Count}");
-                                                    }
-                                                    else
-                                                    {
-                                                        FinalizeLastBet(
-                                                            winIsBanker ? "BANKER" : "PLAYER",
-                                                            balanceAfter,
-                                                            null,
-                                                            null,
-                                                            seqDisplay,
-                                                            settleSeqVersion,
-                                                            settleSeqEvent,
-                                                            "tick-tail-change");
-                                                    }
+                                                    FinalizeLastBet(
+                                                        winIsBanker ? "BANKER" : "PLAYER",
+                                                        balanceAfter,
+                                                        null,
+                                                        null,
+                                                        seqDisplay,
+                                                        settleSeqVersion,
+                                                        settleSeqEvent,
+                                                        "tick-tail-change");
                                                 }
 
                                                 _lockMajorMinorUpdates = false;
@@ -5136,39 +5397,11 @@ try{
                             skipDisplayPush = ShouldSkipAcceptedDisplayPushLocked(snap, source, out skipDisplayReason);
 
                         lock (_snapLock) _lastSnap = snap;
-                        if (skipDisplayPush)
-                        {
-                            Log($"[CANVAS][DISPLAY-PUSH-SKIP] reason={skipDisplayReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | seqLen={(snap.seq ?? "").Length} | table={(string.IsNullOrWhiteSpace(GetTableNameFromSnapshot(snap)) ? "-" : Shrink(GetTableNameFromSnapshot(snap), 48))} | untilMs={(long)Math.Max(0, (_suppressNonFrameEmptyDisplayUntilUtc - DateTime.UtcNow).TotalMilliseconds)}");
-                        }
-                        else
-                        {
-                            PushAcceptedDisplayToCanvas(snap, source);
-                        }
-
-                        _ = Dispatcher.BeginInvoke(new Action(() =>
+                        void applyAcceptedTickUi()
                         {
                             try
                             {
-                                if (progUi.HasValue)
-                                {
-                                    const double progMaxSec = 20;
-                                    var sec = Math.Max(0, Math.Min(progMaxSec, progUi.Value));
-                                    var secInt = (int)Math.Round(sec, MidpointRounding.AwayFromZero);
-                                    var ratio = (progMaxSec > 0) ? (sec / progMaxSec) : 0;
-                                    if (PrgBet != null)
-                                    {
-                                        PrgBet.Minimum = 0;
-                                        PrgBet.Maximum = 1;
-                                        PrgBet.Value = ratio;
-                                    }
-                                    if (LblProg != null) LblProg.Text = $"{secInt}s";
-                                }
-                                else
-                                {
-                                    if (PrgBet != null) PrgBet.Value = 0;
-                                    if (LblProg != null)
-                                        LblProg.Text = !string.IsNullOrWhiteSpace(statusUiDisplay) ? "0s" : "-";
-                                }
+                                UpdateUiCountdownState(progUi, statusUiDisplay);
 
                                 var seqStrLocal = snap.seq ?? "";
                                 char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
@@ -5196,22 +5429,28 @@ try{
 
                                 UpdateSeqUI(snap.seq ?? "");
 
-                                if (LblStatusText != null)
-                                {
-                                    if (!string.IsNullOrWhiteSpace(statusUiDisplay))
-                                    {
-                                        LblStatusText.Text = statusUiDisplay;
-                                        LblStatusText.Visibility = Visibility.Visible;
-                                    }
-                                    else
-                                    {
-                                        LblStatusText.Text = "";
-                                        LblStatusText.Visibility = Visibility.Collapsed;
-                                    }
-                                }
+                                SetStatusText(statusUiDisplay);
                             }
-                            catch { }
-                        }));
+                            catch (Exception ex)
+                            {
+                                if (!HitLogThrottle("UI_TICK_APPLY_ERR", 2000))
+                                    Log($"[UI][TICK-APPLY-ERR] {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+                            }
+                        }
+
+                        if (Dispatcher.CheckAccess())
+                            applyAcceptedTickUi();
+                        else
+                            _ = Dispatcher.BeginInvoke(new Action(applyAcceptedTickUi), System.Windows.Threading.DispatcherPriority.Render);
+
+                        if (skipDisplayPush)
+                        {
+                            Log($"[CANVAS][DISPLAY-PUSH-SKIP] reason={skipDisplayReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | seqLen={(snap.seq ?? "").Length} | table={(string.IsNullOrWhiteSpace(GetTableNameFromSnapshot(snap)) ? "-" : Shrink(GetTableNameFromSnapshot(snap), 48))} | untilMs={(long)Math.Max(0, (_suppressNonFrameEmptyDisplayUntilUtc - DateTime.UtcNow).TotalMilliseconds)}");
+                        }
+                        else
+                        {
+                            PushAcceptedDisplayToCanvas(snap, source);
+                        }
                     }
 
                     _lastGameTickUtc = DateTime.UtcNow;
@@ -5324,10 +5563,8 @@ try{
                     var side2 = GetJsonStringLoose(root, "side") ?? "";
                     var amount2 = GetJsonLongLoose(root, "amount");
                     var round2 = GetJsonLongLoose(root, "roundId");
-                    var tabId2 = GetJsonStringLoose(root, "tabId") ?? "";
                     var queueLen = GetJsonLongLoose(root, "queueLen");
                     Log($"[BETQ][DROP] jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} reason={reason} side={side2} amount={(amount2.HasValue ? amount2.Value.ToString() : "-")} round={(round2.HasValue ? round2.Value.ToString() : "-")} queueLen={(queueLen.HasValue ? queueLen.Value.ToString() : "-")}");
-                    TryDropPendingRowForJsDrop(side2, amount2, round2, tabId2, reason, jobId);
                     return;
                 }
 
@@ -5448,6 +5685,9 @@ try{
         {
             try
             {
+                if (!_enableJsFileLog)
+                    return;
+
                 static string OneLine(string? s, int maxLen)
                 {
                     if (string.IsNullOrWhiteSpace(s))
@@ -5553,15 +5793,22 @@ try{
                 string reason = GetJsonStringLoose(root, "reason") ?? "-";
                 string rev = GetJsonStringLoose(root, "rev") ?? "";
                 string session = GetJsonStringLoose(root, "session") ?? "";
+                bool isLayoutDiag = reason.StartsWith("layout-", StringComparison.OrdinalIgnoreCase);
+                if (isLayoutDiag &&
+                    !_enableJsPushDebug &&
+                    HitLogThrottle("JSSEQ_LAYOUT|" + reason, 7000))
+                {
+                    return;
+                }
                 string dataText = "";
                 if (root.TryGetProperty("data", out var dataEl) &&
                     dataEl.ValueKind != JsonValueKind.Null &&
                     dataEl.ValueKind != JsonValueKind.Undefined)
                 {
-                    dataText = CompactJson(dataEl, 2200);
+                    int maxLen = (isLayoutDiag && !_enableJsPushDebug) ? 420 : 2200;
+                    dataText = CompactJson(dataEl, maxLen);
                 }
 
-                bool isLayoutDiag = reason.StartsWith("layout-", StringComparison.OrdinalIgnoreCase);
                 var prefix = isLayoutDiag ? "JSLAYOUT" : "JSSEQ";
                 var line = $"[{prefix}][{OneLine(reason, 80)}] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)}";
                 if (!string.IsNullOrWhiteSpace(rev))
@@ -5608,62 +5855,6 @@ try{
             catch (Exception ex)
             {
                 Log($"[JSCONSOLE][INGEST_ERR] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} err={ex.GetType().Name}: {ex.Message}");
-            }
-        }
-
-        private void IngestJsNetProbe(JsonElement root, string source)
-        {
-            try
-            {
-                static string OneLine(string? s, int maxLen)
-                {
-                    if (string.IsNullOrWhiteSpace(s))
-                        return "";
-                    var t = s.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ').Trim();
-                    return (t.Length > maxLen) ? (t.Substring(0, maxLen) + "...") : t;
-                }
-
-                var kind = OneLine(GetJsonStringLoose(root, "kind") ?? "-", 32);
-                var reason = OneLine(GetJsonStringLoose(root, "reason") ?? "-", 48);
-                var url = OneLine(GetJsonStringLoose(root, "url") ?? "", 220);
-                var href = OneLine(GetJsonStringLoose(root, "href") ?? "", 220);
-                var framePath = OneLine(GetJsonStringLoose(root, "framePath") ?? "", 120);
-                var dataType = OneLine(GetJsonStringLoose(root, "dataType") ?? "", 32);
-                var method = OneLine(GetJsonStringLoose(root, "method") ?? "", 16);
-                var contentType = OneLine(GetJsonStringLoose(root, "contentType") ?? "", 80);
-                var preview = OneLine(GetJsonStringLoose(root, "preview") ?? "", 900);
-                var isGameFrame = GetJsonLongLoose(root, "isGameFrame") ?? 0;
-                var status = GetJsonLongLoose(root, "status");
-                var byteLen = GetJsonLongLoose(root, "byteLen");
-                var roadOwner = string.IsNullOrWhiteSpace(source) ? "js-net-probe" : "js-net-probe/" + source.Trim();
-                var roadUrl = !string.IsNullOrWhiteSpace(url) ? url : href;
-                if (TryBuildRoadInfoCountsPacketFromObject(root, roadOwner, roadUrl, out var compactRoadPacket) && compactRoadPacket != null)
-                {
-                    ProcessNetworkRoadInfoCountsPacket(compactRoadPacket);
-                    var latest = MapWinnerCodeToSeqChar(compactRoadPacket.LatestWinnerCode);
-                    Log($"[NETSEQ][ROADINFO-COMPACT] src={roadOwner} | table={compactRoadPacket.TableId} | shoe={compactRoadPacket.GameShoe} | round={compactRoadPacket.GameRound} | countBanker={compactRoadPacket.BankerCount} | countPlayer={compactRoadPacket.PlayerCount} | countTie={compactRoadPacket.TieCount} | counts={compactRoadPacket.BankerCount}/{compactRoadPacket.PlayerCount}/{compactRoadPacket.TieCount} | latest={(latest.HasValue ? latest.Value.ToString() : "-")} | kind={(string.IsNullOrWhiteSpace(kind) ? "-" : kind)} | byteLen={(byteLen.HasValue ? byteLen.Value.ToString(CultureInfo.InvariantCulture) : "-")}");
-                }
-
-                var dedupeKey = $"NETPROBE|JS|{source}|{kind}|{reason}|{url}|{framePath}|{Shrink(preview, 120)}";
-                var dedupeVal = $"{status?.ToString(CultureInfo.InvariantCulture) ?? "-"}|{byteLen?.ToString(CultureInfo.InvariantCulture) ?? "-"}";
-                if (_pktLastPreviewByKey.TryGetValue(dedupeKey, out var prev) &&
-                    string.Equals(prev, dedupeVal, StringComparison.Ordinal))
-                {
-                    return;
-                }
-                _pktLastPreviewByKey[dedupeKey] = dedupeVal;
-
-                Log($"[NETPROBE][JS] kind={kind} | reason={reason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | gameFrame={isGameFrame} | frame={(string.IsNullOrWhiteSpace(framePath) ? "-" : framePath)} | method={(string.IsNullOrWhiteSpace(method) ? "-" : method)} | status={(status.HasValue ? status.Value.ToString(CultureInfo.InvariantCulture) : "-")} | type={(string.IsNullOrWhiteSpace(dataType) ? "-" : dataType)} | contentType={(string.IsNullOrWhiteSpace(contentType) ? "-" : contentType)} | byteLen={(byteLen.HasValue ? byteLen.Value.ToString(CultureInfo.InvariantCulture) : "-")} | url={(string.IsNullOrWhiteSpace(url) ? "-" : url)} | href={(string.IsNullOrWhiteSpace(href) ? "-" : href)} | preview={(string.IsNullOrWhiteSpace(preview) ? "-" : preview)}");
-
-                if (kind.StartsWith("ws-", StringComparison.OrdinalIgnoreCase))
-                    LogGameInfoWebSocketDiagnostic("js-" + kind, source, !string.IsNullOrWhiteSpace(url) ? url : href, preview, false);
-
-                TryProcessNetworkRoadInfoCountsPacket(preview, false, roadOwner, roadUrl);
-
-            }
-            catch (Exception ex)
-            {
-                Log($"[NETPROBE][JS][INGEST_ERR] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} err={ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -5845,6 +6036,78 @@ try{
                    url.IndexOf("singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool IsLivetablesBaccaratUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+            if (!string.Equals(u.Host, "play.livetables.io", StringComparison.OrdinalIgnoreCase))
+                return false;
+            var path = u.AbsolutePath ?? "";
+            return path.IndexOf("/baccarat", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static long ReadLivetablesTableIdFromUrl(string? rawUrl)
+        {
+            if (!IsLivetablesBaccaratUrl(rawUrl))
+                return 0;
+            try
+            {
+                if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                    return 0;
+                var q = u.Query ?? "";
+                if (q.StartsWith("?", StringComparison.Ordinal))
+                    q = q[1..];
+                if (string.IsNullOrWhiteSpace(q))
+                    return 0;
+                foreach (var pair in q.Split('&', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var kv = pair.Split('=', 2);
+                    var k = kv.Length > 0 ? Uri.UnescapeDataString(kv[0] ?? "") : "";
+                    if (!string.Equals(k, "table_id", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var v = kv.Length > 1 ? Uri.UnescapeDataString(kv[1] ?? "") : "";
+                    if (long.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tableId) && tableId > 0)
+                        return tableId;
+                }
+            }
+            catch
+            {
+            }
+            return 0;
+        }
+
+        private static long ReadLivetablesGameIdFromUrl(string? rawUrl)
+        {
+            if (!IsLivetablesBaccaratUrl(rawUrl))
+                return 0;
+            try
+            {
+                if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                    return 0;
+                var q = u.Query ?? "";
+                if (q.StartsWith("?", StringComparison.Ordinal))
+                    q = q[1..];
+                if (string.IsNullOrWhiteSpace(q))
+                    return 0;
+                foreach (var pair in q.Split('&', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var kv = pair.Split('=', 2);
+                    var k = kv.Length > 0 ? Uri.UnescapeDataString(kv[0] ?? "") : "";
+                    if (!string.Equals(k, "game_id", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var v = kv.Length > 1 ? Uri.UnescapeDataString(kv[1] ?? "") : "";
+                    if (long.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var gameId) && gameId > 0)
+                        return gameId;
+                }
+            }
+            catch
+            {
+            }
+            return 0;
+        }
+
         private static bool IsWebMainUrl(string? url)
         {
             return !string.IsNullOrWhiteSpace(url) &&
@@ -5928,7 +6191,7 @@ try{
             {
                 var fresh = _frameAuthorityCandidates.Values
                     .Where(c => (now - c.LastSeenUtc) <= TimeSpan.FromSeconds(10))
-                    .OrderByDescending(c => IsSingleBacTableUrl(c.Href) ? 3 : (HasSingleBacProxy(c) ? 2 : (IsWebMainUrl(c.Href) ? 1 : 0)))
+                    .OrderByDescending(c => (IsSingleBacTableUrl(c.Href) || IsLivetablesBaccaratUrl(c.Href)) ? 3 : (HasSingleBacProxy(c) ? 2 : (IsWebMainUrl(c.Href) ? 1 : 0)))
                     .ThenByDescending(c => c.Score)
                     .ThenByDescending(c => c.SeenCount)
                     .ToList();
@@ -5954,13 +6217,35 @@ try{
                 bool authorityLost = !noAuthority && _authorityLastSeenUtc != DateTime.MinValue && (now - _authorityLastSeenUtc) > TimeSpan.FromSeconds(14);
                 bool strongEnough = best.Score >= 2500;
                 bool stableProbable = best.Score >= 1200 && _lastAuthorityBestStable >= 2;
-                bool topGameFast = best.IsTop && best.Score >= 1000;
+                bool livetablesFast = IsLivetablesBaccaratUrl(best.Href) && best.IsTop && best.Score >= 100;
+                bool topGameFast = best.IsTop && (best.Score >= 1000 || livetablesFast);
+                long lockedTableId = ReadLivetablesTableIdFromUrl(_authorityHref);
+                long bestTableId = ReadLivetablesTableIdFromUrl(best.Href);
+                bool tableChangedSwitch =
+                    !noAuthority &&
+                    best.IsTop &&
+                    lockedTableId > 0 &&
+                    bestTableId > 0 &&
+                    bestTableId != lockedTableId &&
+                    _lastAuthorityBestStable >= 2;
+                bool recentTableSwitchHold =
+                    _lastAuthorityTableSwitchAtUtc != DateTime.MinValue &&
+                    (now - _lastAuthorityTableSwitchAtUtc) <= TimeSpan.FromSeconds(8);
+                if (tableChangedSwitch && recentTableSwitchHold)
+                {
+                    if ((now - _lastAuthLogUtc) > TimeSpan.FromSeconds(2))
+                    {
+                        _lastAuthLogUtc = now;
+                        Log($"[AUTH][TABLE-SWITCH-HOLD] reason=recent-authority-switch | holdMs={(long)(now - _lastAuthorityTableSwitchAtUtc).TotalMilliseconds} | lockedTable={lockedTableId} | candTable={bestTableId} | score={best.Score} | stable={_lastAuthorityBestStable} | cand={Shrink(best.ContextId, 96)} | locked={Shrink(_authorityContextId, 96)}");
+                    }
+                    return;
+                }
                 bool betterSwitch = !noAuthority &&
                                     !string.Equals(_authorityContextId, best.ContextId, StringComparison.Ordinal) &&
                                     best.Score >= _authorityScore + 900 &&
                                     _lastAuthorityBestStable >= 2;
-                bool shouldLock = (noAuthority || authorityLost || betterSwitch) &&
-                                  (strongEnough || stableProbable || topGameFast);
+                bool shouldLock = (noAuthority || authorityLost || betterSwitch || tableChangedSwitch) &&
+                                  (strongEnough || stableProbable || topGameFast || tableChangedSwitch);
 
                 if (!shouldLock)
                 {
@@ -5982,8 +6267,12 @@ try{
                 _authoritySignals = best.Signals;
                 _authorityLockedAtUtc = now;
                 _authorityLastSeenUtc = now;
+                if (tableChangedSwitch)
+                    _lastAuthorityTableSwitchAtUtc = now;
 
                 var tag = string.IsNullOrWhiteSpace(prev) ? "[AUTH][LOCK]" : (authorityLost ? "[AUTH][RELOCK]" : "[AUTH][SWITCH]");
+                if (tableChangedSwitch)
+                    tag = "[AUTH][TABLE-SWITCH]";
                 if (best.ProxyChildScore >= 1200 && !string.IsNullOrWhiteSpace(best.ProxyChildFramePath))
                     tag = string.IsNullOrWhiteSpace(prev) ? "[AUTH][LOCK-PROXY]" : (authorityLost ? "[AUTH][RELOCK-PROXY]" : "[AUTH][SWITCH-PROXY]");
                 Log($"{tag} ctx={Shrink(_authorityContextId, 120)} | prev={(string.IsNullOrWhiteSpace(prev) ? "-" : Shrink(prev, 96))} | score={_authorityScore} | stable={_lastAuthorityBestStable} | conf={(string.IsNullOrWhiteSpace(_authorityConfidence) ? "-" : _authorityConfidence)} | signals={(string.IsNullOrWhiteSpace(_authoritySignals) ? "-" : _authoritySignals)} | path={(string.IsNullOrWhiteSpace(_authorityFramePath) ? "-" : _authorityFramePath)} | proxy={(best.ProxyChildScore > 0 ? (best.ProxyChildScore.ToString(CultureInfo.InvariantCulture) + ":" + Shrink(best.ProxyChildFramePath, 80)) : "-")} | proxyHref={TrimHrefForLog(best.ProxyChildHref)} | href={TrimHrefForLog(_authorityHref)}");
@@ -6009,7 +6298,7 @@ try{
                     "return 'pending:no-authority-api';" +
                     "}catch(e){return 'err:' + String(e&&e.message?e.message:e);}})();";
 
-                int topSent = 0, frameSent = 0, popupSent = 0;
+                int topSent = 0, frameSent = 0, popupTopSent = 0, popupSent = 0;
                 try
                 {
                     if (Web?.CoreWebView2 != null)
@@ -6045,6 +6334,16 @@ try{
                 {
                     if (_popupWeb?.CoreWebView2 != null)
                     {
+                        popupTopSent++;
+                        _ = _popupWeb.ExecuteScriptAsync(js);
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    if (_popupWeb?.CoreWebView2 != null)
+                    {
                         foreach (var item in GetPopupArmedFramesSnapshot())
                         {
                             try
@@ -6062,7 +6361,7 @@ try{
                 }
                 catch { }
 
-                Log($"[GAMEBOOT][COMMAND] reason={reason} | ctx={Shrink(contextId, 120)} | token={Shrink(token, 12)} | top={topSent} | frames={frameSent} | popupFrames={popupSent}");
+                Log($"[GAMEBOOT][COMMAND] reason={reason} | ctx={Shrink(contextId, 120)} | token={Shrink(token, 12)} | top={topSent} | frames={frameSent} | popupTop={popupTopSent} | popupFrames={popupSent}");
                 await Task.CompletedTask;
             }).Task.Unwrap();
         }
@@ -6076,6 +6375,19 @@ try{
             {
                 if (string.IsNullOrWhiteSpace(_authorityContextId))
                 {
+                    var isPullSource =
+                        !string.IsNullOrWhiteSpace(source) &&
+                        source.IndexOf("pull", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (isPullSource)
+                    {
+                        routeReason = "no-authority-yet-skip-pull";
+                        if ((now - _lastTickRouteLogUtc) > TimeSpan.FromSeconds(2))
+                        {
+                            _lastTickRouteLogUtc = now;
+                            Log($"[TICK][REJECT] reason=no-authority-yet-skip-pull | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(key) ? "-" : Shrink(key, 96))} | score={(snap.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | href={TrimHrefForLog(snap.href)}");
+                        }
+                        return false;
+                    }
                     if ((now - _lastTickRouteLogUtc) > TimeSpan.FromSeconds(2))
                     {
                         _lastTickRouteLogUtc = now;
@@ -6093,6 +6405,79 @@ try{
                         Log($"[TICK][REJECT] reason=empty-context-not-authority | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | locked={Shrink(_authorityContextId, 96)} | score={(snap.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | href={TrimHrefForLog(snap.href)}");
                     }
                     return false;
+                }
+
+                long lockedTableId = ReadLivetablesTableIdFromUrl(_authorityHref);
+                long lockedGameId = ReadLivetablesGameIdFromUrl(_authorityHref);
+                long incomingTableId = snap.tableId.HasValue && snap.tableId.Value > 0
+                    ? snap.tableId.Value
+                    : ReadLivetablesTableIdFromUrl(snap.href);
+                long incomingGameId = ReadLivetablesGameIdFromUrl(snap.href);
+                bool tableSwitched =
+                    lockedTableId > 0 &&
+                    incomingTableId > 0 &&
+                    lockedTableId != incomingTableId &&
+                    IsLivetablesBaccaratUrl(_authorityHref) &&
+                    IsLivetablesBaccaratUrl(snap.href);
+
+                if (tableSwitched &&
+                    !string.Equals(key, _authorityContextId, StringComparison.Ordinal) &&
+                    _authorityLastSeenUtc != DateTime.MinValue &&
+                    (now - _authorityLastSeenUtc) > TimeSpan.FromSeconds(1))
+                {
+                    var score = (int)(snap.contextScore ?? 0);
+                    var signals = snap.signals ?? "";
+                    var seqLen = FilterResultDisplaySeqWindow(snap.seq).Length;
+                    var rawLen = FilterResultDisplaySeqWindow(snap.rawSeq).Length;
+                    var incomingSeqDisplay = FilterResultDisplaySeqWindow(snap.seq);
+                    var incomingRawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+                    var incomingSeqForTrust = SelectTrustedSeqDisplay(incomingSeqDisplay, incomingRawDisplay);
+                    bool hasIncomingSeq = seqLen > 0 || rawLen > 0;
+                    var currentAcceptedSeq = FilterResultDisplaySeqWindow(_lastCanvasAcceptedSeqDisplay);
+                    bool incomingDiffersCurrent = hasIncomingSeq &&
+                        !string.Equals(incomingSeqForTrust, currentAcceptedSeq, StringComparison.Ordinal);
+                    _weakPullSwitchCandidateTableId = 0;
+                    _weakPullSwitchCandidateFirstSeenUtc = DateTime.MinValue;
+                    _weakPullSwitchCandidateHits = 0;
+                    var prev = _authorityContextId;
+                    _authorityContextId = key;
+                    _authorityToken = Guid.NewGuid().ToString("N");
+                    _authorityHref = snap.href ?? "";
+                    _authorityFramePath = snap.framePath ?? "";
+                    _authorityScore = (int)(snap.contextScore ?? 0);
+                    _authorityConfidence = snap.contextConfidence ?? "";
+                    _authoritySignals = snap.signals ?? "";
+                    _authorityLockedAtUtc = now;
+                    _authorityLastSeenUtc = now;
+                    _lastAuthorityTableSwitchAtUtc = now;
+                    _weakPullSwitchCandidateTableId = 0;
+                    _weakPullSwitchCandidateFirstSeenUtc = DateTime.MinValue;
+                    _weakPullSwitchCandidateHits = 0;
+                    _frameAuthorityCandidates.Clear();
+                    _lastAuthorityBestKey = _authorityContextId;
+                    _lastAuthorityBestStable = 1;
+                    routeReason = "authority-table-switch-accept";
+                    if (lockedGameId > 0 && incomingGameId > 0 && lockedGameId != incomingGameId)
+                    {
+                        Log($"[AUTH][TABLE-SWITCH-GAMEID-MISMATCH-ALLOW] oldTable={lockedTableId} | newTable={incomingTableId} | oldGame={lockedGameId} | newGame={incomingGameId} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | score={score} | signals={(string.IsNullOrWhiteSpace(signals) ? "-" : signals)}");
+                    }
+                    Log($"[AUTH][TABLE-SWITCH-ACCEPT] oldTable={lockedTableId} | newTable={incomingTableId} | oldCtx={Shrink(prev, 96)} | newCtx={Shrink(key, 96)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | score={(snap.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | href={TrimHrefForLog(snap.href)}");
+                    if (!string.Equals(prev, _authorityContextId, StringComparison.Ordinal))
+                    {
+                        var hasIncomingDisplaySeq = seqLen > 0 || rawLen > 0;
+                        bool keepDisplayOnSwitch = hasIncomingDisplaySeq;
+                        if (keepDisplayOnSwitch)
+                        {
+                            Log($"[CANVAS][DISPLAY-CLEAR-SKIP] reason=authority-table-switch-seq-ready | seqLen={seqLen} | rawLen={rawLen} | incomingDiff={((incomingDiffersCurrent) ? 1 : 0)} | oldTable={lockedTableId} | newTable={incomingTableId} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)}");
+                        }
+                        else
+                        {
+                            Log($"[CANVAS][DISPLAY-CLEAR-ON-SWITCH] reason=no-incoming-seq | seqLen={seqLen} | rawLen={rawLen} | oldTable={lockedTableId} | newTable={incomingTableId} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)}");
+                            ClearAcceptedDisplayOnCanvas("authority-table-switch");
+                        }
+                    }
+                    _ = StartAuthorityContextAsync(_authorityContextId, _authorityToken, "table-switch-tick");
+                    return true;
                 }
 
                 if (string.Equals(key, _authorityContextId, StringComparison.Ordinal))
@@ -6783,12 +7168,16 @@ try{
 
         private bool ShouldFetchCdpHttpBody(string? url, string? resourceType, string? mimeType, int statusCode)
         {
+            if (!_enableHttpResponseBodyTap)
+                return false;
+
             if (statusCode > 0 && statusCode >= 400)
                 return false;
 
             var u = url ?? "";
             var type = (resourceType ?? "").Trim();
             var mime = (mimeType ?? "").Trim().ToLowerInvariant();
+            bool interestingHttpUrl = IsInterestingHttpUrl(u);
 
             if (mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ||
                 mime.StartsWith("font/", StringComparison.OrdinalIgnoreCase) ||
@@ -6799,7 +7188,7 @@ try{
                 return false;
             }
 
-            if (IsInterestingHttpUrl(u))
+            if (interestingHttpUrl)
                 return true;
 
             bool fetchLike =
@@ -6819,6 +7208,22 @@ try{
             if (!textLike)
                 return false;
 
+            // Home/login có nhiều API tổng hợp rất lớn; chỉ kéo full body khi đã có
+            // ngữ cảnh game đáng tin cậy hoặc URL thuộc flow/player query cần thiết.
+            if (!ShouldInspectHeavyGameNetwork(u))
+                return false;
+
+            if (!_enableJsPushDebug)
+            {
+                return u.IndexOf("/player/query/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       u.IndexOf("queryWebGameHallDatas", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       u.IndexOf("queryInitTableInfo", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       u.IndexOf("queryInitWebGameHall", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       u.IndexOf("queryEnableFunctionForWebsite", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       u.IndexOf("hallroad", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       u.IndexOf("road", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
             return u.IndexOf("/player/", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    u.IndexOf("/api/", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    u.IndexOf("query", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -6830,6 +7235,8 @@ try{
             reason = "";
             preview = "";
             if (candidate == null || string.IsNullOrWhiteSpace(body))
+                return false;
+            if (!_enableJsPushDebug)
                 return false;
 
             var shrunk = Shrink(body.Trim(), 600);
@@ -6846,91 +7253,12 @@ try{
             if (_pktLastPreviewByKey.TryGetValue(key, out var prev) &&
                 string.Equals(prev, val, StringComparison.Ordinal))
                 return false;
+            var throttleKey = "CDP.HTTP.BODY.LOG|" + candidate.OwnerTag + "|" + candidate.Url;
+            if (HitLogThrottle(throttleKey, 7000))
+                return false;
 
             _pktLastPreviewByKey[key] = val;
             return true;
-        }
-
-        private static bool LooksLikeNetworkProbeUrl(string? url)
-        {
-            var u = (url ?? "").Trim();
-            if (u.Length == 0)
-                return false;
-
-            return u.IndexOf("singleBacTable", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   u.IndexOf("/player/", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   u.IndexOf("game", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   u.IndexOf("road", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   u.IndexOf("history", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   u.IndexOf("winner", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   u.IndexOf("result", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   u.IndexOf("socket", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   u.IndexOf("baccarat", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static bool LooksLikeNetworkProbePayload(string? payload)
-        {
-            var text = payload ?? "";
-            if (text.Length == 0)
-                return false;
-
-            return text.IndexOf("winner", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   text.IndexOf("gameRound", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   text.IndexOf("gameShoe", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   text.IndexOf("eventType", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   text.IndexOf("result", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   text.IndexOf("road", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   text.IndexOf("history", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   text.IndexOf("bankerHand", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   text.IndexOf("playerHand", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private void LogCdpWebSocketCreatedProbe(string ownerTag, string requestId, string? url, long count)
-        {
-            if (string.IsNullOrWhiteSpace(url))
-                return;
-
-            var key = "NETPROBE.CDP.WS.CREATED|" + (ownerTag ?? "") + "|" + url;
-            if (_pktLastPreviewByKey.TryGetValue(key, out _))
-                return;
-
-            _pktLastPreviewByKey[key] = "1";
-            Log($"[NETPROBE][CDP-WS-CREATED] owner={(string.IsNullOrWhiteSpace(ownerTag) ? "-" : ownerTag)} | count={count} | requestId={(string.IsNullOrWhiteSpace(requestId) ? "-" : requestId)} | interesting={(LooksLikeNetworkProbeUrl(url) ? 1 : 0)} | url={Shrink(url, 240)}");
-        }
-
-        private void LogCdpWebSocketFrameProbe(string direction, string ownerTag, string? url, string payload, bool isBinary, long globalCount)
-        {
-            try
-            {
-                var owner = string.IsNullOrWhiteSpace(ownerTag) ? "-" : ownerTag;
-                var urlText = url ?? "";
-                var countKey = "NETPROBE.CDP.WS.FRAME.COUNT|" + direction + "|" + owner + "|" + urlText;
-                var perUrlCount = _cdpProbeFrameCounts.AddOrUpdate(countKey, 1, (_, old) => old >= 1000000 ? old : old + 1);
-
-                var decoded = DecodePacketText(payload, isBinary);
-                var hasPayloadHint = LooksLikeNetworkProbePayload(decoded);
-                var hasUrlHint = LooksLikeNetworkProbeUrl(urlText);
-                var isSample = perUrlCount <= 3 && hasUrlHint;
-                if (!hasPayloadHint && !isSample)
-                    return;
-
-                var preview = PreviewPacketPayloadEx(payload, isBinary);
-                var reason = hasPayloadHint ? "payload-hint" : "sample";
-                var dedupeKey = $"NETPROBE.CDP.WS.FRAME|{direction}|{owner}|{urlText}|{reason}|{(hasPayloadHint ? Shrink(preview, 120) : perUrlCount.ToString(CultureInfo.InvariantCulture))}";
-                var dedupeVal = $"{payload?.Length ?? 0}|{isBinary}";
-                if (_pktLastPreviewByKey.TryGetValue(dedupeKey, out var prev) &&
-                    string.Equals(prev, dedupeVal, StringComparison.Ordinal))
-                {
-                    return;
-                }
-
-                _pktLastPreviewByKey[dedupeKey] = dedupeVal;
-                Log($"[NETPROBE][CDP-WS-{direction}] reason={reason} | owner={owner} | global={globalCount} | perUrl={perUrlCount} | bin={(isBinary ? 1 : 0)} | payloadLen={(payload?.Length ?? 0)} | url={(string.IsNullOrWhiteSpace(urlText) ? "-" : Shrink(urlText, 220))} | preview={(string.IsNullOrWhiteSpace(preview) ? "-" : Shrink(preview, 900))}");
-            }
-            catch (Exception ex)
-            {
-                Log($"[NETPROBE][CDP-WS-{direction}][ERR] owner={(string.IsNullOrWhiteSpace(ownerTag) ? "-" : ownerTag)} | {ex.GetType().Name}: {Shrink(ex.Message, 120)}");
-            }
         }
 
         private async Task FetchCdpResponseBodyAsync(CoreWebView2 core, CdpHttpResponseCandidate candidate)
@@ -6979,9 +7307,7 @@ try{
 
                 Interlocked.Increment(ref _cdpDiagHttpBody);
                 TryProcessNetworkBetPoolPayload(body, false, candidate.OwnerTag, candidate.Url, "cdp-http");
-                ObserveNetworkGameState(body, false);
                 TryProcessNetworkHistoryPayload(body, false, candidate.OwnerTag, candidate.Url, "cdp-http");
-                TryProcessNetworkRoadInfoCountsPacket(body, false, "cdp-http/" + candidate.OwnerTag, candidate.Url);
 
                 if (ShouldLogCdpHttpBodyProbe(candidate, body, out var reason, out var preview))
                 {
@@ -7039,7 +7365,6 @@ try{
                         var reqId = root.TryGetProperty("requestId", out var reqEl) ? (reqEl.GetString() ?? "") : "";
                         var url = root.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
                         if (!string.IsNullOrEmpty(reqId)) _wsUrlByRequestId[reqId] = url;
-                        LogCdpWebSocketCreatedProbe(ownerTag, reqId, url, wsCreatedCount);
                         if (_enableCdpNetworkTap && IsInteresting(url))
                             LogPacket("WS.created/" + ownerTag, url, "", false);
                         if (wsCreatedCount % 120 == 0)
@@ -7065,12 +7390,13 @@ try{
                         var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
                         var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
                         var isBin = opcode != 1;
-                        TryProcessNetworkBetPoolPayload(payload, isBin, ownerTag, url, "ws");
-                        ObserveNetworkGameState(payload, isBin);
-                        TryProcessNetworkHistoryPayload(payload, isBin, ownerTag, url, "ws");
-                        LogGameInfoWebSocketDiagnostic("cdp-ws-recv", ownerTag, url, payload, isBin, wsRecvCount);
-                        TryProcessNetworkRoadInfoCountsPacket(payload, isBin, "cdp-ws-recv/" + ownerTag, url);
-                        LogCdpWebSocketFrameProbe("RECV", ownerTag, url, payload, isBin, wsRecvCount);
+                        if (ShouldInspectHeavyGameNetwork(url))
+                        {
+                            TryProcessNetworkBetPoolPayload(payload, isBin, ownerTag, url, "ws");
+                            ObserveNetworkGameState(payload, isBin);
+                            TryProcessNetworkHistoryPayload(payload, isBin, ownerTag, url, "ws");
+                            TryProcessNetworkWinnerPacket(payload, isBin, ownerTag, url);
+                        }
                         if (_enableCdpNetworkTap && ShouldLogPacketFrame("WS.recv", url, payload, isBin, out var preview, out var reason))
                             LogPacket("WS.recv/" + ownerTag + "/" + reason, url, preview, isBin);
                         if (wsRecvCount % 240 == 0)
@@ -7096,8 +7422,6 @@ try{
                         var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
                         var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
                         var isBin = opcode != 1;
-                        LogGameInfoWebSocketDiagnostic("cdp-ws-send", ownerTag, url, payload, isBin, wsSentCount);
-                        LogCdpWebSocketFrameProbe("SEND", ownerTag, url, payload, isBin, wsSentCount);
                         if (_enableCdpNetworkTap && ShouldLogPacketFrame("WS.send", url, payload, isBin, out var preview, out var reason))
                             LogPacket("WS.send/" + ownerTag + "/" + reason, url, preview, isBin);
                         if (wsSentCount % 240 == 0)
@@ -7247,6 +7571,38 @@ try{
             return false;
         }
 
+        private bool HasFreshGameTick()
+        {
+            var last = _lastGameTickUtc;
+            return last != DateTime.MinValue &&
+                   (DateTime.UtcNow - last) <= TimeSpan.FromSeconds(6);
+        }
+
+        private bool HasLikelyActiveBetRoute()
+        {
+            try
+            {
+                if (IsLikelyBetGameUrl(Web?.Source?.ToString()))
+                    return true;
+                if (IsLikelyBetGameUrl(_popupWeb?.Source?.ToString()))
+                    return true;
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private bool ShouldInspectHeavyGameNetwork(string? url)
+        {
+            var u = (url ?? "").Trim();
+            if (IsPlayerFlowUrl(u) || IsLikelyBetGameUrl(u) || IsInterestingHttpUrl(u))
+                return true;
+
+            return HasLikelyActiveBetRoute() || HasFreshGameTick();
+        }
+
         private bool IsInterestingHttpUrl(string? url)
         {
             if (string.IsNullOrWhiteSpace(url)) return false;
@@ -7390,75 +7746,8 @@ try{
             int arr = rawText.IndexOf('[');
             int idx = obj >= 0 && arr >= 0 ? Math.Min(obj, arr) : Math.Max(obj, arr);
             if (idx < 0 || idx >= rawText.Length) return null;
-            int end = FindBalancedJsonEnd(rawText, idx);
-            var json = (end > idx ? rawText.Substring(idx, end - idx + 1) : rawText.Substring(idx)).Trim();
+            var json = rawText.Substring(idx).Trim();
             return string.IsNullOrWhiteSpace(json) ? null : json;
-        }
-
-        private static int FindBalancedJsonEnd(string text, int start)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(text) || start < 0 || start >= text.Length)
-                    return -1;
-
-                var open = text[start];
-                var close = open == '{' ? '}' : open == '[' ? ']' : '\0';
-                if (close == '\0')
-                    return -1;
-
-                var stack = new Stack<char>();
-                bool inString = false;
-                bool escaped = false;
-                for (int i = start; i < text.Length; i++)
-                {
-                    var ch = text[i];
-                    if (inString)
-                    {
-                        if (escaped)
-                        {
-                            escaped = false;
-                            continue;
-                        }
-                        if (ch == '\\')
-                        {
-                            escaped = true;
-                            continue;
-                        }
-                        if (ch == '"')
-                            inString = false;
-                        continue;
-                    }
-
-                    if (ch == '"')
-                    {
-                        inString = true;
-                        continue;
-                    }
-                    if (ch == '{')
-                    {
-                        stack.Push('}');
-                        continue;
-                    }
-                    if (ch == '[')
-                    {
-                        stack.Push(']');
-                        continue;
-                    }
-                    if ((ch == '}' || ch == ']') && stack.Count > 0)
-                    {
-                        var expected = stack.Pop();
-                        if (ch != expected)
-                            return -1;
-                        if (stack.Count == 0)
-                            return i;
-                    }
-                }
-            }
-            catch
-            {
-            }
-            return -1;
         }
 
         private static char? MapWinnerCodeToSeqChar(int winnerCode)
@@ -7484,661 +7773,53 @@ try{
             };
         }
 
-        private static bool TryBuildDeterministicRoadInfoBootstrapPrefix(NetworkRoadInfoCountsPacket packet, out string prefixDisplay)
-        {
-            prefixDisplay = "";
-            if (packet == null || packet.GameRound <= 0)
-                return false;
-
-            var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
-            if (!latestChar.HasValue)
-                return false;
-
-            int banker = Math.Max(0, packet.BankerCount);
-            int player = Math.Max(0, packet.PlayerCount);
-            int tie = Math.Max(0, packet.TieCount);
-
-            switch (latestChar.Value)
-            {
-                case 'B':
-                    banker--;
-                    break;
-                case 'P':
-                    player--;
-                    break;
-                case 'T':
-                    tie--;
-                    break;
-            }
-
-            if (banker < 0 || player < 0 || tie < 0)
-                return false;
-
-            int prefixLen = (int)Math.Max(0, packet.GameRound - 1);
-            int remaining = banker + player + tie;
-            if (remaining != prefixLen)
-                return false;
-
-            if (remaining == 0)
-            {
-                prefixDisplay = "";
-                return true;
-            }
-
-            int activeDoors = (banker > 0 ? 1 : 0) + (player > 0 ? 1 : 0) + (tie > 0 ? 1 : 0);
-            if (activeDoors != 1)
-                return false;
-
-            char prefixChar = banker > 0 ? 'B' : (player > 0 ? 'P' : 'T');
-            prefixDisplay = new string(prefixChar, remaining);
-            return true;
-        }
-
-        private static bool TryBuildDeterministicRoadInfoShuffleResetPrefix(NetworkRoadInfoCountsPacket packet, out string prefixDisplay)
-        {
-            prefixDisplay = "";
-            if (packet == null)
-                return false;
-
-            var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
-            if (!latestChar.HasValue)
-                return false;
-
-            int banker = Math.Max(0, packet.BankerCount);
-            int player = Math.Max(0, packet.PlayerCount);
-            int tie = Math.Max(0, packet.TieCount);
-            int total = banker + player + tie;
-            if (total <= 0 || total > 6)
-                return false;
-
-            int activeDoors = (banker > 0 ? 1 : 0) + (player > 0 ? 1 : 0) + (tie > 0 ? 1 : 0);
-            if (activeDoors != 1)
-                return false;
-
-            char onlyDoor = banker > 0 ? 'B' : (player > 0 ? 'P' : 'T');
-            if (onlyDoor != latestChar.Value)
-                return false;
-
-            prefixDisplay = total > 1
-                ? new string(onlyDoor, total - 1)
-                : "";
-            return true;
-        }
-
-        private static List<string> BuildNetworkJsonCandidates(string rawText)
-        {
-            var candidates = new List<string>();
-
-            void Add(string? candidate)
-            {
-                var value = (candidate ?? "").Trim();
-                if (value.Length == 0)
-                    return;
-                foreach (var existing in candidates)
-                {
-                    if (string.Equals(existing, value, StringComparison.Ordinal))
-                        return;
-                }
-                candidates.Add(value);
-            }
-
-            Add(ExtractJsonPayload(rawText));
-
-            var text = (rawText ?? "").Trim();
-            for (int i = 0; i < text.Length && candidates.Count < 16; i++)
-            {
-                var ch = text[i];
-                if (ch != '{' && ch != '[')
-                    continue;
-                Add(ExtractJsonPayload(text.Substring(i)));
-            }
-
-            return candidates;
-        }
-
-        private static bool TryBuildRoadInfoCountsPacketFromObject(JsonElement obj, string ownerTag, string? url, out NetworkRoadInfoCountsPacket? packet)
+        private bool TryParseNetworkWinnerPacket(string payload, bool isBinary, string ownerTag, string? url, out NetworkWinnerPacket? packet)
         {
             packet = null;
-            if (obj.ValueKind != JsonValueKind.Object)
-                return false;
+            try
+            {
+                var rawText = DecodePacketText(payload, isBinary);
+                var json = ExtractJsonPayload(rawText);
+                if (string.IsNullOrWhiteSpace(json)) return false;
 
-            JsonElement roadEl = default;
-            bool hasRoadInfo = false;
-            if (TryGetJsonPropertyLoose(obj, "roadInfo", out var directRoad) && directRoad.ValueKind == JsonValueKind.Object)
-            {
-                roadEl = directRoad;
-                hasRoadInfo = true;
-            }
-            else if (TryGetJsonPropertyLoose(obj, "message", out var messageEl))
-            {
-                if (messageEl.ValueKind == JsonValueKind.Object &&
-                    TryGetJsonPropertyLoose(messageEl, "roadInfo", out var nestedRoad) &&
-                    nestedRoad.ValueKind == JsonValueKind.Object)
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var msgType = GetJsonStringLoose(root, "messageType") ?? "";
+                if (!string.Equals(msgType, "GameInfo", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                var handler = GetJsonLongLoose(root, "handler") ?? -1;
+                if (handler != 4) return false;
+                if (!root.TryGetProperty("message", out var msgEl) || msgEl.ValueKind != JsonValueKind.Object)
+                    return false;
+
+                var evt = GetJsonStringLoose(msgEl, "eventType") ?? "";
+                if (!string.Equals(evt, "GP_WINNER", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                var winnerCode = (int)(GetJsonLongLoose(msgEl, "winner") ?? -1);
+                var winnerChar = MapWinnerCodeToSeqChar(winnerCode);
+                if (!winnerChar.HasValue)
+                    return false;
+
+                packet = new NetworkWinnerPacket
                 {
-                    roadEl = nestedRoad;
-                    hasRoadInfo = true;
-                }
-                else if (messageEl.ValueKind == JsonValueKind.String)
-                {
-                    var nested = ExtractJsonPayload(messageEl.GetString() ?? "");
-                    if (!string.IsNullOrWhiteSpace(nested))
-                    {
-                        try
-                        {
-                            using var nestedDoc = JsonDocument.Parse(nested);
-                            if (TryBuildRoadInfoCountsPacketFromObject(nestedDoc.RootElement, ownerTag, url, out packet) && packet != null)
-                                return true;
-                        }
-                        catch
-                        {
-                        }
-                    }
-                }
-            }
-            else if (TryGetJsonPropertyLoose(obj, "winCounts", out var countsEl) && countsEl.ValueKind == JsonValueKind.Array)
-            {
-                roadEl = obj;
-                hasRoadInfo = true;
-            }
-
-            if (!hasRoadInfo || roadEl.ValueKind != JsonValueKind.Object)
-                return false;
-            if (!TryReadBaccaratWinCounts(roadEl, out var banker, out var player, out var tie))
-                return false;
-
-            var tableId = ReadLongByAnyName(roadEl, "tableID", "tableId", "tableNo");
-            if (tableId <= 0) tableId = ReadLongByAnyName(obj, "tableID", "tableId", "tableNo");
-            var gameShoe = ReadLongByAnyName(roadEl, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
-            if (gameShoe <= 0) gameShoe = ReadLongByAnyName(obj, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
-            var gameRound = ReadLongByAnyName(roadEl, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
-            if (gameRound <= 0) gameRound = ReadLongByAnyName(obj, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
-            if (tableId <= 0 || gameShoe <= 0 || gameRound <= 0)
-                return false;
-
-            var latestWinnerCode = TryReadRoadInfoLatestWinnerCode(roadEl, out var latestCode)
-                ? latestCode
-                : -1;
-
-            packet = new NetworkRoadInfoCountsPacket
-            {
-                TableId = tableId,
-                GameShoe = gameShoe,
-                GameRound = gameRound,
-                BankerCount = banker,
-                PlayerCount = player,
-                TieCount = tie,
-                LatestWinnerCode = latestWinnerCode,
-                OwnerTag = ownerTag ?? "",
-                Url = url ?? ""
-            };
-            return true;
-        }
-
-        private static int MapRoadInfoRoadCodeToWinnerCode(long roadCode)
-        {
-            return roadCode switch
-            {
-                0 => WinnerCharToCode('B'),
-                1 => WinnerCharToCode('P'),
-                2 => WinnerCharToCode('T'),
-                4 => WinnerCharToCode('P'),
-                7 => WinnerCharToCode('P'),
-                8 => WinnerCharToCode('B'),
-                _ => -1
-            };
-        }
-
-        private static bool TryReadRoadInfoLatestWinnerCode(JsonElement roadEl, out int winnerCode)
-        {
-            winnerCode = -1;
-            if (roadEl.ValueKind != JsonValueKind.Object)
-                return false;
-
-            if (TryReadLongByAnyName(roadEl, out var directRoad, "latestRoad", "latestRoadCode", "lastRoad", "lastRoadCode"))
-            {
-                winnerCode = MapRoadInfoRoadCodeToWinnerCode(directRoad);
-                return winnerCode >= 0;
-            }
-
-            if (!TryGetJsonPropertyLoose(roadEl, "markerRoads", out var markerRoadsEl) ||
-                markerRoadsEl.ValueKind != JsonValueKind.Array)
-            {
-                return false;
-            }
-
-            var bestIndex = -1;
-            long bestStamp = long.MinValue;
-            long bestRoad = long.MinValue;
-            var index = 0;
-            foreach (var item in markerRoadsEl.EnumerateArray())
-            {
-                if (item.ValueKind == JsonValueKind.Object &&
-                    TryReadLongByAnyName(item, out var roadValue, "road"))
-                {
-                    TryReadLongByAnyName(item, out var stamp, "stampTime", "time", "ts");
-                    if (bestIndex < 0 || stamp > bestStamp || (stamp == bestStamp && index > bestIndex))
-                    {
-                        bestIndex = index;
-                        bestStamp = stamp;
-                        bestRoad = roadValue;
-                    }
-                }
-                index++;
-            }
-
-            if (bestIndex < 0)
-                return false;
-
-            winnerCode = MapRoadInfoRoadCodeToWinnerCode(bestRoad);
-            return winnerCode >= 0;
-        }
-
-        private static bool TryFindRoadInfoCountsPacket(JsonElement el, string ownerTag, string? url, int depth, out NetworkRoadInfoCountsPacket? packet)
-        {
-            packet = null;
-            if (depth > 8)
-                return false;
-
-            if (el.ValueKind == JsonValueKind.Object)
-            {
-                if (TryBuildRoadInfoCountsPacketFromObject(el, ownerTag, url, out packet) && packet != null)
-                    return true;
-
-                foreach (var prop in el.EnumerateObject())
-                {
-                    if (TryFindRoadInfoCountsPacket(prop.Value, ownerTag, url, depth + 1, out packet) && packet != null)
-                        return true;
-
-                    if (prop.Value.ValueKind == JsonValueKind.String)
-                    {
-                        var raw = prop.Value.GetString() ?? "";
-                        if (raw.IndexOf("roadInfo", StringComparison.OrdinalIgnoreCase) < 0 &&
-                            raw.IndexOf("winCounts", StringComparison.OrdinalIgnoreCase) < 0)
-                        {
-                            continue;
-                        }
-                        var nested = ExtractJsonPayload(raw);
-                        if (string.IsNullOrWhiteSpace(nested))
-                            continue;
-                        try
-                        {
-                            using var nestedDoc = JsonDocument.Parse(nested);
-                            if (TryFindRoadInfoCountsPacket(nestedDoc.RootElement, ownerTag, url, depth + 1, out packet) && packet != null)
-                                return true;
-                        }
-                        catch
-                        {
-                        }
-                    }
-                }
-            }
-            else if (el.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in el.EnumerateArray())
-                {
-                    if (TryFindRoadInfoCountsPacket(item, ownerTag, url, depth + 1, out packet) && packet != null)
-                        return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool TryParseRoadInfoCountsPacket(string payload, bool isBinary, string ownerTag, string? url, out NetworkRoadInfoCountsPacket? packet)
-        {
-            packet = null;
-            var rawText = DecodePacketText(payload, isBinary);
-            if (string.IsNullOrWhiteSpace(rawText) ||
-                rawText.IndexOf("winCounts", StringComparison.OrdinalIgnoreCase) < 0)
-            {
-                return false;
-            }
-
-            foreach (var json in BuildNetworkJsonCandidates(rawText))
-            {
-                try
-                {
-                    using var doc = JsonDocument.Parse(json);
-                    if (TryFindRoadInfoCountsPacket(doc.RootElement, ownerTag, url, 0, out packet) && packet != null)
-                        return true;
-                }
-                catch
-                {
-                }
-            }
-
-            return false;
-        }
-
-        private void ResetRoadInfoCountsCacheLocked(string reason)
-        {
-            if (_roadInfoCountsTableId <= 0 &&
-                _roadInfoCountsGameShoe <= 0 &&
-                _roadInfoCountsRound <= 0)
-            {
-                return;
-            }
-
-            Log($"[NETSEQ][ROADINFO-RESET] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | prevTable={_roadInfoCountsTableId} | prevShoe={_roadInfoCountsGameShoe} | prevRound={_roadInfoCountsRound} | prev={_roadInfoCountsB}/{_roadInfoCountsP}/{_roadInfoCountsT}");
-            _roadInfoCountsTableId = 0;
-            _roadInfoCountsGameShoe = 0;
-            _roadInfoCountsRound = 0;
-            _roadInfoCountsB = 0;
-            _roadInfoCountsP = 0;
-            _roadInfoCountsT = 0;
-            _roadInfoCountsSeenUtc = DateTime.MinValue;
-        }
-
-        private void SeedRoadInfoCountsCacheLocked(NetworkRoadInfoCountsPacket packet, string reason)
-        {
-            _roadInfoCountsTableId = packet.TableId;
-            _roadInfoCountsGameShoe = packet.GameShoe;
-            _roadInfoCountsRound = packet.GameRound;
-            _roadInfoCountsB = packet.BankerCount;
-            _roadInfoCountsP = packet.PlayerCount;
-            _roadInfoCountsT = packet.TieCount;
-            _roadInfoCountsSeenUtc = DateTime.UtcNow;
-            var latest = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
-            Log($"[NETSEQ][ROADINFO-SEED] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | latest={(latest.HasValue ? latest.Value.ToString() : "-")} | netCtx={_netSeqTableId}/{_netSeqGameShoe}/{_netSeqLastRound}");
-        }
-
-        private void SeedRoadInfoCountsFromSeqLocked(string seqDisplay, long tableId, long gameShoe, long gameRound, string reason)
-        {
-            if (tableId <= 0 || gameShoe <= 0 || gameRound <= 0)
-                return;
-
-            CountSeqChars(seqDisplay, out var banker, out var player, out var tie, out _, out _);
-            if (banker + player + tie <= 0)
-                return;
-
-            _roadInfoCountsTableId = tableId;
-            _roadInfoCountsGameShoe = gameShoe;
-            _roadInfoCountsRound = gameRound;
-            _roadInfoCountsB = banker;
-            _roadInfoCountsP = player;
-            _roadInfoCountsT = tie;
-            _roadInfoCountsSeenUtc = DateTime.UtcNow;
-            Log($"[NETSEQ][ROADINFO-SEED] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | src=dom-bootstrap | table={tableId} | shoe={gameShoe} | round={gameRound} | counts={banker}/{player}/{tie} | seqLen={(seqDisplay ?? "").Length} | netCtx={_netSeqTableId}/{_netSeqGameShoe}/{_netSeqLastRound}");
-        }
-
-        private List<NetworkWinnerPacket> BuildWinnersFromRoadInfoCountsLocked(NetworkRoadInfoCountsPacket packet)
-        {
-            var winners = new List<NetworkWinnerPacket>();
-            var activeTableId = ResolveActiveTableIdLocked();
-            if (activeTableId > 0 && packet.TableId > 0 && packet.TableId != activeTableId)
-            {
-                Log($"[NETSEQ][ROADINFO-BLOCK] reason=table-mismatch | active={activeTableId} | packet={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount}");
-                return winners;
-            }
-
-            var activeShoe = _activeGameShoe > 0 ? _activeGameShoe : (_netSeqGameShoe > 0 ? _netSeqGameShoe : _netObservedGameShoe);
-            if (activeShoe > 0 && packet.GameShoe > 0 && packet.GameShoe != activeShoe)
-            {
-                ArmDomShoeSwitchLocked(packet.TableId, packet.GameShoe, packet.GameRound, "roadinfo-shoe-change", packet.OwnerTag);
-                MarkPendingRowsAwaitFinalWinnerForReset("roadinfo-shoe-change", packet.TableId, packet.GameShoe, packet.GameRound);
-                ResetRoadInfoCountsCacheLocked("roadinfo-shoe-change");
-                var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
-                string deterministicPrefix = "";
-                bool canRebuildFromNewShoeFirstRoadInfo =
-                    latestChar.HasValue &&
-                    TryBuildDeterministicRoadInfoBootstrapPrefix(packet, out deterministicPrefix);
-
-                if (canRebuildFromNewShoeFirstRoadInfo)
-                {
-                    var firstWinnerChar = latestChar.GetValueOrDefault();
-                    SeedRoadInfoCountsCacheLocked(packet, "new-shoe-rebuild-baseline");
-                    Log($"[NETSEQ][ROADINFO-WINNER] src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={firstWinnerChar} | count=1 | prevRound=- | prev=-/-/- | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | delta=new-shoe-first-roadinfo-rebuild | prefixLen={deterministicPrefix.Length} | prefix={(string.IsNullOrWhiteSpace(deterministicPrefix) ? "-" : deterministicPrefix)}");
-                    winners.Add(new NetworkWinnerPacket
-                    {
-                        TableId = packet.TableId,
-                        GameShoe = packet.GameShoe,
-                        GameRound = packet.GameRound,
-                        WinnerCode = packet.LatestWinnerCode,
-                        BankerValue = -1,
-                        PlayerValue = -1,
-                        BootstrapPrefixDisplay = deterministicPrefix,
-                        EventType = "ROADINFO_WINCOUNTS_FIRST",
-                        OwnerTag = "cdp-roadinfo/" + (packet.OwnerTag ?? ""),
-                        Url = packet.Url ?? ""
-                    });
-                    return winners;
-                }
-
-                SeedRoadInfoCountsCacheLocked(packet, "new-shoe-baseline");
-                return winners;
-            }
-
-            var sum = packet.BankerCount + packet.PlayerCount + packet.TieCount;
-            if (sum <= 0)
-            {
-                ResetRoadInfoCountsCacheLocked("wincounts-zero-or-shuffle");
-                Log($"[NETSEQ][ROADINFO-BLOCK] reason=wincounts-zero-or-shuffle | src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount}");
-                return winners;
-            }
-
-            if (_roadInfoCountsTableId <= 0 ||
-                _roadInfoCountsTableId != packet.TableId ||
-                _roadInfoCountsGameShoe != packet.GameShoe)
-            {
-                var currentSeq = FilterResultDisplaySeqWindow(_netSeqDisplay);
-                var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
-                var waitingForBootstrap =
-                    string.IsNullOrWhiteSpace(currentSeq) &&
-                    (
-                        _tableSwitchRebaseArmed ||
-                        _initialTableEnterArmed ||
-                        IsShoeSwitchRebaseArmed() ||
-                        IsWaitingBoardBootstrapSeqEvent(_netSeqEvent) ||
-                        IsWaitingBoardBootstrapSeqEvent(_netSeqSource)
-                    );
-                string deterministicPrefix = "";
-                var canAppendLatestFromFirstRoadInfo =
-                    currentSeq.Length > 0 &&
-                    latestChar.HasValue &&
-                    packet.GameRound > 0 &&
-                    packet.GameRound > currentSeq.Length;
-                var canRebuildFirstRoadInfoFromCounts =
-                    latestChar.HasValue &&
-                    waitingForBootstrap &&
-                    TryBuildDeterministicRoadInfoBootstrapPrefix(packet, out deterministicPrefix);
-
-                if (canAppendLatestFromFirstRoadInfo)
-                {
-                    var firstWinnerChar = latestChar.GetValueOrDefault();
-                    if (_netSeqGameShoe <= 0 && packet.GameShoe > 0)
-                        _netSeqGameShoe = packet.GameShoe;
-                    if (_activeGameShoe <= 0 && packet.GameShoe > 0)
-                        _activeGameShoe = packet.GameShoe;
-                    if (_netObservedGameShoe <= 0 && packet.GameShoe > 0)
-                        _netObservedGameShoe = packet.GameShoe;
-
-                    SeedRoadInfoCountsCacheLocked(packet, "first-roadinfo-latest-baseline");
-                    Log($"[NETSEQ][ROADINFO-WINNER] src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={firstWinnerChar} | count=1 | prevRound=- | prev=-/-/- | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | delta=first-roadinfo-latest");
-                    winners.Add(new NetworkWinnerPacket
-                    {
-                        TableId = packet.TableId,
-                        GameShoe = packet.GameShoe,
-                        GameRound = packet.GameRound,
-                        WinnerCode = packet.LatestWinnerCode,
-                        BankerValue = -1,
-                        PlayerValue = -1,
-                        EventType = "ROADINFO_WINCOUNTS_FIRST",
-                        OwnerTag = "cdp-roadinfo/" + (packet.OwnerTag ?? ""),
-                        Url = packet.Url ?? ""
-                    });
-                    return winners;
-                }
-
-                if (canRebuildFirstRoadInfoFromCounts)
-                {
-                    var firstWinnerChar = latestChar.GetValueOrDefault();
-                    if (_netSeqGameShoe <= 0 && packet.GameShoe > 0)
-                        _netSeqGameShoe = packet.GameShoe;
-                    if (_activeGameShoe <= 0 && packet.GameShoe > 0)
-                        _activeGameShoe = packet.GameShoe;
-                    if (_netObservedGameShoe <= 0 && packet.GameShoe > 0)
-                        _netObservedGameShoe = packet.GameShoe;
-
-                    SeedRoadInfoCountsCacheLocked(packet, "first-roadinfo-rebuild-baseline");
-                    Log($"[NETSEQ][ROADINFO-WINNER] src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={firstWinnerChar} | count=1 | prevRound=- | prev=-/-/- | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | delta=first-roadinfo-rebuild | prefixLen={deterministicPrefix.Length} | prefix={(string.IsNullOrWhiteSpace(deterministicPrefix) ? "-" : deterministicPrefix)}");
-                    winners.Add(new NetworkWinnerPacket
-                    {
-                        TableId = packet.TableId,
-                        GameShoe = packet.GameShoe,
-                        GameRound = packet.GameRound,
-                        WinnerCode = packet.LatestWinnerCode,
-                        BankerValue = -1,
-                        PlayerValue = -1,
-                        BootstrapPrefixDisplay = deterministicPrefix,
-                        EventType = "ROADINFO_WINCOUNTS_FIRST",
-                        OwnerTag = "cdp-roadinfo/" + (packet.OwnerTag ?? ""),
-                        Url = packet.Url ?? ""
-                    });
-                    return winners;
-                }
-
-                SeedRoadInfoCountsCacheLocked(packet, "first-baseline");
-                return winners;
-            }
-
-            var prevSum = _roadInfoCountsB + _roadInfoCountsP + _roadInfoCountsT;
-            if (packet.BankerCount < _roadInfoCountsB ||
-                packet.PlayerCount < _roadInfoCountsP ||
-                packet.TieCount < _roadInfoCountsT ||
-                sum < prevSum)
-            {
-                var latestChar = MapWinnerCodeToSeqChar(packet.LatestWinnerCode);
-                string deterministicResetPrefix = "";
-                bool canRebuildSameShoeShuffleReset =
-                    latestChar.HasValue &&
-                    TryBuildDeterministicRoadInfoShuffleResetPrefix(packet, out deterministicResetPrefix);
-
-                if (canRebuildSameShoeShuffleReset)
-                {
-                    var resetWinnerChar = latestChar.GetValueOrDefault();
-                    ArmDomShoeSwitchLocked(packet.TableId, packet.GameShoe, packet.GameRound, "roadinfo-same-shoe-reset", packet.OwnerTag);
-                    MarkPendingRowsAwaitFinalWinnerForReset("roadinfo-same-shoe-reset", packet.TableId, packet.GameShoe, packet.GameRound);
-                    ResetRoadInfoCountsCacheLocked("wincounts-decrease-or-shuffle");
-                    SeedRoadInfoCountsCacheLocked(packet, "after-decrease-rebuild-baseline");
-                    Log($"[NETSEQ][ROADINFO-WINNER] src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={resetWinnerChar} | count=1 | prevRound=- | prev=-/-/- | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | delta=same-shoe-shuffle-rebuild | prefixLen={deterministicResetPrefix.Length} | prefix={(string.IsNullOrWhiteSpace(deterministicResetPrefix) ? "-" : deterministicResetPrefix)}");
-                    winners.Add(new NetworkWinnerPacket
-                    {
-                        TableId = packet.TableId,
-                        GameShoe = packet.GameShoe,
-                        GameRound = packet.GameRound,
-                        WinnerCode = packet.LatestWinnerCode,
-                        BankerValue = -1,
-                        PlayerValue = -1,
-                        BootstrapPrefixDisplay = deterministicResetPrefix,
-                        EventType = "ROADINFO_WINCOUNTS_FIRST",
-                        OwnerTag = "cdp-roadinfo/" + (packet.OwnerTag ?? ""),
-                        Url = packet.Url ?? ""
-                    });
-                    return winners;
-                }
-
-                MarkPendingRowsAwaitFinalWinnerForReset("roadinfo-same-shoe-reset", packet.TableId, packet.GameShoe, packet.GameRound);
-                ResetRoadInfoCountsCacheLocked("wincounts-decrease-or-shuffle");
-                SeedRoadInfoCountsCacheLocked(packet, "after-decrease-baseline");
-                return winners;
-            }
-
-            if (packet.GameRound < _roadInfoCountsRound)
-            {
-                Log($"[NETSEQ][ROADINFO-BLOCK] reason=round-regress | src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | prevRound={_roadInfoCountsRound} | round={packet.GameRound} | prev={_roadInfoCountsB}/{_roadInfoCountsP}/{_roadInfoCountsT} | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount}");
-                return winners;
-            }
-
-            var dB = packet.BankerCount - _roadInfoCountsB;
-            var dP = packet.PlayerCount - _roadInfoCountsP;
-            var dT = packet.TieCount - _roadInfoCountsT;
-            var deltaSum = dB + dP + dT;
-            if (deltaSum == 0)
-            {
-                _roadInfoCountsRound = Math.Max(_roadInfoCountsRound, packet.GameRound);
-                _roadInfoCountsSeenUtc = DateTime.UtcNow;
-                return winners;
-            }
-
-            var advancedDoors = (dB > 0 ? 1 : 0) + (dP > 0 ? 1 : 0) + (dT > 0 ? 1 : 0);
-            if (advancedDoors != 1 || deltaSum < 1 || deltaSum > 6)
-            {
-                Log($"[NETSEQ][ROADINFO-BLOCK] reason=not-single-count-advance | src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | prevRound={_roadInfoCountsRound} | prev={_roadInfoCountsB}/{_roadInfoCountsP}/{_roadInfoCountsT} | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | delta={dB}/{dP}/{dT}");
-                SeedRoadInfoCountsCacheLocked(packet, "multi-delta-baseline");
-                return winners;
-            }
-
-            var winnerChar = dB > 0 ? 'B' : (dP > 0 ? 'P' : 'T');
-            var winnerCode = WinnerCharToCode(winnerChar);
-            if (winnerCode < 0)
-                return winners;
-
-            Log($"[NETSEQ][ROADINFO-WINNER] src={(string.IsNullOrWhiteSpace(packet.OwnerTag) ? "-" : packet.OwnerTag)} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar} | count={deltaSum} | prevRound={_roadInfoCountsRound} | prev={_roadInfoCountsB}/{_roadInfoCountsP}/{_roadInfoCountsT} | countBanker={packet.BankerCount} | countPlayer={packet.PlayerCount} | countTie={packet.TieCount} | counts={packet.BankerCount}/{packet.PlayerCount}/{packet.TieCount} | delta={dB}/{dP}/{dT}");
-            _roadInfoCountsTableId = packet.TableId;
-            _roadInfoCountsGameShoe = packet.GameShoe;
-            _roadInfoCountsRound = packet.GameRound;
-            _roadInfoCountsB = packet.BankerCount;
-            _roadInfoCountsP = packet.PlayerCount;
-            _roadInfoCountsT = packet.TieCount;
-            _roadInfoCountsSeenUtc = DateTime.UtcNow;
-
-            var firstRound = packet.GameRound > deltaSum
-                ? packet.GameRound - deltaSum + 1
-                : packet.GameRound;
-            for (var i = 0; i < deltaSum; i++)
-            {
-                winners.Add(new NetworkWinnerPacket
-                {
-                    TableId = packet.TableId,
-                    GameShoe = packet.GameShoe,
-                    GameRound = firstRound + i,
+                    TableId = GetJsonLongLoose(msgEl, "tableID") ?? 0,
+                    GameShoe = GetJsonLongLoose(msgEl, "gameShoe") ?? 0,
+                    GameRound = GetJsonLongLoose(msgEl, "gameRound") ?? 0,
                     WinnerCode = winnerCode,
-                    BankerValue = -1,
-                    PlayerValue = -1,
-                    EventType = "ROADINFO_WINCOUNTS",
-                    OwnerTag = "cdp-roadinfo/" + (packet.OwnerTag ?? ""),
-                    Url = packet.Url ?? ""
-                });
+                    BankerValue = (int)(GetJsonLongLoose(msgEl, "bankerHandValue") ?? -1),
+                    PlayerValue = (int)(GetJsonLongLoose(msgEl, "playerHandValue") ?? -1),
+                    EventType = evt,
+                    OwnerTag = ownerTag ?? "",
+                    Url = url ?? ""
+                };
+                return packet.GameRound > 0;
             }
-
-            return winners;
-        }
-
-        private void TryProcessNetworkRoadInfoCountsPacket(string payload, bool isBinary, string ownerTag, string? url)
-        {
-            if (!TryParseRoadInfoCountsPacket(payload, isBinary, ownerTag, url, out var roadPacket) || roadPacket == null)
-                return;
-
-            ProcessNetworkRoadInfoCountsPacket(roadPacket);
-        }
-
-        private void ProcessNetworkRoadInfoCountsPacket(NetworkRoadInfoCountsPacket roadPacket)
-        {
-            Dispatcher.BeginInvoke(new Action(() =>
+            catch
             {
-                try
-                {
-                    var currentSnap = CloneAuthoritativeRawSnap();
-                    List<NetworkWinnerPacket> winnerPackets;
-                    lock (_roundStateLock)
-                    {
-                        winnerPackets = BuildWinnersFromRoadInfoCountsLocked(roadPacket);
-                    }
-
-                    if (winnerPackets.Count == 0)
-                        return;
-
-                    foreach (var winnerPacket in winnerPackets)
-                    {
-                        ProcessNetworkWinnerPacket(winnerPacket, currentSnap);
-                        currentSnap = CloneAuthoritativeRawSnap();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log("[NETSEQ][ROADINFO] " + ex.Message);
-                }
-            }));
+                return false;
+            }
         }
 
         private static bool IsNetworkHistoryName(string? name)
@@ -8492,7 +8173,9 @@ try{
             }
             catch (Exception ex)
             {
-                var key = "pool-net-error|" + ex.GetType().Name + "|" + ex.Message;
+                if (HitLogThrottle("pool-net-error-throttle|" + source + "|" + ownerTag + "|" + ex.GetType().Name, 15000))
+                    return;
+                var key = "pool-net-error|" + source + "|" + ownerTag + "|" + ex.GetType().Name + "|" + Shrink(ex.Message, 80);
                 if (!string.Equals(_lastNetworkBetPoolKey, key, StringComparison.Ordinal) ||
                     (DateTime.UtcNow - _lastNetworkBetPoolLogUtc) > TimeSpan.FromSeconds(5))
                 {
@@ -8587,6 +8270,14 @@ try{
             var s = (source ?? "").Trim();
             return s.IndexOf("partial-blocked", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    s.IndexOf("partial-incomplete", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsSyntheticDisplayPoolSource(string? source)
+        {
+            var s = (source ?? "").Trim();
+            return s.IndexOf("stable-hold/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("stable-partial/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("pool-blocked/", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string StripStableHoldSourcePrefix(string? source)
@@ -8685,6 +8376,8 @@ try{
 
             if (!HasPoolSideDecrease(incoming, prev))
                 return "";
+            if (IsPreferredTailDisplaySource(incoming.Source))
+                return "";
             if (LooksLikeNewBetRoundPoolReset(snap, incoming, prev))
                 return "";
 
@@ -8698,14 +8391,23 @@ try{
             if (incomingSum >= prevSum)
                 return "";
 
-            // Accept small aggregate dips to avoid Canvas bouncing back to stale values.
-            if (incomingSum >= (prevSum * 85 / 100))
+            // Accept moderate aggregate dips to reduce perceived lag on Canvas.
+            if (incomingSum >= (prevSum * 75 / 100))
                 return "";
 
             if (PoolValueCount(incoming) < PoolValueCount(prev))
                 return "pool-partial-regress";
 
             return IsCachedHostPoolSource(incoming.Source) ? "cached-pool-regress" : "pool-regress-same-round";
+        }
+
+        private static bool IsPreferredTailDisplaySource(string? source)
+        {
+            var s = (source ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(s))
+                return false;
+            return s.IndexOf("preferred-tail-direct", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("preferred-only", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool LooksLikeNewBetRoundPoolReset(CwSnapshot? snap, CwTotals incoming, CwTotals prev)
@@ -8761,26 +8463,17 @@ try{
             };
         }
 
-        private static int WinnerCharToCode(char winnerChar)
-        {
-            return char.ToUpperInvariant(winnerChar) switch
-            {
-                'B' => 1,
-                'P' => 2,
-                'T' => 0,
-                _ => -1
-            };
-        }
-
         private static bool IsDisplayAuthorityPoolSource(string? source)
         {
             var s = (source ?? "").Trim();
             if (string.IsNullOrWhiteSpace(s))
                 return false;
-            if (IsUntrustedNetworkPoolSource(s) || IsTextFallbackPoolSource(s) || IsPartialBlockedPoolSource(s))
+            if (IsUntrustedNetworkPoolSource(s) || IsTextFallbackPoolSource(s) || IsPartialBlockedPoolSource(s) || IsSyntheticDisplayPoolSource(s))
                 return false;
+            if (s.Equals("top", StringComparison.OrdinalIgnoreCase) ||
+                s.StartsWith("top/", StringComparison.OrdinalIgnoreCase))
+                return true;
             return s.Contains("frame", StringComparison.OrdinalIgnoreCase) ||
-                   s.Equals("top", StringComparison.OrdinalIgnoreCase) ||
                    s.Contains("dom", StringComparison.OrdinalIgnoreCase) ||
                    s.Contains("betbox", StringComparison.OrdinalIgnoreCase) ||
                    s.Contains("zone", StringComparison.OrdinalIgnoreCase);
@@ -8822,6 +8515,9 @@ try{
             if (incoming == null)
                 return null;
 
+            if (HasAnyPoolValue(incoming) && IsSyntheticDisplayPoolSource(incoming.Source))
+                return BuildPoolBlockedTotals(incoming, source, "synthetic-display-source");
+
             if (HasAnyPoolValue(incoming) && IsTextFallbackPoolSource(incoming.Source))
                 return BuildPoolBlockedTotals(incoming, source, "text-fallback");
 
@@ -8842,6 +8538,7 @@ try{
 
         private CwTotals? BuildStableCanvasTotals(CwSnapshot snap, string source)
         {
+            var nowUtc = DateTime.UtcNow;
             var incomingRaw = snap?.totals;
             var incoming = incomingRaw;
             incoming = BuildCanvasDisplayIncomingTotals(incoming, source);
@@ -8851,6 +8548,10 @@ try{
             var prev = _lastCanvasDisplayTotals;
             var incomingHasPool = HasAnyPoolValue(incoming);
             var prevHasPool = HasAnyPoolValue(prev);
+            var prevPoolAge = nowUtc - _lastCanvasDisplayFreshPoolUtc;
+            var allowCarryPrevPool = prevHasPool &&
+                                     _lastCanvasDisplayFreshPoolUtc > DateTime.MinValue &&
+                                     prevPoolAge <= CanvasPoolCarryMaxAge;
             var decisionIncoming = incoming;
             var decision = incomingHasPool ? "accept" : (prevHasPool ? "carry-prev" : "no-pool");
             var decisionReason = incomingHasPool ? "incoming-pool" : "no-incoming-pool";
@@ -8859,7 +8560,7 @@ try{
                 incomingHasPool &&
                 PoolValueCount(incoming) < 3)
             {
-                if (prev != null && prevHasPool && IsSameDisplayTable(incoming, prev))
+                if (prev != null && allowCarryPrevPool && IsSameDisplayTable(incoming, prev))
                 {
                     decision = "hold";
                     decisionReason = "pool-partial-incomplete";
@@ -8877,6 +8578,7 @@ try{
 
             var holdReason = (incoming != null &&
                               prev != null &&
+                              allowCarryPrevPool &&
                               incomingHasPool &&
                               prevHasPool &&
                               IsSameDisplayTable(incoming, prev))
@@ -8884,6 +8586,7 @@ try{
                 : "";
             if (incoming != null &&
                 prev != null &&
+                allowCarryPrevPool &&
                 incomingHasPool &&
                 prevHasPool &&
                 IsSameDisplayTable(incoming, prev) &&
@@ -8896,14 +8599,17 @@ try{
                 incomingHasPool = HasAnyPoolValue(incoming);
             }
 
+            var carryPrevPool = !incomingHasPool && allowCarryPrevPool;
+            var dropPrevPool = !incomingHasPool && prevHasPool && !allowCarryPrevPool;
+
             var poolSource = incomingHasPool
                 ? (incoming?.Source ?? "")
-                : (prevHasPool ? (prev?.Source ?? "") : (incoming?.Source ?? prev?.Source ?? "csharp-stable"));
+                : (carryPrevPool ? (prev?.Source ?? "") : (incoming?.Source ?? prev?.Source ?? "csharp-stable"));
             var merged = new CwTotals
             {
-                B = incoming?.B ?? prev?.B,
-                P = incoming?.P ?? prev?.P,
-                T = incoming?.T ?? prev?.T,
+                B = incoming?.B ?? (carryPrevPool ? prev?.B : null),
+                P = incoming?.P ?? (carryPrevPool ? prev?.P : null),
+                T = incoming?.T ?? (carryPrevPool ? prev?.T : null),
                 A = incoming?.A ?? prev?.A,
                 N = !string.IsNullOrWhiteSpace(incoming?.N) ? incoming!.N : (prev?.N ?? ""),
                 SD = incoming?.SD ?? prev?.SD,
@@ -8918,11 +8624,16 @@ try{
                 Source = string.IsNullOrWhiteSpace(poolSource) ? "csharp-stable" : poolSource
             };
 
-            if (!incomingHasPool && prevHasPool)
+            if (carryPrevPool)
             {
                 decision = "carry-prev";
                 if (string.IsNullOrWhiteSpace(decisionReason) || string.Equals(decisionReason, "no-incoming-pool", StringComparison.OrdinalIgnoreCase))
                     decisionReason = "incoming-without-pool";
+            }
+            else if (dropPrevPool)
+            {
+                decision = "drop-prev";
+                decisionReason = "incoming-without-pool-stale";
             }
             LogPoolDisplayDecision(snap, source, decision, decisionReason, decisionIncoming, prev, merged);
 
@@ -8946,6 +8657,13 @@ try{
                 _lastCanvasDisplayTotals = CloneTotalsForTasks(merged);
             }
 
+            if (incomingHasPool &&
+                PoolValueCount(incoming) >= 3 &&
+                !IsSyntheticDisplayPoolSource(incoming?.Source))
+            {
+                _lastCanvasDisplayFreshPoolUtc = nowUtc;
+            }
+
             return merged;
         }
 
@@ -8954,8 +8672,11 @@ try{
             try
             {
                 _lastCanvasAcceptedSeqKey = "";
+                _lastCanvasAcceptedSeqDisplay = "";
                 _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+                _lastWaitingBootstrapShownSwitchTicks = 0;
                 _lastCanvasDisplayTotals = null;
+                _lastCanvasDisplayFreshPoolUtc = DateTime.MinValue;
 
                 var js =
                     "(function(){try{" +
@@ -9050,10 +8771,39 @@ try{
                 var seqDisplayState = BuildCanvasSeqDisplayState(snap, seq);
                 var totals = BuildStableCanvasTotals(snap, source);
                 var totalsSource = totals?.Source ?? "";
-                var key = $"{seq}|{seqDisplayState}|{snap.seqVersion}|{snap.seqEvent}|{snap.seqSource}|{snap.prog}|{snap.status}|{snap.tableName}|{snap.tableId}|{snap.seqTableName}|{snap.seqTableId}|{totals?.B}|{totals?.P}|{totals?.T}|{totals?.A}|{totals?.N}|{totals?.TB}|{totals?.TA}|{totalsSource}|{snap.framePath}|{snap.dataFramePath}|{snap.dataMode}";
+                int progKey = snap.prog.HasValue
+                    ? Math.Max(0, Math.Min((int)UiCountdownAbsoluteMaxSec, ToUiCountdownWholeSec(Math.Max(0, Math.Min(UiCountdownAbsoluteMaxSec, snap.prog.Value)))))
+                    : -1;
                 var now = DateTime.UtcNow;
+                var waitingCandidate = string.Equals(seqDisplayState, "waiting-board-bootstrap", StringComparison.OrdinalIgnoreCase);
+                if (waitingCandidate)
+                {
+                    var switchTicks = _lastAuthorityTableSwitchAtUtc == DateTime.MinValue ? 0L : _lastAuthorityTableSwitchAtUtc.Ticks;
+                    var switchAge = _lastAuthorityTableSwitchAtUtc == DateTime.MinValue
+                        ? TimeSpan.MaxValue
+                        : (now - _lastAuthorityTableSwitchAtUtc);
+                    bool suppressWaiting =
+                        (switchTicks > 0 && switchAge >= TimeSpan.Zero && switchAge < WaitingBootstrapDisplayDelay) ||
+                        (switchTicks > 0 && _lastWaitingBootstrapShownSwitchTicks == switchTicks);
+                    if (suppressWaiting)
+                    {
+                        seqDisplayState = "";
+                    }
+                    else if (switchTicks > 0)
+                    {
+                        _lastWaitingBootstrapShownSwitchTicks = switchTicks;
+                    }
+                }
+                var key = $"{seq}|{seqDisplayState}|{progKey}|{snap.seqVersion}|{snap.seqEvent}|{snap.seqSource}|{snap.status}|{snap.tableName}|{snap.tableId}|{snap.seqTableName}|{snap.seqTableId}|{totals?.B}|{totals?.P}|{totals?.T}|{totals?.A}|{totals?.N}|{totals?.TB}|{totals?.TA}|{totalsSource}|{snap.framePath}|{snap.dataFramePath}|{snap.dataMode}";
+                bool seqChanged = !string.Equals(seq, _lastCanvasAcceptedSeqDisplay, StringComparison.Ordinal);
+                bool forceImmediatePush =
+                    seqChanged ||
+                    string.Equals(seqDisplayState, "waiting-board-bootstrap", StringComparison.OrdinalIgnoreCase) ||
+                    IsWaitingBoardBootstrapSeqEvent(snap.seqEvent) ||
+                    IsWaitingBoardBootstrapSeqEvent(snap.seqSource);
                 Log($"[CANVAS][DISPLAY-PUSH-ENTER] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | seqLen={seq.Length} | seqState={(string.IsNullOrWhiteSpace(seqDisplayState) ? "-" : seqDisplayState)} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | table={(string.IsNullOrWhiteSpace(totals?.TB) ? "-" : Shrink(totals!.TB, 48))} | tableAmount={(totals?.TA?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}");
-                if (string.Equals(key, _lastCanvasAcceptedSeqKey, StringComparison.Ordinal) &&
+                if (!forceImmediatePush &&
+                    string.Equals(key, _lastCanvasAcceptedSeqKey, StringComparison.Ordinal) &&
                     (now - _lastCanvasAcceptedSeqPushUtc) < TimeSpan.FromSeconds(1.5))
                 {
                     if ((now - _lastCanvasDisplaySkipLogUtc) > TimeSpan.FromSeconds(3))
@@ -9064,8 +8814,21 @@ try{
                     return;
                 }
 
+                if (!forceImmediatePush &&
+                    (now - _lastCanvasDisplayDispatchUtc) < CanvasDisplayPushMinInterval)
+                {
+                    if ((now - _lastCanvasDisplaySkipLogUtc) > TimeSpan.FromSeconds(3))
+                    {
+                        _lastCanvasDisplaySkipLogUtc = now;
+                        Log($"[CANVAS][DISPLAY-PUSH-SKIP] reason=throttle-min-interval | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | seqLen={seq.Length} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))}");
+                    }
+                    return;
+                }
+
                 _lastCanvasAcceptedSeqKey = key;
+                _lastCanvasAcceptedSeqDisplay = seq;
                 _lastCanvasAcceptedSeqPushUtc = now;
+                _lastCanvasDisplayDispatchUtc = now;
 
                 var payload = new
                 {
@@ -9129,7 +8892,7 @@ try{
                     "var roots=[].slice.call(document.querySelectorAll('#__cw_root_allin'));" +
                     "var infos=[].slice.call(document.querySelectorAll('#__cw_root_allin #cwInfo,#cwInfo'));" +
                     "function fmt(v){if(v==null||v==='')return '--';var n=Number(v);if(!isFinite(n))return String(v);try{return n.toLocaleString('en-US');}catch(_){return String(n);}}" +
-                    "function patchInfo(info,tt){if(!info||!tt)return 0;var b=tt.B,p=tt.P,t=tt.T,tb=tt.TB,ta=tt.TA,acc=tt.N,bal=tt.A;var has=(b!=null&&b!=='')||(p!=null&&p!=='')||(t!=null&&t!=='');var hasTable=(tb!=null&&String(tb).trim()!=='')||(ta!=null&&ta!=='');var hasHud=(acc!=null&&String(acc).trim()!=='')||(bal!=null&&bal!=='');if(!has&&!hasTable&&!hasHud)return 0;var html=String(info.innerHTML||'');var next=html;if(hasHud){var hudLine='TÀI KHOẢN : '+(acc!=null&&String(acc).trim()?String(acc).trim():'--')+' | SỐ DƯ : '+fmt(bal);next=next.replace(/TÀI\\s*KHOẢN\\s*:\\s*[^|\\n<]*\\s*\\|\\s*SỐ\\s*DƯ\\s*:\\s*(?:--|[\\d.,KMB]+)/i,hudLine);}if(hasTable){var tableLine='BÀN : '+(tb!=null&&String(tb).trim()?String(tb).trim():'--')+' | TIỀN BÀN : '+fmt(ta);next=next.replace(/BÀN\\s*:\\s*[^|\\n<]*\\s*\\|\\s*TIỀN BÀN\\s*:\\s*(?:--|[\\d.,KMB]+)/i,tableLine);}if(has){var poolLine='BANKER: '+fmt(b)+' | PLAYER: '+fmt(p)+' | TIE: '+fmt(t);next=next.replace(/BANKER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*PLAYER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*TIE\\s*:\\s*(?:--|[\\d.,KMB]+)/i,poolLine);var src=String(tt.BS||tt.Source||tt.source||'csharp');var domLine='BET POOL DOM : B='+fmt(b)+' | P='+fmt(p)+' | T='+fmt(t)+' | SRC='+src;next=next.replace(/BET POOL DOM\\s*:\\s*B\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*P\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*T\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*SRC\\s*=\\s*[^\\n<]*/i,domLine);}if(next!==html){info.innerHTML=next;return 1;}return 0;}" +
+                    "function patchInfo(info,tt){if(!info||!tt)return 0;var b=tt.B,p=tt.P,t=tt.T,tb=tt.TB,ta=tt.TA;var has=(b!=null&&b!=='')||(p!=null&&p!=='')||(t!=null&&t!=='');var hasTable=(tb!=null&&String(tb).trim()!=='')||(ta!=null&&ta!=='');if(!has&&!hasTable)return 0;var html=String(info.innerHTML||'');var next=html;if(hasTable){var tableLine='BÀN : '+(tb!=null&&String(tb).trim()?String(tb).trim():'--')+' | TIỀN BÀN : '+fmt(ta);next=next.replace(/BÀN\\s*:\\s*[^|\\n<]*\\s*\\|\\s*TIỀN BÀN\\s*:\\s*(?:--|[\\d.,KMB]+)/i,tableLine);}if(has){var poolLine='BANKER: '+fmt(b)+' | PLAYER: '+fmt(p)+' | TIE: '+fmt(t);next=next.replace(/BANKER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*PLAYER\\s*:\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*TIE\\s*:\\s*(?:--|[\\d.,KMB]+)/i,poolLine);var src=String(tt.BS||tt.Source||tt.source||'csharp');var domLine='BET POOL DOM : B='+fmt(b)+' | P='+fmt(p)+' | T='+fmt(t)+' | SRC='+src;next=next.replace(/BET POOL DOM\\s*:\\s*B\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*P\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*T\\s*=\\s*(?:--|[\\d.,KMB]+)\\s*\\|\\s*SRC\\s*=\\s*[^\\n<]*/i,domLine);}if(next!==html){info.innerHTML=next;return 1;}return 0;}" +
                     "window.__abx_patch_csharp_pool_lines=function(){try{if(!(window.__abx_csharp_display_enabled===1||window.__abx_csharp_display_enabled===true))return 'disabled';var at=Number(window.__abx_csharp_display_snapshot_at||0)||0;if(at&&Date.now()-at>6000)return 'stale';var ss=window.__abx_csharp_display_snapshot||{};var tt=window.__abx_csharp_display_pool_totals||(ss&&ss.totals)||{};var list=[].slice.call(document.querySelectorAll('#__cw_root_allin #cwInfo,#cwInfo'));var n=0;for(var i=0;i<list.length;i++)n+=patchInfo(list[i],tt);return 'patched='+n;}catch(e){return 'err:'+String(e&&e.message?e.message:e);}};" +
                     "var patchRes=window.__abx_patch_csharp_pool_lines();r+='|patch='+patchRes;" +
                     "if(!window.__abx_csharp_pool_patch_timer){window.__abx_csharp_pool_patch_timer=setInterval(function(){try{var rr=window.__abx_patch_csharp_pool_lines&&window.__abx_patch_csharp_pool_lines();if(rr==='disabled'||rr==='stale'){clearInterval(window.__abx_csharp_pool_patch_timer);window.__abx_csharp_pool_patch_timer=0;}}catch(_){clearInterval(window.__abx_csharp_pool_patch_timer);window.__abx_csharp_pool_patch_timer=0;}},120);}" +
@@ -9139,7 +8902,6 @@ try{
                     "var tt=(snap&&snap.totals)||{};var b=tt.B,p=tt.P,t=tt.T;var tb=tt.TB,ta=tt.TA;" +
                     "r+='|B='+fmt(b)+'|P='+fmt(p)+'|T='+fmt(t);" +
                     "r+='|table='+(tb!=null&&String(tb).trim()?String(tb).trim().replace(/\\|/g,'/'):'-')+'|tableAmount='+fmt(ta);" +
-                    "r+='|acc='+(tt.N!=null&&String(tt.N).trim()?String(tt.N).trim().replace(/\\|/g,'/'):'-')+'|bal='+fmt(tt.A);" +
                     "r+='|root='+roots.length+'|info='+infos.length+'|poolInfo='+poolInfos+'|visiblePool='+visiblePool+'|route='+route+'|dataPath='+dataPath+'|mir='+mir+'|href='+String(location.href||'').replace(/\\|/g,'/');" +
                     "}catch(_){r+='|inlinePoolErr';}" +
                     "return r;" +
@@ -9188,8 +8950,10 @@ try{
                             }));
                         }
 
-                        var fanoutNow = string.IsNullOrWhiteSpace(_lastCanvasPrimaryTarget) ||
-                                        (DateTime.UtcNow - _lastCanvasDisplayFullFanoutUtc) > TimeSpan.FromSeconds(2.5);
+                        var preferPopupTarget = ShouldPreferPopupCanvasTarget();
+                        var fanoutNow =
+                            (!preferPopupTarget && string.IsNullOrWhiteSpace(_lastCanvasPrimaryTarget)) ||
+                            (DateTime.UtcNow - _lastCanvasDisplayFullFanoutUtc) > TimeSpan.FromSeconds(6);
                         if (fanoutNow)
                             _lastCanvasDisplayFullFanoutUtc = DateTime.UtcNow;
 
@@ -9208,6 +8972,8 @@ try{
                             {
                                 break;
                             }
+                            if (!fanoutNow)
+                                break;
                         }
 
                         Log($"[CANVAS][DISPLAY-PUSH] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | ctx={(string.IsNullOrWhiteSpace(snap.contextId) ? "-" : Shrink(snap.contextId, 80))} | mode={(string.IsNullOrWhiteSpace(snap.dataMode) ? "-" : snap.dataMode)} | data={(string.IsNullOrWhiteSpace(snap.dataFramePath) ? "-" : snap.dataFramePath)} | targets=main:{mainTopSent}/{mainFrameSent},popup:{popupTopSent}/{popupFrameSent} | seqLen={seq.Length} | seqState={(string.IsNullOrWhiteSpace(seqDisplayState) ? "-" : seqDisplayState)} | prog={(snap.prog?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")} | status={(string.IsNullOrWhiteSpace(snap.status) ? "-" : Shrink(snap.status, 32))} | table={(string.IsNullOrWhiteSpace(totals?.TB) ? "-" : Shrink(totals!.TB, 48))} | tableAmount={(totals?.TA?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | poolSrc={(string.IsNullOrWhiteSpace(totalsSource) ? "-" : totalsSource)} | B={(totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | P={(totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | T={(totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")} | acc={(string.IsNullOrWhiteSpace(totals?.N) ? "-" : totals!.N)} | bal={(totals?.A?.ToString("0.###", CultureInfo.InvariantCulture) ?? "-")}");
@@ -9216,7 +8982,7 @@ try{
                     {
                         Log($"[CANVAS][DISPLAY-PUSH-ERR] stage=dispatcher | {ex.GetType().Name}: {Shrink(ex.Message, 160)}");
                     }
-                }));
+                }), System.Windows.Threading.DispatcherPriority.Background);
             }
             catch (Exception ex)
             {
@@ -9239,21 +9005,7 @@ try{
         private bool ShouldSkipAcceptedDisplayPushLocked(CwSnapshot? snap, string source, out string reason)
         {
             reason = "";
-            if (!UseDomBootstrapCdpAppendSeq || snap == null)
-                return false;
-            if (SourceLooksFrameAuthority(source))
-                return false;
-            if (DateTime.UtcNow > _suppressNonFrameEmptyDisplayUntilUtc)
-                return false;
-
-            var seqLen = FilterResultDisplaySeqWindow(snap.seq).Length;
-            if (seqLen > 0)
-                return false;
-
-            reason = string.IsNullOrWhiteSpace(_suppressNonFrameEmptyDisplayReason)
-                ? "prefer-frame-after-context-switch"
-                : _suppressNonFrameEmptyDisplayReason;
-            return true;
+            return false;
         }
 
         private sealed class CanvasDisplayTargetState
@@ -9320,10 +9072,37 @@ try{
                     Route = ParseCanvasResultText(normalizedResult, "route")
                 };
                 _canvasDisplayTargetStates[target] = state;
-                if (state.VisiblePool || (state.HasRoot && TextContainsIgnoreCase(state.Href, "singleBacTable.jsp")))
+                bool livetablesRoot = state.HasRoot && IsLivetablesBaccaratUrl(state.Href);
+                bool popupTarget = target.StartsWith("popup-", StringComparison.OrdinalIgnoreCase);
+                if (state.VisiblePool ||
+                    (state.HasRoot && TextContainsIgnoreCase(state.Href, "singleBacTable.jsp")) ||
+                    livetablesRoot ||
+                    (state.HasRoot && popupTarget))
                     _lastCanvasPrimaryTarget = target;
             }
             catch { }
+        }
+
+        private bool ShouldPreferPopupCanvasTarget()
+        {
+            try
+            {
+                if (_popupWeb?.CoreWebView2 == null)
+                    return false;
+                if (IsPopupBetViewActive())
+                    return true;
+                var src = _popupWeb.Source?.ToString() ?? "";
+                if (IsLikelyBetGameReadyUrl(src) || IsLivetablesBaccaratUrl(src))
+                    return true;
+                lock (_frameAuthorityLock)
+                {
+                    return IsLivetablesBaccaratUrl(_authorityHref);
+                }
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private int ScoreCanvasDisplayTarget(string target)
@@ -9331,6 +9110,7 @@ try{
             try
             {
                 var score = 0;
+                bool preferPopup = ShouldPreferPopupCanvasTarget();
                 if (string.Equals(target, _lastCanvasPrimaryTarget, StringComparison.Ordinal))
                     score += 1_000_000;
                 if (_canvasDisplayTargetStates.TryGetValue(target, out var state))
@@ -9343,8 +9123,10 @@ try{
                     var ageMs = (DateTime.UtcNow - state.LastOkUtc).TotalMilliseconds;
                     if (ageMs < 10_000) score += Math.Max(0, 20_000 - (int)ageMs);
                 }
-                if (target.StartsWith("popup-frame:", StringComparison.OrdinalIgnoreCase)) score += 10_000;
-                else if (target.StartsWith("main-frame:", StringComparison.OrdinalIgnoreCase)) score += 4_000;
+                if (target.StartsWith("popup-frame:", StringComparison.OrdinalIgnoreCase)) score += preferPopup ? 35_000 : 10_000;
+                else if (target.StartsWith("popup-top", StringComparison.OrdinalIgnoreCase)) score += preferPopup ? 28_000 : 2_000;
+                else if (target.StartsWith("main-frame:", StringComparison.OrdinalIgnoreCase)) score += preferPopup ? -5_000 : 4_000;
+                else if (target.StartsWith("main-top", StringComparison.OrdinalIgnoreCase)) score += preferPopup ? -15_000 : -2_000;
                 else score -= 2_000;
                 return score;
             }
@@ -10418,45 +10200,6 @@ try{
             }
         }
 
-        private static bool TryFindObservedGameInfo(JsonElement el, int depth, out long tableId, out long gameShoe, out long gameRound)
-        {
-            tableId = 0;
-            gameShoe = 0;
-            gameRound = 0;
-            if (depth > 8)
-                return false;
-
-            if (el.ValueKind == JsonValueKind.Object)
-            {
-                var t = ReadLongByAnyName(el, "tableID", "tableId", "tableNo");
-                var s = ReadLongByAnyName(el, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
-                var r = ReadLongByAnyName(el, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
-                if (t > 0 && r > 0)
-                {
-                    tableId = t;
-                    gameShoe = Math.Max(0, s);
-                    gameRound = r;
-                    return true;
-                }
-
-                foreach (var prop in el.EnumerateObject())
-                {
-                    if (TryFindObservedGameInfo(prop.Value, depth + 1, out tableId, out gameShoe, out gameRound))
-                        return true;
-                }
-            }
-            else if (el.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in el.EnumerateArray())
-                {
-                    if (TryFindObservedGameInfo(item, depth + 1, out tableId, out gameShoe, out gameRound))
-                        return true;
-                }
-            }
-
-            return false;
-        }
-
         private bool TryParseObservedGameInfoPacket(string payload, bool isBinary, out long tableId, out long gameShoe, out long gameRound)
         {
             tableId = 0;
@@ -10470,9 +10213,6 @@ try{
 
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
-                if (TryFindObservedGameInfo(root, 0, out tableId, out gameShoe, out gameRound))
-                    return tableId > 0 && gameRound > 0;
-
                 var msgType = GetJsonStringLoose(root, "messageType") ?? "";
                 if (!string.Equals(msgType, "GameInfo", StringComparison.OrdinalIgnoreCase))
                     return false;
@@ -10493,239 +10233,11 @@ try{
                 tableId = GetJsonLongLoose(dataEl, "tableID") ?? 0;
                 gameShoe = GetJsonLongLoose(dataEl, "gameShoe") ?? 0;
                 gameRound = GetJsonLongLoose(dataEl, "gameRound") ?? 0;
-                return tableId > 0 && gameRound > 0;
+                return tableId > 0 && gameShoe > 0 && gameRound > 0;
             }
             catch
             {
                 return false;
-            }
-        }
-
-        private static bool TryBuildGameInfoDiagnosticFromObject(JsonElement obj, out GameInfoDiagnosticPacket? diag)
-        {
-            diag = null;
-            if (obj.ValueKind != JsonValueKind.Object)
-                return false;
-
-            var msgType = ReadStringByAnyName(obj, "messageType", "msgType", "type");
-            if (!string.Equals(msgType, "GameInfo", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            var handler = ReadLongByAnyName(obj, "handler", "handlerID", "handlerId");
-            JsonElement dataEl = obj;
-            JsonDocument? nestedMessageDoc = null;
-            try
-            {
-                if (handler == 2 && TryGetJsonPropertyLoose(obj, "tableInfo", out var tableInfoEl) &&
-                    tableInfoEl.ValueKind == JsonValueKind.Object)
-                {
-                    dataEl = tableInfoEl;
-                }
-                else if (TryGetJsonPropertyLoose(obj, "message", out var messageEl))
-                {
-                    if (messageEl.ValueKind == JsonValueKind.Object)
-                    {
-                        dataEl = messageEl;
-                    }
-                    else if (messageEl.ValueKind == JsonValueKind.String)
-                    {
-                        var nested = ExtractJsonPayload(messageEl.GetString() ?? "");
-                        if (!string.IsNullOrWhiteSpace(nested))
-                        {
-                            nestedMessageDoc = JsonDocument.Parse(nested);
-                            dataEl = nestedMessageDoc.RootElement;
-                        }
-                    }
-                }
-
-                var tableId = ReadLongByAnyName(dataEl, "tableID", "tableId", "tableNo");
-                if (tableId <= 0) tableId = ReadLongByAnyName(obj, "tableID", "tableId", "tableNo");
-                var gameShoe = ReadLongByAnyName(dataEl, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
-                if (gameShoe <= 0) gameShoe = ReadLongByAnyName(obj, "gameShoe", "currentGameShoe", "shoe", "shoeNo");
-                var gameRound = ReadLongByAnyName(dataEl, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
-                if (gameRound <= 0) gameRound = ReadLongByAnyName(obj, "gameRound", "currentGameRound", "round", "roundNo", "roundId");
-
-                var eventType = ReadStringByAnyName(dataEl, "eventType", "event", "name", "action", "cmd");
-                if (string.IsNullOrWhiteSpace(eventType))
-                    eventType = ReadStringByAnyName(obj, "eventType", "event", "name", "action", "cmd");
-
-                var winnerSide = TryReadWinnerSideFromObject(dataEl) ?? TryReadWinnerSideFromObject(obj);
-                var winnerCode = -1;
-                if (TryReadLongByAnyName(dataEl, out var rawWinnerCode, "winner", "win", "winnerCode", "gameWinner", "roundResult", "resultType"))
-                {
-                    winnerCode = (int)rawWinnerCode;
-                    winnerSide ??= MapWinnerCodeToSeqChar(winnerCode);
-                }
-                else if (TryReadLongByAnyName(obj, out rawWinnerCode, "winner", "win", "winnerCode", "gameWinner", "roundResult", "resultType"))
-                {
-                    winnerCode = (int)rawWinnerCode;
-                    winnerSide ??= MapWinnerCodeToSeqChar(winnerCode);
-                }
-                else if (winnerSide.HasValue)
-                {
-                    winnerCode = WinnerCharToCode(winnerSide.Value);
-                }
-
-                var bankerValue = -1;
-                if (TryReadLongByAnyName(dataEl, out var bankerRaw, "bankerHandValue", "bankerPoint", "bankerValue"))
-                    bankerValue = (int)bankerRaw;
-                var playerValue = -1;
-                if (TryReadLongByAnyName(dataEl, out var playerRaw, "playerHandValue", "playerPoint", "playerValue"))
-                    playerValue = (int)playerRaw;
-
-                var status = ReadStringByAnyName(dataEl, "gameStatus", "status", "state", "roundStatus", "processStatus");
-                if (string.IsNullOrWhiteSpace(status))
-                    status = ReadStringByAnyName(obj, "gameStatus", "status", "state", "roundStatus", "processStatus");
-
-                diag = new GameInfoDiagnosticPacket
-                {
-                    MessageType = msgType,
-                    Handler = handler,
-                    TableId = tableId,
-                    GameShoe = gameShoe,
-                    GameRound = gameRound,
-                    EventType = eventType,
-                    WinnerChar = winnerSide,
-                    WinnerCode = winnerCode,
-                    BankerValue = bankerValue,
-                    PlayerValue = playerValue,
-                    Status = status
-                };
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-            finally
-            {
-                nestedMessageDoc?.Dispose();
-            }
-        }
-
-        private static bool TryFindGameInfoDiagnosticPacket(JsonElement el, int depth, out GameInfoDiagnosticPacket? diag)
-        {
-            diag = null;
-            if (depth > 8)
-                return false;
-
-            if (el.ValueKind == JsonValueKind.Object)
-            {
-                if (TryBuildGameInfoDiagnosticFromObject(el, out diag) && diag != null)
-                    return true;
-
-                foreach (var prop in el.EnumerateObject())
-                {
-                    if (TryFindGameInfoDiagnosticPacket(prop.Value, depth + 1, out diag) && diag != null)
-                        return true;
-
-                    if (prop.Value.ValueKind == JsonValueKind.String)
-                    {
-                        var raw = prop.Value.GetString() ?? "";
-                        if (raw.IndexOf("GameInfo", StringComparison.OrdinalIgnoreCase) < 0)
-                            continue;
-                        var nested = ExtractJsonPayload(raw);
-                        if (string.IsNullOrWhiteSpace(nested))
-                            continue;
-                        try
-                        {
-                            using var nestedDoc = JsonDocument.Parse(nested);
-                            if (TryFindGameInfoDiagnosticPacket(nestedDoc.RootElement, depth + 1, out diag) && diag != null)
-                                return true;
-                        }
-                        catch
-                        {
-                        }
-                    }
-                }
-            }
-            else if (el.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in el.EnumerateArray())
-                {
-                    if (TryFindGameInfoDiagnosticPacket(item, depth + 1, out diag) && diag != null)
-                        return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool TryParseGameInfoDiagnosticPacket(string payload, bool isBinary, out GameInfoDiagnosticPacket? diag)
-        {
-            diag = null;
-            var rawText = DecodePacketText(payload, isBinary);
-            if (string.IsNullOrWhiteSpace(rawText) ||
-                rawText.IndexOf("GameInfo", StringComparison.OrdinalIgnoreCase) < 0)
-            {
-                return false;
-            }
-
-            foreach (var json in BuildNetworkJsonCandidates(rawText))
-            {
-                try
-                {
-                    using var doc = JsonDocument.Parse(json);
-                    if (TryFindGameInfoDiagnosticPacket(doc.RootElement, 0, out diag) && diag != null)
-                        return true;
-                }
-                catch
-                {
-                }
-            }
-
-            return false;
-        }
-
-        private void LogGameInfoWebSocketDiagnostic(string channel, string ownerTag, string? url, string payload, bool isBinary, long? frameCount = null)
-        {
-            try
-            {
-                if (!TryParseGameInfoDiagnosticPacket(payload, isBinary, out var diag) || diag == null)
-                    return;
-
-                var owner = string.IsNullOrWhiteSpace(ownerTag) ? "-" : ownerTag;
-                var winner = diag.WinnerChar.HasValue
-                    ? $"{diag.WinnerChar.Value}({diag.WinnerCode})"
-                    : (diag.WinnerCode >= 0 ? diag.WinnerCode.ToString(CultureInfo.InvariantCulture) : "-");
-                long activeTable;
-                long netTable;
-                long netShoe;
-                long netRound;
-                long obsTable;
-                long obsShoe;
-                long obsRound;
-                lock (_roundStateLock)
-                {
-                    activeTable = ResolveActiveTableIdLocked();
-                    netTable = _netSeqTableId;
-                    netShoe = _netSeqGameShoe;
-                    netRound = _netSeqLastRound;
-                    obsTable = _netObservedTableId;
-                    obsShoe = _netObservedGameShoe;
-                    obsRound = _netObservedGameRound;
-                }
-                var preview = Shrink(DecodePacketText(payload, isBinary), 260);
-                var frameText = frameCount.HasValue ? frameCount.Value.ToString(CultureInfo.InvariantCulture) : "-";
-                var handlerText = diag.Handler >= 0 ? diag.Handler.ToString(CultureInfo.InvariantCulture) : "-";
-                var tableText = diag.TableId > 0 ? diag.TableId.ToString(CultureInfo.InvariantCulture) : "-";
-                var shoeText = diag.GameShoe > 0 ? diag.GameShoe.ToString(CultureInfo.InvariantCulture) : "-";
-                var roundText = diag.GameRound > 0 ? diag.GameRound.ToString(CultureInfo.InvariantCulture) : "-";
-
-                Log($"[NETPROBE][GAMEINFO] channel={(string.IsNullOrWhiteSpace(channel) ? "-" : channel)} | owner={owner} | frame={frameText} | handler={handlerText} | table={tableText} | shoe={shoeText} | round={roundText} | event={(string.IsNullOrWhiteSpace(diag.EventType) ? "-" : Shrink(diag.EventType, 60))} | winner={winner} | banker={(diag.BankerValue >= 0 ? diag.BankerValue.ToString(CultureInfo.InvariantCulture) : "-")} | player={(diag.PlayerValue >= 0 ? diag.PlayerValue.ToString(CultureInfo.InvariantCulture) : "-")} | status={(string.IsNullOrWhiteSpace(diag.Status) ? "-" : Shrink(diag.Status, 60))} | activeTable={(activeTable > 0 ? activeTable.ToString(CultureInfo.InvariantCulture) : "-")} | netCtx={netTable}/{netShoe}/{netRound} | obsCtx={obsTable}/{obsShoe}/{obsRound} | url={TrimHrefForLog(url)} | preview={preview}");
-
-                var bucket = $"{channel}|{owner}|{diag.TableId}|{diag.GameShoe}";
-                var state = $"{roundText}|h={handlerText}|evt={(string.IsNullOrWhiteSpace(diag.EventType) ? "-" : diag.EventType)}|win={winner}";
-                _gameInfoDiagRoundBySourceTable.TryGetValue(bucket, out var prevState);
-                if (!string.Equals(prevState, state, StringComparison.Ordinal))
-                {
-                    _gameInfoDiagRoundBySourceTable[bucket] = state;
-                    Log($"[NETPROBE][GAMEINFO-ROUND] channel={(string.IsNullOrWhiteSpace(channel) ? "-" : channel)} | owner={owner} | table={tableText} | shoe={shoeText} | prev={(string.IsNullOrWhiteSpace(prevState) ? "-" : Shrink(prevState, 80))} | next={Shrink(state, 80)} | netCtx={netTable}/{netShoe}/{netRound} | obsCtx={obsTable}/{obsShoe}/{obsRound}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Log($"[NETPROBE][GAMEINFO][ERR] channel={(string.IsNullOrWhiteSpace(channel) ? "-" : channel)} | owner={(string.IsNullOrWhiteSpace(ownerTag) ? "-" : ownerTag)} | {ex.GetType().Name}: {Shrink(ex.Message, 120)}");
             }
         }
 
@@ -10775,7 +10287,7 @@ try{
                 var tableId = GetJsonLongLoose(dataEl, "tableID") ?? 0;
                 var gameShoe = GetJsonLongLoose(dataEl, "gameShoe") ?? 0;
                 var gameRound = GetJsonLongLoose(dataEl, "gameRound") ?? 0;
-                if (tableId <= 0 || gameRound <= 0)
+                if (tableId <= 0 || gameShoe <= 0 || gameRound <= 0)
                     return;
 
                 _hallRoundCache[tableId] = new HallRoundSnapshot
@@ -10807,7 +10319,6 @@ try{
                 _netObservedGameShoe = 0;
                 _netObservedGameRound = 0;
                 _suppressJsBootstrapAfterObservedReset = false;
-                ResetRoadInfoCountsCacheLocked("observed-context-clear/" + reason);
             }
 
             if (hadContext)
@@ -11182,12 +10693,13 @@ try{
             _lockMajorMinorUpdates = false;
             _suppressJsBootstrapAfterObservedReset = false;
             ResetJsRawBootstrapProbeLocked();
-            ResetDomAppendFallbackProbeLocked();
-            ResetRoadInfoCountsCacheLocked("dom-table-switch");
             ClearShoeChangeRebaseArmLocked();
             _lastCanvasAcceptedSeqKey = "";
+            _lastCanvasAcceptedSeqDisplay = "";
             _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+            _lastWaitingBootstrapShownSwitchTicks = 0;
             _lastCanvasDisplayTotals = null;
+            _lastCanvasDisplayFreshPoolUtc = DateTime.MinValue;
 
             Log($"[CTX][SWITCH-ARM] reason=dom-table-change | prev={prevTableId} | next={newTableId} | table={Shrink(tableName, 48)} | prevLen={prevLen} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
         }
@@ -11230,9 +10742,6 @@ try{
             _activeTableId = tableId;
             _activeGameShoe = newShoe;
             _activeGameRound = newRound;
-
-            DropPendingRowsForSeqRebaseReset(reason, true, out _);
-
             _activeContextSource = "cdp-observed-shoe";
             _activeContextUpdatedAtUtc = DateTime.UtcNow;
             _netLastWinnerKey = "";
@@ -11250,28 +10759,19 @@ try{
             _lockMajorMinorUpdates = false;
             _suppressJsBootstrapAfterObservedReset = false;
             ResetJsRawBootstrapProbeLocked();
-            ResetDomAppendFallbackProbeLocked();
-            ResetRoadInfoCountsCacheLocked("dom-shoe-switch");
             ClearShoeChangeRebaseArmLocked();
             _lastCanvasAcceptedSeqKey = "";
+            _lastCanvasAcceptedSeqDisplay = "";
             _lastCanvasAcceptedSeqPushUtc = DateTime.MinValue;
+            _lastWaitingBootstrapShownSwitchTicks = 0;
             _lastCanvasDisplayTotals = null;
+            _lastCanvasDisplayFreshPoolUtc = DateTime.MinValue;
 
             Log($"[CTX][SHOE-ARM] reason={reason} | table={tableId} | oldShoe={prevShoe} | newShoe={newShoe} | oldRound={prevRound} | newRound={newRound} | prevLen={prevLen} | prevVer={prevVer} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | action=wait-dom-bootstrap");
         }
 
         private void ObserveDomAuthorityContextLocked(CwSnapshot? snap, string source, string boardSeqEvent, string statusRaw)
         {
-            if (!IsFrameSingleBacAuthoritySnapshot(snap, source))
-            {
-                if ((DateTime.UtcNow - _lastJsRawBootstrapLogUtc) > TimeSpan.FromSeconds(2))
-                {
-                    _lastJsRawBootstrapLogUtc = DateTime.UtcNow;
-                    Log($"[CTX][DOM-TABLE-SKIP] reason=non-singlebac-seq-source | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | href={(string.IsNullOrWhiteSpace(snap?.href) ? "-" : Shrink(snap!.href!, 96))} | table={(string.IsNullOrWhiteSpace(GetTableNameFromSnapshot(snap)) ? "-" : Shrink(GetTableNameFromSnapshot(snap), 48))} | seqTable={(string.IsNullOrWhiteSpace(GetSeqTableNameFromSnapshot(snap)) ? "-" : Shrink(GetSeqTableNameFromSnapshot(snap), 48))} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
-                }
-                return;
-            }
-
             if (!TryResolveDomAuthorityTableContext(snap, source, out var tableId, out var tableName, out var tableSource, out var usedSeqTable))
                 return;
 
@@ -11398,7 +10898,6 @@ try{
                         _netSeqWinnerSeedOnly = false;
                         _suppressJsBootstrapAfterObservedReset = true;
                         ResetJsRawBootstrapProbeLocked();
-                        ResetDomAppendFallbackProbeLocked();
                     }
                 }
                 else
@@ -11424,21 +10923,8 @@ try{
             }
         }
 
-        private static bool IsRoadInfoWinCountsPacket(NetworkWinnerPacket? packet) =>
-            packet != null &&
-            ((packet.EventType ?? "").IndexOf("ROADINFO", StringComparison.OrdinalIgnoreCase) >= 0 ||
-             (packet.OwnerTag ?? "").IndexOf("roadinfo", StringComparison.OrdinalIgnoreCase) >= 0);
-
-        private static string GetNetworkWinnerSeqEvent(NetworkWinnerPacket packet) =>
-            "net-roadinfo-wincounts";
-
-        private static string GetNetworkWinnerSeqSource(NetworkWinnerPacket packet) =>
-            "cdp-roadinfo";
-
         private NetworkSeqApplyResult ApplyNetworkWinnerLocked(NetworkWinnerPacket packet, CwSnapshot? currentSnap)
         {
-            string seqEventSource = GetNetworkWinnerSeqEvent(packet);
-            string seqSource = GetNetworkWinnerSeqSource(packet);
             var result = new NetworkSeqApplyResult
             {
                 TableId = packet.TableId,
@@ -11450,26 +10936,10 @@ try{
             if (!winnerChar.HasValue)
                 return result;
 
-            var activeTableForFill = ResolveActiveTableIdLocked();
-            if (packet.TableId <= 0)
-                packet.TableId = activeTableForFill > 0
-                    ? activeTableForFill
-                    : (_netSeqTableId > 0 ? _netSeqTableId : _netObservedTableId);
-            if (packet.GameShoe <= 0)
-                packet.GameShoe = _activeGameShoe > 0
-                    ? _activeGameShoe
-                    : (_netSeqGameShoe > 0 ? _netSeqGameShoe : _netObservedGameShoe);
-
-            result.TableId = packet.TableId;
-            result.GameShoe = packet.GameShoe;
-            result.GameRound = packet.GameRound;
-
             string winnerText = MapWinnerCharToResultText(winnerChar.Value);
             string eventKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
             string prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
             long prevVersion = _netSeqVersion;
-            string bootstrapPrefixDisplay = FilterResultDisplaySeqWindow(packet.BootstrapPrefixDisplay);
-            bool bootstrapPrefixApplied = false;
 
             result.PrevSeq = prevDisplay;
             result.NextSeq = prevDisplay;
@@ -11486,7 +10956,7 @@ try{
                 return result;
             }
 
-            var activeTableId = activeTableForFill > 0 ? activeTableForFill : ResolveActiveTableIdLocked();
+            var activeTableId = ResolveActiveTableIdLocked();
             if (activeTableId > 0 && packet.TableId > 0 && packet.TableId != activeTableId)
             {
                 result.Action = "context-mismatch";
@@ -11518,14 +10988,12 @@ try{
                 _baseSeqDisplay = "";
                 _baseSeqVersion = 0;
                 _baseSeqEvent = "";
-                _baseSeqSource = seqSource;
+                _baseSeqSource = "network";
                 _roundTotalsB = 0;
                 _roundTotalsP = 0;
                 _roundTotalsT = 0;
                 _lockMajorMinorUpdates = false;
                 ResetJsRawBootstrapProbeLocked();
-                ResetDomAppendFallbackProbeLocked();
-                ResetRoadInfoCountsCacheLocked("network-table-change");
                 ClearTableSwitchRebaseArmLocked();
                 ClearShoeChangeRebaseArmLocked();
             }
@@ -11534,7 +11002,6 @@ try{
                 var oldShoe = _netSeqGameShoe;
                 var oldRound = _netSeqLastRound;
                 ArmDomShoeSwitchLocked(packet.TableId, packet.GameShoe, packet.GameRound, "winner-shoe-change", packet.OwnerTag);
-                MarkPendingRowsAwaitFinalWinnerForReset("winner-shoe-change", packet.TableId, packet.GameShoe, packet.GameRound);
                 result.Action = "wait-dom-bootstrap";
                 result.NextSeq = "";
                 result.NextVersion = _netSeqVersion;
@@ -11543,30 +11010,6 @@ try{
                 Log($"[NETSEQ][SEED-BLOCK] reason=cdp-winner-new-shoe | action=wait-dom-bootstrap | table={packet.TableId} | oldShoe={oldShoe} | newShoe={packet.GameShoe} | oldRound={oldRound} | newRound={packet.GameRound} | winner={winnerChar.Value} | oldLen={prevDisplay.Length} | oldVer={prevVersion} | policy=dom-bootstrap-cdp-append");
                 return result;
             }
-
-            bool canApplyBootstrapPrefix =
-                string.IsNullOrWhiteSpace(prevDisplay) &&
-                !string.IsNullOrWhiteSpace(bootstrapPrefixDisplay) &&
-                packet.GameRound == (bootstrapPrefixDisplay.Length + 1) &&
-                (
-                    _tableSwitchRebaseArmed ||
-                    _initialTableEnterArmed ||
-                    IsShoeSwitchRebaseArmed() ||
-                    IsWaitingBoardBootstrapSeqEvent(_netSeqEvent) ||
-                    IsWaitingBoardBootstrapSeqEvent(_netSeqSource)
-                );
-            if (canApplyBootstrapPrefix)
-            {
-                prevDisplay = bootstrapPrefixDisplay;
-                prevVersion = ComputeNextSyncSeqVersion(prevVersion, "", prevDisplay, Math.Max(prevVersion, prevDisplay.Length));
-                bootstrapPrefixApplied = true;
-                Log($"[NETSEQ][SEED-REBUILD] reason=roadinfo-deterministic-prefix | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | prefixLen={prevDisplay.Length} | prefix={prevDisplay} | winner={winnerChar.Value} | oldVer={_netSeqVersion} | seedVer={prevVersion}");
-            }
-
-            result.PrevSeq = prevDisplay;
-            result.NextSeq = prevDisplay;
-            result.PrevVersion = prevVersion;
-            result.NextVersion = prevVersion;
 
             bool roundAlreadySeen =
                 !contextReset &&
@@ -11612,14 +11055,10 @@ try{
             }
 
             string nextDisplay = prevDisplay + winnerChar.Value;
-            long nextVersion = ComputeNextSyncSeqVersion(prevVersion, prevDisplay, nextDisplay, prevVersion + 1);
+            long nextVersion = ComputeNextSyncSeqVersion(prevVersion, prevDisplay, nextDisplay, Math.Max(prevVersion + 1, packet.GameRound));
             string action = contextReset
                 ? "reset-table-append"
-                : (shoeChanged
-                    ? "shoe-keep-append"
-                    : (bootstrapPrefixApplied
-                        ? "append-rebuild-" + seqSource
-                        : (result.HadGap ? "append-gap-" + seqSource : "append-" + seqSource)));
+                : (shoeChanged ? "shoe-keep-append" : (result.HadGap ? "append-gap-cdp" : "append-cdp"));
 
             result.Changed = true;
             result.Appended = true;
@@ -11627,7 +11066,7 @@ try{
             result.NextSeq = nextDisplay;
             result.PrevVersion = prevVersion;
             result.NextVersion = nextVersion;
-            result.SeqEvent = seqEventSource;
+            result.SeqEvent = "net-gp-winner";
             result.Action = action;
 
             _netSeqWinnerSeedOnly = false;
@@ -11638,7 +11077,7 @@ try{
             _netSeqDisplay = nextDisplay;
             _netSeqVersion = nextVersion;
             _netSeqEvent = result.SeqEvent;
-            _netSeqSource = seqSource;
+            _netSeqSource = "cdp-append";
             _netSeqTableId = packet.TableId;
             _netSeqGameShoe = packet.GameShoe;
             _netSeqLastRound = packet.GameRound;
@@ -11648,7 +11087,7 @@ try{
             _activeTableId = packet.TableId > 0 ? packet.TableId : _activeTableId;
             _activeGameShoe = packet.GameShoe > 0 ? packet.GameShoe : _activeGameShoe;
             _activeGameRound = packet.GameRound > 0 ? packet.GameRound : _activeGameRound;
-            _activeContextSource = seqSource;
+            _activeContextSource = "cdp-append";
             _activeContextUpdatedAtUtc = DateTime.UtcNow;
             _suppressJsBootstrapAfterObservedReset = false;
             _netLastWinnerKey = eventKey;
@@ -11660,28 +11099,25 @@ try{
             _baseSeq = FilterPlayableSeq(nextDisplay);
             _baseSeqVersion = nextVersion;
             _baseSeqEvent = result.SeqEvent;
-            _baseSeqSource = seqSource;
+            _baseSeqSource = "cdp-append";
 
             Log($"[NETSEQ][APPEND] src={packet.OwnerTag} | action={action} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={winnerChar.Value} | prevLen={prevDisplay.Length} | nextLen={nextDisplay.Length} | prevVer={prevVersion} | nextVer={nextVersion} | banker={packet.BankerValue} | player={packet.PlayerValue}");
             return result;
         }
 
-        private void ProcessNetworkWinnerPacket(NetworkWinnerPacket packet, CwSnapshot? currentSnap)
+        private void TryProcessNetworkWinnerPacket(string payload, bool isBinary, string ownerTag, string? url)
         {
-            // Reset count when receiving a shuffle signal from CDP
-            if (packet.EventType != null && packet.EventType.Contains("shuffle", StringComparison.OrdinalIgnoreCase))
-            {
-                _roadInfoCountsB = 0;
-                _roadInfoCountsP = 0;
-                _roadInfoCountsT = 0;
-                Log($"[CDP] Count reset due to shuffle signal: B={_roadInfoCountsB}, P={_roadInfoCountsP}, T={_roadInfoCountsT}");
-            }
+            if (!TryParseNetworkWinnerPacket(payload, isBinary, ownerTag, url, out var packet) || packet == null)
+                return;
             Interlocked.Increment(ref _cdpDiagWinnerPackets);
             Interlocked.Exchange(ref _cdpDiagLastWinnerTicksUtc, DateTime.UtcNow.Ticks);
 
-            try
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                    CwSnapshot? displaySnap = null;
+                try
+                {
+                    var currentSnap = CloneAuthoritativeRawSnap();
+
                     string eventKey = $"{packet.TableId}|{packet.GameShoe}|{packet.GameRound}|{packet.WinnerCode}";
                     if (string.Equals(_netLastWinnerKey, eventKey, StringComparison.Ordinal))
                         return;
@@ -11689,28 +11125,22 @@ try{
                     NetworkSeqApplyResult applied;
                     lock (_roundStateLock)
                     {
-                        string settleSource = GetNetworkWinnerSeqEvent(packet);
-                        string lateSettleSource = settleSource + "-late-context";
                         applied = ApplyNetworkWinnerLocked(packet, currentSnap);
                         if (string.IsNullOrWhiteSpace(applied.ResultText))
                             return;
-                        
-                        // Finalize pending bets even if not appended, as long as we have a valid winner
                         if (!applied.Appended && !applied.Replaced)
                         {
-                            // Always try to finalize pending when we have a valid winner result
-                            if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
+                            if (_pendingRows.Count > 0 &&
+                                !HasJackpotMultiSideRunning() &&
+                                IsLateContextWinnerAction(applied.Action) &&
+                                HasPendingWinnerCandidate(packet.TableId, packet.GameShoe, packet.GameRound))
                             {
                                 double lateBalanceAfter = ResolveHistoryBalance(currentSnap?.totals?.A);
                                 long lateSettleVersion = packet.GameRound > 0
                                     ? packet.GameRound
                                     : Math.Max(applied.NextVersion, applied.PrevVersion + 1);
 
-                                string finalizeReason = IsLateContextWinnerAction(applied.Action) 
-                                    ? "late-context-winner" 
-                                    : $"winner-no-append-{applied.Action}";
-
-                                Log($"[BET][HIST][FINALIZE-NO-APPEND] action={applied.Action} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | pending={_pendingRows.Count} | settleVer={lateSettleVersion} | reason={finalizeReason}");
+                                Log($"[BET][HIST][LATE-WINNER] action={applied.Action} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | winner={applied.ResultChar} | pending={_pendingRows.Count} | settleVer={lateSettleVersion} | reason=settle-without-seq-append");
 
                                 if (applied.ResultChar == 'T')
                                 {
@@ -11721,8 +11151,8 @@ try{
                                         "TIE",
                                         applied.NextSeq,
                                         lateSettleVersion,
-                                        settleSource,
-                                        lateSettleSource,
+                                        "net-gp-winner",
+                                        "net-gp-winner-late-context",
                                         packet.TableId,
                                         packet.GameShoe,
                                         packet.GameRound);
@@ -11736,8 +11166,8 @@ try{
                                         null,
                                         applied.NextSeq,
                                         lateSettleVersion,
-                                        settleSource,
-                                        lateSettleSource,
+                                        "net-gp-winner",
+                                        "net-gp-winner-late-context",
                                         packet.TableId,
                                         packet.GameShoe,
                                         packet.GameRound);
@@ -11763,7 +11193,7 @@ try{
                                     applied.NextSeq,
                                     applied.NextVersion,
                                     applied.SeqEvent,
-                                    settleSource,
+                                    "net-gp-winner",
                                     packet.TableId,
                                     packet.GameShoe,
                                     packet.GameRound);
@@ -11790,7 +11220,7 @@ try{
                                     applied.NextSeq,
                                     applied.NextVersion,
                                     applied.SeqEvent,
-                                    settleSource,
+                                    "net-gp-winner",
                                     packet.TableId,
                                     packet.GameShoe,
                                     packet.GameRound);
@@ -11811,7 +11241,6 @@ try{
                         updated.niSeq = _niSeq.ToString();
                         updated.ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                         _lastSnap = updated;
-                        displaySnap = CloneSnapRaw(updated);
                     }
 
                     try
@@ -11821,16 +11250,14 @@ try{
                     }
                     catch { }
 
-                    if (displaySnap != null)
-                        PushAcceptedDisplayToCanvas(displaySnap, packet.OwnerTag);
-
                     if (applied.HadGap || applied.PrevSeq.Length <= 2)
                         TryApplyPendingNetworkHistoryForContext("winner");
-            }
-            catch (Exception ex)
-            {
-                Log("[NETSEQ][WINNER] " + ex.Message);
-            }
+                }
+                catch (Exception ex)
+                {
+                    Log("[NETSEQ][WINNER] " + ex.Message);
+                }
+            }));
         }
 
         private static bool IsChangingShoeStatus(string? statusRaw)
@@ -11863,18 +11290,15 @@ try{
             var evt = seqEventRaw ?? "";
             return evt.IndexOf("waiting-board-bootstrap", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    evt.IndexOf("table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   evt.IndexOf("short-board-bootstrap-wait", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    IsNoBoardSeqEvent(evt);
         }
 
-        private static bool IsTinyBoardBootstrapWaitSeqEvent(string? seqEventRaw)
+        private static string SelectTrustedSeqDisplay(string? seqDisplayRaw, string? rawDisplayRaw)
         {
-            var evt = (seqEventRaw ?? "").Trim();
-            if (evt.Length == 0)
-                return false;
-
-            return evt.IndexOf("short-board-bootstrap-wait", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   evt.IndexOf("table-switch-wait-bead", StringComparison.OrdinalIgnoreCase) >= 0;
+            var seqDisplay = FilterResultDisplaySeqWindow(seqDisplayRaw);
+            if (!string.IsNullOrWhiteSpace(seqDisplay))
+                return seqDisplay;
+            return FilterResultDisplaySeqWindow(rawDisplayRaw);
         }
 
         private static string BuildCanvasSeqDisplayState(CwSnapshot? snap, string seqDisplay)
@@ -12066,40 +11490,7 @@ try{
             _jsRawBootstrapStableCount = 0;
         }
 
-        private void ResetDomAppendFallbackProbeLocked()
-        {
-            _lastDomAppendFallbackKey = "";
-            _lastDomAppendFallbackStableCount = 0;
-            _lastDomAppendFallbackFirstSeenUtc = DateTime.MinValue;
-        }
-
-        private bool IsTrustedTableAlignedFallbackRawBootstrapLocked(
-            CwSnapshot snap,
-            string source,
-            string rawDisplay,
-            string statusRaw,
-            string boardSeqEvent)
-        {
-            if (snap == null)
-                return false;
-            if (string.IsNullOrWhiteSpace(rawDisplay) || rawDisplay.Length < 8)
-                return false;
-            if (!IsFrameSingleBacAuthoritySnapshot(snap, source))
-                return false;
-
-            var activeTableId = ResolveActiveTableIdLocked();
-            var snapSeqTableId = GetSeqTableIdFromSnapshot(snap);
-            var snapTableId = GetTableIdFromSnapshot(snap);
-            var candidateTableId = snapSeqTableId > 0 ? snapSeqTableId : snapTableId;
-            if (activeTableId > 0 && candidateTableId > 0 && candidateTableId != activeTableId)
-                return false;
-            if (activeTableId > 0 && candidateTableId <= 0)
-                return false;
-
-            return IsTrustedRawBoardSnapshotSeq(snap.seq, rawDisplay, statusRaw, boardSeqEvent);
-        }
-
-        private bool IsTrustedInitialJsRawBootstrap(CwSnapshot snap, string source, string rawDisplay, string statusRaw, string boardSeqEvent, out string reason)
+        private bool IsTrustedInitialJsRawBootstrap(CwSnapshot snap, string rawDisplay, string statusRaw, string boardSeqEvent, out string reason)
         {
             reason = "";
             if (snap == null)
@@ -12127,22 +11518,14 @@ try{
                 reason = "parser-unstable";
                 return false;
             }
-            if (rawDisplay.Length <= 3 && IsTinyBoardBootstrapWaitSeqEvent(boardSeqEvent))
-            {
-                reason = "tiny-board-wait-event";
-                return false;
-            }
 
             var which = (snap.seqWhich ?? "").Trim();
             if (which.IndexOf("hold-managed", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 which.IndexOf("managed-hold", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 which.IndexOf("fallback", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                if (!IsTrustedTableAlignedFallbackRawBootstrapLocked(snap, source, rawDisplay, statusRaw, boardSeqEvent))
-                {
-                    reason = "untrusted-seq-which";
-                    return false;
-                }
+                reason = "untrusted-seq-which";
+                return false;
             }
 
             if (_netObservedGameRound > 0 && rawDisplay.Length > (_netObservedGameRound + 1))
@@ -12181,7 +11564,7 @@ try{
                 return false;
 
             var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
-            if (!IsTrustedInitialJsRawBootstrap(snap, source, rawDisplay, statusRaw, boardSeqEvent, out var rejectReason))
+            if (!IsTrustedInitialJsRawBootstrap(snap, rawDisplay, statusRaw, boardSeqEvent, out var rejectReason))
             {
                 if ((DateTime.UtcNow - _lastJsRawBootstrapLogUtc) > TimeSpan.FromSeconds(2))
                 {
@@ -12248,349 +11631,8 @@ try{
             _suppressJsBootstrapAfterObservedReset = false;
             ClearTableSwitchRebaseArmLocked();
             ResetJsRawBootstrapProbeLocked();
-            ResetDomAppendFallbackProbeLocked();
+
             Log($"[SEQ][DOM-BOOTSTRAP] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={tableId} | shoe={_netSeqGameShoe} | obsRound={_netObservedGameRound} | seqLen={rawDisplay.Length} | seqVer={_netSeqVersion} | lastRound={_netSeqLastRound} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | which={(string.IsNullOrWhiteSpace(snap.seqWhich) ? "-" : snap.seqWhich)} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)} | policy=dom-bootstrap-cdp-append");
-            return true;
-        }
-
-        private bool TryRepairTinyDomBootstrapLocked(
-            CwSnapshot snap,
-            string source,
-            string statusRaw,
-            string boardDisplay,
-            long jsSeqVersion,
-            string boardSeqEvent)
-        {
-            if (!UseDomBootstrapCdpAppendSeq || snap == null)
-                return false;
-
-            var prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
-            if (prevDisplay.Length <= 0 || prevDisplay.Length > 3)
-                return false;
-            if (IsChangingShoeStatus(statusRaw))
-                return false;
-
-            var jsDisplay = FilterResultDisplaySeqWindow(boardDisplay);
-            var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
-            bool contextArmed = _tableSwitchRebaseArmed || _initialTableEnterArmed || _shoeChangeRebaseArmed;
-            if (contextArmed &&
-                !IsTrustedTableAlignedFallbackRawBootstrapLocked(snap, source, rawDisplay, statusRaw, boardSeqEvent))
-            {
-                return false;
-            }
-            if (rawDisplay.Length < 8)
-                return false;
-            if (!IsTrustedRawBoardSnapshotSeq(jsDisplay, rawDisplay, statusRaw, boardSeqEvent))
-                return false;
-
-            var tableId = ResolveActiveTableIdLocked();
-            var prevVer = _netSeqVersion;
-            var prevEvt = _netSeqEvent;
-            var prevSrc = _netSeqSource;
-
-            _syncSeqPrefixDisplay = "";
-            _boardSeqDisplay = rawDisplay;
-            _boardSeqVersion = Math.Max(jsSeqVersion, rawDisplay.Length);
-            _boardSeqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "dom-bootstrap-repair" : boardSeqEvent;
-            _netSeqDisplay = rawDisplay;
-            _netSeqVersion = ComputeNextSyncSeqVersion(prevVer, prevDisplay, rawDisplay, Math.Max(jsSeqVersion, rawDisplay.Length));
-            _netSeqEvent = "dom-bootstrap-repair";
-            _netSeqSource = "dom-bootstrap-repair";
-            if (tableId > 0)
-            {
-                _netSeqTableId = tableId;
-                _activeTableId = tableId;
-                _activeContextSource = "dom-bootstrap-repair";
-                _activeContextUpdatedAtUtc = DateTime.UtcNow;
-            }
-            if (_activeGameShoe > 0)
-                _netSeqGameShoe = _activeGameShoe;
-            else if (_netObservedGameShoe > 0)
-                _netSeqGameShoe = _netObservedGameShoe;
-            _netSeqLastRound = rawDisplay.Length;
-            _netSeqWinnerSeedOnly = false;
-            _netLastWinnerKey = "";
-            _netLastWinnerAt = DateTime.MinValue;
-            _baseSeqDisplay = rawDisplay;
-            _baseSeq = FilterPlayableSeq(rawDisplay);
-            _baseSeqVersion = _netSeqVersion;
-            _baseSeqEvent = _netSeqEvent;
-            _baseSeqSource = _netSeqSource;
-            _roundTotalsB = 0;
-            _roundTotalsP = 0;
-            _roundTotalsT = 0;
-            _lockMajorMinorUpdates = false;
-            _suppressJsBootstrapAfterObservedReset = false;
-            ResetJsRawBootstrapProbeLocked();
-            ResetDomAppendFallbackProbeLocked();
-            snap.seq = rawDisplay;
-            snap.rawSeq = rawDisplay;
-            snap.seqVersion = _netSeqVersion;
-            snap.seqEvent = _netSeqEvent;
-            snap.seqSource = _netSeqSource;
-
-            Log($"[SEQ][DOM-BOOTSTRAP-REPAIR] reason=replace-tiny-bootstrap | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={(tableId > 0 ? tableId.ToString(CultureInfo.InvariantCulture) : "-")} | shoe={_netSeqGameShoe} | prevLen={prevDisplay.Length} | prevVer={prevVer} | prevEvt={(string.IsNullOrWhiteSpace(prevEvt) ? "-" : prevEvt)} | prevSrc={(string.IsNullOrWhiteSpace(prevSrc) ? "-" : prevSrc)} | jsLen={jsDisplay.Length} | rawLen={rawDisplay.Length} | seqVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | rawCount={BuildSeqCountText(rawDisplay, includeH: true)} | policy=dom-bootstrap-cdp-append");
-            return true;
-        }
-
-        private void LogDomAppendDiagnosticLocked(
-            string reason,
-            string source,
-            string statusRaw,
-            string boardSeqEvent,
-            string prevDisplay,
-            string rawDisplay,
-            string rawCombinedDisplay,
-            string delta)
-        {
-            var now = DateTime.UtcNow;
-            var key = $"{reason}|{source}|{prevDisplay.Length}|{rawDisplay.Length}|{rawCombinedDisplay.Length}|{delta}|{_netSeqVersion}|{boardSeqEvent}";
-            if (string.Equals(_lastDomAppendFallbackDiagKey, key, StringComparison.Ordinal) &&
-                (now - _lastDomAppendFallbackLogUtc) < TimeSpan.FromSeconds(3))
-            {
-                return;
-            }
-
-            _lastDomAppendFallbackDiagKey = key;
-            _lastDomAppendFallbackLogUtc = now;
-            Log($"[NETSEQ][DOM-DIAG-AHEAD] reason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | delta={(string.IsNullOrWhiteSpace(delta) ? "-" : Shrink(delta, 40))} | rawLen={rawDisplay.Length} | rawCombinedLen={rawCombinedDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | action=wait-cdp-or-dom-recovery | policy=dom-bootstrap-cdp-append");
-        }
-
-        private bool TryApplyDomAppendFallbackLocked(
-            CwSnapshot snap,
-            string source,
-            string statusRaw,
-            long jsSeqVersion,
-            string boardSeqEvent)
-        {
-            if (!UseDomBootstrapCdpAppendSeq || snap == null)
-                return false;
-
-            var prevDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
-            if (string.IsNullOrWhiteSpace(prevDisplay))
-                return false;
-            if (_tableSwitchRebaseArmed || _initialTableEnterArmed || _shoeChangeRebaseArmed)
-                return false;
-            if (IsChangingShoeStatus(statusRaw))
-                return false;
-
-            var rawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
-            if (string.IsNullOrWhiteSpace(rawDisplay))
-            {
-                ResetDomAppendFallbackProbeLocked();
-                return false;
-            }
-
-            // In wrapper mode rawSeq can be a board suffix. Let overlap matching decide
-            // whether it indicates a new result instead of rejecting by length.
-            var rawCombinedDisplay = BuildSyncSeqFromBoardLocked(rawDisplay);
-            if (!TryExtractSeqAdvanceDelta(prevDisplay, rawCombinedDisplay, out var delta) ||
-                string.IsNullOrWhiteSpace(delta))
-            {
-                LogDomAppendDiagnosticLocked("raw-overlap-no-delta", source, statusRaw, boardSeqEvent, prevDisplay, rawDisplay, rawCombinedDisplay, "");
-                ResetDomAppendFallbackProbeLocked();
-                return false;
-            }
-
-            if (!EnableDomRecoveryAfterMissingNetworkWinner)
-            {
-                if ((DateTime.UtcNow - _lastDomAppendFallbackLogUtc) > TimeSpan.FromSeconds(2))
-                {
-                    _lastDomAppendFallbackLogUtc = DateTime.UtcNow;
-                    Log($"[NETSEQ][DOM-APPEND-BLOCK] reason=cdp-only-policy | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | delta={delta} | rawLen={rawDisplay.Length} | rawCombinedLen={rawCombinedDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | obsRound={_netObservedGameRound} | lastRound={_netSeqLastRound} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | action=wait-cdp | policy=dom-bootstrap-cdp-only");
-                }
-                ResetDomAppendFallbackProbeLocked();
-                return false;
-            }
-
-            if (delta.Length != 1)
-            {
-                if ((DateTime.UtcNow - _lastDomAppendFallbackLogUtc) > TimeSpan.FromSeconds(3))
-                {
-                    _lastDomAppendFallbackLogUtc = DateTime.UtcNow;
-                    Log($"[NETSEQ][DOM-RECOVERY-BLOCK] reason=delta-not-single | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | deltaLen={delta.Length} | delta={Shrink(delta, 40)} | rawLen={rawDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)}");
-                }
-                ResetDomAppendFallbackProbeLocked();
-                return false;
-            }
-
-            var resultChar = char.ToUpperInvariant(delta[0]);
-            if (resultChar != 'B' && resultChar != 'P' && resultChar != 'T')
-            {
-                ResetDomAppendFallbackProbeLocked();
-                return false;
-            }
-
-            var activeTableId = ResolveActiveTableIdLocked();
-            var snapTableId = snap.seqTableId.GetValueOrDefault() > 0
-                ? snap.seqTableId.GetValueOrDefault()
-                : snap.tableId.GetValueOrDefault();
-            if (activeTableId > 0 && snapTableId > 0 && snapTableId != activeTableId)
-            {
-                ResetDomAppendFallbackProbeLocked();
-                return false;
-            }
-            if (_netSeqTableId > 0 && snapTableId > 0 && snapTableId != _netSeqTableId)
-            {
-                ResetDomAppendFallbackProbeLocked();
-                return false;
-            }
-
-            var recentWinnerAgeSec = _netLastWinnerAt == DateTime.MinValue
-                ? double.MaxValue
-                : (DateTime.UtcNow - _netLastWinnerAt).TotalSeconds;
-            bool recentWinnerActive =
-                _netLastWinnerAt != DateTime.MinValue &&
-                recentWinnerAgeSec <= DomRecoveryRecentWinnerBlockSeconds &&
-                !string.IsNullOrWhiteSpace(_netLastWinnerKey);
-            if (recentWinnerActive)
-            {
-                LogDomAppendDiagnosticLocked("recent-cdp-winner", source, statusRaw, boardSeqEvent, prevDisplay, rawDisplay, rawCombinedDisplay, delta);
-                ResetDomAppendFallbackProbeLocked();
-                return false;
-            }
-
-            var key = $"{activeTableId}|{prevDisplay}|{rawCombinedDisplay}|{delta}|{boardSeqEvent}";
-            var now = DateTime.UtcNow;
-            if (string.Equals(_lastDomAppendFallbackKey, key, StringComparison.Ordinal))
-                _lastDomAppendFallbackStableCount++;
-            else
-            {
-                _lastDomAppendFallbackKey = key;
-                _lastDomAppendFallbackStableCount = 1;
-                _lastDomAppendFallbackFirstSeenUtc = now;
-            }
-
-            var candidateAgeMs = _lastDomAppendFallbackFirstSeenUtc == DateTime.MinValue
-                ? 0
-                : (int)Math.Max(0, (now - _lastDomAppendFallbackFirstSeenUtc).TotalMilliseconds);
-            var requiredStableTicks = IsParserUnstableHoldSeqEvent(boardSeqEvent)
-                ? Math.Max(3, DomRecoveryMinStableTicks)
-                : DomRecoveryMinStableTicks;
-            if (_lastDomAppendFallbackStableCount < requiredStableTicks || candidateAgeMs < DomRecoveryMinAgeMs)
-            {
-                if ((DateTime.UtcNow - _lastDomAppendFallbackLogUtc) > TimeSpan.FromSeconds(2))
-                {
-                    _lastDomAppendFallbackLogUtc = DateTime.UtcNow;
-                    var waitReason = _lastDomAppendFallbackStableCount < requiredStableTicks
-                        ? "need-stable-ticks"
-                        : "wait-cdp-grace";
-                    Log($"[NETSEQ][DOM-RECOVERY-WAIT] reason={waitReason} | src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={(activeTableId > 0 ? activeTableId.ToString(CultureInfo.InvariantCulture) : "-")} | delta={delta} | stable={_lastDomAppendFallbackStableCount}/{requiredStableTicks} | ageMs={candidateAgeMs} | graceMs={DomRecoveryMinAgeMs} | rawLen={rawDisplay.Length} | netLen={prevDisplay.Length} | netVer={_netSeqVersion} | obsRound={_netObservedGameRound} | lastRound={_netSeqLastRound} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
-                }
-                return false;
-            }
-
-            var nextDisplay = FilterResultDisplaySeqWindow(prevDisplay + resultChar);
-            var prevVer = _netSeqVersion;
-            var nextVer = ComputeNextSyncSeqVersion(prevVer, prevDisplay, nextDisplay, prevVer + 1);
-            var prevRound = _netSeqLastRound;
-            var nextRound = prevRound > 0
-                ? prevRound + 1
-                : (_netObservedGameRound > 0 ? _netObservedGameRound : nextDisplay.Length);
-            var resultText = MapWinnerCharToResultText(resultChar);
-            _boardSeqDisplay = rawDisplay;
-            _boardSeqVersion = Math.Max(jsSeqVersion, rawDisplay.Length);
-            _boardSeqEvent = "dom-recovery";
-            _netSeqDisplay = nextDisplay;
-            _netSeqVersion = nextVer;
-            _netSeqEvent = "dom-recovery";
-            _netSeqSource = "dom-recovery";
-            _netSeqWinnerSeedOnly = false;
-            _netSeqTableId = activeTableId > 0 ? activeTableId : _netSeqTableId;
-            if (_netSeqGameShoe <= 0)
-                _netSeqGameShoe = _activeGameShoe > 0 ? _activeGameShoe : _netObservedGameShoe;
-            _netSeqLastRound = nextRound;
-            _netObservedTableId = _netSeqTableId > 0 ? _netSeqTableId : _netObservedTableId;
-            if (_netSeqGameShoe > 0)
-                _netObservedGameShoe = _netSeqGameShoe;
-            if (nextRound > 0)
-                _netObservedGameRound = Math.Max(_netObservedGameRound, nextRound);
-            _activeTableId = _netSeqTableId > 0 ? _netSeqTableId : _activeTableId;
-            if (_netSeqGameShoe > 0)
-                _activeGameShoe = _netSeqGameShoe;
-            _activeGameRound = nextRound;
-            _activeContextSource = "dom-recovery";
-            _activeContextUpdatedAtUtc = DateTime.UtcNow;
-            _netLastWinnerKey = $"{_netSeqTableId}|{_netSeqGameShoe}|{_netSeqLastRound}|{WinnerCharToCode(resultChar)}";
-            _netLastWinnerAt = DateTime.UtcNow;
-            _baseSeqDisplay = nextDisplay;
-            _baseSeq = FilterPlayableSeq(nextDisplay);
-            _baseSeqVersion = nextVer;
-            _baseSeqEvent = _netSeqEvent;
-            _baseSeqSource = _netSeqSource;
-            _lastJsAppendFingerprint = "";
-            _lastJsAppendAppliedUtc = DateTime.UtcNow;
-            var appliedStableCount = _lastDomAppendFallbackStableCount;
-            ResetDomAppendFallbackProbeLocked();
-
-            snap.seq = nextDisplay;
-            snap.rawSeq = rawDisplay;
-            snap.seqVersion = nextVer;
-            snap.seqEvent = _netSeqEvent;
-            snap.seqSource = _netSeqSource;
-
-            if (resultChar == 'B' || resultChar == 'P')
-            {
-                bool winIsBanker = resultChar == 'B';
-                long prevB = _roundTotalsB, prevP = _roundTotalsP;
-                char ni = winIsBanker ? ((prevB >= prevP) ? 'N' : 'I')
-                                      : ((prevP >= prevB) ? 'N' : 'I');
-                _niSeq.Append(ni);
-                if (_niSeq.Length > NiSeqMax)
-                    _niSeq.Remove(0, _niSeq.Length - NiSeqMax);
-                Log($"[NI] add={ni} | seq={_niSeq} | tail={resultChar} | B={prevB} | P={prevP} | source=dom-recovery");
-            }
-
-            Log($"[NETSEQ][DOM-RECOVERY-APPLY] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | table={(_netSeqTableId > 0 ? _netSeqTableId.ToString(CultureInfo.InvariantCulture) : "-")} | shoe={(_netSeqGameShoe > 0 ? _netSeqGameShoe.ToString(CultureInfo.InvariantCulture) : "-")} | round={(_netSeqLastRound > 0 ? _netSeqLastRound.ToString(CultureInfo.InvariantCulture) : "-")} | winner={resultChar} | prevLen={prevDisplay.Length} | nextLen={nextDisplay.Length} | rawLen={rawDisplay.Length} | prevVer={prevVer} | nextVer={nextVer} | prevRound={prevRound} | obsRound={_netObservedGameRound} | stable={appliedStableCount} | ageMs={candidateAgeMs} | evt={(string.IsNullOrWhiteSpace(boardSeqEvent) ? "-" : boardSeqEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))} | policy=cdp-first-dom-recovery");
-
-            try
-            {
-                UpdateSeqUI(nextDisplay);
-                SetLastResultUI(resultChar.ToString());
-            }
-            catch { }
-
-            if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
-            {
-                if (!string.IsNullOrWhiteSpace(resultText))
-                {
-                    var balanceAfter = ResolveHistoryBalance(snap.totals?.A);
-                    var settleRound = _netSeqLastRound > 0 ? _netSeqLastRound : nextVer;
-                    Log($"[BET][HIST][SETTLE-FROM-DOM-RECOVERY] result={resultText} | delta={delta} | prevLen={prevDisplay.Length} | nextLen={nextDisplay.Length} | prevVer={prevVer} | nextVer={nextVer} | pending={_pendingRows.Count}");
-
-                    if (resultChar == 'T')
-                    {
-                        FinalizeLastBet(
-                            "TIE",
-                            balanceAfter,
-                            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-                            "TIE",
-                            nextDisplay,
-                            nextVer,
-                            _netSeqEvent,
-                            "dom-recovery",
-                            activeTableId,
-                            _netSeqGameShoe,
-                            settleRound);
-                    }
-                    else
-                    {
-                        FinalizeLastBet(
-                            resultText,
-                            balanceAfter,
-                            null,
-                            null,
-                            nextDisplay,
-                            nextVer,
-                            _netSeqEvent,
-                            "dom-recovery",
-                            activeTableId,
-                            _netSeqGameShoe,
-                            settleRound);
-                    }
-                }
-            }
-
             return true;
         }
 
@@ -13414,7 +12456,7 @@ try{
                     _netSeqWinnerSeedOnly ||
                     (
                         string.Equals(_netSeqSource, "network", StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals(_netSeqEvent, "net-roadinfo-wincounts", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(_netSeqEvent, "net-gp-winner", StringComparison.OrdinalIgnoreCase) &&
                         _netSeqDisplay.Length <= 2
                     );
                 bool seedFromShortJsBootstrap =
@@ -13721,18 +12763,75 @@ try{
             if (UseDomBootstrapCdpAppendSeq)
             {
                 var netDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                var incomingDisplay = FilterResultDisplaySeqWindow(snap.seq);
+                var incomingRawDisplay = FilterResultDisplaySeqWindow(snap.rawSeq);
+                var incomingDisplayEffective = SelectTrustedSeqDisplay(incomingDisplay, incomingRawDisplay);
                 var incomingSeqEvent = snap.seqEvent ?? "";
                 var incomingSeqSource = snap.seqSource ?? "";
+                var recentSwitchAge = _lastAuthorityTableSwitchAtUtc == DateTime.MinValue
+                    ? TimeSpan.MaxValue
+                    : (DateTime.UtcNow - _lastAuthorityTableSwitchAtUtc);
+                bool recentAuthorityTableSwitch =
+                    _lastAuthorityTableSwitchAtUtc != DateTime.MinValue &&
+                    recentSwitchAge <= TimeSpan.FromSeconds(3);
+                bool trustedIncomingAfterSwitch =
+                    recentAuthorityTableSwitch &&
+                    (
+                        IsTrustedRawBoardSnapshotSeq(incomingDisplayEffective, incomingRawDisplay, snap.status, incomingSeqEvent) ||
+                        IsTrustedNoChangeRawBootstrapSeq(incomingDisplayEffective, incomingRawDisplay, snap.status, incomingSeqEvent) ||
+                        IsTrustedBoardRawBootstrapSeq(incomingDisplayEffective, incomingRawDisplay, snap.status, incomingSeqEvent)
+                    );
+                if (trustedIncomingAfterSwitch)
+                    recentAuthorityTableSwitch = false;
+                bool inResetOrTableSwitchPhase =
+                    _tableSwitchRebaseArmed ||
+                    _initialTableEnterArmed ||
+                    recentAuthorityTableSwitch ||
+                    IsWaitingBoardBootstrapSeqEvent(incomingSeqEvent) ||
+                    IsWaitingBoardBootstrapSeqEvent(incomingSeqSource) ||
+                    incomingSeqEvent.IndexOf("shoe-reset-arm", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    incomingSeqEvent.IndexOf("table-switch", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    incomingSeqSource.IndexOf("table-switch", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (string.IsNullOrWhiteSpace(netDisplay) &&
+                    !string.IsNullOrWhiteSpace(incomingDisplayEffective))
+                {
+                    var normalizedIncomingSeqEvent = string.IsNullOrWhiteSpace(incomingSeqEvent) ? "dom-board-full-scan" : incomingSeqEvent;
+                    var normalizedIncomingSeqSource = string.IsNullOrWhiteSpace(incomingSeqSource) ? "dom-board-full-scan" : incomingSeqSource;
+                    snap.seq = incomingDisplayEffective;
+                    snap.rawSeq = !string.IsNullOrWhiteSpace(incomingRawDisplay) ? incomingRawDisplay : incomingDisplayEffective;
+                    snap.seqVersion = Math.Max(snap.seqVersion ?? 0, incomingDisplayEffective.Length);
+                    snap.seqEvent = normalizedIncomingSeqEvent;
+                    snap.seqSource = normalizedIncomingSeqSource;
+                    snap.niSeq = _niSeq.ToString();
+                    var keepJsVersion = snap.seqVersion ?? 0;
+                    bool keepJsChanged =
+                        !string.Equals(_lastAuthKeepJsDisplay, incomingDisplayEffective, StringComparison.Ordinal) ||
+                        _lastAuthKeepJsVersion != keepJsVersion ||
+                        !string.Equals(_lastAuthKeepJsEvent, normalizedIncomingSeqEvent, StringComparison.Ordinal) ||
+                        !string.Equals(_lastAuthKeepJsSource, normalizedIncomingSeqSource, StringComparison.Ordinal);
+                    _lastAuthKeepJsDisplay = incomingDisplayEffective;
+                    _lastAuthKeepJsVersion = keepJsVersion;
+                    _lastAuthKeepJsEvent = normalizedIncomingSeqEvent;
+                    _lastAuthKeepJsSource = normalizedIncomingSeqSource;
+                    if (keepJsChanged || (DateTime.UtcNow - _lastAuthKeepJsLogUtc) >= AuthKeepJsLogHeartbeat)
+                    {
+                        _lastAuthKeepJsLogUtc = DateTime.UtcNow;
+                        Log($"[NETSEQ][AUTH-KEEP-JS] reason=network-empty-keep-incoming | jsLen={incomingDisplayEffective.Length} | rawLen={(snap.rawSeq?.Length ?? 0)} | jsVer={(snap.seqVersion?.ToString(CultureInfo.InvariantCulture) ?? "-")} | jsEvt={(string.IsNullOrWhiteSpace(snap.seqEvent) ? "-" : snap.seqEvent)} | jsSrc={(string.IsNullOrWhiteSpace(snap.seqSource) ? "-" : snap.seqSource)} | netLen={netDisplay.Length} | netVer={_netSeqVersion} | inResetOrSwitch={(inResetOrTableSwitchPhase ? 1 : 0)} | recentAuthSwitch={(recentAuthorityTableSwitch ? 1 : 0)} | trustedAfterSwitch={(trustedIncomingAfterSwitch ? 1 : 0)} | switchAgeMs={(recentSwitchAge == TimeSpan.MaxValue ? -1 : (long)recentSwitchAge.TotalMilliseconds)} | changed={(keepJsChanged ? 1 : 0)}");
+                    }
+                    return;
+                }
                 bool waitingBoardBootstrap =
                     string.IsNullOrWhiteSpace(netDisplay) &&
                     (
                         _tableSwitchRebaseArmed ||
                         _initialTableEnterArmed ||
+                        recentAuthorityTableSwitch ||
                         IsWaitingBoardBootstrapSeqEvent(incomingSeqEvent) ||
                         IsWaitingBoardBootstrapSeqEvent(incomingSeqSource)
                     );
                 snap.seq = netDisplay;
-                snap.rawSeq = netDisplay;
+                snap.rawSeq = string.IsNullOrWhiteSpace(netDisplay) ? incomingRawDisplay : netDisplay;
                 snap.seqVersion = _netSeqVersion;
                 snap.seqEvent = waitingBoardBootstrap ? "waiting-board-bootstrap" : string.IsNullOrWhiteSpace(_netSeqEvent)
                     ? (string.IsNullOrWhiteSpace(netDisplay) ? "network-empty" : "network")
@@ -13742,7 +12841,7 @@ try{
                 if (waitingBoardBootstrap && (DateTime.UtcNow - _lastSeqWaitingBootstrapLogUtc) > TimeSpan.FromSeconds(2))
                 {
                     _lastSeqWaitingBootstrapLogUtc = DateTime.UtcNow;
-                    Log($"[NETSEQ][AUTH-WAIT-BOOTSTRAP] reason=empty-net-wait-board | netLen={netDisplay.Length} | netVer={_netSeqVersion} | incomingEvt={(string.IsNullOrWhiteSpace(incomingSeqEvent) ? "-" : incomingSeqEvent)} | incomingSrc={(string.IsNullOrWhiteSpace(incomingSeqSource) ? "-" : incomingSeqSource)} | tableSwitchArm={(_tableSwitchRebaseArmed ? 1 : 0)} | initialEnter={(_initialTableEnterArmed ? 1 : 0)}");
+                    Log($"[NETSEQ][AUTH-WAIT-BOOTSTRAP] reason=empty-net-wait-board | netLen={netDisplay.Length} | netVer={_netSeqVersion} | incomingEvt={(string.IsNullOrWhiteSpace(incomingSeqEvent) ? "-" : incomingSeqEvent)} | incomingSrc={(string.IsNullOrWhiteSpace(incomingSeqSource) ? "-" : incomingSeqSource)} | tableSwitchArm={(_tableSwitchRebaseArmed ? 1 : 0)} | initialEnter={(_initialTableEnterArmed ? 1 : 0)} | recentAuthSwitch={(recentAuthorityTableSwitch ? 1 : 0)} | trustedAfterSwitch={(trustedIncomingAfterSwitch ? 1 : 0)} | switchAgeMs={(recentSwitchAge == TimeSpan.MaxValue ? -1 : (long)recentSwitchAge.TotalMilliseconds)}");
                 }
                 return;
             }
@@ -13822,6 +12921,7 @@ try{
             preview = Shrink(body, 2000);
             reason = "";
             if (string.IsNullOrWhiteSpace(preview)) return false;
+            if (!_enableJsPushDebug) return false;
             if (!IsInterestingHttpUrl(url)) return false;
 
             var lower = preview.ToLowerInvariant();
@@ -13834,6 +12934,8 @@ try{
             if (_pktLastPreviewByKey.TryGetValue(dedupeKey, out var prev) &&
                 string.Equals(prev, dedupeVal, StringComparison.Ordinal))
                 return false;
+            if (HitLogThrottle("HTTP.BODY.LOG|" + (url ?? ""), 7000))
+                return false;
 
             _pktLastPreviewByKey[dedupeKey] = dedupeVal;
             reason = payloadHit ? "payload-hit" : "interesting-url";
@@ -13842,6 +12944,12 @@ try{
 
         private void LogPacket(string kind, string? url, string preview, bool isBinary)
         {
+            if (!_enableJsPushDebug &&
+                kind.StartsWith("CDP.HTTP.body/", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             if (COMPACT_RUNTIME_LOG)
             {
                 var payload = preview ?? "";
@@ -13868,7 +12976,11 @@ try{
                 }
             }
 
-            var line = $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {url ?? ""}\n      {preview}";
+            var safeUrl = TrimHrefForLog(url);
+            var safePreview = preview ?? "";
+            if (safePreview.Length > PACKET_PREVIEW_MAX_CHARS)
+                safePreview = safePreview.Substring(0, PACKET_PREVIEW_MAX_CHARS) + "...";
+            var line = $"[PKT] {DateTime.Now:HH:mm:ss} {kind} {safeUrl}\n      {safePreview}";
             // Ghi file luôn (không chặn)
             EnqueueFile(line);
 
@@ -13883,6 +12995,8 @@ try{
         /// <summary>
         private async void CoreWebView2_WebResourceResponseReceived(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs e)
         {
+            if (DisableHttpAndCdpTaps)
+                return;
             try
             {
                 var url = e?.Request?.Uri ?? "";
@@ -15428,6 +14542,12 @@ try{
             var host = (u.Host ?? "").ToLowerInvariant();
             if (host.StartsWith("bpweb.") || host.StartsWith("games."))
                 return true;
+            if (string.Equals(host, "play.livetables.io", StringComparison.OrdinalIgnoreCase))
+            {
+                var p = u.AbsolutePath ?? "";
+                if (p.IndexOf("/baccarat", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
             if (IsLikelyGame8bPopupUrl(rawUrl))
                 return true;
             var path = u.AbsolutePath ?? "";
@@ -16116,27 +15236,6 @@ try{
             if (!hasSnapData)
                 return (false, "snap-empty");
 
-            var statusRaw = snap?.status ?? "";
-            if (IsChangingShoeStatus(statusRaw))
-                return (false, "status-blocked-changing-shoe");
-
-            var seqEventRaw = snap?.seqEvent ?? "";
-            var seqSourceRaw = snap?.seqSource ?? "";
-            if (IsWaitingBoardBootstrapSeqEvent(seqEventRaw) ||
-                IsWaitingBoardBootstrapSeqEvent(seqSourceRaw))
-            {
-                return (false, "seq-not-ready-bootstrap-wait");
-            }
-
-            if (snap?.prog.HasValue == true)
-            {
-                var p = snap.prog.Value;
-                if (double.IsNaN(p) || double.IsInfinity(p))
-                    return (false, "prog-invalid");
-                if (p < 3)
-                    return (false, $"prog-too-low p={p:0.###} (<3)");
-            }
-
             return (true, "ok");
         }
 
@@ -16163,7 +15262,7 @@ try{
                 Log($"[Loop][AUTO-STOP] tab={tab.Name} | run={tab.RunId}");
                 StopTask(tab);
             }
-            BaccaratSexyCasino2.Tasks.TaskUtil.ClearBetCooldown();
+            BaccaratPragmatic.Tasks.TaskUtil.ClearBetCooldown();
             SetPlayButtonState(_activeTab?.IsRunning == true);
         }
 
@@ -16826,12 +15925,6 @@ try{
                 StakeChainTotals = stakeChainTotalsArr,
 
                 DecisionPercent = decisionPercent,
-                AutoResetStakeOnNonNegativeWin = tab.RunAutoResetStakeOnNonNegativeWin,
-                ConsumeAutoResetStakeRequest = () =>
-                {
-                    if (Dispatcher.CheckAccess()) return ConsumeAutoResetStakeRequest(tab);
-                    return Dispatcher.Invoke(() => ConsumeAutoResetStakeRequest(tab));
-                },
                 State = tab.DecisionState,
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => tab.Cooldown,
@@ -17084,8 +16177,7 @@ try{
                 IssuedGameShoe = issuedGameShoe,
                 IssuedObservedRound = issuedObservedRound,
                 IssuedSeqSource = issuedSeqSource,
-                SawClosedAfterIssue = false,
-                AwaitingFinalWinnerAfterShoeReset = false
+                SawClosedAfterIssue = false
             };
 
             char issueTail = issuedSeqDisplay.Length > 0 ? issuedSeqDisplay[^1] : '-';
@@ -17118,7 +16210,7 @@ try{
             tab.ActiveTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
             tab.DecisionState = new DecisionState();
-            BaccaratSexyCasino2.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
+            BaccaratPragmatic.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             var ctx = BuildContext(tab, runId, useRawWinAmount);
             ctx.Log?.Invoke($"[TASK][RUN] start | tab={tab.Id} | run={runId} | task={task.DisplayName}");
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
@@ -17178,7 +16270,7 @@ try{
         private void StopAllTasksAndRelease()
         {
             StopAllTasks();
-            BaccaratSexyCasino2.Tasks.TaskUtil.ClearBetCooldown();
+            BaccaratPragmatic.Tasks.TaskUtil.ClearBetCooldown();
             SetPlayButtonState(_activeTab?.IsRunning == true);
             StopExpiryCountdown();
             StopLeaseHeartbeat();
@@ -17316,13 +16408,10 @@ try{
 
                 // Chuẩn bị & chạy Task chiến lược (giữ nguyên)
                 RebuildStakeSeq((TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim());
-                _decisionPercent = ReadDecisionSecondsFromUi(_cfg?.DecisionSeconds > 0 ? _cfg.DecisionSeconds : 10);
                 activeTab.RunStakeSeq = _stakeSeq.ToArray();
                 activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
                 activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();
                 activeTab.RunDecisionPercent = _decisionPercent;
-                activeTab.RunAutoResetStakeOnNonNegativeWin = _cfg.AutoResetStakeOnNonNegativeWin;
-                activeTab.AutoResetStakeRequested = false;
                 activeTab.IsRunning = true;
                 MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
                 _winTotal = activeTab.WinTotal;
@@ -17340,27 +16429,26 @@ try{
                 activeTab.TaskCts = new CancellationTokenSource();
 
                 bool useRawWinAmount = false;
-                BaccaratSexyCasino2.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
+                BaccaratPragmatic.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
                 {
-                    0 => new BaccaratSexyCasino2.Tasks.SeqParityFollowTask(),     // 1
-                    1 => new BaccaratSexyCasino2.Tasks.PatternParityTask(),       // 2
-                    2 => new BaccaratSexyCasino2.Tasks.SeqMajorMinorTask(),       // 3
-                    3 => new BaccaratSexyCasino2.Tasks.PatternMajorMinorTask(),   // 4
-                    4 => new BaccaratSexyCasino2.Tasks.SmartPrevTask(),           // 5
-                    5 => new BaccaratSexyCasino2.Tasks.RandomParityTask(),        // 6
-                    6 => new BaccaratSexyCasino2.Tasks.AiStatParityTask(),        // 7
-                    7 => new BaccaratSexyCasino2.Tasks.StateTransitionBiasTask(), // 8
-                    8 => new BaccaratSexyCasino2.Tasks.RunLengthBiasTask(),       // 9
-                    9 => new BaccaratSexyCasino2.Tasks.EnsembleMajorityTask(),    // 10
-                    10 => new BaccaratSexyCasino2.Tasks.TimeSlicedHedgeTask(),    // 11
-                    11 => new BaccaratSexyCasino2.Tasks.KnnSubsequenceTask(),     // 12
-                    12 => new BaccaratSexyCasino2.Tasks.DualScheduleHedgeTask(),  // 13
-                    13 => new BaccaratSexyCasino2.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
-                    14 => new BaccaratSexyCasino2.Tasks.AiExpertPanelTask(), // 15
-                    15 => new BaccaratSexyCasino2.Tasks.Top10PatternFollowTask(), // 16
-                    16 => new BaccaratSexyCasino2.Tasks.SeqParityHotBackTask(), // 17
-                    17 => new BaccaratSexyCasino2.Tasks.SmartPrevAdvancedTask(), // 18
-                    _ => new BaccaratSexyCasino2.Tasks.SmartPrevTask(),
+                    0 => new BaccaratPragmatic.Tasks.SeqParityFollowTask(),     // 1
+                    1 => new BaccaratPragmatic.Tasks.PatternParityTask(),       // 2
+                    2 => new BaccaratPragmatic.Tasks.SeqMajorMinorTask(),       // 3
+                    3 => new BaccaratPragmatic.Tasks.PatternMajorMinorTask(),   // 4
+                    4 => new BaccaratPragmatic.Tasks.SmartPrevTask(),           // 5
+                    5 => new BaccaratPragmatic.Tasks.RandomParityTask(),        // 6
+                    6 => new BaccaratPragmatic.Tasks.AiStatParityTask(),        // 7
+                    7 => new BaccaratPragmatic.Tasks.StateTransitionBiasTask(), // 8
+                    8 => new BaccaratPragmatic.Tasks.RunLengthBiasTask(),       // 9
+                    9 => new BaccaratPragmatic.Tasks.EnsembleMajorityTask(),    // 10
+                    10 => new BaccaratPragmatic.Tasks.TimeSlicedHedgeTask(),    // 11
+                    11 => new BaccaratPragmatic.Tasks.KnnSubsequenceTask(),     // 12
+                    12 => new BaccaratPragmatic.Tasks.DualScheduleHedgeTask(),  // 13
+                    13 => new BaccaratPragmatic.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()), // 14
+                    14 => new BaccaratPragmatic.Tasks.AiExpertPanelTask(), // 15
+                    15 => new BaccaratPragmatic.Tasks.Top10PatternFollowTask(), // 16
+                    16 => new BaccaratPragmatic.Tasks.SeqParityHotBackTask(), // 17
+                    _ => new BaccaratPragmatic.Tasks.SmartPrevTask(),
                 };
 
                 activeTab.ActiveTask = task;
@@ -17448,7 +16536,7 @@ try{
 
                 if (!IsAnyTabRunning())
                 {
-                    BaccaratSexyCasino2.Tasks.TaskUtil.ClearBetCooldown();
+                    BaccaratPragmatic.Tasks.TaskUtil.ClearBetCooldown();
                     Log($"[Loop] stopped | run={activeTab.RunId}");
                     StopExpiryCountdown();
                     StopLeaseHeartbeat();
@@ -17537,6 +16625,12 @@ try{
             // ❗ Quan trọng: KHÔNG đụng Web.IsEnabled để tránh crash WebView2 trên VPS/RDP
             if (Web != null)
                 Web.IsHitTestVisible = !locked;
+
+            if (_lastMouseLockApplied != locked)
+            {
+                _lastMouseLockApplied = locked;
+                Log($"[LockMouse][APPLY] locked={(locked ? 1 : 0)} | webHitTest={(Web?.IsHitTestVisible == true ? 1 : 0)} | shield={(MouseShield?.Visibility == Visibility.Visible ? 1 : 0)}");
+            }
         }
 
 
@@ -17621,7 +16715,7 @@ try{
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // đặt trong MainWindow.xaml.cs (project BaccaratSexyCasino2)
+        // đặt trong MainWindow.xaml.cs (project BaccaratPragmatic)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
@@ -17838,41 +16932,20 @@ try{
             _ = SaveStatsAsync();
         }
 
-        private bool ConsumeAutoResetStakeRequest(StrategyTabState tab)
-        {
-            if (tab == null || !tab.AutoResetStakeRequested)
-                return false;
-
-            tab.AutoResetStakeRequested = false;
-            return true;
-        }
-
         private void UpdateTabWin(StrategyTabState tab, double net, string moneyStrategyId)
         {
             if (tab == null) return;
 
             tab.WinTotal += net;
             tab.Stats.TotalProfit += net;
-            try
-            {
-                BaccaratSexyCasino2.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
-            }
-            catch { /* ignore */ }
-
-            if (tab.RunAutoResetStakeOnNonNegativeWin && tab.WinTotal >= 0)
-            {
-                double beforeReset = tab.WinTotal;
-                tab.WinTotal = 0;
-                tab.AutoResetStakeRequested = true;
-                Log($"[MONEY][AUTO-RESET-NONNEG] winTotalBefore={beforeReset:N0} | netDelta={net:N0} | action=reset-win-and-level1 | strategy={(string.IsNullOrWhiteSpace(moneyStrategyId) ? "-" : moneyStrategyId)} | tab={tab.Id}");
-            }
-            else if (tab.RunAutoResetStakeOnNonNegativeWin)
-            {
-                Log($"[MONEY][AUTO-RESET-NONNEG][SKIP] reason=win-total-negative | winTotal={tab.WinTotal:N0} | netDelta={net:N0} | strategy={(string.IsNullOrWhiteSpace(moneyStrategyId) ? "-" : moneyStrategyId)} | tab={tab.Id}");
-            }
-
             if (ReferenceEquals(_activeTab, tab))
                 _winTotal = tab.WinTotal;
+
+            try
+            {
+                BaccaratPragmatic.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
+            }
+            catch { /* ignore */ }
 
             if (ReferenceEquals(_activeTab, tab) && LblWin != null)
                 LblWin.Text = tab.WinTotal.ToString("N0");
@@ -18326,7 +17399,7 @@ try{
             {
                 // Đọc thẳng từ embedded (KHÔNG thử đọc từ đĩa)
                 var resName = FindResourceName("v4_js_xoc_dia_live.js")
-                              ?? "BaccaratSexyCasino2.v4_js_xoc_dia_live.js";
+                              ?? "BaccaratPragmatic.v4_js_xoc_dia_live.js";
                 var text = ReadEmbeddedText(resName);
                 text = RemoveUtf8Bom(text);
 
@@ -19006,9 +18079,13 @@ try{
         private async Task TryPullPopupTickFallbackAsync()
         {
             if (_popupWeb?.CoreWebView2 == null) return;
-            if (!IsPopupBetViewActive()) return;
+            if (!ShouldAllowPopupTickPull()) return;
+            var now = DateTime.UtcNow;
+            if (_lastAuthorityMsgTickUtc != DateTime.MinValue &&
+                (now - _lastAuthorityMsgTickUtc) <= TimeSpan.FromMilliseconds(1500))
+                return;
             var age = DateTime.UtcNow - _lastGameTickUtc;
-            if (age <= TimeSpan.FromSeconds(1.2)) return;
+            if (age <= TimeSpan.FromMilliseconds(POPUP_PULL_STALE_TRIGGER_MS)) return;
             if (Interlocked.Exchange(ref _popupTickPullBusy, 1) == 1) return;
             try
             {
@@ -19023,6 +18100,27 @@ try{
             {
                 Interlocked.Exchange(ref _popupTickPullBusy, 0);
             }
+        }
+
+        private bool ShouldAllowPopupTickPull()
+        {
+            if (_popupWeb?.CoreWebView2 == null)
+                return false;
+            if (IsPopupBetViewActive())
+                return true;
+
+            string popupSrc = "";
+            try { popupSrc = _popupWeb.CoreWebView2.Source ?? ""; } catch { popupSrc = ""; }
+            if (IsLikelyBetGameReadyUrl(popupSrc) || IsLivetablesBaccaratUrl(popupSrc))
+                return true;
+
+            lock (_frameAuthorityLock)
+            {
+                if (IsLikelyBetGameReadyUrl(_authorityHref) || IsLivetablesBaccaratUrl(_authorityHref))
+                    return true;
+            }
+
+            return false;
         }
 
 
@@ -19306,6 +18404,8 @@ try{
             {
                 StopLogPump();
                 try { _uiModeTimer?.Stop(); _uiModeTimer = null; } catch { }
+                try { _uiCountdownTimer?.Stop(); _uiCountdownTimer = null; } catch { }
+                try { _uiCountdownTraceTimer?.Dispose(); _uiCountdownTraceTimer = null; } catch { }
                 StopLeaseHeartbeat();
                 StopLicenseRecheckTimer();
                 StopExpiryCountdown();
@@ -19408,59 +18508,36 @@ try{
                 {
                     LblStatusText.Text = "";
                     LblStatusText.Visibility = Visibility.Collapsed;
+                    LblStatusText.ClearValue(TextBlock.ForegroundProperty);
                 }
                 else
                 {
                     LblStatusText.Text = status;
                     LblStatusText.Visibility = Visibility.Visible;
+                    if (IsAllowBetStatus(status))
+                        LblStatusText.Foreground = Brushes.LimeGreen;
+                    else if (IsWaitingResultStatus(status))
+                        LblStatusText.Foreground = Brushes.Red;
+                    else
+                        LblStatusText.ClearValue(TextBlock.ForegroundProperty);
                 }
             }
             catch { /* ignore */ }
         }
 
-        private static string NormalizeStatusTail(string? tail)
-        {
-            if (string.IsNullOrWhiteSpace(tail))
-                return "";
-            var s = tail.Trim();
-            if (s.StartsWith("html/", StringComparison.OrdinalIgnoreCase))
-                s = s.Substring("html/".Length);
-            return new string(s.Where(ch => !char.IsWhiteSpace(ch)).ToArray()).ToLowerInvariant();
-        }
+        private static bool IsAllowBetStatus(string status)
+            => string.Equals(status, "Cho phép đặt cược", StringComparison.Ordinal)
+            || string.Equals(status, "Cho phep dat cuoc", StringComparison.OrdinalIgnoreCase);
 
-        private static bool IsAuthorityStatusTail(string? tail)
-        {
-            var clean = NormalizeStatusTail(tail);
-            return StatusAuthorityTails.Any(authorityTail =>
-                string.Equals(clean, NormalizeStatusTail(authorityTail), StringComparison.Ordinal));
-        }
+        private static bool IsWaitingResultStatus(string status)
+            => string.Equals(status, "Đợi kết quả", StringComparison.Ordinal)
+            || string.Equals(status, "Doi ket qua", StringComparison.OrdinalIgnoreCase);
 
-        private static bool IsAuthorityStatusSource(string? source) =>
-            !string.IsNullOrWhiteSpace(source) &&
-            source.Trim().StartsWith("authority-processStatus|", StringComparison.OrdinalIgnoreCase);
-
-        private static bool IsStatusAuthorityMissing(string? source)
+        private static string BuildStatusFromProg(double? prog)
         {
-            source ??= "";
-            return source.IndexOf("authority-processStatus-missing", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   source.IndexOf("authority-processStatus-error", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static bool IsTrustedStatusForUi(string? statusRaw, string? statusSource, string? statusTail)
-        {
-            statusRaw = (statusRaw ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(statusRaw))
-                return false;
-            if (statusRaw.StartsWith("Baccarat DOM", StringComparison.OrdinalIgnoreCase))
-                return false;
-            if (IsStatusAuthorityMissing(statusSource))
-                return false;
-            return IsAuthorityStatusSource(statusSource) || IsAuthorityStatusTail(statusTail);
-        }
-
-        private static string BuildStatusUiText(string? statusRaw)
-        {
-            return statusRaw ?? "";
+            if (prog.HasValue && prog.Value > 0d)
+                return "Cho phép đặt cược";
+            return "Đợi kết quả";
         }
 
 
@@ -19587,46 +18664,6 @@ try{
             return Math.Max(0, age.TotalSeconds);
         }
 
-        private void TryDropPendingRowForJsDrop(string sideRaw, long? amount, long? roundId, string tabId, string reason, long? jobId)
-        {
-            if (_pendingRows.Count == 0)
-                return;
-
-            var side = (sideRaw ?? "").Trim().ToUpperInvariant();
-            var now = DateTime.Now;
-
-            var candidates = _pendingRows
-                .Where(r => (now - r.At).TotalMinutes <= 10)
-                .Where(r => string.IsNullOrWhiteSpace(side) || string.Equals(r.Side, side, StringComparison.OrdinalIgnoreCase))
-                .Where(r => !amount.HasValue || amount.Value <= 0 || r.Stake == amount.Value)
-                .Where(r => !roundId.HasValue || roundId.Value <= 0 || r.IssuedRoundId == roundId.Value)
-                .OrderByDescending(r => r.At)
-                .ToList();
-
-            if (candidates.Count == 0)
-            {
-                Log($"[BET][HIST][DROP-MISS] reason=js-bet-dropped-no-match | jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} | tab={(string.IsNullOrWhiteSpace(tabId) ? "-" : tabId)} | side={(string.IsNullOrWhiteSpace(side) ? "-" : side)} | amount={(amount.HasValue ? amount.Value.ToString("N0", CultureInfo.InvariantCulture) : "-")} | round={(roundId.HasValue ? roundId.Value.ToString() : "-")} | dropReason={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | pending={_pendingRows.Count}");
-                return;
-            }
-
-            var row = candidates[0];
-            var balance = ResolveHistoryBalance();
-            row.Result = "DROP-JS";
-            row.WinLose = "Bỏ qua";
-            row.Account = balance;
-            row.AwaitingFinalWinnerAfterShoeReset = false;
-            _pendingRows.Remove(row);
-
-            Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | reason=js-bet-dropped:{(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | jobId={(jobId.HasValue ? jobId.Value.ToString() : "-")} | tab={(string.IsNullOrWhiteSpace(tabId) ? "-" : tabId)}");
-
-            if (_autoFollowNewest)
-                ShowFirstPage();
-            else
-                RefreshCurrentPage();
-
-            Log($"[BET][HIST][UI-REFRESH] reason=js-bet-dropped | dropped=1 | pending={_pendingRows.Count} | all={_betAll.Count} | autoFollow={(_autoFollowNewest ? 1 : 0)} | page={_pageIndex + 1}");
-        }
-
         private static bool IsAwaitingFinalWinnerCandidate(BetRow row, out double ageSec)
         {
             ageSec = PendingAgeSeconds(row);
@@ -19640,41 +18677,12 @@ try{
 
         private void LogPendingKeepAwaitFinalWinner(BetRow row, string source, long tableId, long gameShoe, long gameRound, double ageSec)
         {
-            row.AwaitingFinalWinnerAfterShoeReset = true;
-            if (tableId > 0)
-                row.SettleTargetTableId = tableId;
-            if (gameShoe > 0)
-                row.SettleTargetShoe = gameShoe;
-            if (gameRound > 0)
-                row.SettleTargetRound = gameRound;
-            else if (row.SettleTargetRound <= 0)
-                row.SettleTargetRound = 1;
             var nowUtc = DateTime.UtcNow;
             if ((nowUtc - row.LastAwaitFinalWinnerKeepLogUtc).TotalSeconds < 5)
                 return;
 
             row.LastAwaitFinalWinnerKeepLogUtc = nowUtc;
-            Log($"[BET][HIST][KEEP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | newTable={(tableId > 0 ? tableId.ToString() : "-")} | newShoe={(gameShoe > 0 ? gameShoe.ToString() : "-")} | newRound={(gameRound > 0 ? gameRound.ToString() : "-")} | targetTable={(row.SettleTargetTableId > 0 ? row.SettleTargetTableId.ToString() : "-")} | targetShoe={(row.SettleTargetShoe > 0 ? row.SettleTargetShoe.ToString() : "-")} | targetRound={(row.SettleTargetRound > 0 ? row.SettleTargetRound.ToString() : "-")} | ageSec={ageSec:0} | reason=await-final-winner-after-shoe-reset | source={source}");
-        }
-
-        private int MarkPendingRowsAwaitFinalWinnerForReset(string source, long tableId, long gameShoe, long gameRound)
-        {
-            if (_pendingRows.Count == 0)
-                return 0;
-
-            int keptCount = 0;
-            foreach (var row in _pendingRows.ToList())
-            {
-                if (tableId > 0 && row.IssuedTableId > 0 && row.IssuedTableId != tableId)
-                    continue;
-                if (!IsAwaitingFinalWinnerCandidate(row, out var ageSec))
-                    continue;
-
-                keptCount++;
-                LogPendingKeepAwaitFinalWinner(row, source, tableId, gameShoe, gameRound, ageSec);
-            }
-
-            return keptCount;
+            Log($"[BET][HIST][KEEP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | newTable={(tableId > 0 ? tableId.ToString() : "-")} | newShoe={(gameShoe > 0 ? gameShoe.ToString() : "-")} | newRound={(gameRound > 0 ? gameRound.ToString() : "-")} | ageSec={ageSec:0} | reason=await-final-winner-after-shoe-reset | source={source}");
         }
 
         private bool IsShoeSwitchRebaseArmed()
@@ -19762,15 +18770,6 @@ try{
                    string.Equals(action, "context-mismatch", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(action, "dup-round", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(action, "dup-event", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool IsNetworkWinnerSeqEvent(string? seqEventRaw)
-        {
-            var evt = (seqEventRaw ?? "").Trim();
-            if (evt.Length == 0)
-                return false;
-
-            return evt.IndexOf("net-roadinfo-wincounts", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void InvalidatePendingRowsForContextReset(long tableId, long gameShoe, long gameRound)
@@ -19902,57 +18901,9 @@ try{
             bool hasSettleShoe = settleGameShoe > 0;
             char settleTail = settleDisplay.Length > 0 ? settleDisplay[^1] : '-';
             bool advFallbackLogged = false;
-            bool resetCarryFallbackLogged = false;
             bool isNetworkWinnerSettle =
-                string.Equals(settleReason, "net-roadinfo-wincounts", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(settleSeqEvent, "net-roadinfo-wincounts", StringComparison.OrdinalIgnoreCase);
-
-            bool IsFirstWinnerAfterShoeReset(BetRow row)
-            {
-                if (!isNetworkWinnerSettle || row == null || !row.AwaitingFinalWinnerAfterShoeReset)
-                    return false;
-
-                if (row.SettleTargetTableId > 0)
-                {
-                    if (!hasSettleTable || settleTableId != row.SettleTargetTableId)
-                        return false;
-                }
-
-                if (row.SettleTargetShoe > 0)
-                {
-                    if (!hasSettleShoe || settleGameShoe != row.SettleTargetShoe)
-                        return false;
-                }
-
-                if (row.SettleTargetRound > 0)
-                {
-                    if (settleGameRound > 0 && settleGameRound == row.SettleTargetRound)
-                        return true;
-
-                    if (settleGameRound > row.SettleTargetRound && row.SettleTargetRound <= 1)
-                    {
-                        row.SettleTargetRound = settleGameRound;
-                        Log($"[BET][HIST][TARGET-RETARGET] id={BetIdForLog(row)} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | targetTable={(row.SettleTargetTableId > 0 ? row.SettleTargetTableId.ToString() : "-")} | targetShoe={(row.SettleTargetShoe > 0 ? row.SettleTargetShoe.ToString() : "-")} | newTargetRound={settleGameRound} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)} | reason=late-first-winner-after-reset");
-                        return true;
-                    }
-
-                    return false;
-                }
-
-                if (!hasSettleTable || settleTableId <= 0)
-                    return false;
-                if (row.IssuedTableId > 0 && row.IssuedTableId != settleTableId)
-                    return false;
-
-                long settleVer = settleSeqVersion ?? 0;
-                bool firstResetWinner =
-                    settleVer == 1 ||
-                    settleGameRound == 1;
-                if (!firstResetWinner)
-                    return false;
-
-                return true;
-            }
+                string.Equals(settleReason, "net-gp-winner", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(settleSeqEvent, "net-gp-winner", StringComparison.OrdinalIgnoreCase);
 
             bool IsRowContextMatch(BetRow row)
             {
@@ -19961,76 +18912,36 @@ try{
                 if (hasSettleTable && row.IssuedTableId > 0 && row.IssuedTableId != settleTableId)
                     return false;
                 if (hasSettleShoe && row.IssuedGameShoe > 0 && row.IssuedGameShoe != settleGameShoe)
-                {
-                    if (IsFirstWinnerAfterShoeReset(row))
-                        return true;
                     return false;
-                }
                 return true;
-            }
-
-            bool IsSingleDisplayAppend(BetRow row)
-            {
-                var issuedDisplay = row.IssuedSeqDisplay ?? "";
-                if (issuedDisplay.Length == 0 || settleDisplay.Length != issuedDisplay.Length + 1)
-                    return false;
-                return settleDisplay.StartsWith(issuedDisplay, StringComparison.Ordinal);
             }
 
             bool IsRowSeqAdvanced(BetRow row)
             {
                 if (!hasSettleContext) return true;
-                bool displayAdvanced = !string.Equals(settleDisplay, row.IssuedSeqDisplay ?? "", StringComparison.Ordinal);
-                if (isNetworkWinnerSettle && settleGameRound > 0)
-                {
-                    if (IsFirstWinnerAfterShoeReset(row))
-                    {
-                        if (!resetCarryFallbackLogged)
-                        {
-                            resetCarryFallbackLogged = true;
-                            Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason=winner-after-shoe-reset | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | issueShoe={row.IssuedGameShoe} | settleRound={settleGameRound} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
-                        }
-                        return true;
-                    }
-
-                    if (!IsRowContextMatch(row))
-                        return false;
-
-                    if (IsNetworkWinnerRoundMatch(row, settleGameRound, settleSeqVersion))
-                    {
-                        if (!advFallbackLogged)
-                        {
-                            string advReason =
-                                row.IssuedObservedRound > 0 && row.IssuedObservedRound == settleGameRound
-                                    ? "winner-round-confirmed"
-                                    : (row.IssuedRoundId > 0 && row.IssuedRoundId + 1 == settleGameRound
-                                        ? "winner-round-plus-one"
-                                        : "winner-version-plus-one");
-                            advFallbackLogged = true;
-                            Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason={advReason} | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
-                        }
-                        return true;
-                    }
-
-                    Log($"[BET][HIST][ADV-BLOCK] id={BetIdForLog(row)} | reason=network-round-mismatch | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
-                    return false;
-                }
-
                 if (isNetworkWinnerSettle &&
-                    displayAdvanced &&
-                    IsSingleDisplayAppend(row))
+                    settleGameRound > 0 &&
+                    IsRowContextMatch(row) &&
+                    IsNetworkWinnerRoundMatch(row, settleGameRound, settleSeqVersion))
                 {
                     if (!advFallbackLogged)
                     {
+                        string advReason =
+                            row.IssuedObservedRound > 0 && row.IssuedObservedRound == settleGameRound
+                                ? "winner-round-confirmed"
+                                : (row.IssuedRoundId > 0 && row.IssuedRoundId + 1 == settleGameRound
+                                    ? "winner-round-plus-one"
+                                    : "winner-version-plus-one");
                         advFallbackLogged = true;
-                        Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason=network-single-display-append | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueLen={(row.IssuedSeqDisplay ?? "").Length} | settleLen={settleDisplay.Length} | settleEvt={(settleSeqEvent ?? "-")}");
+                        Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason={advReason} | issueRound={row.IssuedRoundId} | issueObsRound={row.IssuedObservedRound} | settleRound={settleGameRound} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | settleVer={(settleSeqVersion?.ToString() ?? "-")} | issueEvt={(string.IsNullOrWhiteSpace(row.IssuedSeqEvent) ? "-" : row.IssuedSeqEvent)} | settleEvt={(string.IsNullOrWhiteSpace(settleSeqEvent) ? "-" : settleSeqEvent)}");
                     }
                     return true;
                 }
+                bool displayAdvanced = !string.Equals(settleDisplay, row.IssuedSeqDisplay ?? "", StringComparison.Ordinal);
                 bool hasIssueVersion = (row.IssuedSeqVersion ?? 0) > 0;
                 if (hasSettleVersion && hasIssueVersion)
                 {
-                    if (settleSeqVersion!.Value == row.IssuedSeqVersion!.Value + 1)
+                    if (settleSeqVersion!.Value > row.IssuedSeqVersion!.Value)
                         return true;
                     if (settleSeqVersion!.Value < row.IssuedSeqVersion!.Value &&
                         row.SawClosedAfterIssue &&
@@ -20042,15 +18953,6 @@ try{
                             Log($"[BET][HIST][ADV-FALLBACK] id={BetIdForLog(row)} | reason=version-regress-display | issueVer={row.IssuedSeqVersion} | settleVer={settleSeqVersion} | issueLen={row.IssuedSeqDisplay.Length} | settleLen={settleDisplay.Length} | settleEvt={(settleSeqEvent ?? "-")}");
                         }
                         return true;
-                    }
-                    if (settleSeqVersion!.Value > row.IssuedSeqVersion!.Value + 1)
-                    {
-                        if (!advFallbackLogged)
-                        {
-                            advFallbackLogged = true;
-                            Log($"[BET][HIST][ADV-BLOCK] id={BetIdForLog(row)} | reason=settle-version-skipped-row | issueVer={row.IssuedSeqVersion} | settleVer={settleSeqVersion} | issueLen={row.IssuedSeqDisplay.Length} | settleLen={settleDisplay.Length} | settleEvt={(settleSeqEvent ?? "-")}");
-                        }
-                        return false;
                     }
                     return false;
                 }
@@ -20107,12 +19009,16 @@ try{
                 var orderedMatches = rowsToFinalize
                     .OrderBy(row => row.At)
                     .ToList();
-                var heldMatches = orderedMatches.Skip(1).ToList();
-                if (heldMatches.Count > 0)
+                var duplicateMatches = orderedMatches.Skip(1).ToList();
+                if (duplicateMatches.Count > 0)
                 {
-                    foreach (var row in heldMatches)
+                    foreach (var row in duplicateMatches)
                     {
-                        Log($"[BET][HIST][HOLD-AMBIGUOUS] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=multi-match-guard-keep-pending");
+                        row.Result = "RESET-DUP";
+                        row.WinLose = "Bỏ qua";
+                        row.Account = balanceAfter;
+                        Log($"[BET][HIST][DROP] id={BetIdForLog(row)} | at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | reason=multi-match-guard");
+                        _pendingRows.Remove(row);
                     }
                 }
                 rowsToFinalize = orderedMatches.Take(1).ToList();
@@ -20151,7 +19057,6 @@ try{
 
             foreach (var row in rowsToFinalize)
             {
-                row.AwaitingFinalWinnerAfterShoeReset = false;
                 row.Result = resultText;
                 bool win = !isTieResult && winSet.Contains(row.Side);
                 row.WinLose = isTieResult ? "Hòa" : (win ? "Thắng" : "Thua");

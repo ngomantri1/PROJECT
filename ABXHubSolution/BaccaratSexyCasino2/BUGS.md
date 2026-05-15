@@ -1,18 +1,24 @@
 # Bugs
 
 ## Current Bugs
-- Confirmed open bug (2026-05-14): after shuffle, bet can be dropped by JS as stale due to round mismatch.
+- Active bug focus (2026-05-14): some hands still show computed decision in UI but real chip placement does not happen.
 - Symptom chain seen in logs:
-  - C# logs `[BET-SEND][OK]` and records `[BET][HIST][PENDING]`,
-  - JS logs `[BETQ][DROP] reason=stale` with large `staleGap`,
-  - C# may still finalize that row from network winner, creating virtual win/loss not backed by real chip placement.
+  - C# logs `[BET-SEND][OK]` and records `[BET][HIST][PENDING]` (optimistic),
+  - JS logs `[BETQ][DONE] ok=0` or `delta=0`,
+  - C# can still finalize from network winner, creating virtual win/loss not backed by real chip placement.
 
 ## Recently Fixed
+- Strategy list/state sync now includes strategy 18 end-to-end:
+  - UI combo item added,
+  - runtime switch map added (`index 17`),
+  - tooltip index 17/18 corrected.
 - `gamehall.jsp` can no longer bootstrap/rebase real game sequence authority.
 - Initial table entry no longer gets stuck with only tiny bead `B` when valid full raw board exists.
 - First hand after `gameShoe` change can append via deterministic `roadInfo` rebuild.
 - First hand after same-shoe shuffle reset can append via deterministic `roadInfo` reset.
 - Pending rows no longer block the bet pipe.
+- JS queue no longer drops by `roundId < currentRound` stale-check (temporarily disabled for test).
+- Bet gate now requires `prog >= 3` and blocks on changing-shoe/bootstrap-wait statuses.
 - Canvas now keeps one authority panel instead of flickering top/frame source.
 - These reset paths now mark pending rows immediately at real reset time:
   - `roadinfo-shoe-change`
@@ -27,18 +33,15 @@
 - `multi-match-guard` no longer writes wrong history rows as `RESET-DUP/B o qua`; ambiguous extra rows stay pending and log `HOLD-AMBIGUOUS`.
 
 ## Not Fully Fixed Yet
-- Round sync for bet execution is not fully fixed:
-  - C# round source (`seqVersion` from network authority) and
-  - JS stale-check round source (`readLen` from local sequence read)
-  can diverge right after shuffle/bootstrap.
-- Need to prevent pending/final from bets that were dropped by JS pre-execution.
+- JS stale-drop guard `roundId < currentRound` has been removed for testing; long-term stale policy is still undecided.
+- Need to prevent pending/final from bets that were not executed (`ok=0` / `delta<=0`).
 - Need runtime confirmation that settle after reset is now stable in all real cases.
 - Need root-cause analysis for rare cases where more than one pending row still passes the same settle gate.
+- Strategy 18 is newly added and still needs runtime soak verification against expected seg-rule outcomes.
 
 ## Root Causes
-- JS stale gate compares `job.roundId` with `currentRound=readLen`, not with the same network-authority round basis used by C#.
-- During `shoe-reset-arm-no-board` / `short-board-bootstrap-wait-*`, local managed sequence may still carry old length while network round already restarted.
 - Optimistic send-only mode in C# records pending before JS confirms actual click execution result.
+- Current finalize path still depends mainly on network winner context, not strict JS execution confirmation.
 - Reset context can happen in multiple branches:
   - observed reset
   - roadInfo shoe change
@@ -51,11 +54,13 @@
 
 ## Temporary Workarounds
 - Use the latest Release build.
-- Keep phase guard + `prog >= 5` enabled (already patched) to avoid sending during clear non-playable phase.
+- Keep phase guard + `prog >= 3` enabled to avoid sending during clear non-playable phase.
 - When settle looks suspicious, inspect logs:
+  - `[BETQ][ENQ]`
   - `[BETQ][RUN]`
-  - `[BETQ][DROP]`
   - `[BETQ][DONE]`
+  - `[BETQ][ACK]`
+  - `[BETQ][DROP]` (only if JS emits)
   - `[CTX][SHOE-ARM]`
   - `[NETSEQ][ROADINFO-WINNER]`
   - `[BET][HIST][KEEP]`
@@ -86,8 +91,8 @@
   - `net_probe` extraction for `roadInfo`
 
 ## Symptoms To Watch
-- Repeated pattern: `BET-SEND OK` then `BETQ DROP stale`.
-- `round` in send context is small (`1..3`) while `curRound` in JS run/drop is large (`24..27`).
+- Repeated pattern: `BET-SEND OK` then `BETQ DONE ok=0` or `delta=0`.
+- `BETQ ACK` appears but bet amount on table side does not increase.
 - `seqLen` increases but history row is still waiting.
 - `ctxSkip > 0` in `[BET][HIST][CHECK]`.
 - `pending-not-settled | reason=context-mismatch`.

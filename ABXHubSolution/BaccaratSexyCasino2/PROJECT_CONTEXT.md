@@ -28,19 +28,28 @@
    - then append from CDP/network `roadInfo.winCounts`.
 8. Task runtime gets `GameContext`, waits for bet window, sends bet via JS, records pending, waits for settle.
 
+## Latest Updates (2026-05-15)
+- Added strategy `18) Bám cầu trước nâng cao`.
+- New task class: `Tasks/SmartPrevAdvancedTask.cs`.
+- UI strategy list now has 18 items; runtime map now routes `BetStrategyIndex == 17` to strategy 18.
+- Strategy 18 reuses the same runtime flow as strategy 5 and only changes decision logic:
+  - if `seg3 == 1`: `seg1 == 1` -> reverse last result, `seg1 > 1` -> follow last result,
+  - if `seg3 > 1`: always follow last result.
+- Tooltip mapping for strategy index 17/18 was synchronized in `MainWindow.xaml.cs`.
+
 ## Latest Updates (2026-05-14)
 - Bet gate in C# now blocks send when phase is not playable:
   - blocked status contains `Vui lòng đợi`, `xáo bài`, `changing shoe`,
   - blocked sequence event contains `shoe-reset-arm-no-board`, `waiting-board-bootstrap`, `short-board-bootstrap-wait`, `table-switch-wait-bead`.
-- Bet gate now also requires `prog >= 5` before sending.
-- Added richer JS/C# bet diagnostics:
-  - `[BETQ][RUN]` includes `curRead/curPub/curDom` round diagnostics,
-  - `[BETQ][DROP]` includes `reason=stale` with `staleGap`,
-  - `[BETQ][DONE]` includes `rawErr/rawOkField`.
-- Confirmed open runtime issue after shuffle:
-  - C# sends `roundId` from network sequence (`seqVersion`),
-  - JS stale-check compares against local `readLen`,
-  - round mismatch can drop bet as stale.
+- Bet gate now also requires `prog >= 3` before sending.
+- JS queue stale-drop condition `roundId < currentRound` was removed in `processBetQueue(...)` (test mode).
+- Added/kept JS-C# bet diagnostics:
+  - `[BETQ][RUN]` logs `curRound` and enqueue/exec context,
+  - `[BETQ][DONE]` logs `ok`, `clicks`, `before/after/delta`, `rawType/raw`,
+  - C# keeps `[BETQ][DROP]` + `TryDropPendingRowForJsDrop(...)` if JS emits `bet_dropped`.
+- Current focus moved to execution fidelity:
+  - optimistic pending row is still created from `PlaceBet(...)`,
+  - if JS returns `ok=0` or click delta is zero, UI/history can still drift from real chip placement.
 
 ## Coding Rules
 - Do not let JS local/fallback become authority when C# already has authority.
@@ -66,7 +75,7 @@
   - sequence authority must not jump to lobby,
   - valid pending rows must not be lost,
   - DOM fallback must not use wrong table.
-- Bet send and bet execution must use the same round basis. If round bases differ (network vs local DOM managed sequence), stale-drop can occur.
+- Bet send and bet execution must remain on a consistent round basis, especially if stale guards are re-enabled later.
 
 ## WebSocket / Network Flow
 - JS captures WebSocket/XHR hints and sends `abx: net_probe`.
