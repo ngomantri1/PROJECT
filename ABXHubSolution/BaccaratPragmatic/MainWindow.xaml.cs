@@ -536,6 +536,10 @@ namespace BaccaratPragmatic
         private readonly ConcurrentDictionary<ulong, CoreWebView2Frame> _mainFrameRefs = new();
         private readonly ConcurrentDictionary<int, CoreWebView2Frame> _popupFrameRefs = new();
         private readonly ConcurrentDictionary<int, string> _frameInjectedDocKeys = new();
+        private readonly ConcurrentDictionary<string, string> _frameNavStartUrlByKey = new();
+        private readonly ConcurrentDictionary<int, string> _frameLastNavStartUrlByRef = new();
+        private DateTime _lastPopupErrorUiGuardUtc = DateTime.MinValue;
+        private int _popupErrorUiGuardCount = 0;
         private DateTime _lastMainFramesRearmUtc = DateTime.MinValue;
         private int _popupInjectBusy = 0;
         private readonly object _frameAuthorityLock = new();
@@ -695,6 +699,8 @@ namespace BaccaratPragmatic
         private DateTime _betWebNavigatingSinceUtc = DateTime.MinValue;
         private DateTime _betWebLastNavDoneUtc = DateTime.MinValue;
         private DateTime _lastAutoStopByNavUtc = DateTime.MinValue;
+        private DateTime _popupTickPullBlockedUntilUtc = DateTime.MinValue;
+        private string _popupTickPullBlockReason = "";
 
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
         private readonly SemaphoreSlim _statsWriteGate = new(1, 1);
@@ -6125,6 +6131,19 @@ try{
             if (string.IsNullOrWhiteSpace(key))
                 return;
 
+            // Pragmatic gs2c wrapper page can have very weak DOM signals (score=0),
+            // but it is still the real game-ready context and should outrank host lobby frames.
+            if (scout.isTop &&
+                IsLikelyBetGameReadyUrl(scout.href) &&
+                scout.score < 1200)
+            {
+                scout.score = 1200;
+                if (string.IsNullOrWhiteSpace(scout.confidence))
+                    scout.confidence = "weak";
+                if (string.IsNullOrWhiteSpace(scout.signals))
+                    scout.signals = "url:game-ready";
+            }
+
             if (IsIgnoredAuthorityFrameUrl(scout.href))
             {
                 LogAuthorityFilter("tracker-frame", scout, source);
@@ -6492,6 +6511,25 @@ try{
                     return true;
                 }
 
+                var lockedHref = (_authorityHref ?? "").Trim();
+                var incomingHref = (snap.href ?? "").Trim();
+                if (!string.IsNullOrWhiteSpace(lockedHref) &&
+                    !string.IsNullOrWhiteSpace(incomingHref) &&
+                    IsLikelyBetGameReadyUrl(lockedHref) &&
+                    IsLikelyBetGameReadyUrl(incomingHref) &&
+                    string.Equals(lockedHref, incomingHref, StringComparison.OrdinalIgnoreCase))
+                {
+                    var prev = _authorityContextId;
+                    _authorityContextId = key;
+                    _authorityFramePath = snap.framePath ?? _authorityFramePath;
+                    _authorityLastSeenUtc = now;
+                    _lastAuthorityBestKey = _authorityContextId;
+                    _lastAuthorityBestStable = 1;
+                    routeReason = "authority-rebind-same-href";
+                    Log($"[AUTH][REBIND] reason=same-game-href | oldCtx={Shrink(prev, 96)} | newCtx={Shrink(key, 96)} | href={TrimHrefForLog(incomingHref)}");
+                    return true;
+                }
+
                 if (_authorityLastSeenUtc != DateTime.MinValue && (now - _authorityLastSeenUtc) > TimeSpan.FromSeconds(14))
                 {
                     Log($"[AUTH][LOST] reason=tick-from-other-context-after-timeout | old={Shrink(_authorityContextId, 96)} | oldHref={TrimHrefForLog(_authorityHref)} | new={Shrink(key, 96)} | newHref={TrimHrefForLog(snap.href)}");
@@ -6676,6 +6714,7 @@ try{
                 TrackPopupFrameRef(f);
                 _ = f.ExecuteScriptAsync(FRAME_SHIM);
                 f.WebMessageReceived += PopupFrame_WebMessageReceived;
+                f.NavigationStarting += Frame_NavigationStarting_Bridge;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 _ = InjectGameBridgeOnFrameIfNeededAsync(f, "frame-created-probe");
                 Log("[PopupWeb] frame bridge armed.");
@@ -6753,6 +6792,11 @@ try{
                 }
                 if (e.IsSuccess)
                 {
+                    if (IsLikelyBetGameUrl(src))
+                    {
+                        _popupTickPullBlockedUntilUtc = DateTime.MinValue;
+                        _popupTickPullBlockReason = "";
+                    }
                     if (keepMainHostVisible)
                     {
                         await Dispatcher.InvokeAsync(() =>
@@ -7510,11 +7554,31 @@ try{
                 {
                     try
                     {
+                        if (!_cdpTapOwnerGeneration.TryGetValue(ownerTag, out var activeGeneration) || activeGeneration != generation)
+                            return;
+
                         using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
                         var root = doc.RootElement;
                         var reqId = root.TryGetProperty("requestId", out var reqEl) ? (reqEl.GetString() ?? "") : "";
+                        string failedUrl = "";
                         if (!string.IsNullOrWhiteSpace(reqId))
+                        {
+                            var key = CdpRequestKey(ownerTag, reqId);
+                            if (_httpResponseByRequestKey.TryGetValue(key, out var candidate) && candidate != null)
+                                failedUrl = candidate.Url ?? "";
                             _httpResponseByRequestKey.TryRemove(CdpRequestKey(ownerTag, reqId), out _);
+                        }
+
+                        var errorText = root.TryGetProperty("errorText", out var errEl) ? (errEl.GetString() ?? "") : "";
+                        var type = root.TryGetProperty("type", out var typeEl) ? (typeEl.GetString() ?? "") : "";
+                        var canceled = root.TryGetProperty("canceled", out var cancelEl) &&
+                                       (cancelEl.ValueKind == JsonValueKind.True ||
+                                        (cancelEl.ValueKind == JsonValueKind.String && string.Equals(cancelEl.GetString(), "true", StringComparison.OrdinalIgnoreCase)));
+
+                        if (!string.IsNullOrWhiteSpace(errorText))
+                        {
+                            Log($"[CDP][LOAD-FAILED] owner={ownerTag} | reqId={(string.IsNullOrWhiteSpace(reqId) ? "-" : reqId)} | type={(string.IsNullOrWhiteSpace(type) ? "-" : type)} | canceled={(canceled ? 1 : 0)} | err={errorText} | url={Shrink(failedUrl, 180)}");
+                        }
                     }
                     catch { }
                 };
@@ -14551,6 +14615,8 @@ try{
             if (IsLikelyGame8bPopupUrl(rawUrl))
                 return true;
             var path = u.AbsolutePath ?? "";
+            if (path.IndexOf("/gs2c/game/load", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
             if (path.IndexOf("/player/webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
             if (path.IndexOf("/player/singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -15079,6 +15145,7 @@ try{
       if (u.indexOf('/player/webmain.jsp') >= 0) s += 90;
       if (u.indexOf('/player/gamehall.jsp') >= 0) s += 80;
       if (u.indexOf('/player/login/apilogin') >= 0) s += 70;
+      if (u.indexOf('/gs2c/game/load') >= 0) s += 120;
       if (u.indexOf('app.lucky-wheel.game8b.com') >= 0) s += 95;
       if (u.indexOf('game8b.com') >= 0) s += 35;
       if (u.indexOf('bpweb.') >= 0) s += 40;
@@ -15242,7 +15309,7 @@ try{
         private void AutoStopTasksOnBetPipelineReset(string reason, string src)
         {
             if (!string.IsNullOrWhiteSpace(reason) &&
-                reason.StartsWith("popup-nav", StringComparison.OrdinalIgnoreCase))
+                reason.StartsWith("popup-", StringComparison.OrdinalIgnoreCase))
             {
                 ClearObservedContext($"auto-stop:{reason}");
             }
@@ -17536,6 +17603,7 @@ try{
                 if (frameId == 0) return;
                 var frame = TryGetFrameByIdSafe(frameId);
                 if (frame == null) return;
+                RememberFrameNavigationStart(frame, e);
                 ArmMainFrameBridge(frame, "frame-nav-start");
             }
             catch (Exception ex)
@@ -17579,6 +17647,7 @@ try{
                 {
                     _ = frame.ExecuteScriptAsync(FRAME_SHIM);
                     frame.WebMessageReceived += MainFrame_WebMessageReceived_Bridge;
+                    frame.NavigationStarting += Frame_NavigationStarting_Bridge;
                     frame.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 }
 
@@ -17637,6 +17706,28 @@ try{
                 if (source == null) return 0;
                 var t = source.GetType();
                 var p = t.GetProperty("FrameId", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                if (p == null) return 0;
+                var raw = p.GetValue(source);
+                if (raw == null) return 0;
+                if (raw is ulong u) return u;
+                if (raw is long l && l > 0) return (ulong)l;
+                if (raw is int i && i > 0) return (ulong)i;
+                var s = Convert.ToString(raw, CultureInfo.InvariantCulture);
+                return ulong.TryParse(s, out var parsed) ? parsed : 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static ulong TryGetNavigationIdSafe(object? source)
+        {
+            try
+            {
+                if (source == null) return 0;
+                var t = source.GetType();
+                var p = t.GetProperty("NavigationId", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
                 if (p == null) return 0;
                 var raw = p.GetValue(source);
                 if (raw == null) return 0;
@@ -17833,6 +17924,7 @@ try{
             var href = (hrefRaw ?? "").Trim();
             if (href.Length == 0) return false;
             return
+                href.IndexOf("/gs2c/game/load", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("/player/", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -18038,13 +18130,176 @@ try{
             return true;
         }
 
+        private static string BuildFrameNavKey(ulong frameId, ulong navId)
+            => frameId.ToString(CultureInfo.InvariantCulture) + "|" + navId.ToString(CultureInfo.InvariantCulture);
+
+        private static string TryGetFrameSourceSafe(CoreWebView2Frame? frame)
+        {
+            try
+            {
+                if (frame == null) return "";
+                var t = frame.GetType();
+                var p = t.GetProperty("Source", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                if (p == null) return "";
+                var raw = p.GetValue(frame);
+                return Convert.ToString(raw, CultureInfo.InvariantCulture) ?? "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private void RememberFrameNavigationStart(CoreWebView2Frame? frame, CoreWebView2NavigationStartingEventArgs e)
+        {
+            if (frame == null || e == null) return;
+            var uri = (e.Uri ?? "").Trim();
+            var frameRef = RuntimeHelpers.GetHashCode(frame);
+            if (!string.IsNullOrWhiteSpace(uri))
+                _frameLastNavStartUrlByRef[frameRef] = uri;
+
+            var frameId = TryGetFrameIdSafe(frame);
+            var navId = TryGetNavigationIdSafe(e);
+            if (frameId > 0 && navId > 0 && !string.IsNullOrWhiteSpace(uri))
+                _frameNavStartUrlByKey[BuildFrameNavKey(frameId, navId)] = uri;
+        }
+
+        private string ResolveFrameNavigationTarget(CoreWebView2Frame? frame, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            var frameId = TryGetFrameIdSafe(frame);
+            var navId = TryGetNavigationIdSafe(e);
+            if (frameId > 0 && navId > 0 &&
+                _frameNavStartUrlByKey.TryRemove(BuildFrameNavKey(frameId, navId), out var mapped) &&
+                !string.IsNullOrWhiteSpace(mapped))
+            {
+                return mapped;
+            }
+
+            var frameRef = frame == null ? 0 : RuntimeHelpers.GetHashCode(frame);
+            if (frameRef != 0 &&
+                _frameLastNavStartUrlByRef.TryGetValue(frameRef, out var fallback) &&
+                !string.IsNullOrWhiteSpace(fallback))
+            {
+                return fallback;
+            }
+
+            var frameSrc = TryGetFrameSourceSafe(frame);
+            if (!string.IsNullOrWhiteSpace(frameSrc))
+                return frameSrc;
+            return "";
+        }
+
+        private static bool IsCertificateNavigationError(CoreWebView2WebErrorStatus status)
+        {
+            var s = status.ToString();
+            return s.IndexOf("Certificate", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void ResetAuthorityForPopupFrameError(string reason, string target)
+        {
+            bool hadAuthority;
+            string oldCtx;
+            string oldHref;
+            lock (_frameAuthorityLock)
+            {
+                hadAuthority = !string.IsNullOrWhiteSpace(_authorityContextId) ||
+                               !string.IsNullOrWhiteSpace(_authorityHref);
+                oldCtx = _authorityContextId;
+                oldHref = _authorityHref;
+                _authorityContextId = "";
+                _authorityToken = "";
+                _authorityHref = "";
+                _authorityFramePath = "";
+                _authorityScore = 0;
+                _authorityConfidence = "";
+                _authoritySignals = "";
+                _authorityLockedAtUtc = DateTime.MinValue;
+                _authorityLastSeenUtc = DateTime.MinValue;
+                _lastAuthorityBestKey = "";
+                _lastAuthorityBestStable = 0;
+                _frameAuthorityCandidates.Clear();
+            }
+
+            if (hadAuthority)
+            {
+                ClearAcceptedDisplayOnCanvas("popup-frame-error-authority-reset");
+                Log($"[AUTH][RESET] reason={reason} | oldCtx={Shrink(oldCtx, 96)} | oldHref={TrimHrefForLog(oldHref)} | target={TrimHrefForLog(target)}");
+            }
+        }
+
+        private async Task GuardUiOnPopupFrameErrorPageAsync(CoreWebView2Frame? frame, string? target, CoreWebView2WebErrorStatus? status = null)
+        {
+            try
+            {
+                if (frame == null) return;
+                var href = (target ?? "").Trim();
+                bool isErrorPage = href.IndexOf("chrome-error://chromewebdata", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool isCertError = status.HasValue && IsCertificateNavigationError(status.Value);
+                if (!isErrorPage && !isCertError)
+                    return;
+
+                var frameKey = GetFrameRefKey(frame);
+                if (frameKey == 0 || !_popupFrameRefs.ContainsKey(frameKey))
+                    return;
+
+                var now = DateTime.UtcNow;
+                if ((now - _lastPopupErrorUiGuardUtc) < TimeSpan.FromSeconds(2))
+                    return;
+                _lastPopupErrorUiGuardUtc = now;
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (PopupHost != null)
+                        PopupHost.Visibility = Visibility.Collapsed;
+                    if (Web != null)
+                        Web.Visibility = Visibility.Visible;
+                });
+                var guardReason = isCertError ? "popup-frame-cert-error" : "popup-frame-error-page";
+                AutoStopTasksOnBetPipelineReset(guardReason, href);
+                ResetAuthorityForPopupFrameError(guardReason, href);
+                _popupTickPullBlockedUntilUtc = DateTime.UtcNow.AddSeconds(15);
+                _popupTickPullBlockReason = guardReason;
+                var guardCount = Interlocked.Increment(ref _popupErrorUiGuardCount);
+                Log($"[UI-GUARD] popup frame error fallback to main web. | reason={guardReason} | count={guardCount} | frameKey={frameKey} | status={(status.HasValue ? status.Value.ToString() : "-")} | target={TrimHrefForLog(href)}");
+            }
+            catch (Exception ex)
+            {
+                Log("[UI-GUARD] " + ex.Message);
+            }
+        }
+
+        private void Frame_NavigationStarting_Bridge(object? sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            try
+            {
+                var frame = sender as CoreWebView2Frame;
+                if (frame == null) return;
+                RememberFrameNavigationStart(frame, e);
+            }
+            catch { }
+        }
+
         private async void Frame_NavigationCompleted_Bridge(object? sender, CoreWebView2NavigationCompletedEventArgs e)
         {
             try
             {
-                if (!e.IsSuccess) return;
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
+                var frameId = TryGetFrameIdSafe(f);
+                var navId = TryGetNavigationIdSafe(e);
+                var target = ResolveFrameNavigationTarget(f, e);
+                if (!e.IsSuccess)
+                {
+                    Log($"[FrameNav][ERR] frameId={frameId} | navId={navId} | status={e.WebErrorStatus} | target={TrimHrefForLog(target)}");
+                    await GuardUiOnPopupFrameErrorPageAsync(f, target, e.WebErrorStatus);
+                    return;
+                }
+                if (!string.IsNullOrWhiteSpace(target) &&
+                    target.IndexOf("chrome-error://chromewebdata", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Log($"[FrameNav][ERR-PAGE] frameId={frameId} | navId={navId} | target={TrimHrefForLog(target)}");
+                    await GuardUiOnPopupFrameErrorPageAsync(f, target);
+                }
                 await InjectGameBridgeOnFrameIfNeededAsync(f, "nav-completed");
             }
             catch (Exception ex)
@@ -18106,6 +18361,17 @@ try{
         {
             if (_popupWeb?.CoreWebView2 == null)
                 return false;
+            if (PopupHost == null || PopupHost.Visibility != Visibility.Visible)
+                return false;
+            if (_popupTickPullBlockedUntilUtc > DateTime.UtcNow)
+            {
+                if (!HitLogThrottle("POPUP_PULL_BLOCK", 3000))
+                {
+                    var leftMs = (long)Math.Max(0, (_popupTickPullBlockedUntilUtc - DateTime.UtcNow).TotalMilliseconds);
+                    Log($"[TICK][PULL-SKIP] reason=popup-pull-blocked | leftMs={leftMs} | blockReason={(string.IsNullOrWhiteSpace(_popupTickPullBlockReason) ? "-" : _popupTickPullBlockReason)}");
+                }
+                return false;
+            }
             if (IsPopupBetViewActive())
                 return true;
 

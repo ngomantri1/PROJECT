@@ -47,6 +47,12 @@ BaccaratPragmatic/
 - Canvas Watch visibility policy duoc chuan hoa:
   - khong con force `display:block` trong `__abxStartAuthority()` khi default dang la hidden.
   - root panel luon theo `CW_PANEL_VISIBLE_DEFAULT` + localStorage override.
+- Dieu tra/stabilize pragmatic frame-route (2026-05-17):
+  - bo sung theo doi nav cua frame qua `FrameNavigationStarting/Completed` de lay dung `target` theo `frameId|navId`.
+  - log loi theo frame: `[FrameNav][ERR]`, `[FrameNav][ERR-PAGE]`.
+  - authority scout boost cho top `gs2c/game/load` khi score DOM yeu (score=0/rat thap) de khong mat authority vao host frame.
+  - bo sung `authority rebind same-game-href` de xu ly truong hop context key doi nhung van cung game URL.
+  - bo sung UI guard popup-frame error page (`chrome-error://chromewebdata`) de fallback UI ve main web, khong can thiep cert/TLS.
 
 ## Data flow (hien tai)
 
@@ -64,6 +70,15 @@ BaccaratPragmatic/
   - `waiting-board-bootstrap` duoc throttle de tranh spam UI.
 6. C# update UI status/progress/totals/seq theo snapshot authority.
 7. Strategy su dung `GameContext` de dat cuoc.
+
+## Error-path quan trong (2026-05-17)
+
+1. Popup/child frame dieu huong vao launcher/game url.
+2. Neu WebView2 tra ve status loi (`WebErrorStatus`) hoac target thanh `chrome-error://chromewebdata`:
+  - ghi log `[FrameNav][ERR*]`.
+  - neu frame do la popup frame dang duoc theo doi -> kich hoat `[UI-GUARD]` fallback UI.
+3. App KHONG bypass SSL/cert.
+4. Neu cert provider sai (vd CN mismatch) thi van co the fail theo tung lan vao game.
 
 ## DOM bet flow (layout moi)
 

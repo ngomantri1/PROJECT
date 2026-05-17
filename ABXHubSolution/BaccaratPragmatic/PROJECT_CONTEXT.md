@@ -4,7 +4,8 @@ Tai lieu nay tom tat code hien tai de AI/dev tiep tuc sua dung huong.
 
 ## Tong quan
 
-- App la `WPF .NET 8` dieu khien ban `Baccarat Ezugi` qua `WebView2`.
+- App la `WPF .NET 8` dieu khien ban `Baccarat Pragmatic` qua `WebView2`.
+- Nguon goc: migrate tu project cu `BaccaratEzugiCasino` (giu lai mot so ten file/JS de tuong thich).
 - Chay 2 che do:
   - `Standalone` WinExe.
   - `Plugin` cho `AutoBetHub` qua `ABX.Core`.
@@ -60,6 +61,24 @@ Tai lieu nay tom tat code hien tai de AI/dev tiep tuc sua dung huong.
 - Da fix bug Canvas Watch nhay 1 nhip luc moi vao khi de mac dinh an:
   - nguyen nhan: `__abxStartAuthority()` tung force `#__cw_root_allin` -> `display:block`.
   - fix: thay bang goi `__cw_applyPanelDisplayOwner(...)` de ton trong cau hinh `CW_PANEL_VISIBLE_DEFAULT=false`.
+
+## Cap nhat moi nhat (2026-05-17)
+
+- Van de "luc vao duoc, luc khong vao duoc" da duoc khoanh vung ro:
+  - frame con cua Pragmatic co luc roi vao `chrome-error://chromewebdata`.
+  - nguon goc ben ngoai app: cert mismatch (`CertificateCommonNameIsIncorrect`) tren launcher/frame cua provider.
+- Da them log dieu tra frame-nav de boc tach loi theo frame:
+  - `[FrameNav][ERR] frameId/navId/status/target`
+  - `[FrameNav][ERR-PAGE]` khi target la `chrome-error://chromewebdata`.
+- Da cung co authority de giam mat ngu canh khi vao game:
+  - top frame `gs2c` duoc boost score toi thieu (de khong thua host frame score thap).
+  - them `[AUTH][REBIND] reason=same-game-href` khi context key doi nhung game href giong nhau.
+- Da them UI guard toi thieu, KHONG bypass cert:
+  - neu popup-frame trung `chrome-error://chromewebdata` thi fallback ve main web + reset pipeline popup.
+  - log: `[UI-GUARD] popup frame hit chrome-error page, fallback to main web.`
+- Gioi han hien tai:
+  - UI guard chi tranh "ket may trang" o UI.
+  - neu cert/SSL ben provider sai o thoi diem do thi van co the khong vao duoc game.
 
 ## Luu y deploy
 

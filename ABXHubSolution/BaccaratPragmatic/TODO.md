@@ -35,8 +35,24 @@
   - bo force `display:block` trong `__abxStartAuthority`.
   - ton trong hoan toan policy visible/hidden ngay tu luc vao ban.
 
+## Da xong hom nay (2026-05-17)
+
+- [x] Bo sung trace frame navigation de boc net error theo frame:
+  - map `frameId|navId -> target uri` tu `FrameNavigationStarting`.
+  - log `FrameNavigationCompleted` bang `[FrameNav][ERR]` + `[FrameNav][ERR-PAGE]`.
+- [x] Hardening authority cho Pragmatic `gs2c`:
+  - boost scout score toi thieu cho top frame game-ready url.
+  - bo sung `AUTH rebind` khi cung `game href` nhung doi context key.
+- [x] Them UI guard toi thieu tranh ket man "may trang":
+  - detect popup frame roi vao `chrome-error://chromewebdata`.
+  - fallback UI ve main web + reset popup bet pipeline.
+  - khong bypass cert/TLS.
+
 ## Viec can tiep tuc
 
+- [ ] Theo doi 24h tan suat `[FrameNav][ERR]` theo `WebErrorStatus` de tach loi ben ngoai/ben trong.
+- [ ] Them counter nhe cho `[UI-GUARD]` (theo phien) de biet muc do phat sinh "may trang".
+- [ ] Neu external cert mismatch xuat hien thuong xuyen: thong bao ro cho van hanh/provider (ngoai pham vi code app).
 - [ ] Theo doi tinh on dinh selector B/P/T theo tung ban (provider co the doi class/tail).
 - [ ] Theo doi them 24h cho nhom class moi cua bet target (`css-1or1crx`, `css-1o2wumy`, `css-qso31z`) de phat hien som khi provider rotate class.
 - [ ] Theo doi 24h log switch ban:

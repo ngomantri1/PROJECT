@@ -31,6 +31,21 @@
   - Nguyen nhan: `__abxStartAuthority()` force `display:block` cho `#__cw_root_allin`.
   - Da fix: dung `__cw_applyPanelDisplayOwner()` de ton trong `CW_PANEL_VISIBLE_DEFAULT=false`.
 
+## Trang thai cap nhat (2026-05-17)
+
+- Van de vao game khong on dinh (luc duoc luc khong):
+  - Da bat duoc theo log frame-nav: frame con co the roi vao `chrome-error://chromewebdata`.
+  - Co xuat hien loi cert CN mismatch o launcher/frame (`CertificateCommonNameIsIncorrect`) tu phia provider.
+  - Day la loi ben ngoai; app khong va khong duoc bypass cert.
+- Trieu chung "ket may trang":
+  - khi popup frame loi va dung o error page, UI de nhin nhu treo.
+  - Da them `[UI-GUARD]` fallback ve main web de tranh ket UI.
+  - Luu y: guard chi la giam tac dong UI, khong sua duoc loi TLS/cert goc.
+- Mat authority do context key thay doi trong cung game:
+  - Da bo sung `[AUTH][REBIND] reason=same-game-href` de giu authority khi href game khong doi.
+- Top `gs2c` score DOM yeu:
+  - Da bo sung boost score toi thieu khi URL da la game-ready de tranh lock nham host frame.
+
 ## Da fix / da giam ro
 
 - Da bo fallback cu cua tong cuoc B/P/T tranh scan nham (nhat la dinh chip `10M`).
@@ -39,9 +54,14 @@
 - Da bo sung log chi tiet cho switch/sync seq de truy vet nhanh:
   - `[AUTH][TABLE-SWITCH-ACCEPT]`, `[CANVAS][DISPLAY-CLEAR-*]`
   - `[NETSEQ][AUTH-KEEP-JS]`, `[NETSEQ][AUTH-WAIT-BOOTSTRAP]`, `[SEQ][RX-DATA]`.
+- Da bo sung log dieu tra frame:
+  - `[FrameNav][ERR] frameId/navId/status/target`
+  - `[FrameNav][ERR-PAGE] target=chrome-error://chromewebdata`
+  - `[UI-GUARD] popup frame hit chrome-error page, fallback to main web.`
 
 ## Risk con lai
 
+- Neu cert/tls cua provider loi theo thoi diem, app van co the that bai vao game du logic trong app dung.
 - Selector class cua provider co the doi bat ky luc nao, gay null B/P/T hoac sai target dat cuoc.
 - Khi selector doi, vi da bo fallback cu, pool se ve `--` ngay (dung theo thiet ke moi).
 - `MainWindow.xaml.cs` van lon, de phat sinh regression khi sua nhanh.
