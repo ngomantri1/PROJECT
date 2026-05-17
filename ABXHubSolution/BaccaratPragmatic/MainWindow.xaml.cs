@@ -540,6 +540,8 @@ namespace BaccaratPragmatic
         private readonly ConcurrentDictionary<int, string> _frameLastNavStartUrlByRef = new();
         private DateTime _lastPopupErrorUiGuardUtc = DateTime.MinValue;
         private int _popupErrorUiGuardCount = 0;
+        private DateTime _statusOverrideUntilUtc = DateTime.MinValue;
+        private string _statusOverrideText = "";
         private DateTime _lastMainFramesRearmUtc = DateTime.MinValue;
         private int _popupInjectBusy = 0;
         private readonly object _frameAuthorityLock = new();
@@ -701,6 +703,20 @@ namespace BaccaratPragmatic
         private DateTime _lastAutoStopByNavUtc = DateTime.MinValue;
         private DateTime _popupTickPullBlockedUntilUtc = DateTime.MinValue;
         private string _popupTickPullBlockReason = "";
+        private long _popupRouteSessionSeq = 0;
+        private long _popupRouteSessionId = 0;
+        private string _popupRouteStage = "idle";
+        private DateTime _popupRouteStageSinceUtc = DateTime.MinValue;
+        private DateTime _popupRouteSessionStartedUtc = DateTime.MinValue;
+        private DateTime _popupLastDataTickUtc = DateTime.MinValue;
+        private int _popupPullEmptyStreak = 0;
+        private DateTime _popupPullEmptySinceUtc = DateTime.MinValue;
+        private DateTime _popupPullNextAllowedUtc = DateTime.MinValue;
+        private DateTime _popupLastSoftRecoverUtc = DateTime.MinValue;
+        private int _popupSoftRecoverCount = 0;
+        private string _popupLastFrameErrorStatus = "";
+        private DateTime _popupLastFrameErrorUtc = DateTime.MinValue;
+        private DateTime _popupRouteSummaryUtc = DateTime.MinValue;
 
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
         private readonly SemaphoreSlim _statsWriteGate = new(1, 1);
@@ -748,6 +764,8 @@ namespace BaccaratPragmatic
         private static readonly TimeSpan WaitingBootstrapDisplayDelay = TimeSpan.FromMilliseconds(600);
         private static readonly TimeSpan CanvasPoolCarryMaxAge = TimeSpan.FromMilliseconds(1200);
         private static readonly TimeSpan AuthKeepJsLogHeartbeat = TimeSpan.FromSeconds(4);
+        private static readonly TimeSpan PopupNoDataWatchdog = TimeSpan.FromSeconds(18);
+        private static readonly TimeSpan PopupNoDataRecoverCooldown = TimeSpan.FromSeconds(12);
         // Master switch: đặt false để bỏ qua kiểm tra Trial/License (không UI, không config, true kiểm tra bình thường)
         private bool CheckLicense = true;
 
@@ -1111,6 +1129,10 @@ Ví dụ không hợp lệ:
         private const int CW_PUSH_MS_DEBUG_DEFAULT = 180;
         private const int POPUP_PULL_FALLBACK_MS = 180;
         private const int POPUP_PULL_STALE_TRIGGER_MS = 2500;
+        private const int POPUP_PULL_EMPTY_STREAK_SOFT_BLOCK = 6;
+        private const int POPUP_PULL_EMPTY_BACKOFF_BASE_MS = 800;
+        private const int POPUP_PULL_EMPTY_BACKOFF_STEP_MS = 700;
+        private const int POPUP_PULL_EMPTY_BACKOFF_MAX_MS = 10000;
         private const int UI_MODE_POLL_MS = 500;
         private bool _enableCdpNetworkTap = false;
         private bool _enableCdpObservedContextTap = true;
@@ -4776,6 +4798,11 @@ try{
                 var deferBlankPopupForHost = IsCurrentHostB8Pro07() &&
                     string.Equals(target, "about:blank", StringComparison.OrdinalIgnoreCase);
                 Log("[NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
+                if (!string.IsNullOrWhiteSpace(target))
+                {
+                    StartPopupRouteSession("new-window-requested", target);
+                    SetPopupRouteStage("new-window-requested", deferBlankPopupForHost ? "defer-blank-popup-for-host" : "new-window-requested", target: target);
+                }
 
                 var popupWeb = await EnsurePopupWebReadyAsync();
                 if (popupWeb?.CoreWebView2 != null)
@@ -5127,6 +5154,21 @@ try{
                             }
                             _lastUiProgAcceptedRawSec = progUi.Value;
                             _lastUiProgAcceptedRawUtc = progNowUtc;
+                        }
+
+                        if (IsPopupMessageSource(source))
+                        {
+                            var hasUsefulPopupData =
+                                pullHasSeqData ||
+                                (progUi.HasValue && progUi.Value > UiCountdownForceZeroToleranceSec);
+                            if (!isPullSource &&
+                                !hasUsefulPopupData &&
+                                (FilterResultDisplaySeqWindow(snap.seq).Length > 0 || FilterResultDisplaySeqWindow(snap.rawSeq).Length > 0))
+                            {
+                                hasUsefulPopupData = true;
+                            }
+                            if (isPullSource || hasUsefulPopupData)
+                                RegisterPopupPullOutcome(hasUsefulPopupData, isPullSource ? "tick-popup-pull" : "tick-popup-msg");
                         }
 
                         snap.prog = progUi;
@@ -6746,6 +6788,7 @@ try{
                 Log("[PopupWeb.NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
                 if (!string.IsNullOrWhiteSpace(target))
                 {
+                    SetPopupRouteStage("popup-new-window", "popup-new-window-requested", target: target);
                     e.Handled = true;
                     _popupWeb?.CoreWebView2?.Navigate(target);
                 }
@@ -6762,8 +6805,15 @@ try{
             {
                 _betWebNavigatingSinceUtc = DateTime.UtcNow;
                 var src = (e.Uri ?? "").Trim();
+                var isAboutBlank = string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
+                if (!isAboutBlank && (IsLikelyBetGameUrl(src) || IsLikelyBetGatewayUrl(src)))
+                    StartPopupRouteSession("popup-nav-start", src);
+                else if (_popupRouteSessionId == 0)
+                    StartPopupRouteSession("popup-nav-init", src);
                 var keepMainHostVisible = IsCurrentHostB8Pro07() &&
-                    string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
+                    isAboutBlank;
+                SetPopupRouteStage(isAboutBlank ? "popup-about-blank" : "popup-nav-starting", keepMainHostVisible ? "keep-main-host-visible" : "popup-nav-start", src: src, target: src);
+                LogPopupDiag("NAV-START", keepMainHostVisible ? "keep-main-host-visible" : "popup-nav-start", src: src, target: src);
                 if (!keepMainHostVisible && !IsLikelyBetGameUrl(src))
                     AutoStopTasksOnBetPipelineReset("popup-nav-start", src);
             }
@@ -6781,6 +6831,20 @@ try{
                     !string.IsNullOrWhiteSpace(src) &&
                     !string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
+                if (e.IsSuccess)
+                {
+                    if (IsLikelyBetGameReadyUrl(src))
+                        SetPopupRouteStage("popup-top-game-ready", "popup-nav-done-game-ready", src: src, target: src);
+                    else if (string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase))
+                        SetPopupRouteStage("popup-about-blank", "popup-nav-done-about-blank", src: src, target: src);
+                    else
+                        SetPopupRouteStage("popup-nav-done", "popup-nav-done-non-game", src: src, target: src);
+                }
+                else
+                {
+                    SetPopupRouteStage("popup-nav-error", "popup-nav-done-err", src: src, target: src, status: e.WebErrorStatus);
+                }
+                LogPopupDiag("NAV-DONE", e.IsSuccess ? "popup-nav-done-ok" : "popup-nav-done-err", src: src, target: src, status: e.IsSuccess ? null : e.WebErrorStatus);
                 _betWebNavigatingSinceUtc = DateTime.MinValue;
                 _betWebLastNavDoneUtc = DateTime.UtcNow;
                 if (TryParseProviderErrorUrl(src, out var providerStatus, out var providerDesc, out var providerExternal))
@@ -6794,8 +6858,20 @@ try{
                 {
                     if (IsLikelyBetGameUrl(src))
                     {
-                        _popupTickPullBlockedUntilUtc = DateTime.MinValue;
-                        _popupTickPullBlockReason = "";
+                        // Không xóa block/error quá sớm nếu vừa có frame cert/transient error,
+                        // để watchdog còn đủ tín hiệu chẩn đoán và recovery mềm đúng nhịp.
+                        var hasRecentFrameError =
+                            _popupLastFrameErrorUtc != DateTime.MinValue &&
+                            (DateTime.UtcNow - _popupLastFrameErrorUtc) <= TimeSpan.FromSeconds(45);
+                        var keepErrorBlock =
+                            hasRecentFrameError &&
+                            !string.IsNullOrWhiteSpace(_popupTickPullBlockReason) &&
+                            _popupTickPullBlockReason.StartsWith("popup-frame-", StringComparison.OrdinalIgnoreCase);
+                        if (!keepErrorBlock)
+                        {
+                            _popupTickPullBlockedUntilUtc = DateTime.MinValue;
+                            _popupTickPullBlockReason = "";
+                        }
                     }
                     if (keepMainHostVisible)
                     {
@@ -6826,6 +6902,7 @@ try{
                         AutoStopTasksOnBetPipelineReset("popup-nav-done-non-game", src);
                     }
                     await InjectOnPopupDocAsync();
+                    MaybeLogPopupRouteSummary("popup-nav-completed");
                 }
             }
             catch { }
@@ -6876,6 +6953,7 @@ try{
                 if (Web != null)
                     Web.Visibility = Visibility.Visible;
                 DestroyPopupWeb();
+                SetPopupRouteStage("popup-closed", "popup-close-host", forceLog: true);
                 Web?.Focus();
                 Log("[PopupWeb] closed");
             }
@@ -6897,6 +6975,12 @@ try{
             _popupFrameRefs.Clear();
             _betWebNavigatingSinceUtc = DateTime.MinValue;
             _betWebLastNavDoneUtc = DateTime.MinValue;
+            _popupPullEmptyStreak = 0;
+            _popupPullEmptySinceUtc = DateTime.MinValue;
+            _popupPullNextAllowedUtc = DateTime.MinValue;
+            _popupLastDataTickUtc = DateTime.MinValue;
+            _popupTickPullBlockedUntilUtc = DateTime.MinValue;
+            _popupTickPullBlockReason = "";
 
             if (popupWeb == null)
                 return;
@@ -18189,10 +18273,263 @@ try{
             return "";
         }
 
+        private static string FormatAgeMsFromUtc(DateTime utcNow, DateTime valueUtc)
+        {
+            if (valueUtc == DateTime.MinValue)
+                return "-";
+            return Math.Max(0, (utcNow - valueUtc).TotalMilliseconds).ToString("0", CultureInfo.InvariantCulture);
+        }
+
+        private static bool IsPopupMessageSource(string? source)
+        {
+            return !string.IsNullOrWhiteSpace(source) &&
+                   source.IndexOf("popup", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void StartPopupRouteSession(string reason, string? src = null)
+        {
+            _popupRouteSessionId = Interlocked.Increment(ref _popupRouteSessionSeq);
+            _popupRouteSessionStartedUtc = DateTime.UtcNow;
+            _popupLastDataTickUtc = DateTime.MinValue;
+            _popupPullEmptyStreak = 0;
+            _popupPullEmptySinceUtc = DateTime.MinValue;
+            _popupPullNextAllowedUtc = DateTime.MinValue;
+            _popupSoftRecoverCount = 0;
+            _popupLastFrameErrorStatus = "";
+            _popupLastFrameErrorUtc = DateTime.MinValue;
+            SetPopupRouteStage("session-start", reason, src: src, forceLog: true);
+        }
+
+        private void SetPopupRouteStage(
+            string nextStage,
+            string reason,
+            string? src = null,
+            string? target = null,
+            CoreWebView2WebErrorStatus? status = null,
+            int? frameKey = null,
+            ulong? frameId = null,
+            ulong? navId = null,
+            bool forceLog = false)
+        {
+            nextStage = string.IsNullOrWhiteSpace(nextStage) ? "unknown" : nextStage.Trim();
+            var now = DateTime.UtcNow;
+            var prev = _popupRouteStage;
+            var changed = !string.Equals(prev, nextStage, StringComparison.Ordinal);
+            if (changed)
+                _popupRouteStageSinceUtc = now;
+            _popupRouteStage = nextStage;
+            if (!forceLog && !changed)
+                return;
+
+            var sid = _popupRouteSessionId.ToString(CultureInfo.InvariantCulture);
+            var stageAgeMs = _popupRouteStageSinceUtc == DateTime.MinValue
+                ? "-"
+                : Math.Max(0, (now - _popupRouteStageSinceUtc).TotalMilliseconds).ToString("0", CultureInfo.InvariantCulture);
+            Log($"[POPSTATE] sid={sid} | stage={nextStage} | prev={(string.IsNullOrWhiteSpace(prev) ? "-" : prev)} | stageAgeMs={stageAgeMs} | reason={reason}");
+            LogPopupDiag("STATE", reason, src: src, target: target, status: status, frameKey: frameKey, frameId: frameId, navId: navId);
+        }
+
+        private void RegisterPopupPullOutcome(bool hasData, string reason)
+        {
+            var now = DateTime.UtcNow;
+            if (hasData)
+            {
+                _popupLastDataTickUtc = now;
+                if (_popupPullEmptyStreak > 0)
+                {
+                    Log($"[TICK][PULL-RECOVER] streak={_popupPullEmptyStreak} | reason={reason}");
+                }
+                _popupPullEmptyStreak = 0;
+                _popupPullEmptySinceUtc = DateTime.MinValue;
+                _popupPullNextAllowedUtc = DateTime.MinValue;
+                SetPopupRouteStage("data-flowing", "popup-pull-has-data");
+                return;
+            }
+
+            if (_popupPullEmptyStreak == 0)
+                _popupPullEmptySinceUtc = now;
+            _popupPullEmptyStreak++;
+
+            if (_popupPullEmptyStreak >= POPUP_PULL_EMPTY_STREAK_SOFT_BLOCK)
+            {
+                var exceed = _popupPullEmptyStreak - POPUP_PULL_EMPTY_STREAK_SOFT_BLOCK;
+                var backoffMs = POPUP_PULL_EMPTY_BACKOFF_BASE_MS + (exceed * POPUP_PULL_EMPTY_BACKOFF_STEP_MS);
+                if (backoffMs > POPUP_PULL_EMPTY_BACKOFF_MAX_MS)
+                    backoffMs = POPUP_PULL_EMPTY_BACKOFF_MAX_MS;
+                var nextAllowed = now.AddMilliseconds(backoffMs);
+                if (nextAllowed > _popupPullNextAllowedUtc)
+                    _popupPullNextAllowedUtc = nextAllowed;
+                if (!HitLogThrottle("POPUP_PULL_EMPTY_BACKOFF", 1500))
+                {
+                    var sinceMs = _popupPullEmptySinceUtc == DateTime.MinValue
+                        ? 0
+                        : (long)Math.Max(0, (now - _popupPullEmptySinceUtc).TotalMilliseconds);
+                    Log($"[TICK][PULL-SKIP] reason=empty-streak-backoff | streak={_popupPullEmptyStreak} | sinceMs={sinceMs} | backoffMs={backoffMs} | from={reason}");
+                }
+                SetPopupRouteStage("stalled-empty-pull", "empty-pull-backoff");
+            }
+        }
+
+        private void MaybeLogPopupRouteSummary(string reason)
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _popupRouteSummaryUtc) < TimeSpan.FromSeconds(8))
+                return;
+            _popupRouteSummaryUtc = now;
+            var sid = _popupRouteSessionId.ToString(CultureInfo.InvariantCulture);
+            var emptySinceMs = _popupPullEmptySinceUtc == DateTime.MinValue
+                ? "-"
+                : Math.Max(0, (now - _popupPullEmptySinceUtc).TotalMilliseconds).ToString("0", CultureInfo.InvariantCulture);
+            Log(
+                $"[POPSUM] sid={sid}" +
+                $" | stage={_popupRouteStage}" +
+                $" | emptyStreak={_popupPullEmptyStreak}" +
+                $" | emptySinceMs={emptySinceMs}" +
+                $" | lastDataAgeMs={FormatAgeMsFromUtc(now, _popupLastDataTickUtc)}" +
+                $" | lastFrameErrAgeMs={FormatAgeMsFromUtc(now, _popupLastFrameErrorUtc)}" +
+                $" | lastFrameErr={(string.IsNullOrWhiteSpace(_popupLastFrameErrorStatus) ? "-" : _popupLastFrameErrorStatus)}" +
+                $" | reason={reason}");
+        }
+
+        private async Task TrySoftRecoverPopupRouteAsync(string reason)
+        {
+            try
+            {
+                if (_popupWeb?.CoreWebView2 == null)
+                    return;
+                var now = DateTime.UtcNow;
+                if ((now - _popupLastSoftRecoverUtc) < PopupNoDataRecoverCooldown)
+                    return;
+                _popupLastSoftRecoverUtc = now;
+                _popupSoftRecoverCount++;
+                _popupTickPullBlockedUntilUtc = now.AddSeconds(4);
+                _popupTickPullBlockReason = "popup-soft-recover";
+                SetPopupRouteStage("recovering", reason, forceLog: true);
+                Log($"[POPRECOVER] reason={reason} | count={_popupSoftRecoverCount} | emptyStreak={_popupPullEmptyStreak}");
+
+                await InjectOnPopupDocAsync();
+
+                string ctx;
+                string token;
+                lock (_frameAuthorityLock)
+                {
+                    ctx = _authorityContextId;
+                    token = _authorityToken;
+                }
+                if (!string.IsNullOrWhiteSpace(ctx) && !string.IsNullOrWhiteSpace(token))
+                    _ = StartAuthorityContextAsync(ctx, token, "popup-soft-recover");
+            }
+            catch (Exception ex)
+            {
+                Log($"[POPRECOVER][ERR] {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+            }
+        }
+
+        private void LogPopupDiag(
+            string tag,
+            string reason,
+            string? src = null,
+            string? target = null,
+            CoreWebView2WebErrorStatus? status = null,
+            int? frameKey = null,
+            ulong? frameId = null,
+            ulong? navId = null)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                string popupSrc = "";
+                string mainSrc = "";
+                try { popupSrc = _popupWeb?.CoreWebView2?.Source ?? ""; } catch { popupSrc = ""; }
+                try { mainSrc = Web?.CoreWebView2?.Source ?? ""; } catch { mainSrc = ""; }
+
+                bool popupVisible = PopupHost?.Visibility == Visibility.Visible;
+                bool webVisible = Web?.Visibility == Visibility.Visible;
+                bool popupActive = IsPopupBetViewActive();
+                int popupFrames = _popupFrameRefs.Count;
+
+                string authorityCtx;
+                string authorityHref;
+                DateTime authoritySeenUtc;
+                lock (_frameAuthorityLock)
+                {
+                    authorityCtx = _authorityContextId;
+                    authorityHref = _authorityHref;
+                    authoritySeenUtc = _authorityLastSeenUtc;
+                }
+
+                var blockLeftMs = _popupTickPullBlockedUntilUtc > now
+                    ? (long)Math.Max(0, (_popupTickPullBlockedUntilUtc - now).TotalMilliseconds)
+                    : 0;
+                var nextPullLeftMs = _popupPullNextAllowedUtc > now
+                    ? (long)Math.Max(0, (_popupPullNextAllowedUtc - now).TotalMilliseconds)
+                    : 0;
+
+                Log(
+                    $"[POPDIAG][{tag}] reason={reason}" +
+                    $" | sid={_popupRouteSessionId}" +
+                    $" | stage={(string.IsNullOrWhiteSpace(_popupRouteStage) ? "-" : _popupRouteStage)}" +
+                    $" | src={(string.IsNullOrWhiteSpace(src) ? "-" : src)}" +
+                    $" | status={(status.HasValue ? status.Value.ToString() : "-")}" +
+                    $" | frame={(frameId.HasValue ? frameId.Value.ToString(CultureInfo.InvariantCulture) : "-")}/{(navId.HasValue ? navId.Value.ToString(CultureInfo.InvariantCulture) : "-")}" +
+                    $" | frameKey={(frameKey.HasValue ? frameKey.Value.ToString(CultureInfo.InvariantCulture) : "-")}" +
+                    $" | popupVisible={(popupVisible ? 1 : 0)}" +
+                    $" | webVisible={(webVisible ? 1 : 0)}" +
+                    $" | popupActive={(popupActive ? 1 : 0)}" +
+                    $" | popupFrames={popupFrames}" +
+                    $" | emptyStreak={_popupPullEmptyStreak}" +
+                    $" | nextPullLeftMs={nextPullLeftMs}" +
+                    $" | blockLeftMs={blockLeftMs}" +
+                    $" | blockReason={(string.IsNullOrWhiteSpace(_popupTickPullBlockReason) ? "-" : _popupTickPullBlockReason)}" +
+                    $" | tickAgeMs={FormatAgeMsFromUtc(now, _lastGameTickUtc)}" +
+                    $" | authAgeMs={FormatAgeMsFromUtc(now, authoritySeenUtc)}" +
+                    $" | popupSrc={TrimHrefForLog(popupSrc)}" +
+                    $" | mainSrc={TrimHrefForLog(mainSrc)}" +
+                    $" | authCtx={(string.IsNullOrWhiteSpace(authorityCtx) ? "-" : Shrink(authorityCtx, 80))}" +
+                    $" | authHref={TrimHrefForLog(authorityHref)}" +
+                    $" | target={TrimHrefForLog(target)}");
+            }
+            catch { }
+        }
+
         private static bool IsCertificateNavigationError(CoreWebView2WebErrorStatus status)
         {
             var s = status.ToString();
             return s.IndexOf("Certificate", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsTransientFrameNavigationError(CoreWebView2WebErrorStatus status)
+        {
+            var s = status.ToString();
+            return s.IndexOf("Connection", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("Timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("NameNotResolved", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("CannotConnect", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsPragmaticLauncherUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+                return false;
+            var host = (uri.Host ?? "").ToLowerInvariant();
+            if (host.IndexOf("pragmaticplaylive.net", StringComparison.OrdinalIgnoreCase) < 0)
+                return false;
+            var path = uri.AbsolutePath ?? "";
+            return path.IndexOf("/desktop/launcher", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void SetProviderTlsMismatchStatusHint(string target)
+        {
+            try
+            {
+                // Thông báo UI rõ nguyên nhân, không can thiệp/bypass TLS.
+                _statusOverrideText = "Provider TLS/CN mismatch (*.greennet.net.vn)";
+                _statusOverrideUntilUtc = DateTime.UtcNow.AddSeconds(90);
+                Log($"[UI-STATUS] provider-tls-mismatch | target={TrimHrefForLog(target)}");
+            }
+            catch { }
         }
 
         private void ResetAuthorityForPopupFrameError(string reason, string target)
@@ -18235,7 +18572,8 @@ try{
                 var href = (target ?? "").Trim();
                 bool isErrorPage = href.IndexOf("chrome-error://chromewebdata", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool isCertError = status.HasValue && IsCertificateNavigationError(status.Value);
-                if (!isErrorPage && !isCertError)
+                bool isTransientError = status.HasValue && IsTransientFrameNavigationError(status.Value);
+                if (!isErrorPage && !isCertError && !isTransientError)
                     return;
 
                 var frameKey = GetFrameRefKey(frame);
@@ -18246,6 +18584,23 @@ try{
                 if ((now - _lastPopupErrorUiGuardUtc) < TimeSpan.FromSeconds(2))
                     return;
                 _lastPopupErrorUiGuardUtc = now;
+                _popupLastFrameErrorStatus = status.HasValue ? status.Value.ToString() : (isErrorPage ? "ErrorPage" : "-");
+                _popupLastFrameErrorUtc = now;
+
+                if ((isCertError || isTransientError) && !isErrorPage)
+                {
+                    var softReason = isCertError ? "popup-frame-cert-error" : "popup-frame-transient-error";
+                    var softBlockSec = isCertError ? 30 : 12;
+                    _popupTickPullBlockedUntilUtc = DateTime.UtcNow.AddSeconds(softBlockSec);
+                    _popupTickPullBlockReason = softReason;
+                    if (isCertError && IsPragmaticLauncherUrl(href))
+                        SetProviderTlsMismatchStatusHint(href);
+                    var certCount = Interlocked.Increment(ref _popupErrorUiGuardCount);
+                    Log($"[UI-GUARD] popup frame soft guard, keep popup visible. | reason={softReason} | count={certCount} | frameKey={frameKey} | status={(status.HasValue ? status.Value.ToString() : "-")} | target={TrimHrefForLog(href)}");
+                    SetPopupRouteStage("popup-frame-soft-error", softReason, target: href, status: status, frameKey: frameKey);
+                    LogPopupDiag("GUARD", isCertError ? "cert-soft-guard" : "transient-soft-guard", target: href, status: status, frameKey: frameKey);
+                    return;
+                }
 
                 await Dispatcher.InvokeAsync(() =>
                 {
@@ -18254,13 +18609,15 @@ try{
                     if (Web != null)
                         Web.Visibility = Visibility.Visible;
                 });
-                var guardReason = isCertError ? "popup-frame-cert-error" : "popup-frame-error-page";
+                var guardReason = "popup-frame-error-page";
                 AutoStopTasksOnBetPipelineReset(guardReason, href);
                 ResetAuthorityForPopupFrameError(guardReason, href);
                 _popupTickPullBlockedUntilUtc = DateTime.UtcNow.AddSeconds(15);
                 _popupTickPullBlockReason = guardReason;
                 var guardCount = Interlocked.Increment(ref _popupErrorUiGuardCount);
                 Log($"[UI-GUARD] popup frame error fallback to main web. | reason={guardReason} | count={guardCount} | frameKey={frameKey} | status={(status.HasValue ? status.Value.ToString() : "-")} | target={TrimHrefForLog(href)}");
+                SetPopupRouteStage("popup-frame-hard-fallback", guardReason, target: href, status: status, frameKey: frameKey);
+                LogPopupDiag("GUARD", "error-page-hard-fallback", target: href, status: status, frameKey: frameKey);
             }
             catch (Exception ex)
             {
@@ -18275,6 +18632,12 @@ try{
                 var frame = sender as CoreWebView2Frame;
                 if (frame == null) return;
                 RememberFrameNavigationStart(frame, e);
+                var target = (e.Uri ?? "").Trim();
+                if (IsPragmaticLauncherUrl(target))
+                {
+                    var frameKey = GetFrameRefKey(frame);
+                    SetPopupRouteStage("popup-frame-launcher-nav", "frame-nav-launcher-start", target: target, frameKey: frameKey);
+                }
             }
             catch { }
         }
@@ -18288,9 +18651,14 @@ try{
                 var frameId = TryGetFrameIdSafe(f);
                 var navId = TryGetNavigationIdSafe(e);
                 var target = ResolveFrameNavigationTarget(f, e);
+                var frameKey = GetFrameRefKey(f);
                 if (!e.IsSuccess)
                 {
                     Log($"[FrameNav][ERR] frameId={frameId} | navId={navId} | status={e.WebErrorStatus} | target={TrimHrefForLog(target)}");
+                    _popupLastFrameErrorStatus = e.WebErrorStatus.ToString();
+                    _popupLastFrameErrorUtc = DateTime.UtcNow;
+                    SetPopupRouteStage("popup-frame-nav-error", "frame-nav-error", target: target, status: e.WebErrorStatus, frameKey: frameKey, frameId: frameId, navId: navId);
+                    LogPopupDiag("FRAME-ERR", "frame-nav-error", target: target, status: e.WebErrorStatus, frameKey: frameKey, frameId: frameId, navId: navId);
                     await GuardUiOnPopupFrameErrorPageAsync(f, target, e.WebErrorStatus);
                     return;
                 }
@@ -18298,7 +18666,15 @@ try{
                     target.IndexOf("chrome-error://chromewebdata", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     Log($"[FrameNav][ERR-PAGE] frameId={frameId} | navId={navId} | target={TrimHrefForLog(target)}");
+                    _popupLastFrameErrorStatus = "ErrorPage";
+                    _popupLastFrameErrorUtc = DateTime.UtcNow;
+                    SetPopupRouteStage("popup-frame-error-page", "frame-nav-error-page", target: target, frameKey: frameKey, frameId: frameId, navId: navId);
+                    LogPopupDiag("FRAME-ERR-PAGE", "frame-nav-error-page", target: target, frameKey: frameKey, frameId: frameId, navId: navId);
                     await GuardUiOnPopupFrameErrorPageAsync(f, target);
+                }
+                else if (IsPragmaticLauncherUrl(target))
+                {
+                    SetPopupRouteStage("popup-frame-launcher-ready", "frame-nav-launcher-ready", target: target, frameKey: frameKey, frameId: frameId, navId: navId);
                 }
                 await InjectGameBridgeOnFrameIfNeededAsync(f, "nav-completed");
             }
@@ -18333,24 +18709,55 @@ try{
 
         private async Task TryPullPopupTickFallbackAsync()
         {
-            if (_popupWeb?.CoreWebView2 == null) return;
+            if (_popupWeb?.CoreWebView2 == null)
+            {
+                if (!HitLogThrottle("POPUP_PULL_NO_CORE", 2000))
+                    LogPopupDiag("PULL", "skip-no-popup-core");
+                return;
+            }
             if (!ShouldAllowPopupTickPull()) return;
             var now = DateTime.UtcNow;
             if (_lastAuthorityMsgTickUtc != DateTime.MinValue &&
                 (now - _lastAuthorityMsgTickUtc) <= TimeSpan.FromMilliseconds(1500))
+            {
+                if (!HitLogThrottle("POPUP_PULL_FRESH_AUTH_TICK", 2000))
+                    LogPopupDiag("PULL", "skip-fresh-authority-msg");
                 return;
+            }
             var age = DateTime.UtcNow - _lastGameTickUtc;
-            if (age <= TimeSpan.FromMilliseconds(POPUP_PULL_STALE_TRIGGER_MS)) return;
-            if (Interlocked.Exchange(ref _popupTickPullBusy, 1) == 1) return;
+            if (age <= TimeSpan.FromMilliseconds(POPUP_PULL_STALE_TRIGGER_MS))
+            {
+                if (!HitLogThrottle("POPUP_PULL_NOT_STALE", 2200))
+                    LogPopupDiag("PULL", "skip-game-tick-not-stale");
+                return;
+            }
+            if (Interlocked.Exchange(ref _popupTickPullBusy, 1) == 1)
+            {
+                if (!HitLogThrottle("POPUP_PULL_BUSY", 1500))
+                    LogPopupDiag("PULL", "skip-busy");
+                return;
+            }
             try
             {
                 var raw = await _popupWeb.CoreWebView2.ExecuteScriptAsync(PULL_POPUP_TICK_NOW);
                 var msg = JsonSerializer.Deserialize<string>(raw) ?? "";
                 if (string.IsNullOrWhiteSpace(msg))
+                {
+                    RegisterPopupPullOutcome(false, "empty-msg");
+                    if (!HitLogThrottle("POPUP_PULL_EMPTY_MSG", 2000))
+                        LogPopupDiag("PULL", "skip-empty-pull-msg");
                     return;
+                }
                 await HandleIncomingWebMessageAsync(msg, "popup-pull");
+                MaybeLogPopupRouteSummary("popup-pull-tick");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                RegisterPopupPullOutcome(false, "pull-exception");
+                if (!HitLogThrottle("POPUP_PULL_ERR", 2000))
+                    Log($"[TICK][PULL-ERR] {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+                LogPopupDiag("PULL", "pull-exception");
+            }
             finally
             {
                 Interlocked.Exchange(ref _popupTickPullBusy, 0);
@@ -18360,32 +18767,85 @@ try{
         private bool ShouldAllowPopupTickPull()
         {
             if (_popupWeb?.CoreWebView2 == null)
+            {
+                if (!HitLogThrottle("PULL_GATE_NO_CORE", 2500))
+                    LogPopupDiag("PULL-GATE", "reject-no-popup-core");
                 return false;
+            }
             if (PopupHost == null || PopupHost.Visibility != Visibility.Visible)
+            {
+                if (!HitLogThrottle("PULL_GATE_POPUP_HIDDEN", 2500))
+                    LogPopupDiag("PULL-GATE", "reject-popup-hidden");
                 return false;
+            }
             if (_popupTickPullBlockedUntilUtc > DateTime.UtcNow)
             {
                 if (!HitLogThrottle("POPUP_PULL_BLOCK", 3000))
                 {
                     var leftMs = (long)Math.Max(0, (_popupTickPullBlockedUntilUtc - DateTime.UtcNow).TotalMilliseconds);
                     Log($"[TICK][PULL-SKIP] reason=popup-pull-blocked | leftMs={leftMs} | blockReason={(string.IsNullOrWhiteSpace(_popupTickPullBlockReason) ? "-" : _popupTickPullBlockReason)}");
+                    LogPopupDiag("PULL-GATE", "reject-pull-blocked");
+                }
+                return false;
+            }
+            if (_popupPullNextAllowedUtc > DateTime.UtcNow)
+            {
+                if (!HitLogThrottle("POPUP_PULL_NEXT_ALLOWED", 2500))
+                {
+                    var leftMs = (long)Math.Max(0, (_popupPullNextAllowedUtc - DateTime.UtcNow).TotalMilliseconds);
+                    Log($"[TICK][PULL-SKIP] reason=empty-streak-next-allowed | leftMs={leftMs} | streak={_popupPullEmptyStreak}");
+                    LogPopupDiag("PULL-GATE", "reject-empty-streak-backoff");
                 }
                 return false;
             }
             if (IsPopupBetViewActive())
+            {
+                var noDataTooLong =
+                    (_popupLastDataTickUtc != DateTime.MinValue && (DateTime.UtcNow - _popupLastDataTickUtc) > PopupNoDataWatchdog) ||
+                    (_popupLastDataTickUtc == DateTime.MinValue && _popupRouteSessionStartedUtc != DateTime.MinValue && (DateTime.UtcNow - _popupRouteSessionStartedUtc) > PopupNoDataWatchdog);
+                var recentFrameError =
+                    _popupLastFrameErrorUtc != DateTime.MinValue &&
+                    (DateTime.UtcNow - _popupLastFrameErrorUtc) <= TimeSpan.FromSeconds(45);
+                var stalledSession =
+                    _popupPullEmptyStreak >= 10 ||
+                    string.Equals(_popupRouteStage, "stalled-empty-pull", StringComparison.OrdinalIgnoreCase);
+                if (noDataTooLong && (recentFrameError || stalledSession))
+                {
+                    var wdReason = recentFrameError
+                        ? "popup-watchdog-no-data-with-frame-error"
+                        : "popup-watchdog-no-data-stalled";
+                    SetPopupRouteStage("watchdog-no-data", wdReason);
+                    _ = TrySoftRecoverPopupRouteAsync(wdReason);
+                }
+                if (!HitLogThrottle("PULL_GATE_ALLOW_POPUP_ACTIVE", 3000))
+                    LogPopupDiag("PULL-GATE", "allow-popup-active");
+                MaybeLogPopupRouteSummary("pull-gate-popup-active");
                 return true;
+            }
 
             string popupSrc = "";
             try { popupSrc = _popupWeb.CoreWebView2.Source ?? ""; } catch { popupSrc = ""; }
             if (IsLikelyBetGameReadyUrl(popupSrc) || IsLivetablesBaccaratUrl(popupSrc))
+            {
+                if (!HitLogThrottle("PULL_GATE_ALLOW_POPUP_SRC", 3000))
+                    LogPopupDiag("PULL-GATE", "allow-popup-src-ready", src: popupSrc, target: popupSrc);
+                MaybeLogPopupRouteSummary("pull-gate-popup-src-ready");
                 return true;
+            }
 
             lock (_frameAuthorityLock)
             {
                 if (IsLikelyBetGameReadyUrl(_authorityHref) || IsLivetablesBaccaratUrl(_authorityHref))
+                {
+                    if (!HitLogThrottle("PULL_GATE_ALLOW_AUTH_HREF", 3000))
+                        LogPopupDiag("PULL-GATE", "allow-authority-href-ready", target: _authorityHref);
+                    MaybeLogPopupRouteSummary("pull-gate-auth-href-ready");
                     return true;
+                }
             }
 
+            if (!HitLogThrottle("PULL_GATE_REJECT_NO_ROUTE", 2500))
+                LogPopupDiag("PULL-GATE", "reject-no-ready-route", src: popupSrc, target: popupSrc);
             return false;
         }
 
@@ -18769,6 +19229,13 @@ try{
             try
             {
                 if (LblStatusText == null) return;
+                var now = DateTime.UtcNow;
+                var hasOverride =
+                    !string.IsNullOrWhiteSpace(_statusOverrideText) &&
+                    _statusOverrideUntilUtc != DateTime.MinValue &&
+                    now <= _statusOverrideUntilUtc;
+                if (hasOverride)
+                    status = _statusOverrideText;
                 status = (status ?? "").Trim();
                 if (string.IsNullOrEmpty(status))
                 {
@@ -18780,7 +19247,9 @@ try{
                 {
                     LblStatusText.Text = status;
                     LblStatusText.Visibility = Visibility.Visible;
-                    if (IsAllowBetStatus(status))
+                    if (hasOverride)
+                        LblStatusText.Foreground = Brushes.OrangeRed;
+                    else if (IsAllowBetStatus(status))
                         LblStatusText.Foreground = Brushes.LimeGreen;
                     else if (IsWaitingResultStatus(status))
                         LblStatusText.Foreground = Brushes.Red;
