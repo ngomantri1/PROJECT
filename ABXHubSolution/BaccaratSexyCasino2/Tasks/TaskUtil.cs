@@ -258,19 +258,9 @@ namespace BaccaratSexyCasino2.Tasks
             var lastSide = _lastBetSideByTab.TryGetValue(tabKey, out var s) ? s : "";
             var sameRound = lastRound == roundId;
             var sameSide = string.Equals(lastSide, side, StringComparison.OrdinalIgnoreCase);
-            if (!ignoreCooldown)
+            if (!ignoreCooldown && sameRound && sameSide && now - last < SendOnlyCooldownMs)
             {
-                if (_betInFlightByTab.ContainsKey(tabKey))
-                {
-                    ctx.Log?.Invoke($"[BET][BLOCK] send-in-flight | tab={tabKey}{runTag} | side={side} | amount={amount:N0}");
-                    return false;
-                }
-
-                if (sameRound && sameSide && now - last < SendOnlyCooldownMs)
-                {
-                    ctx.Log?.Invoke($"[BET][BLOCK] skip duplicate send | tab={tabKey}{runTag} | side={side} | amount={amount:N0}");
-                    return false;
-                }
+                ctx.Log?.Invoke($"[BET][INFO] duplicate-send-allowed | tab={tabKey}{runTag} | round={roundId} | side={side} | amount={amount:N0}");
             }
 
             // Optimistic mode giống XocDiaTuLinhZoWin: qua được chặn local thì coi như đã bắn.
