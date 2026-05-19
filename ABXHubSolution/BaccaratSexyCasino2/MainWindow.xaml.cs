@@ -13017,6 +13017,11 @@ try{
             long jsSeqVersion,
             string reason)
         {
+            // In CDP-first mode, JS append contract is diagnostic only.
+            // Sequence append after bootstrap must come from CDP/network winner packets.
+            if (UseDomBootstrapCdpAppendSeq)
+                return false;
+
             if (snap == null || !IsAppendSeqMode(seqMode))
                 return false;
 
