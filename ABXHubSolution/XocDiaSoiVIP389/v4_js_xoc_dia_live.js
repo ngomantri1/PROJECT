@@ -1078,57 +1078,17 @@
     }
     function collectProgress() {
         var cd = readCountdownSec();
-        if (cd != null)
-            return cd;
-        if (!__cw_hasCcScene()) {
-            S._progIsSec = true;
+        if (cd == null) {
+            S._progIsSec = false;
             return null;
         }
-        // Nếu đã từng bắt được countdown theo selector thì không rơi ngược về ProgressBar,
-        // tránh nháy 0s -> 18s/20s do lấy nhầm progress ratio.
-        if (S && S._seenCountdown) {
-            S._progIsSec = true;
-            if (S._progSecLast != null)
-                return S._progSecLast;
+        var sec = Number(cd);
+        if (!isFinite(sec)) {
+            S._progIsSec = false;
             return null;
         }
-        S._progIsSec = false;
-        var bars = [];
-        walkNodes(function (n) {
-            if (!nodeInGame(n))
-                return;
-            var comps = getComps(n, cc.ProgressBar);
-            if (comps && comps.length) {
-                var r = wRect(n);
-                for (var i = 0; i < comps.length; i++) {
-                    bars.push({
-                        comp: comps[i],
-                        rect: r,
-                        tail: tailOf(n, 12)
-                    });
-                }
-            }
-        });
-        if (!bars.length) {
-            S._progTail = '';
-            window.__cw_prog_tail = '';
-            return null;
-        }
-        var H = innerHeight,
-        cs = bars.filter(function (b) {
-            var r = b.rect;
-            return r.w > 300 && r.h >= 6 && r.h <= 60 && r.y < H * 0.75;
-        });
-        var barPick = (cs[0] || bars[0]);
-        var bar = barPick.comp;
-        try {
-            S._progTail = barPick.tail || '';
-        } catch (e) {}
-        try {
-            window.__cw_prog_tail = barPick.tail || '';
-        } catch (e) {}
-        var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
-        return clamp01(Number(pr));
+        S._progIsSec = true;
+        return Math.max(0, sec);
     }
     function stabilizeProgSec(p) {
         if (p == null)
@@ -6043,15 +6003,15 @@
     function tick() {
         var p = collectProgress();
         p = stabilizeProgSec(p);
+        // Chỉ chấp nhận prog khi là GIÂY thật; tuyệt đối không dùng ratio cho nghiệp vụ.
+        if (!S._progIsSec)
+            p = null;
         if (p != null) {
             S.prog = p;
             S._progNullHits = 0;
         } else {
             S._progNullHits = (S._progNullHits || 0) + 1;
-            // No-cc countdown thường ẩn node ở cuối phiên -> tránh kẹt 1s.
-            if (S._progIsSec && (S._progNullHits >= 2 || (S.prog != null && Number(S.prog) <= 1))) {
-                S.prog = 0;
-            }
+            S.prog = null;
         }
         var T = sampleTotalsNow();
         S._lastTotals = T;
@@ -6120,7 +6080,7 @@
             abx: 'tick',
             roundId: getRoundIdSafeTick(),
             prog: (pNow != null ? pNow : null),
-            progIsSec: !!S._progIsSec,
+            progIsSec: (pNow != null) ? !!S._progIsSec : false,
             totals: T,
             seq: String(S.seq || ''),
             status: String(S.status || ''),
@@ -6337,6 +6297,9 @@
                 var cp = (typeof collectProgress === 'function') ? collectProgress() : null;
                 if (typeof stabilizeProgSec === 'function')
                     cp = stabilizeProgSec(cp);
+                // Chỉ trả về prog theo GIÂY; không fallback ratio/progress bar.
+                if (!(S && S._progIsSec))
+                    return null;
                 if (typeof cp === 'number')
                     return cp;
                 if (cp && typeof cp.val === 'number')
@@ -6400,8 +6363,8 @@
                         snap = {
                             abx: 'tick',
                             roundId: getRoundIdSafe(),
-                            prog: (typeof last.prog === 'number') ? last.prog : null,
-                            progIsSec: !!last.progIsSec,
+                            prog: ((last.progIsSec === true) && (typeof last.prog === 'number')) ? last.prog : null,
+                            progIsSec: ((last.progIsSec === true) && (typeof last.prog === 'number')),
                             totals: last.totals || null,
                             seq: String(last.seq || ''),
                             status: String(last.status || ''),
@@ -6415,8 +6378,8 @@
                         snap = {
                             abx: 'tick',
                             roundId: getRoundIdSafe(),
-                            prog: p,
-                            progIsSec: !!(S && S._progIsSec),
+                            prog: (typeof p === 'number') ? p : null,
+                            progIsSec: (typeof p === 'number') ? !!(S && S._progIsSec) : false,
                             totals: totalsNow,
                             seq: readSeqSafe(false),
                             status: String(st || ''),

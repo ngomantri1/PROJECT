@@ -144,22 +144,53 @@ namespace XocDiaSoiVIP389.Tasks
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
         {
             // Quy tắc nghiệp vụ: chỉ vào lệnh khi Prog (giây còn lại) < ngưỡng cài đặt.
-            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
             var gateSec = (ctx.DecisionPercent > 0) ? ctx.DecisionPercent : 3;
+            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            long lastDiagMs = 0;
+            bool armed = false;
+            int armedRound = 0;
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double rawProg = s?.prog ?? 0;
-                bool progIsSec = (s?.progIsSec == true) || rawProg > 1.001;
-                double p = progIsSec
-                    ? Math.Max(0, rawProg)
-                    : Math.Max(0, Math.Min(1, rawProg)) * 20.0;
-                var status = (s?.status ?? "").Trim();
-                bool isOpen = p > 0 || status.IndexOf("Đang cược", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (!isOpen) _betIssuedInOpenWindowByTab[tabKey] = false;
+                var roundId = s?.roundId ?? 0;
+                double p = ((s?.progIsSec == true) && s?.prog.HasValue == true)
+                    ? Math.Max(0, s.prog.Value)
+                    : 0;
+                var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                if (nowMs - lastDiagMs >= 1000)
+                {
+                    lastDiagMs = nowMs;
+                    ctx.Log?.Invoke($"[WAIT-BET][{tabKey}] prog={(s?.prog.HasValue == true ? s.prog.Value.ToString("0.##") : "null")} secFlag={(s?.progIsSec == true ? 1 : 0)} p={p:0.##} gate={gateSec:0.##} round={roundId} armed={(armed ? 1 : 0)} armRound={armedRound} seqLen={(s?.seq ?? "").Length}");
+                }
+                if (!armed)
+                {
+                    if (p > gateSec)
+                    {
+                        armed = true;
+                        armedRound = roundId;
+                        ctx.Log?.Invoke($"[WAIT-BET][{tabKey}] ARM p={p:0.##} gate={gateSec:0.##} round={roundId}");
+                    }
+                    await Task.Delay(60, ct);
+                    continue;
+                }
+
+                if (armedRound > 0 && roundId > 0 && roundId != armedRound)
+                {
+                    armed = (p > gateSec);
+                    armedRound = armed ? roundId : 0;
+                    if (armed)
+                        ctx.Log?.Invoke($"[WAIT-BET][{tabKey}] RE-ARM round={roundId} p={p:0.##}");
+                    await Task.Delay(60, ct);
+                    continue;
+                }
+
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
-                if (p > 0 && p < gateSec) break;
+                if (p > 0 && p <= gateSec)
+                {
+                    ctx.Log?.Invoke($"[WAIT-BET][{tabKey}] BREAK p={p:0.##} gate={gateSec:0.##} round={roundId} armRound={armedRound}");
+                    break;
+                }
                 await Task.Delay(60, ct);
             }
         }
@@ -167,21 +198,53 @@ namespace XocDiaSoiVIP389.Tasks
         // Chờ tới cửa đặt hợp lệ theo ngưỡng giây đã cấu hình.
         public static async Task WaitUntilNewRoundStart(GameContext ctx, CancellationToken ct)
         {
-            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
             var gateSec = (ctx.DecisionPercent > 0) ? ctx.DecisionPercent : 3;
+            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            long lastDiagMs = 0;
+            bool armed = false;
+            int armedRound = 0;
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double rawProg = s?.prog ?? 0;
-                bool progIsSec = (s?.progIsSec == true) || rawProg > 1.001;
-                double p = progIsSec
-                    ? Math.Max(0, rawProg)
-                    : Math.Max(0, Math.Min(1, rawProg)) * 20.0;
-                var status = (s?.status ?? "").Trim();
-                bool isOpen = p > 0 || status.IndexOf("Đang cược", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (!isOpen) _betIssuedInOpenWindowByTab[tabKey] = false;
-                if (p > 0 && p < gateSec) break;
+                var roundId = s?.roundId ?? 0;
+                double p = ((s?.progIsSec == true) && s?.prog.HasValue == true)
+                    ? Math.Max(0, s.prog.Value)
+                    : 0;
+                var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                if (nowMs - lastDiagMs >= 1000)
+                {
+                    lastDiagMs = nowMs;
+                    ctx.Log?.Invoke($"[WAIT-NEW][{tabKey}] prog={(s?.prog.HasValue == true ? s.prog.Value.ToString("0.##") : "null")} secFlag={(s?.progIsSec == true ? 1 : 0)} p={p:0.##} gate={gateSec:0.##} round={roundId} armed={(armed ? 1 : 0)} armRound={armedRound} seqLen={(s?.seq ?? "").Length}");
+                }
+                if (!armed)
+                {
+                    if (p > gateSec)
+                    {
+                        armed = true;
+                        armedRound = roundId;
+                        ctx.Log?.Invoke($"[WAIT-NEW][{tabKey}] ARM p={p:0.##} gate={gateSec:0.##} round={roundId}");
+                    }
+                    await Task.Delay(60, ct);
+                    continue;
+                }
+
+                if (armedRound > 0 && roundId > 0 && roundId != armedRound)
+                {
+                    armed = (p > gateSec);
+                    armedRound = armed ? roundId : 0;
+                    if (armed)
+                        ctx.Log?.Invoke($"[WAIT-NEW][{tabKey}] RE-ARM round={roundId} p={p:0.##}");
+                    await Task.Delay(60, ct);
+                    continue;
+                }
+
+                if (p > 0 && p <= gateSec)
+                {
+                    ctx.Log?.Invoke($"[WAIT-NEW][{tabKey}] BREAK p={p:0.##} gate={gateSec:0.##} round={roundId} armRound={armedRound}");
+                    break;
+                }
+                   
                 await Task.Delay(60, ct);
             }
         }

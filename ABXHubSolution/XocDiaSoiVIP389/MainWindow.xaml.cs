@@ -349,7 +349,7 @@ namespace XocDiaSoiVIP389
         // === Fields ================================================================
         private volatile CwSnapshot _lastSnap;
         private readonly object _snapLock = new();
-        private double _countdownMaxSec = 20d;
+        private double _countdownMaxSec = 30d;
         private double? _lastCountdownSec = null;
         private double? _pendingRiseSec = null;
         private int _pendingRiseHits = 0;
