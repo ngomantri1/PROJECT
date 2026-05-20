@@ -40,6 +40,7 @@ XocDiaSoiVIP389/
 - JS đọc game -> tạo `snap` -> `abx:tick`.
 - C# deserialize `CwSnapshot` -> lưu `_lastSnap` -> update UI -> task dùng.
 - Bet history: issue pending -> finalize khi có kết quả mới từ `seq`.
+- Bet history: nếu JS trả `bet_error` hoặc `bet_queue_job_done` với `result=false` thì rollback pending đã ghi ở bước enqueue.
 - Bet command: `Tasks.TaskUtil.PlaceBet` -> `__cw_bet_enqueue(intent)` -> `processBetQueue()` -> `cwBet(side, amount)`.
 - `processBetQueue()` chạy FIFO, không phụ thuộc kết quả thành công của job trước để chuyển job kế tiếp.
 
@@ -64,6 +65,7 @@ XocDiaSoiVIP389/
 - Tên nhân vật/tài khoản.
 - Chuỗi kết quả `SeqIcons`.
 - `home_tick` chỉ ghi đè khi dữ liệu không rỗng.
+- Bet history/pending UI có map `issueKey` để rollback đồng bộ khi nhận tín hiệu fail từ JS.
 
 ## OCR/canvas/DOM flow mới nhất
 - `TextMap` no-cc: `buildTextRectsDom()` đọc text node từ DOM.
@@ -71,7 +73,8 @@ XocDiaSoiVIP389/
 - Ưu tiên tail `countdown-box/countdown-time`.
 - Fallback selector count/timer/clock.
 - Seq no-cc:
-- `readTKSeqDomRoad()` lọc `cardroadtable-list1 span.cl_num`.
+- `readTKSeqDomRoad()` ưu tiên `querySelectorAll` với nhóm selector road/num.
+- Nếu selector không ra dữ liệu thì fallback sang lọc text-rect strict (`cardroadtable-list1 + cl_num`) rồi relaxed match (`road* + num*`).
 - Ghép chuỗi theo cột trái->phải, mỗi cột trên->dưới, chỉ digit `0..4`.
 - Status:
 - Tính cứng theo prog, không fallback label cũ.

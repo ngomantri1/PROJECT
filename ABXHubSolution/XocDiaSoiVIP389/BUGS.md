@@ -22,23 +22,32 @@
 - Đã đổi rule cứng theo prog và màu UI.
 - Seq không đọc được sau đổi page:
 - Đã thêm parser DOM road `cardroadtable-list1 span.cl_num` cho chuỗi `0..4`.
+- History/pending bị lệch khi click fail:
+- Nguyên nhân: C# ghi pending ngay lúc enqueue nhưng chưa rollback khi JS báo `bet_error` hoặc `bet_queue_job_done result=false`.
+- Đã sửa: map pending theo `tabId|roundId|side|amount`, nhận tín hiệu fail thì rollback đúng dòng pending.
+- Seq không hiển thị trên một số máy dù cùng URL:
+- Nguyên nhân: parser `seq` phụ thuộc cứng tail/text-rect theo layout cụ thể.
+- Đã sửa: `readTKSeqDomRoad()` ưu tiên selector DOM road/num, fallback strict rồi relaxed.
 
 ## Bug chưa fix / còn tồn tại
 - Parser DOM vẫn phụ thuộc một số class/id động của vendor; đổi theme lớn có thể cần cập nhật tail.
 - Chưa có test tự động cho JS parser (`prog/seq`) nên vẫn dựa nhiều vào smoke test tay.
 - Cảnh báo build nhiều, gây nhiễu khi truy lỗi mới.
 - Khi bỏ `stale round` guard, có rủi ro lệnh vào trễ sang round kế tiếp nếu queue backlog lớn.
+- Một số log cũ vẫn cho thấy `CW_TICK_DIAG.seqLen=0` kéo dài trên máy khác; cần xác nhận lại sau bản selector-first + restart app.
 
 ## Nguyên nhân bug
 - Trang mới không còn Cocos scene chuẩn như trang cũ (`no-cc`).
 - DOM động thay đổi id/class theo phiên và layout.
 - Logic cũ ưu tiên nhánh cc/path cũ nên miss dữ liệu mới.
+- Runtime khác máy (WebView2 fixed/browser state/theme) có thể làm tail text-rect khác nhau dù URL giống nhau.
 
 ## Workaround tạm thời
 - Khi nghi parser sai: dùng `Scan500Text`/`ScanTK` để lấy tail thực tế rồi cập nhật rule.
 - Nếu UI không cập nhật ngay sau sửa JS: rebuild/restart app (JS đang embed runtime).
 - Khi build lỗi lock exe: tắt process app trước.
 - Nếu thấy vào lệnh trễ khi stake quá lớn: giảm chuỗi tiền/chip hoặc tăng tốc cửa sổ bắn lệnh để giảm backlog queue.
+- Khi điều tra seq lỗi theo máy: chạy probe DevTools (`SEQ_PROBE_JSON`) để so sánh với `CW_TICK_DIAG.seqLen`.
 
 ## Vùng code dễ lỗi
 - `v4_js_xoc_dia_live.js`:

@@ -19,6 +19,7 @@
 - C# nhận tick, cập nhật UI/snapshot, và feed dữ liệu cho strategy tasks.
 - Bet chạy qua JS queue (`__cw_bet_enqueue`) để tuần tự click theo FIFO.
 - Queue hiện không chặn theo kết quả lệnh trước: bet 1 chạy xong sẽ qua bet 2/bet 3 dù `rawResult` false hoặc lỗi.
+- C# history/pending có rollback theo phản hồi JS: nếu `bet_error` hoặc `bet_trace(stage=bet_queue_job_done,result=false)` thì hủy pending row tương ứng để tránh trạng thái "đã đặt" ảo.
 
 ## Coding rules
 - UI update chỉ chạy trên `Dispatcher`.
@@ -47,13 +48,15 @@
 - Hỗ trợ `no-cc` đầy đủ:
 - `TextMap` có fallback DOM (`buildTextRectsDom`) khi không có Cocos scene.
 - `countdown/prog` ưu tiên tail DOM `span#countdown-time` trong `countdown-box`.
-- `seq` đọc từ DOM road `cardroadtable-list1 span.cl_num` và trả chuỗi số `0..4`.
+- `seq` no-cc ưu tiên đọc trực tiếp bằng selector DOM (`.cardroadtable-list1 span.cl_num`, `[class*=cardroad] span[class*=cl_num]`...), nếu không có mới fallback strict/relaxed tail match.
+- `readTKSeqDomRoad()` trả `which` theo mode: `dom_cardroad_selector` / `dom_cardroad_list1` / `dom_cardroad_relaxed` để debug nhanh lệch layout giữa máy.
 - `__cw_startPush` autostart cả khi `no-cc` (không phụ thuộc cứng `cc`).
 
 ## Pending flow
 - Bet issue -> tạo row pending.
 - Khi ván chốt (đuôi `seq` đổi) -> finalize pending theo kết quả thực.
 - Có dedup key để tránh duplicate lịch sử.
+- Pending được map theo khóa `tabId|roundId|side|amount`; khi JS báo lỗi/fail sẽ rollback đúng row theo key này.
 
 ## Rule đặt cược song song
 - 4 cửa `CHAN/LE/TAI/XIU` dùng chung `roundId`.

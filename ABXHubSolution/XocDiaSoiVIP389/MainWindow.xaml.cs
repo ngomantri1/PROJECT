@@ -372,7 +372,8 @@ namespace XocDiaSoiVIP389
         // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
         private int _stakeLevelIndexForUi = -1;
 
-        private double _decisionPercent = 3; // 3s
+        private const int DefaultDecisionSeconds = 3;
+        private double _decisionPercent = DefaultDecisionSeconds; // giữ tên cũ để tránh đụng rộng
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -577,16 +578,18 @@ Ví dụ không hợp lệ:
 • Áp dụng cho cả chuỗi tiền thường và quản lý vốn đa tầng.";
 
         const string TIP_DECISION_PERCENT_GENERAL =
-        @"ĐẶT KHI CÒN % THỜI GIAN
-• Nhập phần trăm (0–100). Hệ thống quy về 0.00–1.00 nội bộ.
-• Ý nghĩa: chỉ đặt cược khi thanh thời gian còn lại ≤ giá trị % này.
-• Ví dụ: 25 = đặt khi còn ~25% thời gian phiên.";
+        @"ĐẶT KHI CÒN (GIÂY)
+• Nhập số giây còn lại để cho phép đặt cược.
+• Chỉ nhận số tự nhiên > 0.
+• Nếu nhập 0 hoặc không phải số tự nhiên, hệ thống tự đặt về 3.
+• Quy tắc vào lệnh: chỉ đặt khi Prog < giá trị giây đã đặt.";
 
         const string TIP_DECISION_PERCENT_NI =
-        @"ĐẶT KHI CÒN % THỜI GIAN (khuyến nghị cho chiến lược Ít/Nhiều)
-• Nhập phần trăm (0–100), KHÔNG phải giây.
-• Nên để khoảng 15% để bám sát dòng tiền hai cửa.
-• Ví dụ: 15 = đặt khi còn ~15% thời gian phiên.";
+        @"ĐẶT KHI CÒN (GIÂY) (khuyến nghị cho chiến lược Ít/Nhiều)
+• Nhập số giây còn lại (số tự nhiên > 0).
+• Nếu nhập 0 hoặc sai định dạng, hệ thống tự đặt về 3.
+• Gợi ý thường dùng: 3 đến 5 giây.
+• Quy tắc vào lệnh: chỉ đặt khi Prog < giá trị giây đã đặt.";
 
         const string TIP_SIDE_RATIO =
         @"CỬA ĐẶT & TỈ LỆ (Chiến lược 35)
@@ -1260,6 +1263,12 @@ Ví dụ không hợp lệ:
         private static string T(TextBox tb, string def = "") => (tb?.Text ?? def).Trim();
         private static string P(PasswordBox? pb, string def = "") => pb?.Password ?? def;
         private static int I(string? s, int def = 0) => int.TryParse(s, out var n) ? n : def;
+        private static int ParseDecisionSecondsOrDefault(string? s, int def = DefaultDecisionSeconds)
+        {
+            if (!int.TryParse((s ?? "").Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var n) || n <= 0)
+                return def;
+            return n;
+        }
 
         // DPAPI
         private static string ProtectString(string? s)
@@ -1573,7 +1582,10 @@ Ví dụ không hợp lệ:
                 UpdateTooltips();
                 UpdateBetStrategyUi();
 
-                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
+                var decisionSeconds = ParseDecisionSecondsOrDefault(_cfg.DecisionSeconds.ToString(CultureInfo.InvariantCulture));
+                _cfg.DecisionSeconds = decisionSeconds;
+                _decisionPercent = decisionSeconds;
+                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = decisionSeconds.ToString(CultureInfo.InvariantCulture);
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();
                 if (ChkAutoResetStakeOnNonNegativeWin != null)
@@ -1624,7 +1636,15 @@ Ví dụ không hợp lệ:
         {
             cfg.Url = T(TxtUrl);
             cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
-            cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
+            var decisionSeconds = ParseDecisionSecondsOrDefault(TxtDecisionSecond?.Text, DefaultDecisionSeconds);
+            cfg.DecisionSeconds = decisionSeconds;
+            _decisionPercent = decisionSeconds;
+            if (TxtDecisionSecond != null)
+            {
+                var normalized = decisionSeconds.ToString(CultureInfo.InvariantCulture);
+                if (!string.Equals(TxtDecisionSecond.Text?.Trim(), normalized, StringComparison.Ordinal))
+                    TxtDecisionSecond.Text = normalized;
+            }
             cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? cfg.BetStrategyIndex;
             cfg.BetSeq = T(TxtChuoiCau, cfg.BetSeq);
             cfg.BetPatterns = T(TxtTheCau, cfg.BetPatterns);
@@ -3236,6 +3256,7 @@ Ví dụ không hợp lệ:
                     if (TxtUser != null) TxtUser.TextChanged += TxtUser_TextChanged;
                     if (TxtPass != null) TxtPass.PasswordChanged += TxtPass_PasswordChanged;
                     if (TxtStakeCsv != null) TxtStakeCsv.TextChanged += TxtStakeCsv_TextChanged;
+                    if (TxtDecisionSecond != null) TxtDecisionSecond.LostFocus += TxtDecisionSecond_LostFocus;
                     if (TxtSideRatio != null) TxtSideRatio.TextChanged += TxtSideRatio_TextChanged;
                     if (CmbBetStrategy != null) CmbBetStrategy.SelectionChanged += CmbBetStrategy_SelectionChanged;
                     if (TxtChuoiCau != null) TxtChuoiCau.TextChanged += TxtChuoiCau_TextChanged;
@@ -3454,7 +3475,7 @@ Ví dụ không hợp lệ:
             AttachTip(ChkAutoResetStakeOnNonNegativeWin, TIP_AUTO_RESET_STAKE_NONNEG);
             AttachTip(TxtSideRatio, TIP_SIDE_RATIO);
 
-            // % thời gian
+            // Đặt khi còn (giây)
             int idx = CmbBetStrategy?.SelectedIndex ?? 8;
             AttachTip(TxtDecisionSecond,
                 (idx == 4 || idx == 5 || idx == 6 || idx == 7) ? TIP_DECISION_PERCENT_NI : TIP_DECISION_PERCENT_GENERAL);
@@ -4924,6 +4945,24 @@ Ví dụ không hợp lệ:
 
         }
 
+        private async void TxtDecisionSecond_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (!_uiReady || _tabSwitching) return;
+
+            var seconds = ParseDecisionSecondsOrDefault(TxtDecisionSecond?.Text, DefaultDecisionSeconds);
+            _decisionPercent = seconds;
+            _cfg.DecisionSeconds = seconds;
+
+            if (TxtDecisionSecond != null)
+            {
+                var normalized = seconds.ToString(CultureInfo.InvariantCulture);
+                if (!string.Equals(TxtDecisionSecond.Text?.Trim(), normalized, StringComparison.Ordinal))
+                    TxtDecisionSecond.Text = normalized;
+            }
+
+            await SaveConfigAsync();
+        }
+
         private async void TxtSideRatio_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (!_uiReady || _tabSwitching) return;
@@ -5235,7 +5274,16 @@ Ví dụ không hợp lệ:
                 activeTab.RunStakeSeq = _stakeSeq.ToArray();
                 activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
                 activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();
-                activeTab.RunDecisionPercent = _decisionPercent;
+                var runDecisionSeconds = ParseDecisionSecondsOrDefault(runCfg.DecisionSeconds.ToString(CultureInfo.InvariantCulture), DefaultDecisionSeconds);
+                runCfg.DecisionSeconds = runDecisionSeconds;
+                _decisionPercent = runDecisionSeconds;
+                if (TxtDecisionSecond != null)
+                {
+                    var normalized = runDecisionSeconds.ToString(CultureInfo.InvariantCulture);
+                    if (!string.Equals(TxtDecisionSecond.Text?.Trim(), normalized, StringComparison.Ordinal))
+                        TxtDecisionSecond.Text = normalized;
+                }
+                activeTab.RunDecisionPercent = runDecisionSeconds;
                 activeTab.RunAutoResetStakeOnNonNegativeWin = runCfg.AutoResetStakeOnNonNegativeWin;
                 activeTab.AutoResetStakeRequested = false;
                 activeTab.IsRunning = true;

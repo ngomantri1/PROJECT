@@ -143,33 +143,45 @@ namespace XocDiaSoiVIP389.Tasks
 
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
         {
-            // Quy ước: prog = phần trăm thời gian đã trôi/hoặc còn lại. Ở code bạn set LblProg = p*100,
-            // ta chọn ngưỡng “<= DecisionPercent” để vào tiền trễ (15% cuối).
+            // Quy tắc nghiệp vụ: chỉ vào lệnh khi Prog (giây còn lại) < ngưỡng cài đặt.
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            var gateSec = (ctx.DecisionPercent > 0) ? ctx.DecisionPercent : 3;
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
+                double rawProg = s?.prog ?? 0;
+                bool progIsSec = (s?.progIsSec == true) || rawProg > 1.001;
+                double p = progIsSec
+                    ? Math.Max(0, rawProg)
+                    : Math.Max(0, Math.Min(1, rawProg)) * 20.0;
                 var status = (s?.status ?? "").Trim();
                 bool isOpen = p > 0 || status.IndexOf("Đang cược", StringComparison.OrdinalIgnoreCase) >= 0;
                 if (!isOpen) _betIssuedInOpenWindowByTab[tabKey] = false;
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
-                if (p <= ctx.DecisionPercent && p > 0) break;
+                if (p > 0 && p < gateSec) break;
                 await Task.Delay(60, ct);
             }
         }
 
-        // Chờ sang phiên mới rồi đặt NGAY khi mở cửa (đặt sớm, KHÔNG phụ thuộc DecisionPercent)
+        // Chờ tới cửa đặt hợp lệ theo ngưỡng giây đã cấu hình.
         public static async Task WaitUntilNewRoundStart(GameContext ctx, CancellationToken ct)
         {
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            var gateSec = (ctx.DecisionPercent > 0) ? ctx.DecisionPercent : 3;
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
-                if (p >= ctx.DecisionPercent) break;
+                double rawProg = s?.prog ?? 0;
+                bool progIsSec = (s?.progIsSec == true) || rawProg > 1.001;
+                double p = progIsSec
+                    ? Math.Max(0, rawProg)
+                    : Math.Max(0, Math.Min(1, rawProg)) * 20.0;
+                var status = (s?.status ?? "").Trim();
+                bool isOpen = p > 0 || status.IndexOf("Đang cược", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!isOpen) _betIssuedInOpenWindowByTab[tabKey] = false;
+                if (p > 0 && p < gateSec) break;
                 await Task.Delay(60, ct);
             }
         }

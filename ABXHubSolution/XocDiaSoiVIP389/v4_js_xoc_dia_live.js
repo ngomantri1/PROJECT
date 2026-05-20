@@ -2024,46 +2024,133 @@
         return c;
     }
 
+    function isRoadDigitTail(tl, strictMode) {
+        tl = String(tl || '').toLowerCase();
+        if (!tl)
+            return false;
+        if (strictMode)
+            return tl.indexOf('cardroadtable-list1') !== -1 && tl.indexOf('span.cl_num') !== -1;
+
+        // Fallback cho các máy/layout đổi class tail: vẫn bám road + số bead.
+        var hasRoad = /cardroad|roadtable|road2list|road-list|road_list|table_road/.test(tl);
+        var hasNum = /cl_num|cl-num|num_ball|road_num|item-num|item_num/.test(tl);
+        var hasSpanNum = (tl.indexOf('span') !== -1 && tl.indexOf('num') !== -1);
+        return (hasRoad && (hasNum || hasSpanNum)) || (tl.indexOf('cl_num') !== -1 && tl.indexOf('road') !== -1);
+    }
+
+    function collectRoadDigitCellsFromTexts(texts, strictMode) {
+        var cells = [];
+        for (var i = 0; i < texts.length; i++) {
+            var t = texts[i] || {};
+            var s = String(t.text == null ? '' : t.text).trim();
+            if (!/^[0-4]$/.test(s))
+                continue;
+            var tail = String(t.tail || '');
+            var tl = tail.toLowerCase();
+            if (!isRoadDigitTail(tl, strictMode))
+                continue;
+            var cx = (Number(t.x) || 0) + (Number(t.w) || 0) / 2;
+            var cy = (Number(t.y) || 0) + (Number(t.h) || 0) / 2;
+            cells.push({
+                v: s,
+                x: cx,
+                y: cy,
+                w: Number(t.w) || 0,
+                h: Number(t.h) || 0,
+                sx: Number(t.sx) || Number(t.x) || 0,
+                sy: Number(t.sy) || Number(t.y) || 0,
+                sw: Number(t.sw) || Number(t.w) || 0,
+                sh: Number(t.sh) || Number(t.h) || 0,
+                tail: tail,
+                fullTail: tail
+            });
+        }
+        return cells;
+    }
+
+    function collectRoadDigitCellsBySelectors() {
+        var sels = [
+            '.cardroadtable-list1 span.cl_num',
+            '[class*="cardroad"] span[class*="cl_num"]',
+            '[class*="road"] span[class*="num"]',
+            '[id*="road"] span[class*="num"]'
+        ];
+        var out = [];
+        var seen = {};
+        try {
+            for (var si = 0; si < sels.length; si++) {
+                var sel = sels[si];
+                var nodes = document.querySelectorAll(sel);
+                if (!nodes || !nodes.length)
+                    continue;
+                for (var i = 0; i < nodes.length; i++) {
+                    var el = nodes[i];
+                    if (!el)
+                        continue;
+                    var s = String(el.textContent || '').trim();
+                    if (!/^[0-4]$/.test(s))
+                        continue;
+                    var r = null;
+                    try {
+                        r = el.getBoundingClientRect();
+                    } catch (_) {
+                        r = null;
+                    }
+                    if (!r || r.width < 4 || r.height < 6)
+                        continue;
+
+                    var x = Math.round(r.left), y = Math.round(r.top);
+                    var w = Math.round(r.width), h = Math.round(r.height);
+                    var key = x + '|' + y + '|' + w + '|' + h + '|' + s;
+                    if (seen[key])
+                        continue;
+                    seen[key] = 1;
+
+                    var tail = domPathOf(el, 12);
+                    out.push({
+                        v: s,
+                        x: x + w / 2,
+                        y: y + h / 2,
+                        w: w,
+                        h: h,
+                        sx: x,
+                        sy: y,
+                        sw: w,
+                        sh: h,
+                        tail: tail,
+                        fullTail: tail
+                    });
+                }
+            }
+        } catch (_) {}
+        return out;
+    }
+
     function readTKSeqDomRoad() {
         try {
-            var texts = buildTextRectsDom();
-            if (!texts || !texts.length)
-                return {
-                    seq: '',
-                    which: 'dom_cardroad_empty',
-                    cols: [],
-                    cells: [],
-                    groups: [],
-                    seqGrouped: ''
-                };
+            var mode = 'strict';
+            var strictHit = true;
+            var cells = collectRoadDigitCellsBySelectors();
+            if (cells.length) {
+                mode = 'selector';
+            } else {
+                var texts = buildTextRectsDom();
+                if (!texts || !texts.length)
+                    return {
+                        seq: '',
+                        which: 'dom_cardroad_empty',
+                        cols: [],
+                        cells: [],
+                        groups: [],
+                        seqGrouped: ''
+                    };
 
-            var cells = [];
-            for (var i = 0; i < texts.length; i++) {
-                var t = texts[i] || {};
-                var s = String(t.text == null ? '' : t.text).trim();
-                if (!/^[0-4]$/.test(s))
-                    continue;
-                var tail = String(t.tail || '');
-                var tl = tail.toLowerCase();
-                if (tl.indexOf('cardroadtable-list1') === -1)
-                    continue;
-                if (tl.indexOf('span.cl_num') === -1)
-                    continue;
-                var cx = (Number(t.x) || 0) + (Number(t.w) || 0) / 2;
-                var cy = (Number(t.y) || 0) + (Number(t.h) || 0) / 2;
-                cells.push({
-                    v: s,
-                    x: cx,
-                    y: cy,
-                    w: Number(t.w) || 0,
-                    h: Number(t.h) || 0,
-                    sx: Number(t.sx) || Number(t.x) || 0,
-                    sy: Number(t.sy) || Number(t.y) || 0,
-                    sw: Number(t.sw) || Number(t.w) || 0,
-                    sh: Number(t.sh) || Number(t.h) || 0,
-                    tail: tail,
-                    fullTail: tail
-                });
+                cells = collectRoadDigitCellsFromTexts(texts, true);
+                if (!cells.length) {
+                    strictHit = false;
+                    cells = collectRoadDigitCellsFromTexts(texts, false);
+                    mode = 'relaxed';
+                }
             }
 
             if (!cells.length)
@@ -2107,7 +2194,8 @@
             seq = limitSeq52(seq);
             return {
                 seq: seq,
-                which: 'dom_cardroad_list1',
+                which: mode === 'selector' ? 'dom_cardroad_selector'
+                    : (strictHit ? 'dom_cardroad_list1' : 'dom_cardroad_relaxed'),
                 cols: cols,
                 cells: cells,
                 groups: groups,

@@ -4,12 +4,14 @@
 - Ổn định toàn bộ luồng `no-cc` cho page mới (tick/prog/seq/status).
 - Giữ đồng bộ hiển thị giữa canvas panel và bảng điều khiển phải.
 - Theo dõi lại queue bet JS khi chạy nhiều strategy song song (C/L + T/X).
+- Theo dõi parser `seq` liên-máy: xác nhận mode `dom_cardroad_selector`/`dom_cardroad_list1`/`dom_cardroad_relaxed` trên từng môi trường runtime.
 
 ## Task chưa hoàn thành
 - Thêm log debug toggleable cho parser seq/prog (bật/tắt theo flag).
 - Rà soát lại các tail DOM còn hard-code để giảm phụ thuộc class động.
 - Dọn warning nullable lớn trong `MainWindow`/`Tasks`.
 - Thêm metric queue (`enqueueTs`, `startTs`, `doneTs`) để đo độ trễ mỗi lệnh bet.
+- Thêm log gọn cho pending rollback (`issueKey`, reason) để đối soát khi có click fail nhưng không vào tiền.
 
 ## Task cần refactor
 - Tách `MainWindow.xaml.cs` thành các service:
@@ -32,5 +34,7 @@
 - `prog > 0` luôn xanh `Đang cược`.
 - `prog <= 0/null` luôn đỏ `Chờ kết quả`.
 - `ScanTK` và luồng task đọc `snap.seq` trên chuỗi dài > 52 ký tự.
+- Test máy có layout khác (theme/class khác): `CW_TICK_DIAG.seqLen` phải > 0 ổn định qua nhiều ván.
 - Build Debug khi app đang mở/đóng (lock exe + ABX.Core dependency).
 - Chạy 2 strategy song song trong cùng round (`CHAN/LE` + `TAI/XIU`) để xác nhận queue bắn đủ lệnh 1->2->3 không dừng giữa chừng.
+- Khi JS trả `bet_error`/`result=false`: verify pending row bị rollback đúng tab/round/side/amount.
