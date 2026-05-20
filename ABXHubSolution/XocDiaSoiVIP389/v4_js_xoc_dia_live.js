@@ -1728,9 +1728,9 @@
     function limitSeq52(seq) {
         if (!seq)
             return '';
-        if (seq.length <= 52)
+        if (seq.length <= 50)
             return seq;
-        return seq.slice(-52);
+        return seq.slice(-50);
     }
 
     var TAIL_LAST_RESULT_ROWS = 'dual/canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/left/lastresult/results/row-';
@@ -2843,7 +2843,7 @@
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    //root.style.display='none';
+    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -3612,21 +3612,18 @@
 
     /* ---------------- cwBet classic ---------------- */
     var ALLOWED_SET = {
+        '10': 1,
+        '20': 1,
+        '50': 1,
+        '100': 1,
+        '500': 1,
         '1000': 1,
         '5000': 1,
         '10000': 1,
-        '50000': 1,
-        '100000': 1,
-        '500000': 1,
-        '1000000': 1,
-        '5000000': 1,
-        '10000000': 1,
-        '20000000': 1,
-        '50000000': 1,
-        '100000000': 1,
-        '500000000': 1
+        '20000': 1,
+        '50000': 1
     };
-    var DENOMS = [500000000, 100000000, 50000000, 20000000, 10000000, 5000000, 1000000, 500000, 100000, 50000, 10000, 5000, 1000];
+    var DENOMS = [50000, 20000, 10000, 5000, 1000, 500, 100, 50, 20, 10];
 
     function active(n) {
         return !n || n.activeInHierarchy !== false;
@@ -3916,10 +3913,10 @@
         LE: /(?:^|[^A-Z0-9])(LE|ODD)(?:$|[^A-Z0-9])/i
     };
     var BET_TAILS = {
-        TAI: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_tai',
-        XIU: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_xiu',
-        CHAN: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_chan',
-        LE: 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_305/root/middle/board_back/lbl_money_total_bet_le'
+        TAI: 'html/body.game_sedie.landscape/div#root/div#container.container.type7.closegr.on.noReturnUrl.tableStyle2.grouptype0.game108.group1.orgParentID49565.road2list/div.table_box/div#lightBig.table_item.mouse_pointer.bet_7.on/div.people_money_box/div.totalbet_money.df/span#moneyBoxBig.df/#text',
+        XIU: 'html/body.game_sedie.landscape/div#root/div#container.container.type7.closegr.on.noReturnUrl.tableStyle2.grouptype0.game108.group1.orgParentID49565.road2list/div.table_box/div#lightSmall.table_item.mouse_pointer.bet_8.on/div.people_money_box/div.totalbet_money.df/span#moneyBoxSmall.df/#text',
+        CHAN: 'html/body.game_sedie.landscape/div#root/div#container.container.type7.closegr.on.noReturnUrl.tableStyle2.grouptype0.game108.group1.orgParentID49565.road2list/div.table_box/div#lightEven.table_item.mouse_pointer.bet_1.on/div.people_money_box/div.totalbet_money.df/span#moneyBoxEven.df/#text',
+        LE: 'html/body.game_sedie.landscape/div#root/div#container.container.type7.closegr.on.noReturnUrl.tableStyle2.grouptype0.game108.group1.orgParentID49565.road2list/div.table_box/div#lightOdd.table_item.mouse_pointer.bet_6.on/div.people_money_box/div.totalbet_money.df/span#moneyBoxOdd.df/#text'
     };
     var BET_ZONE_PATH_TOKENS = {
         TAI: '/board_back/tai_bet',
@@ -3928,21 +3925,116 @@
         LE: '/board_back/le_bet'
     };
     var CHIP_TAILS = {
-        '500000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
-        '100000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value6',
-        '50000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value10',
-        '20000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value9',
-        '10000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value8',
-        '5000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value7',
-        '1000000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value6',
-        '500000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value5',
-        '100000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value4',
-        '50000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value3',
-        '10000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value2',
-        '5000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value1',
-        '1000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value0'
+        '10': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_10',
+        '20': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_20',
+        '50': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_50',
+        '100': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_100',
+        '500': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_500',
+        '1000': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_1k',
+        '5000': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_5k',
+        '10000': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_10k',
+        '20000': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_20k',
+        '50000': 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box/div.chip_item.mouse_pointer.chip_b_50k'
     };
-    var CHIP_PANEL_TAIL = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel';
+    var CHIP_PANEL_TAIL = 'html/body.game_sedie.landscape/div#root/div#container/div#chip_box';
+    var BET_DOM_SELECTORS = {
+        TAI: '#lightBig',
+        XIU: '#lightSmall',
+        CHAN: '#lightEven',
+        LE: '#lightOdd'
+    };
+    var BET_DOM_CONFIRM_SELECTOR = '#bet_btn';
+    var BET_DOM_CANCEL_SELECTOR = '#cancel_bet_btn';
+    function isDomElement(n) {
+        return !!(n && n.nodeType === 1 && typeof n.getBoundingClientRect === 'function');
+    }
+    function domIsVisible(el) {
+        if (!isDomElement(el))
+            return false;
+        var cs = null;
+        try {
+            cs = getComputedStyle(el);
+        } catch (_) {
+            cs = null;
+        }
+        if (cs && (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity || 1) === 0))
+            return false;
+        var r = el.getBoundingClientRect();
+        return !!(r && r.width > 8 && r.height > 8 && r.right > 0 && r.bottom > 0 && r.left < (window.innerWidth || 0) && r.top < (window.innerHeight || 0));
+    }
+    function domRect(el) {
+        if (!isDomElement(el))
+            return null;
+        var r = el.getBoundingClientRect();
+        return {
+            sx: r.left,
+            sy: r.top,
+            sw: Math.max(1, r.width),
+            sh: Math.max(1, r.height)
+        };
+    }
+    function domClickOnce(el) {
+        if (!isDomElement(el))
+            return false;
+        var r = el.getBoundingClientRect();
+        var x = r.left + r.width / 2;
+        var y = r.top + r.height / 2;
+        try {
+            el.dispatchEvent(new PointerEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                pointerType: 'mouse',
+                isPrimary: true,
+                clientX: x,
+                clientY: y
+            }));
+            return true;
+        } catch (_) {
+            try {
+                el.dispatchEvent(new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y
+                }));
+                return true;
+            } catch (_) {}
+        }
+        return false;
+    }
+    function chipTokenForAmount(amount) {
+        var n = Math.max(0, Math.floor(+amount || 0));
+        if (!n)
+            return '';
+        if (n >= 1000 && n % 1000 === 0)
+            return String(n / 1000) + 'k';
+        return String(n);
+    }
+    function findDomChipByAmount(amount) {
+        var token = chipTokenForAmount(amount);
+        if (!token)
+            return null;
+        var sel = '.chip_item.chip_b_' + token;
+        var el = document.querySelector(sel);
+        if (domIsVisible(el))
+            return el;
+        var all = Array.from(document.querySelectorAll('.chip_item')).filter(function (n) {
+            return String(n.className || '').indexOf('chip_b_' + token) !== -1;
+        });
+        return all.length ? all[0] : null;
+    }
+    function findDomBetZone(side) {
+        var key = normalizeSide(side || '');
+        var sel = BET_DOM_SELECTORS[key] || '';
+        if (!sel)
+            return null;
+        var el = document.querySelector(sel);
+        return domIsVisible(el) ? el : null;
+    }
+    function findDomConfirmButton() {
+        var el = document.querySelector(BET_DOM_CONFIRM_SELECTOR);
+        return domIsVisible(el) ? el : null;
+    }
     function tailMatch(full, tail) {
         if (!full || !tail)
             return false;
@@ -4233,6 +4325,9 @@
     }
     function findSide(side) {
         var WANT = normalizeSide(side);
+        var domZone = findDomBetZone(WANT);
+        if (domZone)
+            return domZone;
         var zoneRoot = findBetZoneNode(WANT);
         if (zoneRoot) {
             var zoneList = listClickableTargets(zoneRoot);
@@ -4252,6 +4347,8 @@
         var rx = SIDE_REGEX[WANT];
         if (!rx)
             return null; // không nhận diện được cửa -> bỏ qua, tránh click nhầm
+        if (!__cw_hasCcScene())
+            return null;
         var hit = null;
         (function walk(n) {
             if (hit || !active(n))
@@ -4309,6 +4406,17 @@
         return list;
     }
     function findBetTarget(side) {
+        var domZone = findDomBetZone(side);
+        if (domZone) {
+            var dRect = domRect(domZone);
+            return {
+                node: domZone,
+                domEl: domZone,
+                rect: dRect,
+                area: dRect ? dRect.sw * dRect.sh : 0,
+                source: 'dom_zone'
+            };
+        }
         var geo = buildBetGeometryTarget(side);
         if (geo && geo.node && betRectSane(geo.rect) && !isBetTotalLabelNode(geo.node, side))
             return geo;
@@ -4380,12 +4488,16 @@
         postFocusDelay: 100,
         confirmTimeout: 280,
         confirmPoll: 45,
+        confirmDomRetryMs: 900,
+        confirmDomPollMs: 45,
+        minConfirmGapMs: 700,
         retryPause: 35,
         betweenStepDelay: 45,
         maxAttempts: 3,
         queueAckWait: 60,
         queueSpacingMs: 100
     };
+    var _lastConfirmClickAt = 0;
     function postBetTrace(stage, data) {
         var obj = {
             abx: 'bet_trace',
@@ -4404,6 +4516,108 @@
             console.log('[cwBetTrace]', obj);
         } catch (_) {}
     }
+    function readConfirmState() {
+        try {
+            var btn = findDomConfirmButton();
+            if (!btn) return {
+                    exists: false
+                };
+            var cls = String(btn.className || '');
+            var clsL = cls.toLowerCase();
+            var style = '';
+            try {
+                style = String((btn.getAttribute && btn.getAttribute('style')) || '');
+            } catch (_) {}
+            var ariaDisabled = '';
+            try {
+                ariaDisabled = String((btn.getAttribute && btn.getAttribute('aria-disabled')) || '');
+            } catch (_) {}
+            return {
+                exists: true,
+                id: String(btn.id || ''),
+                cls: cls,
+                disabledClass: clsL.indexOf('disabled') !== -1,
+                ariaDisabled: ariaDisabled,
+                hiddenByDisplay: /display\s*:\s*none/i.test(style),
+                visible: domIsVisible(btn)
+            };
+        } catch (_) {
+            return {
+                exists: false,
+                ex: true
+            };
+        }
+    }
+    async function tryConfirmDomBet(meta) {
+        var sideNorm = normalizeSide(meta && meta.side);
+        var amountNum = Number((meta && meta.amount) || 0);
+        var t0 = (performance && performance.now) ? performance.now() : Date.now();
+        var retryMs = Number(BET_CLICK_CFG.confirmDomRetryMs || 900);
+        var pollMs = Number(BET_CLICK_CFG.confirmDomPollMs || 45);
+        var attempts = 0;
+
+        while ((((performance && performance.now) ? performance.now() : Date.now()) - t0) <= retryMs) {
+            attempts++;
+            if (attempts <= 2 || attempts % 5 === 0) {
+                postBetTrace('bet_confirm_probe', {
+                    side: sideNorm,
+                    amount: amountNum,
+                    attempts: attempts,
+                    state: readConfirmState()
+                });
+            }
+            var btn = findDomConfirmButton();
+            if (btn) {
+                var btnId = String(btn.id || '').toLowerCase();
+                var cancelId = String(BET_DOM_CANCEL_SELECTOR || '').replace(/^#/, '').toLowerCase();
+                var cls = String(btn.className || '').toLowerCase();
+                var isCancel = (btnId === cancelId);
+                var isDisabled = (cls.indexOf('disabled') !== -1);
+                if (!isCancel && !isDisabled) {
+                    var delayForGap = 0;
+                    var nowMs = Date.now();
+                    var minGap = Number(BET_CLICK_CFG.minConfirmGapMs || 700);
+                    if (_lastConfirmClickAt > 0 && minGap > 0) {
+                        var sinceLast = nowMs - _lastConfirmClickAt;
+                        if (sinceLast < minGap) {
+                            delayForGap = minGap - sinceLast;
+                            postBetTrace('bet_confirm_throttle_wait', {
+                                side: sideNorm,
+                                amount: amountNum,
+                                attempts: attempts,
+                                sinceLastConfirmMs: sinceLast,
+                                delayMs: delayForGap
+                            });
+                            await sleep(delayForGap);
+                        }
+                    }
+                    if (domClickOnce(btn)) {
+                        var clickAt = Date.now();
+                        var sinceLastConfirmMs = (_lastConfirmClickAt > 0) ? (clickAt - _lastConfirmClickAt) : -1;
+                        _lastConfirmClickAt = clickAt;
+                        postBetTrace('bet_confirm_click', {
+                            side: sideNorm,
+                            amount: amountNum,
+                            attempts: attempts,
+                            delayedByGapMs: delayForGap,
+                            sinceLastConfirmMs: sinceLastConfirmMs
+                        });
+                        await sleep(90);
+                        return true;
+                    }
+                }
+            }
+            await sleep(pollMs);
+        }
+
+        postBetTrace('bet_confirm_timeout', {
+            side: sideNorm,
+            amount: amountNum,
+            attempts: attempts,
+            retryMs: retryMs
+        });
+        return false;
+    }
     function totalsSnapshotMini(t) {
         t = t || {};
         return {
@@ -4420,12 +4634,19 @@
                 source: '',
                 nodeName: '',
                 nodePath: '',
+                domTag: '',
+                domId: '',
+                domClass: '',
                 rect: null
             };
+        var dEl = tgt.domEl || (isDomElement(tgt.node) ? tgt.node : null);
         return {
             source: String(tgt.source || ''),
-            nodeName: String((tgt.node && tgt.node.name) || ''),
-            nodePath: String((tgt.node && fullPath(tgt.node, 200)) || ''),
+            nodeName: dEl ? '' : String((tgt.node && tgt.node.name) || ''),
+            nodePath: dEl ? '' : String((tgt.node && fullPath(tgt.node, 200)) || ''),
+            domTag: dEl ? String(dEl.tagName || '').toLowerCase() : '',
+            domId: dEl ? String(dEl.id || '') : '',
+            domClass: dEl ? String(dEl.className || '') : '',
             rect: tgt.rect ? {
                 sx: Math.round(tgt.rect.sx || 0),
                 sy: Math.round(tgt.rect.sy || 0),
@@ -4445,7 +4666,12 @@
         };
     }
     function dispatchBetTargetAttempt(tgt, attempt) {
-        if (!tgt || !tgt.node)
+        if (!tgt)
+            return false;
+        var dEl = tgt.domEl || (isDomElement(tgt.node) ? tgt.node : null);
+        if (dEl)
+            return domClickOnce(dEl);
+        if (!tgt.node)
             return false;
         var node = tgt.node;
         var rect = tgt.rect || rectFromNodeCompat(node);
@@ -4481,7 +4707,7 @@
     }
     async function clickBetTargetConfirmed(tgt, side, meta) {
         meta = meta || {};
-        if (!tgt || !tgt.node) {
+        if (!tgt || (!tgt.node && !tgt.domEl)) {
             postBetTrace('bet_target_missing', {
                 side: normalizeSide(side),
                 amount: Number(meta.amount || 0),
@@ -4625,7 +4851,7 @@
     }
     async function clickBetTargetFast(tgt, side, meta) {
         meta = meta || {};
-        if (!tgt || !tgt.node) {
+        if (!tgt || (!tgt.node && !tgt.domEl)) {
             postBetTrace('bet_target_missing', {
                 side: normalizeSide(side),
                 amount: Number(meta.amount || 0),
@@ -4740,8 +4966,14 @@
         m = s.match(/(\d{1,3}(?:[.,\s]\d{3})+|\d{4,9})/);
         if (m) {
             var v2 = parseInt(m[1].replace(/[^\d]/g, ''), 10);
-            if (v2 % 1000 === 0 && ALLOWED_SET[String(v2)])
+            if (ALLOWED_SET[String(v2)])
                 return v2;
+        }
+        m = s.match(/\b(\d{1,5})\b/);
+        if (m) {
+            var v3 = parseInt(m[1], 10);
+            if (ALLOWED_SET[String(v3)])
+                return v3;
         }
         return null;
     }
@@ -5114,6 +5346,27 @@
     }
     function explainChipAmount(amount) {
         var key = String(Math.max(0, Math.floor(+amount || 0)));
+        var domChip = findDomChipByAmount(Number(key));
+        if (domChip) {
+            return {
+                amount: Number(key),
+                tail: String(domChip.className || ''),
+                idx: null,
+                labelNode: domChip,
+                currentChip: domChip,
+                currentTarget: domChip,
+                strictChip: domChip,
+                nearestChip: domChip,
+                ordinalChip: domChip,
+                labelClickable: domChip,
+                strictClickable: domChip,
+                panel: null,
+                panelLabelCount: 0,
+                panelChipCount: 0,
+                labelOrdinal: 0,
+                dom: true
+            };
+        }
         var tail = CHIP_TAILS[key] || '';
         var labelNode = tail ? findNodeByTail(tail) : null;
         if (!labelNode || nodeAmountLoose(labelNode) !== Number(key))
@@ -5220,6 +5473,34 @@
         }
         return ok;
     }
+    function scanDomChipsByClass() {
+        var out = {};
+        var nodes = Array.from(document.querySelectorAll('.chip_item.mouse_pointer, .chip_item'));
+        for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (!domIsVisible(el))
+                continue;
+            var cls = String(el.className || '').toLowerCase();
+            var m = cls.match(/chip_b_(\d+)(k?)/);
+            if (!m)
+                continue;
+            var val = Number(m[1] || 0);
+            if (!isFinite(val) || val <= 0)
+                continue;
+            if (m[2] === 'k')
+                val *= 1000;
+            if (!ALLOWED_SET[String(val)])
+                continue;
+            out[String(val)] = {
+                entry: el,
+                node: el,
+                domEl: el,
+                rect: domRect(el),
+                mode: 'dom'
+            };
+        }
+        return out;
+    }
     function scanChipsByTail() {
         var out = {};
         var keys = Object.keys(CHIP_TAILS || {});
@@ -5242,6 +5523,9 @@
 
     var prevScan = window.cwScanChips;
     window.cwScanChips = function () {
+        var dm = scanDomChipsByClass();
+        if (dm && Object.keys(dm).length)
+            return dm;
         var m = scanChipsByTail();
         if (m && Object.keys(m).length)
             return m;
@@ -5277,6 +5561,12 @@
         var val = Math.max(0, Math.floor(+amount || 0));
         if (!ALLOWED_SET[String(val)])
             throw new Error('M?nh gi  kh?ng h?p l?: ' + amount);
+        var domChipFast = findDomChipByAmount(val);
+        if (domChipFast) {
+            domClickOnce(domChipFast);
+            await sleep(80);
+            return true;
+        }
         var info = explainChipAmount(val);
         var target = pickChipFocusTarget(info);
         if (!target) {
@@ -5343,6 +5633,11 @@
         if (!target) {
             return false;
         }
+        if (isDomElement(target)) {
+            domClickOnce(target);
+            await sleep(80);
+            return true;
+        }
         var target2 = resolveChipNode(target) || target;
         var touched2 = emitTouchOnNode(target2);
         if (!touched2) {
@@ -5396,21 +5691,51 @@
     var LOCK = (window.__cwBetLockFix = window.__cwBetLockFix || {
             busy: false
         });
-    async function withLock(fn) {
-        // chờ ngắn nếu đang bận để tránh trượt lệnh khi bắn liên tục nhiều cửa
-        for (var i = 0; i < 4 && LOCK.busy; i++) {
-            console.warn('[cwBet++] busy, wait', i);
-            await sleep(120);
+    async function withLock(fn, lockMeta) {
+        // Fire-and-continue: không bỏ lệnh khi đang bận, chỉ chờ tới lượt.
+        var waitedMs = 0;
+        while (LOCK.busy) {
+            if (waitedMs === 0 || waitedMs % 600 === 0)
+                console.warn('[cwBet++] busy, wait', waitedMs);
+            await sleep(30);
+            waitedMs += 30;
         }
-        if (LOCK.busy) {
-            console.warn('[cwBet++] busy (give up)');
-            return false;
+        if (lockMeta) {
+            lockMeta.waitedMs = waitedMs;
+            lockMeta.acquireAt = Date.now();
+        }
+        if (waitedMs > 0) {
+            postBetTrace('bet_lock_wait', {
+                waitedMs: waitedMs,
+                side: lockMeta && lockMeta.side ? lockMeta.side : '',
+                amount: lockMeta && lockMeta.amount ? lockMeta.amount : 0,
+                tabId: lockMeta && lockMeta.tabId ? lockMeta.tabId : '',
+                roundId: lockMeta && lockMeta.roundId ? lockMeta.roundId : 0,
+                jobId: lockMeta && lockMeta.jobId ? lockMeta.jobId : ''
+            });
         }
         LOCK.busy = true;
+        postBetTrace('bet_lock_acquire', {
+            waitedMs: waitedMs,
+            side: lockMeta && lockMeta.side ? lockMeta.side : '',
+            amount: lockMeta && lockMeta.amount ? lockMeta.amount : 0,
+            tabId: lockMeta && lockMeta.tabId ? lockMeta.tabId : '',
+            roundId: lockMeta && lockMeta.roundId ? lockMeta.roundId : 0,
+            jobId: lockMeta && lockMeta.jobId ? lockMeta.jobId : ''
+        });
         try {
             return await fn();
         } finally {
             LOCK.busy = false;
+            if (lockMeta) lockMeta.releaseAt = Date.now();
+            postBetTrace('bet_lock_release', {
+                ts2: Date.now(),
+                side: lockMeta && lockMeta.side ? lockMeta.side : '',
+                amount: lockMeta && lockMeta.amount ? lockMeta.amount : 0,
+                tabId: lockMeta && lockMeta.tabId ? lockMeta.tabId : '',
+                roundId: lockMeta && lockMeta.roundId ? lockMeta.roundId : 0,
+                jobId: lockMeta && lockMeta.jobId ? lockMeta.jobId : ''
+            });
         }
     }
 
@@ -5436,8 +5761,9 @@
         };
     }
 
-    window.cwBet = async function (side, amount) {
+    window.cwBet = async function (side, amount, traceMeta) {
         side = normalizeSide(side);
+        traceMeta = traceMeta || {};
         if (amount == null || isNaN(amount)) {
             if (old_cwBet)
                 return old_cwBet(side);
@@ -5462,8 +5788,15 @@
             console.warn('[cwBet++] amount=0');
             return false;
         }
-        var X = raw - (raw % 1000);
+        var X = raw;
 
+        var lockMeta = {
+            side: side,
+            amount: X,
+            tabId: traceMeta.tabId || '',
+            roundId: traceMeta.roundId || 0,
+            jobId: traceMeta.jobId || ''
+        };
         return withLock(async function () {
             var tgt = findBetTarget(side);
             if (!tgt || !tgt.node) {
@@ -5505,6 +5838,11 @@
                     turn: 1,
                     phase: 'single_chip'
                 });
+                if (fired)
+                    await tryConfirmDomBet({
+                        side: side,
+                        amount: X
+                    });
                 if (fired)
                     postBetTrace('bet_done', {
                         side: side,
@@ -5592,12 +5930,16 @@
                 side: side,
                 amount: X
             });
+            await tryConfirmDomBet({
+                side: side,
+                amount: X
+            });
             postBetTrace('bet_done', {
                 side: side,
                 amount: X
             });
             return true;
-        });
+        }, lockMeta);
     };
 
     console.log('[READY] CW merged (compat + TextMap + Scan500Text + TK sequence + Totals by (x,tail) + standardized exports).');
@@ -5688,6 +6030,7 @@
         }
         S._lastSnap = {
             abx: 'tick',
+            roundId: getRoundIdSafeTick(),
             prog: (pNow != null ? pNow : null),
             progIsSec: !!S._progIsSec,
             totals: T,
@@ -5696,6 +6039,21 @@
             ts: Date.now()
         };
         updatePanel();
+    }
+    function getRoundIdSafeTick() {
+        try {
+            var el = document.querySelector('#gameNo');
+            var txt = el ? String(el.textContent || '') : '';
+            if (!txt)
+                return 0;
+            var m = txt.match(/#\s*(\d+)/);
+            if (!m || !m[1])
+                return 0;
+            var v = Number(m[1]);
+            return (Number.isFinite(v) && v > 0) ? Math.floor(v) : 0;
+        } catch (_) {
+            return 0;
+        }
     }
     function start() {
         if (S.running)
@@ -5953,6 +6311,7 @@
                     if (last && (now - (last.ts || 0)) <= freshMs) {
                         snap = {
                             abx: 'tick',
+                            roundId: getRoundIdSafe(),
                             prog: (typeof last.prog === 'number') ? last.prog : null,
                             progIsSec: !!last.progIsSec,
                             totals: last.totals || null,
@@ -5967,6 +6326,7 @@
                          ? statusByProg(p, S && S._lastTextAll ? S._lastTextAll : null) : '';
                         snap = {
                             abx: 'tick',
+                            roundId: getRoundIdSafe(),
                             prog: p,
                             progIsSec: !!(S && S._progIsSec),
                             totals: totalsNow,
@@ -6010,11 +6370,25 @@
         // === BET QUEUE v2: C# đẩy intent, JS xếp hàng và bắn tuần tự ===
         var BET_QUEUE = window.__cwBetQueue = window.__cwBetQueue || [];
         var _processingBetQueue = false;
+        var _betInflight = 0;
+        var _betJobSeq = 0;
+
+        function readRoundIdFromDom() {
+            try {
+                var el = document.querySelector('#gameNo');
+                var txt = el ? String(el.textContent || '') : '';
+                if (!txt) return 0;
+                var m = txt.match(/#\s*(\d+)/);
+                if (!m || !m[1]) return 0;
+                var v = Number(m[1]);
+                return (Number.isFinite(v) && v > 0) ? Math.floor(v) : 0;
+            } catch (_) { return 0; }
+        }
 
         function getRoundIdSafe() {
             try {
-                var seq = readSeqSafe();
-                return (seq && seq.length) ? seq.length : 0;
+                var rid = readRoundIdFromDom();
+                return (rid > 0) ? rid : 0;
             } catch (_) { return 0; }
         }
 
@@ -6032,72 +6406,100 @@
                     amt: amt,
                     tabId: tabId,
                     roundId: roundId,
+                    jobId: 'J' + (++_betJobSeq),
                     at: Date.now()
                 };
             } catch (_) { return null; }
         }
 
+        function dispatchBetJobFireAndContinue(job) {
+            _betInflight++;
+            (async function () {
+                var rawResult = null;
+                var tStart = Date.now();
+                postBetTrace('bet_job_fire_begin', {
+                    side: job.side,
+                    amount: job.amt,
+                    tabId: job.tabId,
+                    roundId: job.roundId,
+                    jobId: job.jobId,
+                    queueLen: BET_QUEUE.length,
+                    inflight: _betInflight,
+                    queueWaitMs: Math.max(0, Date.now() - (job.at || Date.now())),
+                    lockBusy: !!LOCK.busy,
+                    confirm: readConfirmState()
+                });
+                try {
+                    rawResult = await cwBet(job.side, job.amt, {
+                        tabId: job.tabId,
+                        roundId: job.roundId,
+                        jobId: job.jobId
+                    });
+                } catch (fireErr) {
+                    postBetTrace('bet_fire_error', {
+                        side: job.side,
+                        amount: job.amt,
+                        tabId: job.tabId,
+                        roundId: job.roundId,
+                        jobId: job.jobId,
+                        error: String(fireErr && fireErr.message || fireErr),
+                        fast: true
+                    });
+                }
+                _betInflight = Math.max(0, _betInflight - 1);
+                postBetTrace('bet_queue_job_done', {
+                    side: job.side,
+                    amount: job.amt,
+                    tabId: job.tabId,
+                    roundId: job.roundId,
+                    jobId: job.jobId,
+                    result: rawResult === false ? 'false' : String(rawResult),
+                    queueLen: BET_QUEUE.length,
+                    inflight: _betInflight,
+                    elapsedMs: Math.max(0, Date.now() - tStart),
+                    enqueueToDoneMs: Math.max(0, Date.now() - (job.at || Date.now())),
+                    lockBusy: !!LOCK.busy,
+                    confirm: readConfirmState()
+                });
+            })().catch(function (err) {
+                _betInflight = Math.max(0, _betInflight - 1);
+                safePost({
+                    abx: "bet_error",
+                    side: job.side,
+                    amount: job.amt,
+                    tabId: job.tabId,
+                    roundId: job.roundId,
+                    error: String(err && err.message || err),
+                    ts: Date.now()
+                });
+            });
+        }
+
         async function processBetQueue() {
             if (_processingBetQueue) return;
             _processingBetQueue = true;
+            postBetTrace('bet_queue_pump_start', {
+                queueLen: BET_QUEUE.length,
+                inflight: _betInflight
+            });
             while (BET_QUEUE.length) {
                 var job = BET_QUEUE.shift();
                 if (!job) continue;
                 try {
-                    var currentRound = getRoundIdSafe();
-                    if (job.roundId && currentRound && job.roundId < currentRound) {
-                        safePost({
-                            abx: "bet_dropped",
-                            reason: "stale",
-                            tabId: job.tabId,
-                            roundId: job.roundId,
-                            side: job.side,
-                            amount: job.amt,
-                            ts: Date.now()
-                        });
-                        continue;
-                    }
                     if (typeof cwBet !== "function") throw new Error("cwBet not found");
 
-                    postBetTrace('bet_queue_job_start', {
-                        side: job.side,
-                        amount: job.amt,
-                        tabId: job.tabId,
-                        roundId: job.roundId,
-                        queueLen: BET_QUEUE.length
-                    });
+                postBetTrace('bet_queue_job_start', {
+                    side: job.side,
+                    amount: job.amt,
+                    tabId: job.tabId,
+                    roundId: job.roundId,
+                    jobId: job.jobId,
+                    queueLen: BET_QUEUE.length,
+                    inflight: _betInflight,
+                    queueWaitMs: Math.max(0, Date.now() - (job.at || Date.now()))
+                });
 
-                    var rawResult = null;
-                    try {
-                        rawResult = await cwBet(job.side, job.amt);
-                        if (rawResult === false) {
-                            postBetTrace('bet_fire_result_false', {
-                                side: job.side,
-                                amount: job.amt,
-                                tabId: job.tabId,
-                                roundId: job.roundId,
-                                fast: true
-                            });
-                        }
-                    } catch (fireErr) {
-                        postBetTrace('bet_fire_error', {
-                            side: job.side,
-                            amount: job.amt,
-                            tabId: job.tabId,
-                            roundId: job.roundId,
-                            error: String(fireErr && fireErr.message || fireErr),
-                            fast: true
-                        });
-                    }
-
-                    postBetTrace('bet_queue_job_done', {
-                        side: job.side,
-                        amount: job.amt,
-                        tabId: job.tabId,
-                        roundId: job.roundId,
-                        result: rawResult === false ? 'false' : String(rawResult),
-                        queueLen: BET_QUEUE.length
-                    });
+                    dispatchBetJobFireAndContinue(job);
 
                     safePost({
                         abx: "bet",
@@ -6105,8 +6507,8 @@
                         amount: job.amt,
                         tabId: job.tabId,
                         roundId: job.roundId,
-                        fireAndContinue: false,
-                        queueAwaited: true,
+                        fireAndContinue: true,
+                        queueAwaited: false,
                         ts: Date.now()
                     });
                     if (typeof job.resolve === "function") {
@@ -6138,13 +6540,29 @@
                 }
             }
             _processingBetQueue = false;
+            postBetTrace('bet_queue_pump_stop', {
+                queueLen: BET_QUEUE.length,
+                inflight: _betInflight
+            });
         }
 
         window.__cw_bet_enqueue = async function (intent) {
             try {
                 var job = normalizeIntent(intent);
                 if (!job) return "bad";
+                var qBefore = BET_QUEUE.length;
                 BET_QUEUE.push(job);
+                postBetTrace('bet_enqueue_accept', {
+                    side: job.side,
+                    amount: job.amt,
+                    tabId: job.tabId,
+                    roundId: job.roundId,
+                    jobId: job.jobId,
+                    queueBefore: qBefore,
+                    queueAfter: BET_QUEUE.length,
+                    inflight: _betInflight,
+                    lockBusy: !!LOCK.busy
+                });
                 processBetQueue();
                 safePost({
                     abx: "bet_queued",

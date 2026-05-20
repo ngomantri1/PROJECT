@@ -17,6 +17,7 @@ namespace XocDiaSoiVIP389
     public sealed class CwSnapshot
     {
         public string abx { get; set; }
+        public int? roundId { get; set; }
         public double? prog { get; set; }
         public bool? progIsSec { get; set; }
         public CwTotals totals { get; set; }

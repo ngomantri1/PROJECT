@@ -10,6 +10,9 @@
 - Validate post-fix behavior after removing JS stale-drop gate (`roundId < curRound`).
 - Enforce and monitor bet gate `prog >= 3` together with changing-shoe/bootstrap guards.
 - Investigate cases where UI still computes normally but JS does not place real chips.
+- Re-verify CDP-only sequence append behavior after latest policy lock:
+  - DOM should bootstrap only,
+  - post-bootstrap append should come only from CDP/network winner packets.
 - Retest strategy 18 decision rule in live rounds:
   - `seg3 == 1 && seg1 == 1` -> reverse
   - `seg3 == 1 && seg1 > 1` -> follow
@@ -71,6 +74,9 @@
 - Tie result:
   - append `T`,
   - history row shows `Hoa`.
+- DOM vs CDP disagreement case:
+  - when DOM shows `delta=B/T` but CDP confirms `P`, sequence must follow CDP.
+  - ensure no DOM/JS append mutates authoritative sequence in this case.
 
 ## Refactor Candidates
 - Split reset/settle logic out of `MainWindow.xaml.cs`:
@@ -95,3 +101,20 @@
 ## Low Priority
 - Continue splitting `MainWindow.xaml.cs`.
 - Clean up JS devtool probes not used regularly.
+
+## Update (2026-05-19)
+- Keep C# in push-first mode for bet send:
+  - no local choke by `send-in-flight`,
+  - no local choke by same-round duplicate cooldown.
+- Re-verify in live run that both strategy tabs place real money, not just JS ACK.
+- Add a validation metric in log/UI:
+  - compare intended total bet per round vs observed table-side delta after confirm.
+- If mismatch persists, add optional retry policy at JS execution layer (not C# pre-block).
+
+## Update (2026-05-20)
+- Re-applied and verified UI limit patch after accidental revert:
+  - `<mau_qua_khu>` max length is `20` (B/P and I/N),
+  - error/tooltip text synced to `1-20`.
+- Locked sequence behavior to "DOM bootstrap + CDP/network append only":
+  - keep `EnableDomRecoveryAfterMissingNetworkWinner = false`,
+  - block JS append contract in CDP-first mode.

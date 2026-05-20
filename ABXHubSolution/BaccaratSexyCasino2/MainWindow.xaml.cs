@@ -4494,8 +4494,8 @@ try{
             try
             {
                 var target = (e.Uri ?? "").Trim();
-                var deferBlankPopupForHost = IsCurrentHostB8Pro07() &&
-                    string.Equals(target, "about:blank", StringComparison.OrdinalIgnoreCase);
+                var targetIsBlank = string.Equals(target, "about:blank", StringComparison.OrdinalIgnoreCase);
+                var deferPopupActivation = string.IsNullOrWhiteSpace(target) || targetIsBlank || !IsLikelyBetGameUrl(target);
                 Log("[NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
 
                 var popupWeb = await EnsurePopupWebReadyAsync();
@@ -4503,7 +4503,7 @@ try{
                 {
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        if (!deferBlankPopupForHost)
+                        if (!deferPopupActivation)
                         {
                             if (Web != null)
                                 Web.Visibility = Visibility.Collapsed;
@@ -4512,10 +4512,10 @@ try{
                         }
                     });
                     e.NewWindow = popupWeb.CoreWebView2;
-                    if (!deferBlankPopupForHost)
+                    if (!deferPopupActivation)
                         popupWeb.Focus();
                     else
-                        Log("[NewWindowRequested] defer popup activation until host iframe yields a real game URL.");
+                        Log("[NewWindowRequested] defer popup activation until popup reaches a recognized game URL.");
                 }
             }
             catch (Exception ex) { Log("[NewWindowRequested] " + ex); }
@@ -6351,11 +6351,8 @@ try{
             try
             {
                 var src = _popupWeb?.CoreWebView2?.Source ?? "";
-                var keepMainHostVisible = IsCurrentHostB8Pro07() &&
-                    string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
-                var revealDeferredPopup = IsCurrentHostB8Pro07() &&
-                    !string.IsNullOrWhiteSpace(src) &&
-                    !string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
+                var isBlank = string.IsNullOrWhiteSpace(src) || string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
+                var srcLooksGame = IsLikelyBetGameUrl(src);
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
                 _betWebNavigatingSinceUtc = DateTime.MinValue;
                 _betWebLastNavDoneUtc = DateTime.UtcNow;
@@ -6368,7 +6365,18 @@ try{
                 }
                 if (e.IsSuccess)
                 {
-                    if (keepMainHostVisible)
+                    if (!isBlank && srcLooksGame)
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (Web != null)
+                                Web.Visibility = Visibility.Collapsed;
+                            if (PopupHost != null)
+                                PopupHost.Visibility = Visibility.Visible;
+                            _popupWeb?.Focus();
+                        });
+                    }
+                    else
                     {
                         await Dispatcher.InvokeAsync(() =>
                         {
@@ -6377,24 +6385,12 @@ try{
                             if (Web != null)
                                 Web.Visibility = Visibility.Visible;
                         });
-                        Log("[PopupWeb] keep main web active while popup is still about:blank on b8pro07.");
-                    }
-                    else
-                    {
-                        if (revealDeferredPopup)
-                        {
-                            await Dispatcher.InvokeAsync(() =>
-                            {
-                                if (Web != null)
-                                    Web.Visibility = Visibility.Collapsed;
-                                if (PopupHost != null)
-                                    PopupHost.Visibility = Visibility.Visible;
-                                _popupWeb?.Focus();
-                            });
-                            Log("[PopupWeb] reveal deferred popup on b8pro07 | " + src);
-                        }
-                        if (!IsLikelyBetGameUrl(src))
-                        AutoStopTasksOnBetPipelineReset("popup-nav-done-non-game", src);
+                        if (isBlank)
+                            Log("[PopupWeb] keep main web active while popup is about:blank.");
+                        else
+                            Log("[PopupWeb] keep main web active while popup is non-game URL.");
+                        if (!srcLooksGame)
+                            AutoStopTasksOnBetPipelineReset("popup-nav-done-non-game", src);
                     }
                     await InjectOnPopupDocAsync();
                 }
@@ -15424,12 +15420,30 @@ try{
             return string.Equals(host, "app.lucky-wheel.game8b.com", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static bool IsLikelyPragmaticLauncherUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+
+            var host = (u.Host ?? "").ToLowerInvariant();
+            if (host.IndexOf("pragmaticplaylive.net", StringComparison.OrdinalIgnoreCase) < 0 &&
+                host.IndexOf("pragmaticplay.net", StringComparison.OrdinalIgnoreCase) < 0)
+                return false;
+
+            var path = u.AbsolutePath ?? "";
+            return path.IndexOf("/desktop/launcher", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static bool IsLikelyBetGameReadyUrl(string? rawUrl)
         {
             if (string.IsNullOrWhiteSpace(rawUrl))
                 return false;
             if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
                 return false;
+            if (IsLikelyPragmaticLauncherUrl(rawUrl))
+                return true;
             var host = (u.Host ?? "").ToLowerInvariant();
             if (host.StartsWith("bpweb.") || host.StartsWith("games."))
                 return true;
@@ -15512,6 +15526,7 @@ try{
                 url.IndexOf("/player/webmain.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 url.IndexOf("/player/singlebactable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                IsLikelyPragmaticLauncherUrl(url) ||
                 IsLikelyGame8bPopupUrl(url) ||
                 url.IndexOf("/error?", StringComparison.OrdinalIgnoreCase) >= 0;
         }
@@ -15649,10 +15664,9 @@ try{
 
             await Dispatcher.InvokeAsync(() =>
             {
-                if (Web != null) Web.Visibility = Visibility.Collapsed;
-                if (PopupHost != null) PopupHost.Visibility = Visibility.Visible;
+                if (Web != null) Web.Visibility = Visibility.Visible;
+                if (PopupHost != null) PopupHost.Visibility = Visibility.Collapsed;
                 popup.CoreWebView2.Navigate(entryUrl);
-                popup.Focus();
             });
 
             Log("[VaoXocDia] player-flow cache routed popup to: " + entryUrl);
@@ -16046,10 +16060,9 @@ try{
 
             await Dispatcher.InvokeAsync(() =>
             {
-                if (Web != null) Web.Visibility = Visibility.Collapsed;
-                if (PopupHost != null) PopupHost.Visibility = Visibility.Visible;
+                if (Web != null) Web.Visibility = Visibility.Visible;
+                if (PopupHost != null) PopupHost.Visibility = Visibility.Collapsed;
                 popup.CoreWebView2.Navigate(entryUrl);
-                popup.Focus();
             });
 
             Log("[VaoXocDia] iframe fallback routed popup to: " + entryUrl);

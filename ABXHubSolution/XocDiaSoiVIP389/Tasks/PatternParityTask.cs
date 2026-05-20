@@ -80,7 +80,9 @@ namespace XocDiaSoiVIP389.Tasks
                 // có plan → chờ đến lúc vào tiền
                 await WaitUntilNewRoundStart(ctx, ct);
 
-                string baseSeq = snap?.seq ?? string.Empty;
+                // Lấy mốc seq NGAY tại thời điểm vào cửa sổ cược để tránh chấm sớm.
+                var snapAtBet = ctx.GetSnap();
+                string baseSeq = snapAtBet?.seq ?? string.Empty;
                 char plan = planned.Dequeue();
                 string side = ParityCharToSide(plan);
                 long stake;
@@ -95,7 +97,13 @@ namespace XocDiaSoiVIP389.Tasks
                 {
                     stake = money.GetStakeForThisBet();
                 }
-                await PlaceBet(ctx, side, stake, ct);
+                bool placed = await PlaceBet(ctx, side, stake, ct);
+                if (!placed)
+                {
+                    // Không có lệnh cược thực tế -> bỏ qua chấm thắng/thua cho nhịp này.
+                    lastSeqLen = ctx.GetSnap()?.seq?.Length ?? lastSeqLen;
+                    continue;
+                }
 
                 bool win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
                 await TaskUtil.ApplyMoneyAfterRoundAsync(ctx, money, win, win ? stake : -stake);

@@ -17,7 +17,8 @@
 - Startup: load config -> init WebView2 -> inject JS -> start push tick.
 - JS gửi `abx:tick` gồm `prog`, `totals`, `seq`, `status`.
 - C# nhận tick, cập nhật UI/snapshot, và feed dữ liệu cho strategy tasks.
-- Bet chạy qua JS queue (`__cw_bet_enqueue`) để tuần tự click.
+- Bet chạy qua JS queue (`__cw_bet_enqueue`) để tuần tự click theo FIFO.
+- Queue hiện không chặn theo kết quả lệnh trước: bet 1 chạy xong sẽ qua bet 2/bet 3 dù `rawResult` false hoặc lỗi.
 
 ## Coding rules
 - UI update chỉ chạy trên `Dispatcher`.
@@ -53,6 +54,11 @@
 - Bet issue -> tạo row pending.
 - Khi ván chốt (đuôi `seq` đổi) -> finalize pending theo kết quả thực.
 - Có dedup key để tránh duplicate lịch sử.
+
+## Rule đặt cược song song
+- 4 cửa `CHAN/LE/TAI/XIU` dùng chung `roundId`.
+- Nhiều strategy có thể cùng enqueue trong cùng round.
+- JS queue xử lý tuần tự từng job, không drop job chỉ vì `roundId` nhỏ hơn round hiện tại.
 
 ## Threading/UI rules
 - Không dùng WebView2 trực tiếp từ thread nền.

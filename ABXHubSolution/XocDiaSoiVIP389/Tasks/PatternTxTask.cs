@@ -80,7 +80,9 @@ namespace XocDiaSoiVIP389.Tasks
                 // có plan → chờ đến lúc vào tiền
                 await WaitUntilNewRoundStart(ctx, ct);
 
-                string baseSeq = snap?.seq ?? string.Empty;
+                // Lấy mốc seq CHUNG (raw) NGAY tại thời điểm vào cửa sổ cược để chấm theo seq thật.
+                var snapAtBet = ctx.GetSnap();
+                string baseSeq = snapAtBet?.seq ?? string.Empty;
                 char plan = planned.Dequeue();
                 string side = TxCharToSide(plan);
                 long stake;

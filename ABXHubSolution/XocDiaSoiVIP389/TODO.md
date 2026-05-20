@@ -3,11 +3,13 @@
 ## Task đang làm
 - Ổn định toàn bộ luồng `no-cc` cho page mới (tick/prog/seq/status).
 - Giữ đồng bộ hiển thị giữa canvas panel và bảng điều khiển phải.
+- Theo dõi lại queue bet JS khi chạy nhiều strategy song song (C/L + T/X).
 
 ## Task chưa hoàn thành
 - Thêm log debug toggleable cho parser seq/prog (bật/tắt theo flag).
 - Rà soát lại các tail DOM còn hard-code để giảm phụ thuộc class động.
 - Dọn warning nullable lớn trong `MainWindow`/`Tasks`.
+- Thêm metric queue (`enqueueTs`, `startTs`, `doneTs`) để đo độ trễ mỗi lệnh bet.
 
 ## Task cần refactor
 - Tách `MainWindow.xaml.cs` thành các service:
@@ -31,3 +33,4 @@
 - `prog <= 0/null` luôn đỏ `Chờ kết quả`.
 - `ScanTK` và luồng task đọc `snap.seq` trên chuỗi dài > 52 ký tự.
 - Build Debug khi app đang mở/đóng (lock exe + ABX.Core dependency).
+- Chạy 2 strategy song song trong cùng round (`CHAN/LE` + `TAI/XIU`) để xác nhận queue bắn đủ lệnh 1->2->3 không dừng giữa chừng.

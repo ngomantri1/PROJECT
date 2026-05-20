@@ -191,6 +191,7 @@ namespace XocDiaSoiVIP389
                 '1' => FallbackIcons.LoadPackImage("Assets/side/XIULE.png"),
                 '2' => FallbackIcons.LoadPackImage("Assets/side/TAICHAN.png"),
                 '3' => FallbackIcons.LoadPackImage("Assets/side/TAILE.png"),
+                '4' => FallbackIcons.LoadPackImage("Assets/side/TAICHAN.png"),
                 _ => null
             };
             _ballIcons[d] = img;
@@ -217,7 +218,7 @@ namespace XocDiaSoiVIP389
                 if (char.IsDigit(cBall)) digit = cBall;
             }
 
-            if (digit >= '0' && digit <= '3')
+            if (digit >= '0' && digit <= '4')
             {
                 return LoadBall(digit);
             }
@@ -371,7 +372,7 @@ namespace XocDiaSoiVIP389
         // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
         private int _stakeLevelIndexForUi = -1;
 
-        private double _decisionPercent = 5; // 5s
+        private double _decisionPercent = 3; // 3s
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -449,6 +450,7 @@ namespace XocDiaSoiVIP389
 
         // 3) Giữ pending bet để chờ kết quả
         private readonly List<BetRow> _pendingRows = new();
+        private readonly Dictionary<string, List<BetRow>> _pendingRowsByIssueKey = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, DateTime> _betIssueHistoryKeys = new(StringComparer.OrdinalIgnoreCase);
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
@@ -504,7 +506,7 @@ Ví dụ không hợp lệ:
   Cho phép khoảng trắng BÊN TRONG <cửa_kế_tiếp>.
 • So khớp: xét K kết quả gần nhất với K = độ dài <mẫu_quá_khứ>; nếu khớp thì đặt theo <cửa_kế_tiếp>.
 • <cửa_kế_tiếp>: có thể là 1 ký tự (C/L) hoặc một chuỗi C/L (ví dụ: CLL).
-• Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–10 ký tự.
+• Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–20 ký tự.
 Ví dụ hợp lệ:
   CCL -> C
   LLL -> L C
@@ -616,7 +618,7 @@ Ví dụ không hợp lệ:
             public string TabName { get; set; } = "";
             public string Url { get; set; } = "";
             [Obsolete] public string Username { get; set; } = "";
-            public string StakeCsv { get; set; } = "1000-3000-7000-15000-33000-69000-142000-291000-595000-1215000";
+            public string StakeCsv { get; set; } = "10-30-70-150-330-690-1420-2910-5950-12150";
             public int DecisionSeconds { get; set; } = 10;
 
             // Remember creds (DPAPI)
@@ -2509,13 +2511,24 @@ Ví dụ không hợp lệ:
                                 }
 
                                 // 3) JS bet ack: chỉ ghi log phụ. Lịch sử cược chỉ được tạo từ C# sau khi enqueue xong.
+                                if (abxStr == "bet_queued")
+                                {
+                                    string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
+                                    long amount = root.TryGetProperty("amount", out var ae) && ae.ValueKind == JsonValueKind.Number ? ae.GetInt64() : 0;
+                                    string tabId = root.TryGetProperty("tabId", out var te) ? (te.GetString() ?? "") : "";
+                                    int roundId = root.TryGetProperty("roundId", out var re) && re.ValueKind == JsonValueKind.Number ? re.GetInt32() : 0;
+                                    Log($"[BET][QUEUED] tab={DescribeTabForLog(tabId)} round={roundId} side={NormalizeBetSideForHistory(sideRaw)} amount={amount:N0}");
+                                    return;
+                                }
+
+                                // 3.1) JS bet ack: chỉ ghi log phụ. Lịch sử cược chỉ được tạo từ C# sau khi enqueue xong.
                                 if (abxStr == "bet")
                                 {
                                     string sideRaw = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
                                     string tabId = root.TryGetProperty("tabId", out var te) ? (te.GetString() ?? "") : "";
                                     int roundId = root.TryGetProperty("roundId", out var re) && re.ValueKind == JsonValueKind.Number ? re.GetInt32() : 0;
-                                    Log($"[BET][ACK] source=js tab={tabId} round={roundId} side={NormalizeBetSideForHistory(sideRaw)} amount={amount:N0}");
+                                    Log($"[BET][ACK] source=js tab={DescribeTabForLog(tabId)} round={roundId} side={NormalizeBetSideForHistory(sideRaw)} amount={amount:N0}");
                                     return;
                                 }
 
@@ -2525,8 +2538,17 @@ Ví dụ không hợp lệ:
                                 {
                                     string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "?") : "?";
                                     long amount = root.TryGetProperty("amount", out var ae) ? ae.GetInt64() : 0;
+                                    string tabId = root.TryGetProperty("tabId", out var te) ? (te.GetString() ?? "") : "";
+                                    int roundId = root.TryGetProperty("roundId", out var re) && re.ValueKind == JsonValueKind.Number ? re.GetInt32() : 0;
                                     string error = root.TryGetProperty("error", out var ee) ? (ee.GetString() ?? "") : "";
-                                    Log($"[BET][ERR] {side} {amount} :: {error}");
+                                    Log($"[BET][ERR] tab={DescribeTabForLog(tabId)} round={roundId} side={side} amount={amount} :: {error}");
+                                    if (roundId > 0 && amount > 0)
+                                    {
+                                        await Dispatcher.InvokeAsync(() =>
+                                        {
+                                            try { RemovePendingIssueUi(tabId, roundId, side, amount, "bet_error"); } catch { }
+                                        });
+                                    }
                                     return;
                                 }
 
@@ -2536,6 +2558,8 @@ Ví dụ không hợp lệ:
                                     string stage = root.TryGetProperty("stage", out var stgEl) ? (stgEl.GetString() ?? "") : "";
                                     string side = root.TryGetProperty("side", out var sideEl) ? (sideEl.GetString() ?? "") : "";
                                     long amount = root.TryGetProperty("amount", out var amtEl) && amtEl.ValueKind == JsonValueKind.Number ? amtEl.GetInt64() : 0;
+                                    string tabId = root.TryGetProperty("tabId", out var tabEl) ? (tabEl.GetString() ?? "") : "";
+                                    int roundId = root.TryGetProperty("roundId", out var roundEl) && roundEl.ValueKind == JsonValueKind.Number ? roundEl.GetInt32() : 0;
                                     long denom = root.TryGetProperty("denom", out var denEl) && denEl.ValueKind == JsonValueKind.Number ? denEl.GetInt64() : 0;
                                     int turn = root.TryGetProperty("turn", out var turnEl) && turnEl.ValueKind == JsonValueKind.Number ? turnEl.GetInt32() : 0;
                                     string phase = root.TryGetProperty("phase", out var phEl) ? (phEl.GetString() ?? "") : "";
@@ -2552,6 +2576,18 @@ Ví dụ không hợp lệ:
                                     string raw = root.GetRawText();
                                     Log($"[BET][TRACE] stage={stage} side={side} amount={amount} denom={denom} turn={turn} phase={phase} mode={mode} source={source} node={nodeName} path={nodePath}");
                                     Log($"[BET][TRACE][RAW] {raw}");
+
+                                    if (stage.Equals("bet_queue_job_done", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        string result = root.TryGetProperty("result", out var resEl) ? (resEl.GetString() ?? "") : "";
+                                        if (result.Equals("false", StringComparison.OrdinalIgnoreCase) && roundId > 0 && amount > 0)
+                                        {
+                                            await Dispatcher.InvokeAsync(() =>
+                                            {
+                                                try { RemovePendingIssueUi(tabId, roundId, side, amount, "queue_job_done_false"); } catch { }
+                                            });
+                                        }
+                                    }
                                     return;
                                 }
 
@@ -5119,6 +5155,11 @@ Ví dụ không hợp lệ:
                     Log($"[DEC] \"{activeTab.Name}\" is already running");
                     return;
                 }
+                // Khóa cấu hình theo đúng tab bấm Start để tránh race khi đổi tab trong lúc await.
+                ApplyUiToConfig(activeTab.Config);
+                var runCfg = activeTab.Config;
+                int strategyIndexRun = runCfg.BetStrategyIndex;
+
                 await SaveConfigAsync();
                 await EnsureWebReadyAsync();
                 // ✅ Validate trước khi bắt đầu
@@ -5190,33 +5231,32 @@ Ví dụ không hợp lệ:
                 }
 
                 // Chuẩn bị & chạy Task chiến lược (giữ nguyên)
-                RebuildStakeSeq((TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim());
+                RebuildStakeSeq((runCfg.StakeCsv ?? "1000,2000,4000,8000,16000").Trim());
                 activeTab.RunStakeSeq = _stakeSeq.ToArray();
                 activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
                 activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();
                 activeTab.RunDecisionPercent = _decisionPercent;
-                activeTab.RunAutoResetStakeOnNonNegativeWin = _cfg.AutoResetStakeOnNonNegativeWin;
+                activeTab.RunAutoResetStakeOnNonNegativeWin = runCfg.AutoResetStakeOnNonNegativeWin;
                 activeTab.AutoResetStakeRequested = false;
                 activeTab.IsRunning = true;
                 _winTotal = activeTab.WinTotal;
                 if (LblWin != null) LblWin.Text = activeTab.WinTotal.ToString("N0");
                 _dec = new DecisionState();
                 _cooldown = false;
-                int __idx = CmbBetStrategy?.SelectedIndex ?? 8;
-                _cfg.BetSeq = __idx switch
+                runCfg.BetSeq = strategyIndexRun switch
                 {
-                    0 => _cfg.BetSeqCL ?? "",
-                    1 => _cfg.BetSeqTX ?? "",
-                    4 => _cfg.BetSeqNI ?? "",
-                    5 => _cfg.BetSeqNITX ?? "",
+                    0 => runCfg.BetSeqCL ?? "",
+                    1 => runCfg.BetSeqTX ?? "",
+                    4 => runCfg.BetSeqNI ?? "",
+                    5 => runCfg.BetSeqNITX ?? "",
                     _ => ""
                 };
-                _cfg.BetPatterns = __idx switch
+                runCfg.BetPatterns = strategyIndexRun switch
                 {
-                    2 => _cfg.BetPatternsCL ?? "",
-                    3 => _cfg.BetPatternsTX ?? "",
-                    6 => _cfg.BetPatternsNI ?? "",
-                    7 => _cfg.BetPatternsNITX ?? "",
+                    2 => runCfg.BetPatternsCL ?? "",
+                    3 => runCfg.BetPatternsTX ?? "",
+                    6 => runCfg.BetPatternsNI ?? "",
+                    7 => runCfg.BetPatternsNITX ?? "",
                     _ => ""
                 };
 
@@ -5225,7 +5265,7 @@ Ví dụ không hợp lệ:
                 activeTab.TaskCts = new CancellationTokenSource();
 
                 bool useRawWinAmount = false;
-                XocDiaSoiVIP389.Tasks.IBetTask task = _cfg.BetStrategyIndex switch
+                XocDiaSoiVIP389.Tasks.IBetTask task = strategyIndexRun switch
                 {
                     0 => new XocDiaSoiVIP389.Tasks.SeqParityFollowTask(), // 1
                     1 => new XocDiaSoiVIP389.Tasks.SeqTxFollowTask(), // 2
@@ -5265,7 +5305,7 @@ Ví dụ không hợp lệ:
                     _ => new XocDiaSoiVIP389.Tasks.SmartPrevTask(),
                 };
 
-                if (_cfg.BetStrategyIndex == 34) useRawWinAmount = true;
+                if (strategyIndexRun == 34) useRawWinAmount = true;
 
                 activeTab.ActiveTask = task;
 
@@ -5628,10 +5668,10 @@ Ví dụ không hợp lệ:
             );
             if (i1 != null) _resultDigitIconMap['1'] = i1;
 
-            var i2 = FallbackIcons.LoadPackImage("Assets/side/TAICHAN.png") ?? LoadImgSafe(
-                $"pack://application:,,,/{asm};component/Assets/side/TAICHAN.png",
-                "pack://application:,,,/Assets/side/TAICHAN.png",
-                "pack://application:,/Assets/side/TAICHAN.png"
+            var i2 = FallbackIcons.LoadPackImage("Assets/side/CHAN.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/CHAN.png",
+                "pack://application:,,,/Assets/side/CHAN.png",
+                "pack://application:,/Assets/side/CHAN.png"
             );
             if (i2 != null) _resultDigitIconMap['2'] = i2;
 
@@ -5641,6 +5681,13 @@ Ví dụ không hợp lệ:
                 "pack://application:,/Assets/side/TAILE.png"
             );
             if (i3 != null) _resultDigitIconMap['3'] = i3;
+
+            var i4 = FallbackIcons.LoadPackImage("Assets/side/TAICHAN.png") ?? LoadImgSafe(
+                $"pack://application:,,,/{asm};component/Assets/side/TAICHAN.png",
+                "pack://application:,,,/Assets/side/TAICHAN.png",
+                "pack://application:,/Assets/side/TAICHAN.png"
+            );
+            if (i4 != null) _resultDigitIconMap['4'] = i4;
         }
 
 
@@ -6523,23 +6570,32 @@ Ví dụ không hợp lệ:
                         "(function(){try{return !!(window.cc && cc.director && cc.director.getScene);}catch(e){return false;}})()");
                     bool hasCocos = bool.TryParse(cocosJson, out var b) && b;
 
-                    // 3) Đã có tick chưa (ít nhất 1 ký tự seq)
+                    // 3) Đã có tick sống chưa (không bắt buộc seq phải > 0)
                     bool hasTick = false;
+                    bool hasSnap = false;
+                    bool hasProg = false;
+                    bool hasTotals = false;
                     int seqLen = 0;
                     lock (_snapLock)
                     {
+                        hasSnap = _lastSnap != null;
                         seqLen = _lastSnap?.seq?.Length ?? 0;
-                        hasTick = seqLen > 0;
+                        hasProg = _lastSnap?.prog.HasValue == true;
+                        hasTotals = _lastSnap?.totals != null;
                     }
 
                     var tickAgeMs = _lastGameTickUtc == DateTime.MinValue
                         ? -1
                         : (int)Math.Max(0, (DateTime.UtcNow - _lastGameTickUtc).TotalMilliseconds);
+                    bool tickFresh = tickAgeMs >= 0 && tickAgeMs <= 2500;
+                    bool hasAnyTickPayload = (seqLen > 0) || hasProg || hasTotals;
+                    hasTick = hasSnap && tickFresh && hasAnyTickPayload;
+
                     var betType = string.IsNullOrWhiteSpace(typeBet) ? "-" : typeBet;
                     var cocosRaw = (cocosJson ?? "").Trim('"');
                     if (cocosRaw.Length > 32) cocosRaw = cocosRaw.Substring(0, 32);
                     _lastBridgeReadyDiag =
-                        $"hasBet={(hasBet ? 1 : 0)} hasCocos={(hasCocos ? 1 : 0)} hasTick={(hasTick ? 1 : 0)} typeBet={betType} cocosRaw={cocosRaw} seqLen={seqLen} tickAgeMs={(tickAgeMs >= 0 ? tickAgeMs.ToString() : "-")}";
+                        $"hasBet={(hasBet ? 1 : 0)} hasCocos={(hasCocos ? 1 : 0)} hasTick={(hasTick ? 1 : 0)} hasSnap={(hasSnap ? 1 : 0)} hasProg={(hasProg ? 1 : 0)} hasTotals={(hasTotals ? 1 : 0)} typeBet={betType} cocosRaw={cocosRaw} seqLen={seqLen} tickAgeMs={(tickAgeMs >= 0 ? tickAgeMs.ToString() : "-")}";
 
                     if (hasBet && hasTick)
                         return true;
@@ -7033,6 +7089,42 @@ Ví dụ không hợp lệ:
         private static string BuildBetIssueHistoryKey(string? tabId, int roundId, string side, long amount)
             => $"{(tabId ?? "").Trim()}|{roundId}|{side}|{amount}";
 
+        private bool RemovePendingIssueUi(string? tabId, int roundId, string? sideRaw, long amount, string reason)
+        {
+            string side = NormalizeBetSideForHistory(sideRaw);
+            if (string.IsNullOrWhiteSpace(side) || amount <= 0 || roundId <= 0) return false;
+
+            string key = BuildBetIssueHistoryKey(tabId, roundId, side, amount);
+            if (!_pendingRowsByIssueKey.TryGetValue(key, out var rows) || rows.Count == 0)
+                return false;
+
+            int removed = 0;
+            foreach (var row in rows)
+            {
+                if (_pendingRows.Remove(row)) removed++;
+                _betAll.Remove(row);
+            }
+
+            _pendingRowsByIssueKey.Remove(key);
+            _betIssueHistoryKeys.Remove(key);
+            if (removed <= 0) return false;
+
+            Log($"[BET][HIST][ROLLBACK] reason={reason} tab={tabId} round={roundId} side={side} amount={amount:N0} removed={removed} pending={_pendingRows.Count}");
+
+            if (_autoFollowNewest) ShowFirstPage();
+            else RefreshCurrentPage();
+            return true;
+        }
+
+        private string DescribeTabForLog(string? tabId)
+        {
+            var id = (tabId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(id)) return "(no-tab)";
+            var tab = _strategyTabs.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase));
+            if (tab == null) return id;
+            return $"{tab.Name}|{id}";
+        }
+
         private void PruneBetIssueHistoryKeys()
         {
             if (_betIssueHistoryKeys.Count < 2000) return;
@@ -7075,6 +7167,12 @@ Ví dụ không hợp lệ:
             _betAll.Insert(0, row);
             if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
             _pendingRows.Add(row);
+            if (!_pendingRowsByIssueKey.TryGetValue(key, out var groupedRows))
+            {
+                groupedRows = new List<BetRow>();
+                _pendingRowsByIssueKey[key] = groupedRows;
+            }
+            groupedRows.Add(row);
 
             Log($"[BET][HIST][PENDING] source={source} tab={tabId} round={roundId} side={side} amount={amount:N0} pending={_pendingRows.Count}");
 
@@ -7097,11 +7195,21 @@ Ví dụ không hợp lệ:
                 ? result!.ToUpperInvariant()
                 : displayResult!;
 
+            bool txDraw = false;
+            if (resultText.Length == 1)
+            {
+                char digit = resultText[0];
+                txDraw = XocDiaSoiVIP389.Tasks.TaskUtil.DigitToTx(digit) == '\0'
+                      && XocDiaSoiVIP389.Tasks.TaskUtil.DigitToParity(digit) != '\0';
+            }
+
             foreach (var row in _pendingRows)
             {
                 row.Result = resultText;
                 bool win = winSet.Contains(row.Side);
-                row.WinLose = win ? "Thắng" : "Thua";
+                bool isTxSide = row.Side.Equals("TAI", StringComparison.OrdinalIgnoreCase) ||
+                                row.Side.Equals("XIU", StringComparison.OrdinalIgnoreCase);
+                row.WinLose = (txDraw && isTxSide) ? "Hòa" : (win ? "Thắng" : "Thua");
                 row.Account = balanceAfter;
 
                 // ❗KHÔNG Add lại vào _betAll (đã chèn ở thời điểm BET)
@@ -7119,6 +7227,7 @@ Ví dụ không hợp lệ:
             }
 
             _pendingRows.Clear(); // sẵn sàng ván tiếp theo
+            _pendingRowsByIssueKey.Clear();
         }
 
         public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
@@ -7564,7 +7673,7 @@ Ví dụ không hợp lệ:
                     return false;
                 }
 
-                // LHS: chỉ C/L + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
+                // LHS: chỉ C/L + khoảng trắng; độ dài 1–20 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
@@ -7575,9 +7684,9 @@ Ví dụ không hợp lệ:
                     else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm C/L (cho phép khoảng trắng giữa các ký tự)."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
-                if (lhs.Length < 1 || lhs.Length > 10)
+                if (lhs.Length < 1 || lhs.Length > 20)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (C/L).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–20 ký tự (C/L).";
                     return false;
                 }
 
@@ -7641,9 +7750,9 @@ Ví dụ không hợp lệ:
                     else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm T/X hoặc 0..6."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
-                if (lhs.Length < 1 || lhs.Length > 10)
+                if (lhs.Length < 1 || lhs.Length > 20)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (T/X).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–20 ký tự (T/X).";
                     return false;
                 }
 

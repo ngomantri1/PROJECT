@@ -86,6 +86,10 @@
   - only trusted fallback raw board from correct active single-bac table.
 - Waiting state:
   - `waiting-board-bootstrap` is used instead of rendering empty sequence.
+- Policy detail (2026-05-20):
+  - after bootstrap, authoritative append is CDP/network-only.
+  - DOM/JS ahead signals are diagnostic and do not append sequence directly.
+  - JS append contract path is blocked in CDP-first mode (`UseDomBootstrapCdpAppendSeq`).
 
 ## Pending / Settle Flow
 - `PlaceBet(...)` -> `_pendingRows`.
@@ -128,3 +132,21 @@
 - Diagnostics:
   - C#: `[BET-SEND][CTX]`, `[BET-SEND][BEGIN]`, `[BET-SEND][OK]`, `[BETQ][ENQ]`, `[BETQ][RUN]`, `[BETQ][DONE]`, `[BETQ][DROP]`
   - JS: `bet_queued`, `bet_exec_begin`, `bet_exec_done`, `bet`.
+
+## Bet Pipeline Notes (2026-05-19)
+- `TaskUtil.PlaceBet(...)` local throttle was relaxed for multi-strategy push testing:
+  - removed local block by `_betInFlightByTab` (`send-in-flight`),
+  - removed local block by same-round/same-side cooldown (`skip duplicate send`).
+- Duplicate send context is kept as log-only signal:
+  - `[BET][INFO] duplicate-send-allowed`.
+- Effective behavior now:
+  - if run is active and pipe ready, C# pushes intent to JS queue without local per-round choke,
+  - JS queue still serializes execution order on its side.
+- Important diagnostic interpretation:
+  - `BET ACK` currently means JS queue job finished, not guaranteed game/server accepted money.
+
+## UI Validation Notes (2026-05-20)
+- Pattern validator limits in `MainWindow.xaml.cs`:
+  - B/P strategy pattern `<mau_qua_khu>`: `1..20`
+  - I/N strategy pattern `<mau_qua_khu>`: `1..20`
+- Tooltip/error text was synchronized with validator limits to avoid UI-state mismatch.

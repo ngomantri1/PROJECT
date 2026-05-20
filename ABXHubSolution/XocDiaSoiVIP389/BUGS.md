@@ -7,6 +7,9 @@
 - Nhiều warning nullable/unreachable/async-without-await còn tồn tại.
 
 ## Bug đã fix (hôm nay)
+- 2 strategy chạy song song nhưng lệnh sau bị hụt:
+- Nguyên nhân: JS bet queue có check `stale round` và nhánh đánh giá kết quả job trước.
+- Đã sửa: `processBetQueue()` không drop theo `roundId` và không chặn job kế tiếp theo kết quả `rawResult`.
 - Canvas không vào ở page mới do gate URL/cc:
 - Đã cho phép boot/push ở `no-cc`.
 - `TextMap` bấm không ra vùng ở page mới:
@@ -24,6 +27,7 @@
 - Parser DOM vẫn phụ thuộc một số class/id động của vendor; đổi theme lớn có thể cần cập nhật tail.
 - Chưa có test tự động cho JS parser (`prog/seq`) nên vẫn dựa nhiều vào smoke test tay.
 - Cảnh báo build nhiều, gây nhiễu khi truy lỗi mới.
+- Khi bỏ `stale round` guard, có rủi ro lệnh vào trễ sang round kế tiếp nếu queue backlog lớn.
 
 ## Nguyên nhân bug
 - Trang mới không còn Cocos scene chuẩn như trang cũ (`no-cc`).
@@ -34,6 +38,7 @@
 - Khi nghi parser sai: dùng `Scan500Text`/`ScanTK` để lấy tail thực tế rồi cập nhật rule.
 - Nếu UI không cập nhật ngay sau sửa JS: rebuild/restart app (JS đang embed runtime).
 - Khi build lỗi lock exe: tắt process app trước.
+- Nếu thấy vào lệnh trễ khi stake quá lớn: giảm chuỗi tiền/chip hoặc tăng tốc cửa sổ bắn lệnh để giảm backlog queue.
 
 ## Vùng code dễ lỗi
 - `v4_js_xoc_dia_live.js`:

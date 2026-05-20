@@ -40,6 +40,8 @@ XocDiaSoiVIP389/
 - JS đọc game -> tạo `snap` -> `abx:tick`.
 - C# deserialize `CwSnapshot` -> lưu `_lastSnap` -> update UI -> task dùng.
 - Bet history: issue pending -> finalize khi có kết quả mới từ `seq`.
+- Bet command: `Tasks.TaskUtil.PlaceBet` -> `__cw_bet_enqueue(intent)` -> `processBetQueue()` -> `cwBet(side, amount)`.
+- `processBetQueue()` chạy FIFO, không phụ thuộc kết quả thành công của job trước để chuyển job kế tiếp.
 
 ## Websocket packet flow
 - Không dùng WS trực tiếp cho flow chính.
@@ -49,6 +51,11 @@ XocDiaSoiVIP389/
 ## Websocket packet flow (bridge message)
 - JS post `abx:tick`, `abx:bet`, `abx:bet_error`, `abx:bet_trace`, `cw_page_probe`, `cw_js_error`.
 - C# router theo `abx` và cập nhật phần tương ứng.
+
+## Bet Queue Semantics
+- Một queue toàn cục trong JS cho mọi strategy tab.
+- Job được xử lý tuần tự theo thứ tự enqueue.
+- Không còn chặn `stale round` trong queue processor; mục tiêu là không bỏ lệnh khi nhiều strategy bắn cùng lúc.
 
 ## UI update flow
 - Tick -> `Dispatcher.BeginInvoke` -> cập nhật:

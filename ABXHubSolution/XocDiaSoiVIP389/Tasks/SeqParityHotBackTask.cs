@@ -12,7 +12,7 @@ namespace XocDiaSoiVIP389.Tasks
         public string Id => "seq-cl-hotback";
 
         private const int PatternLen = 5;
-        private const int MaxSeqLen = 52;
+        private const int MaxSeqLen = 50;
 
         private static readonly ThreadLocal<Random> _rng =
             new(() => new Random(unchecked(Environment.TickCount * 31 + Environment.CurrentManagedThreadId)));

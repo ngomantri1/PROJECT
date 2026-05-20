@@ -16,6 +16,10 @@ namespace XocDiaSoiVIP389.Tasks
         private static readonly ConcurrentDictionary<string, long> _lastBetOkMsByTab = new();
         private static readonly ConcurrentDictionary<string, int> _lastBetRoundByTab = new();
         private static readonly ConcurrentDictionary<string, string> _lastBetSideByTab = new();
+        // Mỗi tab chỉ cho phép 1 lệnh trong cùng một cửa sổ "Đang cược"
+        private static readonly ConcurrentDictionary<string, bool> _betIssuedInOpenWindowByTab = new();
+        // Đánh dấu ván vừa kết thúc là hòa (chỉ áp dụng cho cửa TÀI/XỈU)
+        private static readonly ConcurrentDictionary<string, bool> _lastRoundDrawByTab = new();
 
         // (tuỳ chọn) reset khi dừng task
         public static void ClearBetCooldown()
@@ -23,6 +27,8 @@ namespace XocDiaSoiVIP389.Tasks
             _lastBetOkMsByTab.Clear();
             _lastBetRoundByTab.Clear();
             _lastBetSideByTab.Clear();
+            _betIssuedInOpenWindowByTab.Clear();
+            _lastRoundDrawByTab.Clear();
         }
 
         public static string ParityCharToSide(char ch) => (DigitToParity(ch) == 'C') ? "CHAN" : "LE";
@@ -41,7 +47,8 @@ namespace XocDiaSoiVIP389.Tasks
             return d switch
             {
                 'X' or 'x' or '0' or '1' => 'X',
-                'T' or 't' or '2' or '3' or '4' or '5' or '6' => 'T',
+                // Rule: 2 là hòa, không phải TÀI cũng không phải XỈU.
+                'T' or 't' or '3' or '4' or '5' or '6' => 'T',
                 _ => '\0'
             };
         }
@@ -138,11 +145,15 @@ namespace XocDiaSoiVIP389.Tasks
         {
             // Quy ước: prog = phần trăm thời gian đã trôi/hoặc còn lại. Ở code bạn set LblProg = p*100,
             // ta chọn ngưỡng “<= DecisionPercent” để vào tiền trễ (15% cuối).
+            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
                 double p = s?.prog ?? 1.0;
+                var status = (s?.status ?? "").Trim();
+                bool isOpen = p > 0 || status.IndexOf("Đang cược", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!isOpen) _betIssuedInOpenWindowByTab[tabKey] = false;
                 //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p <= ctx.DecisionPercent && p > 0) break;
                 await Task.Delay(60, ct);
@@ -152,12 +163,12 @@ namespace XocDiaSoiVIP389.Tasks
         // Chờ sang phiên mới rồi đặt NGAY khi mở cửa (đặt sớm, KHÔNG phụ thuộc DecisionPercent)
         public static async Task WaitUntilNewRoundStart(GameContext ctx, CancellationToken ct)
         {
+            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
                 double p = s?.prog ?? 1.0;
-                //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
                 if (p >= ctx.DecisionPercent) break;
                 await Task.Delay(60, ct);
             }
@@ -170,25 +181,13 @@ namespace XocDiaSoiVIP389.Tasks
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
 
             var snap = ctx.GetSnap?.Invoke();
+
             var roundId = 0;
-            try { roundId = (snap?.seq ?? "").Length; } catch { roundId = 0; }
-
-            var last = _lastBetOkMsByTab.TryGetValue(tabKey, out var v) ? v : 0;
-            var lastRound = _lastBetRoundByTab.TryGetValue(tabKey, out var r) ? r : -1;
-            var lastSide = _lastBetSideByTab.TryGetValue(tabKey, out var s) ? s : "";
-            var sameRound = lastRound == roundId && roundId > 0;
-            var sameSide = string.Equals(lastSide, side, StringComparison.OrdinalIgnoreCase);
-
-            // Allow multi-side in same round; keep cooldown for same side only
-            if (!ignoreCooldown)
+            try
             {
-                const long SameRoundSameSideCooldownMs = 200;
-                if (sameRound && sameSide && now - last < SameRoundSameSideCooldownMs)
-                {
-                    ctx.Log?.Invoke($"[BET] cooldown {SameRoundSameSideCooldownMs}ms active, skip ({SameRoundSameSideCooldownMs - (now - last)}ms left)");
-                    return false;
-                }
+                roundId = snap?.roundId ?? 0;
             }
+            catch { roundId = 0; }
 
             // G?I intent xu?ng JS queue
             var js =
@@ -201,8 +200,15 @@ namespace XocDiaSoiVIP389.Tasks
                 " } else { return 'no'; }" +
                 "}catch(e){ return 'err:' + (e && e.message ? e.message : e); }})();";
 
-            var rRaw = await ctx.EvalJsAsync(js);
-            ctx.Log?.Invoke($"[BET-JS] tab={tabKey} round={roundId} result={rRaw}");
+            try
+            {
+                _ = ctx.EvalJsAsync(js);
+            }
+            catch (Exception ex)
+            {
+                ctx.Log?.Invoke($"[BET-JS][FIRE-ERR] tab={tabKey} round={roundId} err={ex.Message}");
+            }
+            ctx.Log?.Invoke($"[BET-JS] tab={tabKey} round={roundId} result=fire-and-forget");
 
             // C# enqueue xong là ghi pending history ngay; gom một lượt UI để không làm chậm nhịp bet.
             await ctx.UiDispatcher.InvokeAsync(() =>
@@ -212,21 +218,24 @@ namespace XocDiaSoiVIP389.Tasks
                 ctx.UiSetStake?.Invoke(amount);
             });
 
-            // Kh?ng ki?m tra th?nh c?ng/th?t b?i d? tr?nh b?n l?p; ch? d?y l?nh m?t l?n
-            bool ok = true;
+            _lastBetOkMsByTab[tabKey] = now;
+            _lastBetRoundByTab[tabKey] = roundId;
+            _lastBetSideByTab[tabKey] = side ?? "";
+            _betIssuedInOpenWindowByTab[tabKey] = true;
 
-            if (ok)
-            {
-                _lastBetOkMsByTab[tabKey] = now; // k?ch ho?t kh?a 3s
-                _lastBetRoundByTab[tabKey] = roundId;
-                _lastBetSideByTab[tabKey] = side ?? "";
-            }
-
-            return ok;
+            return true;
         }
 
         public static async Task ApplyMoneyAfterRoundAsync(GameContext ctx, MoneyManager money, bool win, double netDelta)
         {
+            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            if (_lastRoundDrawByTab.TryGetValue(tabKey, out var isDraw) && isDraw)
+            {
+                _lastRoundDrawByTab[tabKey] = false;
+                ctx.Log?.Invoke("[ROUND] Hòa (digit=2): không cộng/trừ tiền, không đổi mức.");
+                return;
+            }
+
             bool isMultiChain = string.Equals(ctx.MoneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase);
 
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
@@ -289,14 +298,42 @@ namespace XocDiaSoiVIP389.Tasks
 
         public static async Task<bool> WaitRoundFinishAndJudge(GameContext ctx, string betSide, string baseSeq, CancellationToken ct)
         {
-            // chờ seq tăng độ dài → có kết quả mới
+            var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
+            var snap0 = ctx.GetSnap?.Invoke();
+            var baseRoundId = snap0?.roundId ?? 0;
+            var baseSeqSafe = string.IsNullOrEmpty(baseSeq) ? (snap0?.seq ?? "") : baseSeq;
+
+            // Ưu tiên chờ đổi roundId; fallback seq nếu roundId chưa khả dụng.
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
+                var curRoundId = s?.roundId ?? 0;
                 var curSeq = s?.seq ?? "";
-                if (!string.Equals(curSeq, baseSeq, StringComparison.Ordinal))
+
+                bool roundChanged;
+                if (baseRoundId > 0 && curRoundId > 0)
+                    roundChanged = curRoundId != baseRoundId;
+                else
+                    roundChanged = !string.Equals(curSeq, baseSeqSafe, StringComparison.Ordinal);
+
+                if (roundChanged)
                 {
+                    if (string.IsNullOrEmpty(curSeq))
+                    {
+                        await Task.Delay(120, ct);
+                        continue;
+                    }
+
+                    var sideNorm = (betSide ?? "").Trim().ToUpperInvariant();
+                    if ((sideNorm == "TAI" || sideNorm == "XIU") && DigitToTx(curSeq[^1]) == '\0')
+                    {
+                        _lastRoundDrawByTab[tabKey] = true;
+                        ctx.Log?.Invoke($"[ROUND] Draw detected for {sideNorm} at digit={curSeq[^1]}");
+                        return false;
+                    }
+
+                    _lastRoundDrawByTab[tabKey] = false;
                     bool win = IsWin(betSide, curSeq[^1]);
                     await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win));
                     // cộng tiền lũy kế: +amount khi thắng, -amount khi thua (đơn giản)

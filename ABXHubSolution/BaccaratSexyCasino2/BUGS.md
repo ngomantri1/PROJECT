@@ -38,6 +38,9 @@
 - Need runtime confirmation that settle after reset is now stable in all real cases.
 - Need root-cause analysis for rare cases where more than one pending row still passes the same settle gate.
 - Strategy 18 is newly added and still needs runtime soak verification against expected seg-rule outcomes.
+- Need continued validation for source disagreement visibility:
+  - DOM board can show ahead `B/T` while CDP/network confirms a different winner.
+  - authoritative sequence intentionally follows CDP/network in these cases.
 
 ## Root Causes
 - Optimistic send-only mode in C# records pending before JS confirms actual click execution result.
@@ -99,3 +102,22 @@
 - `matched > 1` or `[BET][HIST][HOLD-AMBIGUOUS]` appears.
 - `DOM-BOOTSTRAP-BLOCK` when active table is correct but full board is still rejected.
 - `ROADINFO-SEED` appears but expected `ROADINFO-WINNER` does not follow.
+- `DOM-APPEND-BLOCK reason=cdp-only-policy` repeats while DOM delta differs from network winner.
+
+## Update (2026-05-19)
+- Confirmed by logs: two strategies can both enqueue and both receive JS ACK in the same round.
+- Still open bug:
+  - JS ACK/done is internal queue completion, not guaranteed server-side money acceptance.
+  - In some rounds, intended two bets are logged, but table balance/amount reflects only one real accepted bet.
+- C# local blocking was removed in `TaskUtil.PlaceBet(...)` to avoid artificial suppression.
+- Remaining gap is execution fidelity between JS click completion and real game acceptance.
+
+## Update (2026-05-20)
+- Clarified by live logs (table C06 case):
+  - DOM reported `delta=B` and was blocked by `cdp-only-policy`.
+  - CDP/network winner packet finalized as `P`, and sequence advanced by network winner path.
+- This behavior is now explicitly intended:
+  - DOM append is diagnostic after bootstrap,
+  - authoritative append must come from CDP/network only.
+- UI/state bug from accidental revert was fixed again:
+  - pattern `<mau_qua_khu>` length limit restored to `1-20`.

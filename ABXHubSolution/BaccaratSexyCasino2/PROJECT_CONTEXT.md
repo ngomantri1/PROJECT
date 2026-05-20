@@ -37,6 +37,33 @@
   - if `seg3 > 1`: always follow last result.
 - Tooltip mapping for strategy index 17/18 was synchronized in `MainWindow.xaml.cs`.
 
+## Latest Updates (2026-05-19)
+- Verified by log that both strategy tabs can enqueue in the same round (same timestamp/round can contain two `BET-JS` + two `BET ACK`).
+- Still observed runtime mismatch on some hands:
+  - logs show both queue jobs done,
+  - real table can reflect only one accepted bet amount.
+- Updated `Tasks/TaskUtil.cs` `PlaceBet(...)` to remove local C# send choke:
+  - removed hard block `send-in-flight`,
+  - removed hard block `skip duplicate send` (same round + same side).
+- Local duplicate cases are now informational only:
+  - `[BET][INFO] duplicate-send-allowed ...`.
+- Current behavior goal for testing:
+  - C# always pushes bet intent down to JS queue (fire-and-forget),
+  - let JS/game acceptance decide real execution.
+
+## Latest Updates (2026-05-20)
+- UI/state validation for pattern strategies was re-synced:
+  - `<mau_qua_khu>` max length updated from `10` to `20` for both B/P and I/N pattern validators.
+  - related tooltip/error text now matches runtime validation (`1-20`).
+- Sequence authority policy was tightened to CDP-first after bootstrap:
+  - DOM is used to bootstrap/rebase initial board state.
+  - append after bootstrap must come from CDP/network winner packets.
+  - DOM append remains diagnostic when ahead (`DOM-APPEND-BLOCK`).
+- Added guard in `MainWindow.xaml.cs` to prevent JS append contract from mutating authoritative sequence in CDP-first mode.
+- Live log investigation notes:
+  - cases like `DOM delta=B/T` can appear,
+  - if CDP/network confirms a different winner (for example `P`), authoritative sequence follows CDP/network.
+
 ## Latest Updates (2026-05-14)
 - Bet gate in C# now blocks send when phase is not playable:
   - blocked status contains `Vui lòng đợi`, `xáo bài`, `changing shoe`,
