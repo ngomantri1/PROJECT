@@ -50,6 +50,12 @@
             Opacity="0.07"
             ShadowDepth="0"
             Color="#000000" />
+        <DropShadowEffect
+            x:Key="SelectedTabGlow"
+            BlurRadius="10"
+            Color="#0D47A1"
+            Opacity="0.35"
+            ShadowDepth="0" />
 
         <!--  Card  -->
         <Style x:Key="Card" TargetType="Border">
@@ -698,15 +704,29 @@
                                                         <Setter TargetName="TabNameEdit" Property="Visibility" Value="Visible" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
-                                                        <Setter TargetName="TabBorder" Property="BorderBrush" Value="{StaticResource Blue}" />
+                                                        <Setter TargetName="TabBorder" Property="BorderBrush" Value="#0D47A1" />
+                                                        <Setter TargetName="TabBorder" Property="BorderThickness" Value="3" />
+                                                        <Setter TargetName="TabBorder" Property="Effect" Value="{x:Null}" />
                                                         <Setter TargetName="TabCloseBtn" Property="Visibility" Value="Visible" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsRunning}" Value="True">
                                                         <Setter TargetName="RunDot" Property="Visibility" Value="Visible" />
                                                         <Setter TargetName="TabBorder" Property="Background" Value="#FDECEC" />
-                                                        <Setter TargetName="TabBorder" Property="BorderBrush" Value="#F5A3A3" />
+                                                        <Setter TargetName="TabBorder" Property="BorderBrush" Value="#D32F2F" />
+                                                        <Setter TargetName="TabBorder" Property="BorderThickness" Value="3" />
+                                                        <Setter TargetName="TabBorder" Property="Effect" Value="{x:Null}" />
                                                         <Setter TargetName="TabNameText" Property="Foreground" Value="#B00000" />
                                                     </DataTrigger>
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding IsRunning}" Value="True" />
+                                                            <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsSelected}" Value="True" />
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter TargetName="TabBorder" Property="Background" Value="#E7F3FF" />
+                                                        <Setter TargetName="TabBorder" Property="BorderBrush" Value="#0D47A1" />
+                                                        <Setter TargetName="TabBorder" Property="BorderThickness" Value="4" />
+                                                        <Setter TargetName="TabNameText" Property="Foreground" Value="#0D47A1" />
+                                                    </MultiDataTrigger>
                                                     <Trigger SourceName="TabBorder" Property="IsMouseOver" Value="True">
                                                         <Setter TargetName="TabCloseBtn" Property="Visibility" Value="Visible" />
                                                     </Trigger>

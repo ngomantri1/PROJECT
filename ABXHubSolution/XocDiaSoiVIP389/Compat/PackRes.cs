@@ -42,7 +42,7 @@ namespace XocDiaSoiVIP389
             EnsureImage(app.Resources, "ImgTHUA", "Assets/kq/THUA.png");
             EnsureImage(app.Resources, "ImgBALL0", "Assets/side/XIUCHAN.png");
             EnsureImage(app.Resources, "ImgBALL1", "Assets/side/XIULE.png");
-            EnsureImage(app.Resources, "ImgBALL2", "Assets/side/TAICHAN.png");
+            EnsureImage(app.Resources, "ImgBALL2", "Assets/side/CHAN.png");
             EnsureImage(app.Resources, "ImgBALL3", "Assets/side/TAILE.png");
             EnsureImage(app.Resources, "ImgBALL0", "pack://application:,,,/XocDiaSoiVIP389;component/Assets/side/XIUCHAN.png");
             EnsureImage(app.Resources, "ImgBALL1", "pack://application:,,,/XocDiaSoiVIP389;component/Assets/side/XIULE.png");

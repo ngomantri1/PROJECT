@@ -7,6 +7,6 @@
     <BitmapImage x:Key="ImgTHUA" UriSource="/XocDiaSoiVIP389;component/Assets/kq/THUA.png" />
     <BitmapImage x:Key="ImgBALL0" UriSource="/XocDiaSoiVIP389;component/Assets/side/XIUCHAN.png" />
     <BitmapImage x:Key="ImgBALL1" UriSource="/XocDiaSoiVIP389;component/Assets/side/XIULE.png" />
-    <BitmapImage x:Key="ImgBALL2" UriSource="/XocDiaSoiVIP389;component/Assets/side/TAICHAN.png" />
+    <BitmapImage x:Key="ImgBALL2" UriSource="/XocDiaSoiVIP389;component/Assets/side/CHAN.png" />
     <BitmapImage x:Key="ImgBALL3" UriSource="/XocDiaSoiVIP389;component/Assets/side/TAILE.png" />
 </ResourceDictionary>

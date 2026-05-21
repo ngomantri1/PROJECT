@@ -12,6 +12,9 @@ namespace XocDiaSoiVIP389.Tasks
 {
     internal static class TaskUtil
     {
+        internal const double WinPayoutRate = 0.98d;
+        internal const double RoundMaxSeconds = 30d;
+
         // Khóa chống bắn đúp: 3s kể từ lần place bet THÀNH CÔNG gần nhất
         private static readonly ConcurrentDictionary<string, long> _lastBetOkMsByTab = new();
         private static readonly ConcurrentDictionary<string, int> _lastBetRoundByTab = new();
@@ -147,7 +150,7 @@ namespace XocDiaSoiVIP389.Tasks
             var gateSec = (ctx.DecisionPercent > 0) ? ctx.DecisionPercent : 3;
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
             long lastDiagMs = 0;
-            bool armed = false;
+            bool armed = gateSec >= RoundMaxSeconds;
             int armedRound = 0;
             while (true)
             {
@@ -201,7 +204,7 @@ namespace XocDiaSoiVIP389.Tasks
             var gateSec = (ctx.DecisionPercent > 0) ? ctx.DecisionPercent : 3;
             var tabKey = string.IsNullOrWhiteSpace(ctx?.TabId) ? "_default" : ctx.TabId;
             long lastDiagMs = 0;
-            bool armed = false;
+            bool armed = gateSec >= RoundMaxSeconds;
             int armedRound = 0;
             while (true)
             {

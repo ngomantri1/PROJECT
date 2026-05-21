@@ -140,7 +140,7 @@ namespace XocDiaSoiVIP389
             SetImg("ImgTHUA", "Assets/kq/THUA.png");
             SetImg("ImgBALL0", "Assets/side/XIUCHAN.png");
             SetImg("ImgBALL1", "Assets/side/XIULE.png");
-            SetImg("ImgBALL2", "Assets/side/TAICHAN.png");
+            SetImg("ImgBALL2", "Assets/side/CHAN.png");
             SetImg("ImgBALL3", "Assets/side/TAILE.png");
 
             // giữ lại để các converter trong MainWindow dùng chung

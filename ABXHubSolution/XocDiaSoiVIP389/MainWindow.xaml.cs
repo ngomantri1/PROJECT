@@ -50,8 +50,9 @@ namespace XocDiaSoiVIP389
         private const string ResultLePng = "Assets/side/LE.png";
         private const string WinPng = "Assets/kq/THANG.png";
         private const string LossPng = "Assets/kq/THUA.png";
+        private const string DrawPng = "Assets/kq/HOA.png";
 
-        private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss;
+        private static ImageSource? _sideChan, _sideLe, _resultChan, _resultLe, _win, _loss, _draw;
 
         public static ImageSource? GetSideChan() => SharedIcons.SideChan ?? (_sideChan ??= Load(SideChanPng));
         public static ImageSource? GetSideLe() => SharedIcons.SideLe ?? (_sideLe ??= Load(SideLePng));
@@ -59,6 +60,7 @@ namespace XocDiaSoiVIP389
         public static ImageSource? GetResultLe() => SharedIcons.ResultLe ?? (_resultLe ??= Load(ResultLePng));
         public static ImageSource? GetWin() => SharedIcons.Win ?? (_win ??= Load(WinPng));
         public static ImageSource? GetLoss() => SharedIcons.Loss ?? (_loss ??= Load(LossPng));
+        public static ImageSource? GetDraw() => _draw ??= Load(DrawPng);
 
         private static string[] BuildPackUris(string relativePath)
         {
@@ -189,7 +191,7 @@ namespace XocDiaSoiVIP389
                 // Tài xỉu live: map đúng 4 trạng thái mới
                 '0' => FallbackIcons.LoadPackImage("Assets/side/XIUCHAN.png"),
                 '1' => FallbackIcons.LoadPackImage("Assets/side/XIULE.png"),
-                '2' => FallbackIcons.LoadPackImage("Assets/side/TAICHAN.png"),
+                '2' => FallbackIcons.LoadPackImage("Assets/side/CHAN.png"),
                 '3' => FallbackIcons.LoadPackImage("Assets/side/TAILE.png"),
                 '4' => FallbackIcons.LoadPackImage("Assets/side/TAICHAN.png"),
                 _ => null
@@ -235,6 +237,7 @@ namespace XocDiaSoiVIP389
             var u = TextNorm.U(value?.ToString() ?? "");
             if (u.StartsWith("THANG")) return FallbackIcons.GetWin();
             if (u.StartsWith("THUA")) return FallbackIcons.GetLoss();
+            if (u.StartsWith("HOA")) return FallbackIcons.GetDraw();
             return null;
         }
         public object ConvertBack(object v, Type t, object p, CultureInfo c) => Binding.DoNothing;
@@ -771,6 +774,8 @@ Ví dụ không hợp lệ:
             public string Result { get; set; } = "";         // Kết quả "CHAN"/"LE"
             public string WinLose { get; set; } = "";        // "Thắng"/"Thua"
             public long Account { get; set; }                // Số dư sau ván
+            public int RoundId { get; set; }                 // Round tại thời điểm vào lệnh (chỉ dùng nội bộ)
+            public string IssueKey { get; set; } = "";       // Key nội bộ để đồng bộ pending dictionary
         }
 
         public static class SharedIcons
@@ -2297,7 +2302,7 @@ Ví dụ không hợp lệ:
                                                         if (!HasJackpotMultiSideRunning())
                                                         {
                                                             string? displayResult = char.IsDigit(tail) ? tail.ToString() : null;
-                                                            FinalizeLastBet(kqStr, accNow2.Value, winners, displayResult);
+                                                            FinalizeLastBet(kqStr, accNow2.Value, winners, displayResult, snap?.roundId ?? 0);
                                                         }
                                                     }
                                                 }
@@ -5100,7 +5105,7 @@ Ví dụ không hợp lệ:
                 {
                     void Apply()
                     {
-                        var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
+                        var net = (applyWinTax && delta > 0) ? Math.Round(delta * XocDiaSoiVIP389.Tasks.TaskUtil.WinPayoutRate) : delta;
                         UpdateTabWin(tab, net, moneyStrategyId);
                     }
 
@@ -7209,7 +7214,9 @@ Ví dụ không hợp lệ:
                 Side = side,
                 Result = "-",
                 WinLose = "-",
-                Account = accNow
+                Account = accNow,
+                RoundId = roundId,
+                IssueKey = key
             };
 
             _betAll.Insert(0, row);
@@ -7234,7 +7241,7 @@ Ví dụ không hợp lệ:
             }
         }
 
-        private void FinalizeLastBet(string? result, long balanceAfter, HashSet<string>? winners = null, string? displayResult = null)
+        private void FinalizeLastBet(string? result, long balanceAfter, HashSet<string>? winners = null, string? displayResult = null, int currentRoundId = 0)
         {
             if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(result)) return;
 
@@ -7242,6 +7249,17 @@ Ví dụ không hợp lệ:
             var resultText = string.IsNullOrWhiteSpace(displayResult)
                 ? result!.ToUpperInvariant()
                 : displayResult!;
+
+            // Khi seq đã đổi tức là ván hiện tại đã khép, dù roundId trên snapshot có thể chưa kịp tăng.
+            // Vì vậy cần chốt cả pending của chính currentRoundId, không chỉ các round nhỏ hơn.
+            var rowsToFinalize = (currentRoundId > 0)
+                ? _pendingRows.Where(r => r.RoundId <= 0 || r.RoundId <= currentRoundId).ToList()
+                : _pendingRows.ToList();
+            if (rowsToFinalize.Count == 0)
+            {
+                Log($"[BET][HIST][FINALIZE-SKIP] result={resultText} curRound={currentRoundId} pending={_pendingRows.Count}");
+                return;
+            }
 
             bool txDraw = false;
             if (resultText.Length == 1)
@@ -7251,7 +7269,7 @@ Ví dụ không hợp lệ:
                       && XocDiaSoiVIP389.Tasks.TaskUtil.DigitToParity(digit) != '\0';
             }
 
-            foreach (var row in _pendingRows)
+            foreach (var row in rowsToFinalize)
             {
                 row.Result = resultText;
                 bool win = winSet.Contains(row.Side);
@@ -7274,8 +7292,18 @@ Ví dụ không hợp lệ:
                 RefreshCurrentPage();   // (mục 3 bên dưới)
             }
 
-            _pendingRows.Clear(); // sẵn sàng ván tiếp theo
-            _pendingRowsByIssueKey.Clear();
+            foreach (var row in rowsToFinalize)
+            {
+                _pendingRows.Remove(row);
+                if (!string.IsNullOrWhiteSpace(row.IssueKey) &&
+                    _pendingRowsByIssueKey.TryGetValue(row.IssueKey, out var groupedRows))
+                {
+                    groupedRows.Remove(row);
+                    if (groupedRows.Count == 0)
+                        _pendingRowsByIssueKey.Remove(row.IssueKey);
+                }
+            }
+            Log($"[BET][HIST][FINALIZE] result={resultText} curRound={currentRoundId} finalized={rowsToFinalize.Count} remain={_pendingRows.Count}");
         }
 
         public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)
@@ -7286,7 +7314,13 @@ Ví dụ không hợp lệ:
             var resText = !string.IsNullOrWhiteSpace(displayResult)
                 ? displayResult
                 : (winners != null && winners.Count > 0 ? string.Join("/", winners) : "-");
-            FinalizeLastBet(resText, balance, winners, resText);
+            int currentRoundId = 0;
+            try
+            {
+                lock (_snapLock) currentRoundId = _lastSnap?.roundId ?? 0;
+            }
+            catch { currentRoundId = 0; }
+            FinalizeLastBet(resText, balance, winners, resText, currentRoundId);
         }
         private void SetLevelForMultiChain(StrategyTabState tab, int chainIndex, int levelIndex)
         {

@@ -34,7 +34,7 @@ namespace XocDiaSoiVIP389.Tasks
                 case "LE":
                 case "TAI":
                 case "XIU":
-                    return stake * 0.98;
+                    return stake * TaskUtil.WinPayoutRate;
                 default:
                     return 0;
             }
