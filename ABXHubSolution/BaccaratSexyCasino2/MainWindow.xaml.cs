@@ -1170,6 +1170,9 @@ Ví dụ không hợp lệ:
         private string? _popupLastDocKey;
         private WebView2? _popupWeb;
         private int _popupTickPullBusy = 0;
+        private DateTime _popupDeferredOpenUntilUtc = DateTime.MinValue;
+        private string _popupDeferredOpenTarget = "";
+        private const int PopupDeferredOpenGraceSeconds = 18;
         private readonly object _playerFlowCacheLock = new();
         private string _lastPlayerFlowGameUrl = "";
         private DateTime _lastPlayerFlowGameAtUtc = DateTime.MinValue;
@@ -4495,12 +4498,35 @@ try{
             {
                 var target = (e.Uri ?? "").Trim();
                 var targetIsBlank = string.Equals(target, "about:blank", StringComparison.OrdinalIgnoreCase);
-                var deferPopupActivation = string.IsNullOrWhiteSpace(target) || targetIsBlank || !IsLikelyBetGameUrl(target);
-                Log("[NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
+                var targetLooksGame = IsLikelyBetGameUrl(target);
+                var deferReason = "";
+                if (string.IsNullOrWhiteSpace(target))
+                    deferReason = "empty-target";
+                else if (targetIsBlank)
+                    deferReason = "about:blank";
+                else if (!targetLooksGame)
+                    deferReason = "non-game-url";
+                var deferPopupActivation = !string.IsNullOrWhiteSpace(deferReason);
+                var opener = Web?.CoreWebView2?.Source ?? "";
+                Log("[NewWindowRequested] target=" + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target) +
+                    " | defer=" + (deferPopupActivation ? "1" : "0") +
+                    " | reason=" + (string.IsNullOrWhiteSpace(deferReason) ? "-" : deferReason) +
+                    " | opener=" + (string.IsNullOrWhiteSpace(opener) ? "-" : Shrink(opener, 180)));
 
                 var popupWeb = await EnsurePopupWebReadyAsync();
                 if (popupWeb?.CoreWebView2 != null)
                 {
+                    if (deferPopupActivation)
+                    {
+                        _popupDeferredOpenUntilUtc = DateTime.UtcNow.AddSeconds(PopupDeferredOpenGraceSeconds);
+                        _popupDeferredOpenTarget = target;
+                    }
+                    else
+                    {
+                        _popupDeferredOpenUntilUtc = DateTime.MinValue;
+                        _popupDeferredOpenTarget = "";
+                    }
+
                     await Dispatcher.InvokeAsync(() =>
                     {
                         if (!deferPopupActivation)
@@ -4515,7 +4541,7 @@ try{
                     if (!deferPopupActivation)
                         popupWeb.Focus();
                     else
-                        Log("[NewWindowRequested] defer popup activation until popup reaches a recognized game URL.");
+                        Log("[NewWindowRequested] defer popup activation until popup reaches a recognized game URL. grace=" + PopupDeferredOpenGraceSeconds.ToString(CultureInfo.InvariantCulture) + "s");
                 }
             }
             catch (Exception ex) { Log("[NewWindowRequested] " + ex); }
@@ -6325,6 +6351,10 @@ try{
                     e.Handled = true;
                     _popupWeb?.CoreWebView2?.Navigate(target);
                 }
+                else
+                {
+                    Log("[PopupWeb.NewWindowRequested] empty-target detected (window.open without immediate URL).");
+                }
             }
             catch (Exception ex)
             {
@@ -6353,6 +6383,7 @@ try{
                 var src = _popupWeb?.CoreWebView2?.Source ?? "";
                 var isBlank = string.IsNullOrWhiteSpace(src) || string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
                 var srcLooksGame = IsLikelyBetGameUrl(src);
+                var deferredOpenActive = _popupDeferredOpenUntilUtc != DateTime.MinValue && DateTime.UtcNow <= _popupDeferredOpenUntilUtc;
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
                 _betWebNavigatingSinceUtc = DateTime.MinValue;
                 _betWebLastNavDoneUtc = DateTime.UtcNow;
@@ -6375,6 +6406,25 @@ try{
                                 PopupHost.Visibility = Visibility.Visible;
                             _popupWeb?.Focus();
                         });
+                        _popupDeferredOpenUntilUtc = DateTime.MinValue;
+                        _popupDeferredOpenTarget = "";
+                    }
+                    else if (deferredOpenActive)
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (Web != null)
+                                Web.Visibility = Visibility.Collapsed;
+                            if (PopupHost != null)
+                                PopupHost.Visibility = Visibility.Visible;
+                            _popupWeb?.Focus();
+                        });
+                        var remainMs = (_popupDeferredOpenUntilUtc - DateTime.UtcNow).TotalMilliseconds;
+                        Log("[PopupWeb] keep popup visible during deferred-open grace | remainMs=" +
+                            Math.Max(0, (int)remainMs).ToString(CultureInfo.InvariantCulture) +
+                            " | srcLooksGame=" + (srcLooksGame ? "1" : "0") +
+                            " | isBlank=" + (isBlank ? "1" : "0") +
+                            " | reqTarget=" + (string.IsNullOrWhiteSpace(_popupDeferredOpenTarget) ? "<empty>" : Shrink(_popupDeferredOpenTarget, 180)));
                     }
                     else
                     {
@@ -6389,6 +6439,14 @@ try{
                             Log("[PopupWeb] keep main web active while popup is about:blank.");
                         else
                             Log("[PopupWeb] keep main web active while popup is non-game URL.");
+                        if (_popupDeferredOpenUntilUtc != DateTime.MinValue)
+                        {
+                            Log("[PopupWeb] deferred-open grace expired | reqTarget=" +
+                                (string.IsNullOrWhiteSpace(_popupDeferredOpenTarget) ? "<empty>" : Shrink(_popupDeferredOpenTarget, 180)) +
+                                " | src=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 180)));
+                            _popupDeferredOpenUntilUtc = DateTime.MinValue;
+                            _popupDeferredOpenTarget = "";
+                        }
                         if (!srcLooksGame)
                             AutoStopTasksOnBetPipelineReset("popup-nav-done-non-game", src);
                     }

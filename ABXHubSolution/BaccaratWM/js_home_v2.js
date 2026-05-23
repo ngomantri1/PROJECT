@@ -5679,26 +5679,40 @@
     };
             }
     };
-            // Đẩy một gói ngay lập tức
-            window.__abx_hw_pushNow = function () {
+            function postHomeTickState(st, forcePush) {
                 try {
-                            var st = (typeof window.__abx_hw_getState === 'function') ? window.__abx_hw_getState() : null;
-                            if (st) {
-                                st.abx = 'home_tick';
-                        // dùng kênh gửi an toàn đã có
-                        if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
-                            chrome.webview.postMessage(JSON.stringify(st));
-        } else {
-                            parent.postMessage(st, '*');
-                        }
-                        }
+                    if (!st)
+                        return false;
+                    st.abx = 'home_tick';
+                    var sig = [
+                        String(st.username || ''),
+                        String(st.balance || ''),
+                        String(st.href || ''),
+                        String(st.title || '')
+                    ].join('|');
+                    if (!forcePush && window.__abx_hw_last_tick_sig === sig)
+                        return false;
+                    window.__abx_hw_last_tick_sig = sig;
+                    safePost(st);
+                    return true;
+                } catch (_) {
+                    return false;
+                }
+            }
+
+            // Đẩy một gói ngay lập tức
+            window.__abx_hw_pushNow = function (forcePush) {
+                try {
+                    var st = (typeof window.__abx_hw_getState === 'function') ? window.__abx_hw_getState() : null;
+                    if (st)
+                        postHomeTickState(st, forcePush === true);
                 } catch (_) {}
-    };
+            };
 
             // Đẩy định kỳ state về C#
             window.__abx_hw_startPush = function (intervalMs) {
                 try {
-                    intervalMs = Math.max(300, Math.floor(+intervalMs || 800));
+                    intervalMs = Math.max(1200, Math.floor(+intervalMs || 2200));
                     if (window.__hw_pushTid) {
                         clearInterval(window.__hw_pushTid);
                         window.__hw_pushTid = 0;
@@ -5706,14 +5720,12 @@
                     window.__hw_pushTid = setInterval(function () {
                 try {
                             var st = (typeof window.__abx_hw_getState === 'function') ? window.__abx_hw_getState() : null;
-                            if (st) {
-                                st.abx = 'home_tick';
-                                safePost(st);
-            }
+                            if (st)
+                                postHomeTickState(st, false);
                 } catch (_) {}
                     }, intervalMs);
                 try {
-                        window.__abx_hw_pushNow && window.__abx_hw_pushNow();
+                        window.__abx_hw_pushNow && window.__abx_hw_pushNow(true);
                 } catch (_) {}
                     return true;
             } catch (_) {

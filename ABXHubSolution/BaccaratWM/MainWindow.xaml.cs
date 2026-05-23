@@ -34,6 +34,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Data;
 using static BaccaratWM.MainWindow;
 using System.Windows.Input;
+using System.Runtime.CompilerServices;
 
 
 
@@ -450,6 +451,19 @@ namespace BaccaratWM
         private string? _autoStartId;        // id script FRAME_AUTOSTART (đăng ký toàn cục)
         private bool _domHooked;             // đã gắn DOMContentLoaded cho top chưa
         private const string BuildMarker = "diag-probe-matrix-v1";
+        private sealed class FrameBridgeState
+        {
+            public string LastNavUri = "";
+            public string LastInjectKey = "";
+            public DateTime LastInjectUtc = DateTime.MinValue;
+            public string LastProbeKey = "";
+            public DateTime LastProbeUtc = DateTime.MinValue;
+        }
+
+        private readonly ConditionalWeakTable<CoreWebView2Frame, FrameBridgeState> _mainFrameBridgeStates = new();
+        private readonly ConditionalWeakTable<CoreWebView2Frame, FrameBridgeState> _popupFrameBridgeStates = new();
+        private static readonly TimeSpan FrameInjectMinGap = TimeSpan.FromMilliseconds(900);
+        private static readonly TimeSpan FrameProbeMinGap = TimeSpan.FromMilliseconds(700);
 
         // === License/Trial run state ===
 
@@ -488,6 +502,9 @@ namespace BaccaratWM
 
         private bool _manualDashboardOpened = false;
         private readonly SemaphoreSlim _cfgWriteGate = new(1, 1);// Khoá ghi config để không bao giờ ghi song song
+        private readonly object _cfgSaveDebounceGate = new();
+        private CancellationTokenSource? _cfgSaveDebounceCts;
+        private const int SaveConfigDebounceMs = 1200;
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
@@ -921,6 +938,9 @@ Ví dụ không hợp lệ:
         private static readonly bool KEEP_PACKET_FILE_LOGS_IN_PRODUCTION = false;
         private static readonly bool KEEP_WM_PACKET_DIAG_IN_PRODUCTION = false;
         private static readonly bool KEEP_WM_DIAG_FOR_INACTIVE_TABLES = false;
+        private static readonly bool ENABLE_FRAME_NET_TAP =
+            !PRODUCTION_LOG_MODE ||
+            string.Equals(Environment.GetEnvironmentVariable("ABX_ENABLE_FRAME_NET_TAP"), "1", StringComparison.Ordinal);
         private int _pktUiSample = 0;
         private bool _mainLockJsRegistered = false;
         private bool _popupLockJsRegistered = false;
@@ -1831,7 +1851,7 @@ Ví dụ không hợp lệ:
         private WebView2LiveBridge? _bridge;
         private bool _inputEventsHooked;
         // Interval push của Home (ms)
-        private int _homePushMs = 800;
+        private int _homePushMs = 2200;
         // Home-flow state flags (per-document)
         private bool _homeAutoLoginDone = false;
         private bool _homeAutoPlayDone = false;
@@ -4809,7 +4829,7 @@ Ví dụ không hợp lệ:
                     Log("Loaded config: " + _cfgPath);
                 }
                 if (MigrateLegacySeqToPb(_cfg))
-                    _ = SaveConfigAsync();
+                    _ = SaveConfigDebouncedAsync();
                 _homeUsername = _cfg.LastHomeUsername;
                 // Sinh / nạp clientId cố định cho lease
                 _leaseClientId = string.IsNullOrWhiteSpace(_cfg.LeaseClientId)
@@ -4841,7 +4861,7 @@ Ví dụ không hợp lệ:
                 if (!string.Equals(normalizedStartupUrl, _cfg.Url, StringComparison.OrdinalIgnoreCase))
                 {
                     _cfg.Url = normalizedStartupUrl;
-                    _ = SaveConfigAsync();
+                    _ = SaveConfigDebouncedAsync();
                 }
                 if (TxtUrl != null) TxtUrl.Text = _cfg.Url;
                 if (TxtStakeCsv != null)
@@ -4905,6 +4925,46 @@ Ví dụ không hợp lệ:
                 _globalCfgSnapshot = CloneConfig(_cfg);
             }
             catch (Exception ex) { Log("[LoadConfig] " + ex); }
+        }
+
+        private Task SaveConfigDebouncedAsync(int delayMs = SaveConfigDebounceMs)
+        {
+            CancellationTokenSource cts;
+            lock (_cfgSaveDebounceGate)
+            {
+                _cfgSaveDebounceCts?.Cancel();
+                _cfgSaveDebounceCts?.Dispose();
+                cts = new CancellationTokenSource();
+                _cfgSaveDebounceCts = cts;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(delayMs, cts.Token);
+                    if (!cts.IsCancellationRequested)
+                        await SaveConfigAsync();
+                }
+                catch (TaskCanceledException) { }
+                catch (Exception ex)
+                {
+                    Log("[SaveConfigDebounced] " + ex.Message);
+                }
+                finally
+                {
+                    lock (_cfgSaveDebounceGate)
+                    {
+                        if (ReferenceEquals(_cfgSaveDebounceCts, cts))
+                        {
+                            _cfgSaveDebounceCts?.Dispose();
+                            _cfgSaveDebounceCts = null;
+                        }
+                    }
+                }
+            });
+
+            return Task.CompletedTask;
         }
 
         private async Task SaveConfigAsync()
@@ -6150,6 +6210,11 @@ Ví dụ không hợp lệ:
                     return false;
 
                 var abx = (abxEl.GetString() ?? "").Trim();
+                if ((string.Equals(abx, "frame_net_tap", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(abx, "frame_net_tap_chunk", StringComparison.OrdinalIgnoreCase)) &&
+                    !ENABLE_FRAME_NET_TAP)
+                    return true;
+
                 if (string.Equals(abx, "frame_net_tap_chunk", StringComparison.OrdinalIgnoreCase))
                     return TryHandleFrameNetTapChunkMessage(root, scope);
                 if (!string.Equals(abx, "frame_net_tap", StringComparison.OrdinalIgnoreCase))
@@ -6585,7 +6650,7 @@ Ví dụ không hợp lệ:
                                         if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
                                         {
                                             _cfg.LastHomeUsername = _homeUsername;
-                                            _ = SaveConfigAsync(); // fire-and-forget
+                                            _ = SaveConfigDebouncedAsync(); // fire-and-forget
                                         }
                                     }
 
@@ -6935,7 +7000,7 @@ Ví dụ không hợp lệ:
                                             if (_cfg != null && _cfg.LastHomeUsername != _homeUsername)
                                             {
                                                 _cfg.LastHomeUsername = _homeUsername;
-                                                _ = SaveConfigAsync();
+                                                _ = SaveConfigDebouncedAsync();
                                             }
                                         }
                                     }
@@ -9018,18 +9083,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var f = e.Frame;
-                _ = ProbeAndMaybeRememberPopupGameFrameAsync(f, "frame-created");
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
-                _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
-                Log("[PopupWeb] frame injected + autostart armed.");
+                var state = _popupFrameBridgeStates.GetValue(f, _ => new FrameBridgeState());
                 _ = LogFrameCollectorDiagAsync(f, "PopupFrameCreated");
 
+                f.NavigationStarting += (s2, e2) =>
+                {
+                    try { state.LastNavUri = (e2.Uri ?? "").Trim(); } catch { }
+                };
                 f.DOMContentLoaded += PopupFrame_DOMContentLoaded_Bridge;
                 f.NavigationCompleted += PopupFrame_NavigationCompleted_Bridge;
             }
@@ -9059,16 +9119,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
 
-                _ = ProbeAndMaybeRememberPopupGameFrameAsync(f, "dom-ready");
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
-                _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
-                Log("[PopupWeb] frame DOMContentLoaded -> reinjected + autostart.");
+                var state = _popupFrameBridgeStates.GetValue(f, _ => new FrameBridgeState());
+                _ = ProbeAndMaybeRememberPopupGameFrameAsync(f, "dom-ready", GetFrameStateUriHint(state));
+                _ = EnsurePopupFrameBridgeOnceAsync(f, "dom-ready");
+                Log("[PopupWeb] frame DOMContentLoaded -> conditional inject/probe.");
                 _ = LogFrameCollectorDiagAsync(f, "PopupFrameDOMContentLoaded");
             }
             catch (Exception ex)
@@ -9089,16 +9143,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 }
 
-                _ = ProbeAndMaybeRememberPopupGameFrameAsync(f, "nav-complete");
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
-                _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
-                Log("[PopupWeb] frame NavigationCompleted -> reinjected + autostart.");
+                var state = _popupFrameBridgeStates.GetValue(f, _ => new FrameBridgeState());
+                _ = ProbeAndMaybeRememberPopupGameFrameAsync(f, "nav-complete", GetFrameStateUriHint(state));
+                _ = EnsurePopupFrameBridgeOnceAsync(f, "nav-complete");
+                Log("[PopupWeb] frame NavigationCompleted -> conditional inject/probe.");
                 _ = LogFrameCollectorDiagAsync(f, "PopupFrameNavigationCompleted");
                 ScheduleDelayedFrameDiag(f, "PopupFrameNavigationCompleted");
             }
@@ -10735,11 +10783,131 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
-        private async Task ProbeAndMaybeRememberPopupGameFrameAsync(CoreWebView2Frame? frame, string stage)
+        private static bool IsNoiseFrameUri(string? uri)
+        {
+            var raw = (uri ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+            if (raw.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (raw.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (raw.StartsWith("blob:", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (raw.IndexOf("/account/user-profile", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
+        }
+
+        private static bool ShouldSkipProbeByHintUri(string? uriHint)
+            => IsNoiseFrameUri(uriHint);
+
+        private static bool ShouldSkipInjectByHintUri(string? uriHint)
+            => IsNoiseFrameUri(uriHint);
+
+        private static bool TryEnterFrameProbe(FrameBridgeState state, string stage, string uriHint)
+        {
+            var normUri = (uriHint ?? "").Trim();
+            var key = $"{stage}:{normUri}";
+            var now = DateTime.UtcNow;
+            if (string.Equals(state.LastProbeKey, key, StringComparison.Ordinal) &&
+                (now - state.LastProbeUtc) < FrameProbeMinGap)
+                return false;
+            state.LastProbeKey = key;
+            state.LastProbeUtc = now;
+            return true;
+        }
+
+        private static bool TryEnterFrameInject(FrameBridgeState state, string uriHint)
+        {
+            var normUri = (uriHint ?? "").Trim();
+            var key = string.IsNullOrWhiteSpace(normUri) ? "(unknown)" : normUri;
+            var now = DateTime.UtcNow;
+            if (string.Equals(state.LastInjectKey, key, StringComparison.OrdinalIgnoreCase) &&
+                (now - state.LastInjectUtc) < FrameInjectMinGap)
+                return false;
+            state.LastInjectKey = key;
+            state.LastInjectUtc = now;
+            return true;
+        }
+
+        private static string? GetFrameStateUriHint(FrameBridgeState state)
+        {
+            var raw = (state.LastNavUri ?? "").Trim();
+            return string.IsNullOrWhiteSpace(raw) ? null : raw;
+        }
+
+        private async Task EnsureMainFrameBridgeOnceAsync(CoreWebView2Frame? frame, string stage)
         {
             try
             {
                 if (frame == null)
+                    return;
+                var state = _mainFrameBridgeStates.GetValue(frame, _ => new FrameBridgeState());
+                var uriHint = GetFrameStateUriHint(state);
+                if (ShouldSkipInjectByHintUri(uriHint))
+                    return;
+                if (!TryEnterFrameInject(state, uriHint ?? ""))
+                    return;
+
+                if (ENABLE_FRAME_NET_TAP)
+                    await frame.ExecuteScriptAsync(FRAME_SHIM);
+                if (!string.IsNullOrEmpty(_appJs))
+                    await frame.ExecuteScriptAsync(_appJs);
+                if (!string.IsNullOrEmpty(_homeJs))
+                    await frame.ExecuteScriptAsync(_homeJs);
+                await frame.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
+                await frame.ExecuteScriptAsync(FRAME_AUTOSTART);
+                await frame.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
+                Log($"[Bridge] Frame injected + autostart stage={stage} uri={ClipForLog(uriHint ?? "", 140)}");
+            }
+            catch (Exception ex)
+            {
+                Log("[Bridge.InjectFrame] " + ex.Message);
+            }
+        }
+
+        private async Task EnsurePopupFrameBridgeOnceAsync(CoreWebView2Frame? frame, string stage)
+        {
+            try
+            {
+                if (frame == null)
+                    return;
+                var state = _popupFrameBridgeStates.GetValue(frame, _ => new FrameBridgeState());
+                var uriHint = GetFrameStateUriHint(state);
+                if (ShouldSkipInjectByHintUri(uriHint))
+                    return;
+                if (!TryEnterFrameInject(state, uriHint ?? ""))
+                    return;
+
+                if (ENABLE_FRAME_NET_TAP)
+                    await frame.ExecuteScriptAsync(FRAME_SHIM);
+                if (!string.IsNullOrEmpty(_appJs))
+                    await frame.ExecuteScriptAsync(_appJs);
+                if (!string.IsNullOrEmpty(_homeJs))
+                    await frame.ExecuteScriptAsync(_homeJs);
+                await frame.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
+                await frame.ExecuteScriptAsync(FRAME_AUTOSTART);
+                await frame.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
+                Log($"[PopupWeb] frame injected + autostart stage={stage} uri={ClipForLog(uriHint ?? "", 140)}");
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.InjectFrame] " + ex.Message);
+            }
+        }
+
+        private async Task ProbeAndMaybeRememberPopupGameFrameAsync(CoreWebView2Frame? frame, string stage, string? uriHint = null)
+        {
+            try
+            {
+                if (frame == null)
+                    return;
+                var state = _popupFrameBridgeStates.GetValue(frame, _ => new FrameBridgeState());
+                var effectiveUriHint = string.IsNullOrWhiteSpace(uriHint) ? GetFrameStateUriHint(state) : uriHint;
+                if (ShouldSkipProbeByHintUri(effectiveUriHint))
+                    return;
+                if (!TryEnterFrameProbe(state, stage, effectiveUriHint ?? ""))
                     return;
 
                 const string js = @"(function(){
@@ -10824,7 +10992,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
 
                 _homeJs ??= await LoadHomeJsAsync();
-                await frame.ExecuteScriptAsync(FRAME_SHIM);
+                if (ENABLE_FRAME_NET_TAP)
+                    await frame.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     await frame.ExecuteScriptAsync(_appJs);
                 if (!string.IsNullOrEmpty(_homeJs))
@@ -10950,11 +11119,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
-        private async Task ProbeAndMaybeRememberMainGameFrameAsync(CoreWebView2Frame? frame, string stage)
+        private async Task ProbeAndMaybeRememberMainGameFrameAsync(CoreWebView2Frame? frame, string stage, string? uriHint = null)
         {
             try
             {
                 if (frame == null)
+                    return;
+                var state = _mainFrameBridgeStates.GetValue(frame, _ => new FrameBridgeState());
+                var effectiveUriHint = string.IsNullOrWhiteSpace(uriHint) ? GetFrameStateUriHint(state) : uriHint;
+                if (ShouldSkipProbeByHintUri(effectiveUriHint))
+                    return;
+                if (!TryEnterFrameProbe(state, stage, effectiveUriHint ?? ""))
                     return;
 
                 const string js = @"(function(){
@@ -11041,7 +11216,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
 
                 _homeJs ??= await LoadHomeJsAsync();
-                await frame.ExecuteScriptAsync(FRAME_SHIM);
+                if (ENABLE_FRAME_NET_TAP)
+                    await frame.ExecuteScriptAsync(FRAME_SHIM);
                 if (!string.IsNullOrEmpty(_appJs))
                     await frame.ExecuteScriptAsync(_appJs);
                 if (!string.IsNullOrEmpty(_homeJs))
@@ -17295,7 +17471,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _cfg.UseTrial = false;
             _lastKnownLicenseUser = username;
             _lastKnownLicenseUntilUtc = expUtc;
-            _ = SaveConfigAsync();
+            _ = SaveConfigDebouncedAsync();
 
             StartExpiryCountdown(expUtc, "license");
             StartLicenseRecheckTimer(username);
@@ -17374,7 +17550,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     _cfg.TrialUntil = trialEndsAt.ToString("o");
                     _cfg.TrialSessionKey = _trialKey;
                     _cfg.UseTrial = true;
-                    _ = SaveConfigAsync();
+                    _ = SaveConfigDebouncedAsync();
 
                     StartExpiryCountdown(trialEndsAt, "trial");
                     StartLeaseHeartbeat(_trialKey, _trialKey);
@@ -17409,7 +17585,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         _cfg.TrialUntil = localTrialUntil.Value.ToString("o");
                         _cfg.TrialSessionKey = _trialKey;
                         _cfg.UseTrial = true;
-                        _ = SaveConfigAsync();
+                        _ = SaveConfigDebouncedAsync();
 
                         StartExpiryCountdown(localTrialUntil.Value, "trial");
                         StartLeaseHeartbeat(_trialKey, _trialKey);
@@ -17430,7 +17606,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     _cfg.TrialUntil = localTrialUntil.Value.ToString("o");
                     _cfg.TrialSessionKey = _trialKey;
                     _cfg.UseTrial = true;
-                    _ = SaveConfigAsync();
+                    _ = SaveConfigDebouncedAsync();
 
                     StartExpiryCountdown(localTrialUntil.Value, "trial");
                     StartLeaseHeartbeat(_trialKey, _trialKey);
@@ -18134,7 +18310,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (!_uiReady) return;               // ⬅️ chặn event khởi động sớm
             ApplyMouseShieldFromCheck();
-            _ = SaveConfigAsync();
+            _ = SaveConfigDebouncedAsync();
             Log("[UI] Khoá chuột web: ON");
         }
 
@@ -18142,7 +18318,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             if (!_uiReady) return;               // ⬅️ chặn event khởi động sớm
             ApplyMouseShieldFromCheck();
-            _ = SaveConfigAsync();
+            _ = SaveConfigDebouncedAsync();
             Log("[UI] Khoá chuột web: OFF");
         }
 
@@ -18679,7 +18855,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             _cfg.TrialSessionKey = "";
             _cfg.UseTrial = false;
             if (saveAsync)
-                _ = SaveConfigAsync();
+                _ = SaveConfigDebouncedAsync();
         }
 
         private static string BuildDeviceId()
@@ -18969,19 +19145,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var f = e.Frame;
-                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "frame-created");
-
-                // Tiêm ngay (idempotent)
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                // NEW: inject Home JS vào frame
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
-                _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
-                Log("[Bridge] Frame injected + autostart armed.");
+                var state = _mainFrameBridgeStates.GetValue(f, _ => new FrameBridgeState());
                 _ = LogFrameCollectorDiagAsync(f, "FrameCreated");
 
                 // Hook lifecycle của CHÍNH frame này
@@ -18991,6 +19155,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     try
                     {
                         lastFrameNavUri = e2.Uri ?? "";
+                        state.LastNavUri = (e2.Uri ?? "").Trim();
                         Log($"[Frame NavStart] id={f.Name} uri={lastFrameNavUri}");
 
                         // Neu iframe vao lobby PP thi dieu huong top window sang cung URL de cung origin
@@ -19085,17 +19250,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
 
-                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "dom-ready");
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
-                _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
+                var state = _mainFrameBridgeStates.GetValue(f, _ => new FrameBridgeState());
+                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "dom-ready", GetFrameStateUriHint(state));
+                _ = EnsureMainFrameBridgeOnceAsync(f, "dom-ready");
 
-                Log("[Bridge] Frame DOMContentLoaded -> reinjected + autostart.");
+                Log("[Bridge] Frame DOMContentLoaded -> conditional inject/probe.");
                 _ = LogFrameCollectorDiagAsync(f, "FrameDOMContentLoaded");
             }
             catch (Exception ex)
@@ -19116,17 +19275,11 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 }
 
-                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "nav-complete");
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                if (!string.IsNullOrEmpty(_appJs))
-                    _ = f.ExecuteScriptAsync(_appJs);
-                if (!string.IsNullOrEmpty(_homeJs))
-                    _ = f.ExecuteScriptAsync(_homeJs);
-                _ = f.ExecuteScriptAsync(GAME_TABLE_PUSH_JS);
-                _ = f.ExecuteScriptAsync(FRAME_AUTOSTART);
-                _ = f.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
+                var state = _mainFrameBridgeStates.GetValue(f, _ => new FrameBridgeState());
+                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "nav-complete", GetFrameStateUriHint(state));
+                _ = EnsureMainFrameBridgeOnceAsync(f, "nav-complete");
 
-                Log("[Bridge] Frame NavigationCompleted -> reinjected + autostart.");
+                Log("[Bridge] Frame NavigationCompleted -> conditional inject/probe.");
                 _ = LogFrameCollectorDiagAsync(f, "FrameNavigationCompleted");
                 ScheduleDelayedFrameDiag(f, "FrameNavigationCompleted");
             }
