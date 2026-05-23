@@ -1,65 +1,73 @@
 ﻿# PROJECT_CONTEXT
 
-## Tổng quan
-- `BaccaratWM` là app WPF (`net8.0-windows`) tự động theo dõi bàn Baccarat và đặt cược qua `WebView2` + JavaScript bridge.
-- Chạy 2 mode chính.
-- Mode standalone app.
-- Mode plugin cho ABX Hub (`ABX_HUB`, `BaccaratWMPlugin.cs`).
-- Logic nghiệp vụ tập trung chủ yếu ở `MainWindow.xaml.cs` và `js_home_v2.js`.
+## Tổng quan project
+- `BaccaratWM` là app WPF (.NET 8) tự động hóa Baccarat bằng `WebView2` + bridge JS (`js_home_v2.js`) + parser CDP network.
+- Chạy 2 chế độ: standalone và plugin trong ABX Hub.
+- Logic runtime tập trung chủ yếu ở `MainWindow.xaml.cs`.
 
-## Công nghệ
-- C#: .NET 8, WPF, async/await, `Dispatcher`, `INotifyPropertyChanged`.
-- Web: WebView2 + CDP (`CallDevToolsProtocolMethodAsync`) + script injection.
-- JS bridge: `window.chrome.webview.postMessage` cho message `abx`.
-- Data/IO: JSON config cục bộ, CSV lịch sử cược, log chẩn đoán.
+## Trạng thái hiện tại (23/05/2026)
+- Đã giảm lag lúc vào trang đáng kể.
+- Vấn đề chính còn lại: vào game WM vẫn có lúc chậm hoặc không ổn định do loop điều hướng popup.
+- Đã triển khai đợt fix mới:
+- Giới hạn retry `about:blank`.
+- Giới hạn recover `blockmsg -> wm`.
+- Cooldown theo cửa sổ thời gian.
+- Chặn `fallback-main` trong pha `block-recover`.
+- Log tham chiếu chính: `C:\Users\Admin\AppData\Local\BaccaratWM\logs\20260523.log`.
+
+## Công nghệ sử dụng
+- C#: WPF, async/await, `Dispatcher`, lock gate theo domain.
+- Web runtime: `WebView2`, CDP (`CallDevToolsProtocolMethodAsync`), script injection.
+- JS bridge: `window.chrome.webview.postMessage`.
+- Data: config/stats JSON local, CSV history, log runtime.
 
 ## Flow hoạt động chính
-- Khởi tạo WebView2, inject script (`TOP_FORWARD`, `GAME_TABLE_PUSH_JS`, `FRAME_AUTOSTART`, `js_home_v2.js`).
-- JS thu thập trạng thái lobby/game và gửi về C# (`home_tick`, `table_update`).
-- C# đồng thời nghe network/CDP để parse feed protocol (`20/21/24/25/26/33/35/38...`) và cập nhật room/cache.
-- Task chiến lược (`Tasks/*`) quyết định side + amount rồi gọi bridge đặt cược `__cw_bet`.
-- Khi dispatch bet, C# ghi `pending`; khi có tín hiệu kết thúc phiên/round thì finalize kết quả + cập nhật thống kê/UI.
+- Khởi tạo WebView2, inject script nền (`TOP_FORWARD`, `FRAME_AUTOSTART`, `js_home_v2.js`...).
+- JS gửi `home_tick`, `table_update`, `bet_diag` về host.
+- C# song song đọc CDP network/websocket và parse feed room/protocol.
+- Task chiến lược tính side/tiền cược rồi gọi bridge `__cw_bet`.
+- C# tạo pending, theo dõi session/round, finalize và cập nhật UI/thống kê.
 
 ## Coding rules
-- Mọi cập nhật UI phải đi qua `Dispatcher`.
-- Mọi truy cập shared mutable state phải giữ đúng lock gate hiện có (`_pendingBetGate`, `_roomFeedGate`, `_tableTasksGate`, `_popupServerRoadGate`, ...).
-- Gọi JS từ C# ưu tiên đường đã serialize (`EvalJsLockedAsync`, `_domActionLock`) để tránh race.
-- Không thêm parser “cứng” theo 1 payload duy nhất; giữ parse tolerant vì feed WM thay đổi format.
-- Không bỏ log prefix chuẩn (`[WM_DIAG]`, `[ROOMDBG]`, `[OVERLAY]`, `[HIST]`) vì đang dùng để điều tra thực địa.
+- Mọi update UI phải qua `Dispatcher`.
+- Mọi state chia sẻ phải đi qua gate/lock hiện có.
+- JS eval từ C# phải theo đường serialize (`_domActionLock`, helper hiện hữu).
+- Parser phải tolerant, không hard-code một schema packet.
+- Giữ log prefix chuẩn để điều tra thực địa.
 
 ## Naming rules
-- Side dùng chuẩn `P/B/T` hoặc `PLAYER/BANKER/TIE`; normalize trước khi so sánh.
-- Session/table key phải normalize trước khi dùng map/queue (`NormalizeSessionKey`, table id canonical).
-- Tên method flow theo động từ rõ nghĩa: `Try*` cho parse/check, `Ensure*` cho init, `Finalize*` cho chốt phiên.
-- Trạng thái tạm/pending phải phản ánh scope theo tên biến (`_pendingRow`, `_pendingBetsByTable`, `LastFinalizedSessionKey`).
+- Side chuẩn: `P/B/T` hoặc `PLAYER/BANKER/TIE` và normalize trước khi so sánh.
+- Key session/table luôn normalize trước khi đưa vào map.
+- `Try*` cho check/parse, `Ensure*` cho init, `Finalize*` cho chốt phiên.
+- Tên biến pending/state phải phản ánh đúng scope table/session.
 
-## Rule quan trọng
-- Ưu tiên nguồn room feed theo độ tin cậy runtime.
-- `protocol35` > `protocol21` wrapped > `table_update` DOM.
-- Cơ chế dedupe/finalize theo session là bắt buộc, không được bỏ.
-- Overlay là lớp hiển thị điều phối thao tác; không được biến overlay thành nguồn sự thật duy nhất của engine.
+## Các rule quan trọng
+- Ưu tiên nguồn room feed theo thứ tự tin cậy runtime: `protocol35` > `protocol21 wrapped` > DOM `table_update`.
+- Dedupe/finalize theo table-session là bắt buộc.
+- Overlay chỉ là lớp thao tác UI, không phải source of truth duy nhất.
+- Không sửa/chuyển mã tiếng Việt UI/comment nếu không liên quan nghiệp vụ.
 
 ## WebSocket flow
-- JS hook `WebSocket`, `fetch`, `XHR` để bắt tín hiệu và emit message về host.
-- C# đăng ký CDP `Network.webSocketFrameReceived/Sent`, `Network.responseReceived`, `Network.loadingFinished` để lấy payload raw.
-- Parser C# tách room/game state từ protocol feed, merge vào cache `_protocol21Rooms`, rồi publish room list.
-- Khi parser miss, hệ thống giữ fallback đường DOM/`table_update` và ghi `WM_DIAG`.
+- JS hook `WebSocket/fetch/XHR` gửi signal về host.
+- C# bắt CDP `Network.*` để lấy raw payload.
+- Parser merge room state vào cache và publish danh sách bàn.
+- Nếu parser miss thì fallback sang DOM/table_update.
 
 ## Pending flow
-- Khi lệnh bet được dispatch thành công, tạo `BetRow` pending và enqueue theo table.
-- Theo dõi session key + trạng thái round từ popup-road/home tick.
-- Dùng `TryMarkFinalizeOncePerTableSession` để đảm bảo mỗi table/session chỉ finalize 1 lần.
-- Finalize ghi kết quả thắng/thua/hòa, account, CSV, stats overlay, rồi clear pending đúng table.
+- Dispatch bet thành công thì tạo pending row theo table.
+- Theo dõi session key và round state.
+- Chỉ finalize một lần cho mỗi table-session.
+- Finalize xong mới clear pending và cập nhật stats/log/CSV.
 
 ## Threading/UI rules
-- Không block UI thread bằng network/IO dài; dùng async và marshal lại UI bằng `Dispatcher`.
-- Không thao tác collection bind UI từ thread nền.
-- Lock scope càng nhỏ càng tốt; tuyệt đối tránh lock chồng nhiều gate không cần thiết.
-- Mọi thay đổi state task đang chạy phải qua gate `_tableTasksGate`.
+- Không block UI thread bằng IO/network dài.
+- Không sửa collection bind UI từ thread nền.
+- Lock scope ngắn, tránh lock chồng không cần thiết.
+- State chạy đa bàn phải qua gate quản lý task/table.
 
-## Tuyệt đối không được phá
-- Cơ chế inject `js_home_v2.js` từ disk/embedded fallback.
-- Dedupe dispatch-ack/pending finalize theo session.
-- Room feed arbitration giữa protocol35/protocol21/table_update.
-- Plugin debug pipeline trong `.csproj` (copy plugin sang `AutoBetHub/Plugins`, bind `ABX.Core`).
-- Fallback icon/resource (`FallbackIcons`, `PackRes`) để UI không vỡ khi thiếu resource runtime.
+## Những điều tuyệt đối không được phá
+- Cơ chế inject `js_home_v2.js` (disk/embedded fallback).
+- Luồng popup/new-window và cert bypass cho host game.
+- Guard dedupe dispatch/finalize.
+- Arbitration room feed đa nguồn.
+- Pipeline plugin debug trong `.csproj` và fallback resource icon.

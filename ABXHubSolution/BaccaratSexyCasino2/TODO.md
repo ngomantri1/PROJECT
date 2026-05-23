@@ -118,3 +118,19 @@
 - Locked sequence behavior to "DOM bootstrap + CDP/network append only":
   - keep `EnableDomRecoveryAfterMissingNetworkWinner = false`,
   - block JS append contract in CDP-first mode.
+
+## Update (2026-05-23)
+- Add popup context auto-recovery when stuck state is detected:
+  - repeated `src=popup-pull` + `href=thirdg.html`,
+  - repeated `DOM-TABLE-SKIP reason=non-singlebac-seq-source`,
+  - missing active `popup-frame/webMain.jsp` authority for a configurable timeout window.
+- Add explicit recovery policy (non-cheat, normal flow):
+  - re-open game from site flow (same user actions path),
+  - re-arm popup and wait for `webMain.jsp` authority lock before resuming full trust.
+- Add watchdog diagnostics for this failure mode:
+  - time-in-stuck-state,
+  - last-seen `popup-frame` timestamp,
+  - last-seen provider `ws-recv` timestamp,
+  - recovery attempt count and outcome.
+- Add UI status hint when running with stale carried snapshot only:
+  - distinguish "live game authority active" vs "carrying previous snapshot while context lost".

@@ -1173,6 +1173,10 @@ Ví dụ không hợp lệ:
         private DateTime _popupDeferredOpenUntilUtc = DateTime.MinValue;
         private string _popupDeferredOpenTarget = "";
         private const int PopupDeferredOpenGraceSeconds = 18;
+        private bool _popupRefreshArmed = false;
+        private DateTime _popupRefreshGraceUntilUtc = DateTime.MinValue;
+        private string _popupRefreshEntryUrl = "";
+        private const int PopupRefreshGraceSeconds = 90;
         private readonly object _playerFlowCacheLock = new();
         private string _lastPlayerFlowGameUrl = "";
         private DateTime _lastPlayerFlowGameAtUtc = DateTime.MinValue;
@@ -6366,10 +6370,35 @@ try{
         {
             try
             {
-                _betWebNavigatingSinceUtc = DateTime.UtcNow;
+                var now = DateTime.UtcNow;
+                _betWebNavigatingSinceUtc = now;
                 var src = (e.Uri ?? "").Trim();
+                var thirdgEntry = IsPopupThirdgEntryUrl(src);
+                if (thirdgEntry)
+                {
+                    _popupRefreshArmed = true;
+                    _popupRefreshGraceUntilUtc = now.AddSeconds(PopupRefreshGraceSeconds);
+                    _popupRefreshEntryUrl = src;
+                    Log("[PopupWeb][REFRESH-NORMAL] phase=entry | url=" + Shrink(src, 220) +
+                        " | grace=" + PopupRefreshGraceSeconds.ToString(CultureInfo.InvariantCulture) + "s");
+                }
+                else if (_popupRefreshArmed && IsProviderLoginTransitUrl(src))
+                {
+                    Log("[PopupWeb][REFRESH-NORMAL] phase=provider-hop | url=" + Shrink(src, 220));
+                }
+
+                var refreshGraceActive = IsPopupRefreshGraceActive();
                 var keepMainHostVisible = IsCurrentHostB8Pro07() &&
                     string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
+                var suppressAutoStopForRefresh = (thirdgEntry || refreshGraceActive) && !IsLikelyBetGameReadyUrl(src);
+                if (suppressAutoStopForRefresh)
+                {
+                    var remainMs = (_popupRefreshGraceUntilUtc - now).TotalMilliseconds;
+                    Log("[PopupWeb][REFRESH-NORMAL] phase=nav-start-hold | suppressAutoStop=1 | remainMs=" +
+                        Math.Max(0, (int)remainMs).ToString(CultureInfo.InvariantCulture) +
+                        " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                    return;
+                }
                 if (!keepMainHostVisible && !IsLikelyBetGameUrl(src))
                     AutoStopTasksOnBetPipelineReset("popup-nav-start", src);
             }
@@ -6380,19 +6409,36 @@ try{
         {
             try
             {
+                var now = DateTime.UtcNow;
                 var src = _popupWeb?.CoreWebView2?.Source ?? "";
+                var thirdgEntry = IsPopupThirdgEntryUrl(src);
+                if (thirdgEntry)
+                {
+                    _popupRefreshArmed = true;
+                    _popupRefreshGraceUntilUtc = now.AddSeconds(PopupRefreshGraceSeconds);
+                    _popupRefreshEntryUrl = src;
+                }
                 var isBlank = string.IsNullOrWhiteSpace(src) || string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
                 var srcLooksGame = IsLikelyBetGameUrl(src);
                 var deferredOpenActive = _popupDeferredOpenUntilUtc != DateTime.MinValue && DateTime.UtcNow <= _popupDeferredOpenUntilUtc;
+                var refreshGraceActive = IsPopupRefreshGraceActive();
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
                 _betWebNavigatingSinceUtc = DateTime.MinValue;
-                _betWebLastNavDoneUtc = DateTime.UtcNow;
+                _betWebLastNavDoneUtc = now;
                 if (TryParseProviderErrorUrl(src, out var providerStatus, out var providerDesc, out var providerExternal))
                 {
                     Log("[PopupWeb][ProviderError] status=" +
                         (string.IsNullOrWhiteSpace(providerStatus) ? "-" : providerStatus) +
                         " | desc=" + (string.IsNullOrWhiteSpace(providerDesc) ? "-" : providerDesc) +
                         " | external=" + (string.IsNullOrWhiteSpace(providerExternal) ? "-" : providerExternal));
+                    Log("[PopupWeb][REFRESH-FAIL] type=provider-error | action=auto-stop-reset | status=" +
+                        (string.IsNullOrWhiteSpace(providerStatus) ? "-" : providerStatus) +
+                        " | desc=" + (string.IsNullOrWhiteSpace(providerDesc) ? "-" : Shrink(providerDesc, 220)) +
+                        " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                    _popupRefreshArmed = false;
+                    _popupRefreshGraceUntilUtc = DateTime.MinValue;
+                    _popupRefreshEntryUrl = "";
+                    AutoStopTasksOnBetPipelineReset("popup-provider-error", src);
                 }
                 if (e.IsSuccess)
                 {
@@ -6406,6 +6452,13 @@ try{
                                 PopupHost.Visibility = Visibility.Visible;
                             _popupWeb?.Focus();
                         });
+                        if (_popupRefreshArmed)
+                        {
+                            Log("[PopupWeb][REFRESH-NORMAL] phase=recovered-game-url | url=" + Shrink(src, 220));
+                        }
+                        _popupRefreshArmed = false;
+                        _popupRefreshGraceUntilUtc = DateTime.MinValue;
+                        _popupRefreshEntryUrl = "";
                         _popupDeferredOpenUntilUtc = DateTime.MinValue;
                         _popupDeferredOpenTarget = "";
                     }
@@ -6425,6 +6478,27 @@ try{
                             " | srcLooksGame=" + (srcLooksGame ? "1" : "0") +
                             " | isBlank=" + (isBlank ? "1" : "0") +
                             " | reqTarget=" + (string.IsNullOrWhiteSpace(_popupDeferredOpenTarget) ? "<empty>" : Shrink(_popupDeferredOpenTarget, 180)));
+                    }
+                    else if (refreshGraceActive || thirdgEntry || IsProviderLoginTransitUrl(src))
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (Web != null)
+                                Web.Visibility = Visibility.Collapsed;
+                            if (PopupHost != null)
+                                PopupHost.Visibility = Visibility.Visible;
+                            _popupWeb?.Focus();
+                        });
+                        var remainMs = (_popupRefreshGraceUntilUtc - now).TotalMilliseconds;
+                        Log("[PopupWeb][REFRESH-NORMAL] phase=non-game-hold | suppressAutoStop=1 | remainMs=" +
+                            Math.Max(0, (int)remainMs).ToString(CultureInfo.InvariantCulture) +
+                            " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                        if (_popupRefreshArmed && !refreshGraceActive && !thirdgEntry)
+                        {
+                            Log("[PopupWeb][REFRESH-FAIL] type=grace-expired-no-game-url | action=hold-no-reset | entry=" +
+                                (string.IsNullOrWhiteSpace(_popupRefreshEntryUrl) ? "<empty>" : Shrink(_popupRefreshEntryUrl, 220)) +
+                                " | current=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                        }
                     }
                     else
                     {
@@ -6451,6 +6525,16 @@ try{
                             AutoStopTasksOnBetPipelineReset("popup-nav-done-non-game", src);
                     }
                     await InjectOnPopupDocAsync();
+                }
+                else
+                {
+                    if (refreshGraceActive || thirdgEntry || _popupRefreshArmed)
+                    {
+                        Log("[PopupWeb][REFRESH-FAIL] type=navigation-error | action=hold-no-reset | err=" +
+                            e.WebErrorStatus.ToString() +
+                            " | entry=" + (string.IsNullOrWhiteSpace(_popupRefreshEntryUrl) ? "<empty>" : Shrink(_popupRefreshEntryUrl, 220)) +
+                            " | current=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                    }
                 }
             }
             catch { }
@@ -6519,6 +6603,9 @@ try{
             _popupBridgeRegistered = false;
             _popupDevToolsOpened = false;
             _popupLastDocKey = null;
+            _popupRefreshArmed = false;
+            _popupRefreshGraceUntilUtc = DateTime.MinValue;
+            _popupRefreshEntryUrl = "";
             _popupFrameRefs.Clear();
             _betWebNavigatingSinceUtc = DateTime.MinValue;
             _betWebLastNavDoneUtc = DateTime.MinValue;
@@ -15527,6 +15614,41 @@ try{
             if (path.IndexOf("/player/login/apiLogin", StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
             return false;
+        }
+
+        private static bool IsPopupThirdgEntryUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+            if (!string.Equals(u.Host, "new.wencheng.cc", StringComparison.OrdinalIgnoreCase))
+                return false;
+            var path = u.AbsolutePath ?? "";
+            return path.IndexOf("/home/thirdg.html", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsProviderLoginTransitUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+
+            var path = u.AbsolutePath ?? "";
+            if (path.IndexOf("/player/login/apiLogin", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (path.IndexOf("/api/player/", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                path.IndexOf("/login", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
+        }
+
+        private bool IsPopupRefreshGraceActive()
+        {
+            return _popupRefreshArmed &&
+                   _popupRefreshGraceUntilUtc != DateTime.MinValue &&
+                   DateTime.UtcNow <= _popupRefreshGraceUntilUtc;
         }
 
         private static bool TryParseProviderErrorUrl(string? rawUrl, out string status, out string desc, out string externalUrl)

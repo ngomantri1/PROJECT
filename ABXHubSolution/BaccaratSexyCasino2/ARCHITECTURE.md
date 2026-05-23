@@ -145,6 +145,23 @@
 - Important diagnostic interpretation:
   - `BET ACK` currently means JS queue job finished, not guaranteed game/server accepted money.
 
+## Popup Refresh / Context Guard (2026-05-23)
+- `MainWindow.xaml.cs` popup flow now keeps local refresh state:
+  - `_popupRefreshArmed`
+  - `_popupRefreshGraceUntilUtc`
+  - `_popupRefreshEntryUrl`
+- URL classifiers used by popup navigation handling:
+  - `IsPopupThirdgEntryUrl(...)`
+  - `IsProviderLoginTransitUrl(...)`
+  - `IsPopupRefreshGraceActive()`
+- Navigation behavior:
+  - on `thirdg.html` entry: arm grace and log `[PopupWeb][REFRESH-NORMAL] phase=entry`,
+  - during grace/transit: suppress popup auto-stop reset path and keep popup host visible,
+  - on real provider error URL: log provider error + `[REFRESH-FAIL]` and reset via `popup-provider-error`.
+- Operational gap still open:
+  - if provider/site drops context from `webMain.jsp` to `gamehall/thirdg` and never returns to game iframe,
+  - system currently keeps last accepted snapshot/tick loop but has no forced auto-recovery to re-enter the game frame.
+
 ## UI Validation Notes (2026-05-20)
 - Pattern validator limits in `MainWindow.xaml.cs`:
   - B/P strategy pattern `<mau_qua_khu>`: `1..20`

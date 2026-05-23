@@ -121,3 +121,18 @@
   - authoritative append must come from CDP/network only.
 - UI/state bug from accidental revert was fixed again:
   - pattern `<mau_qua_khu>` length limit restored to `1-20`.
+
+## Update (2026-05-23)
+- New observed runtime issue in `%LocalAppData%\\BaccaratSexyCasino2\\logs\\20260523.log`:
+  - popup can drop from active game context (`popup-frame` at `webMain.jsp`) to transit/lobby context (`popup-pull` at `thirdg.html`),
+  - UI then shows stale carry-forward values and appears visually disconnected (gray game area / broken-content icon symptom).
+- Evidence pattern in logs:
+  - just before drop: normal `popup-frame` authority with `ws-recv` and accepted pool/status,
+  - after drop: repetitive `DOM-TABLE-SKIP reason=non-singlebac-seq-source` + `incoming-without-pool`,
+  - tick remains alive but only on `popup-pull` context (`score=0`, no game signals).
+- Important negative findings for this incident:
+  - no `popup-nav-start` auto-stop/reset loop at the failing moment,
+  - no `popup-provider-error` marker at the failing moment.
+- Working diagnosis:
+  - primary trigger is provider/site context drop or redirect out of game iframe,
+  - tool defect is lack of automatic re-entry/recovery when the context remains stuck on `thirdg.html`.

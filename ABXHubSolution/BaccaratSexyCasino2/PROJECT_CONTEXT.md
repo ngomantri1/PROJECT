@@ -51,6 +51,23 @@
   - C# always pushes bet intent down to JS queue (fire-and-forget),
   - let JS/game acceptance decide real execution.
 
+## Latest Updates (2026-05-23)
+- Popup refresh guard for `new.wencheng.cc` was patched in `MainWindow.xaml.cs`:
+  - add grace window when popup enters `thirdg.html`,
+  - suppress immediate auto-stop/reset during provider transit,
+  - reset only on real provider error.
+- New popup refresh diagnostics are now available in logs:
+  - `[PopupWeb][REFRESH-NORMAL]`
+  - `[PopupWeb][REFRESH-FAIL]`
+  - reset reason `popup-provider-error`.
+- Live verification with `%LocalAppData%\\BaccaratSexyCasino2\\logs\\20260523.log` shows:
+  - patch markers appear and old `popup-nav-start` auto-stop was not triggered in the observed run,
+  - there is a real runtime case where game context drops from `popup-frame/webMain.jsp` back to `popup-pull/thirdg.html`,
+  - after the drop, tool keeps running tick/canvas with last accepted snapshot but no longer has active game frame authority.
+- Current interpretation:
+  - this failure mode is mostly provider/site context drop/redirect (session/game frame left),
+  - tool-side gap is missing auto-recovery when stuck on `thirdg.html` without recovering game frame.
+
 ## Latest Updates (2026-05-20)
 - UI/state validation for pattern strategies was re-synced:
   - `<mau_qua_khu>` max length updated from `10` to `20` for both B/P and I/N pattern validators.

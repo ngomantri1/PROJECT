@@ -1,57 +1,47 @@
 ﻿# BUGS
 
 ## Bug hiện tại
-- `DecisionSeconds` chưa được nối rõ vào runtime decision gate.
-- Dấu hiệu: có lưu/đọc `_cfg.DecisionSeconds` và bind `TxtDecisionSecond`, nhưng giá trị đưa vào `GameContext.DecisionPercent` vẫn từ `_decisionPercent = 3`.
-- Tác động: người dùng đổi `DecisionSeconds` có thể không ảnh hưởng hành vi task như kỳ vọng.
+- Vào game WM chưa ổn định tuyệt đối.
+- Triệu chứng: có phiên vẫn chậm hoặc không vào sâu game dù app đã bớt lag.
+- Dấu hiệu log: xuất hiện cụm loop điều hướng popup và redirect chặn mạng.
 
-- `ValidateSeqNI` lệch giữa logic và thông báo.
-- Logic: cho phép `2..100`.
-- Message lỗi: ghi `2..50`.
-- Tác động: gây hiểu sai validation thực tế.
+- Room feed có thể trống sau chuỗi điều hướng lỗi.
+- Triệu chứng UI: danh sách bàn có lúc rỗng (`Không có mục nào`) dù đã login.
 
-- `App.xaml` tham chiếu `Assets/kq/BANKER.png`, `Assets/kq/PLAYER.png` nhưng thư mục `Assets/kq` hiện chỉ có `THANG/THUA/HOA`.
-- Tác động: resource key có thể fail tùy đường chạy; hiện được giảm rủi ro nhờ fallback icon ở code.
+## Bug đã fix
+- Lag nặng lúc vào trang do loop điều hướng dày đã được giảm mạnh.
+- Đã thêm guard runtime:
+- Retry budget + cooldown cho `about:blank`.
+- Recover budget + cooldown cho `blockmsg -> wm`.
+- Suppress `fallback-main` trong cửa sổ `block-recover`.
 
-## Bug đã fix / đã có cơ chế phòng lỗi
-- Trùng lịch sử do ack lặp.
-- Đã có cơ chế dedupe dispatch signature + cửa sổ thời gian ngắn trước khi append history.
-
-- Chốt pending nhiều lần trong cùng session.
-- Đã có `TryMarkFinalizeOncePerTableSession` + map `_lastFinalizedSessionByTable`.
-
-- Kẹt chờ cửa cược khi countdown/source nhiễu.
-- Đã có fallback wait logic trong `TaskUtil.WaitUntilBetWindow` dựa trên nhiều tín hiệu state.
-
-- Mất room list do parser đơn nguồn.
-- Đã có multi-source arbitration (`protocol35`, `protocol21`, `table_update`) + buffer publish cho wrapped protocol21.
+- Lỗi ký tự tiếng Việt bị sai mã trong phần chỉnh sửa trước đã được cảnh báo và yêu cầu tránh tái diễn.
 
 ## Bug chưa fix
-- Mismatch `DecisionSeconds` vs `_decisionPercent` (cần trace và nối runtime rõ ràng).
-- Mismatch text validation `ValidateSeqNI`.
-- Cấu hình csproj dùng `Microsoft.NET.Sdk.WindowsDesktop` phát warning `NETSDK1137` khi build bằng SDK mới.
+- Vẫn còn case không ổn định khi hop từ `thirdg.html` sang WM game host.
+- Chưa có dashboard metric gọn theo phiên popup để nhìn nhanh nguyên nhân fail.
+- Một số warning build cũ của solution vẫn tồn tại (không chặn build nhưng tăng nhiễu).
 
-## Nguyên nhân bug (gốc)
-- Nghiệp vụ tập trung trong `MainWindow.xaml.cs` quá lớn nên dễ bỏ sót wire config-runtime.
-- Runtime dùng nhiều nguồn tín hiệu song song (JS push, CDP network, popup frame) nên dễ race/inconsistency.
-- Một số resource/key legacy còn tồn tại sau nhiều vòng đổi UI assets.
+## Nguyên nhân bug
+- Luồng popup phụ thuộc redirect nhiều bước và môi trường mạng chặn trung gian (`blockmsg.greennet`).
+- Trước đây policy retry/recover quá nhanh gây vòng lặp dày, bào tài nguyên UI/thread.
+- Runtime có nhiều nguồn tín hiệu song song (JS/CDP/popup/main) dễ tạo race nếu không có guard.
 
 ## Workaround tạm thời
-- Với decision window: tạm dùng giá trị mặc định thực tế của engine cho tới khi nối xong config-runtime.
-- Với `ValidateSeqNI`: hướng dẫn người dùng theo ngưỡng thực chạy (`2..100`) thay vì text UI.
-- Với ảnh Banker/Player: ưu tiên icon từ `Assets/side/*` và fallback `FallbackIcons`.
-- Với room feed chập chờn: dùng nút refresh room sau khi lobby tải ổn định; theo dõi log `[WM_DIAG]` để chọn nguồn feed đúng.
+- Khi game chưa vào ổn định, ưu tiên quan sát log phiên mới nhất trước khi chạy nhiều bàn.
+- Giữ số bàn chạy thấp trong lúc tune threshold popup guard.
+- Nếu room rỗng, refresh đúng sau khi popup đã ổn định URL game host.
 
 ## Vùng code dễ lỗi
-- `MainWindow.xaml.cs`.
-- Khối parser protocol21/35 và publish room.
-- Khối pending/finalize bet theo session/table.
-- Khối inject/re-inject script cho main frame + popup frame.
+- `MainWindow.xaml.cs`:
+- `PopupWeb_NavigationStarting`
+- `PopupWeb_NavigationCompleted`
+- `StartPopupNavigationWatchdog`
+- `FallbackPopupToMainAsync`
 
-- `js_home_v2.js`.
-- `__cw_bet` queue/confirm/diag.
-- Overlay state sync (`__abxTableOverlay`).
-- History/road parsing từ DOM/SVG/canvas.
+- `js_home_v2.js`:
+- hook websocket/xhr/fetch
+- bridge `__cw_bet`
+- overlay state sync
 
-- `Tasks/*`.
-- Các strategy có logic money progression + stop condition dễ gây drift nếu state đầu vào lệch.
+- Parser room feed protocol (ưu tiên/fallback giữa nhiều nguồn).
