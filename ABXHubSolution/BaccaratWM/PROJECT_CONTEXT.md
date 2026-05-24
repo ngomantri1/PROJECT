@@ -5,15 +5,30 @@
 - Chạy 2 chế độ: standalone và plugin trong ABX Hub.
 - Logic runtime tập trung chủ yếu ở `MainWindow.xaml.cs`.
 
-## Trạng thái hiện tại (23/05/2026)
-- Đã giảm lag lúc vào trang đáng kể.
-- Vấn đề chính còn lại: vào game WM vẫn có lúc chậm hoặc không ổn định do loop điều hướng popup.
-- Đã triển khai đợt fix mới:
-- Giới hạn retry `about:blank`.
-- Giới hạn recover `blockmsg -> wm`.
-- Cooldown theo cửa sổ thời gian.
-- Chặn `fallback-main` trong pha `block-recover`.
-- Log tham chiếu chính: `C:\Users\Admin\AppData\Local\BaccaratWM\logs\20260523.log`.
+## Trạng thái hiện tại (24/05/2026)
+- App đã giảm lag/đơ startup so với đầu phiên.
+- Vấn đề còn lại: vào game WM vẫn có tính intermittent (lúc vào được, lúc kẹt ở popup đen hoặc không đi tiếp).
+- Kết luận điều tra log:
+- Có phiên fail do cert endpoint game trong log cũ (`ERR_CERT_COMMON_NAME_INVALID`).
+- Log mới `20260524.log` không còn cert fail, nhưng có phiên chỉ `NavigationStarting thirdg` rồi không có `NavigationCompleted`.
+
+## Patch gần nhất đã áp dụng
+- `js_home_v2.js`:
+- Tăng guard mở game từ `3000ms` lên `7000ms`.
+- Giảm lobby auto-retry từ `200ms` xuống `1000ms`.
+- Thêm cờ `busy` để tránh callback retry chồng lặp.
+- `MainWindow.xaml.cs`:
+- Thêm watchdog cho `thirdg.html`: quá `8s` không `NavigationCompleted` thì retry đúng `1` lần.
+- Không đổi flow mở game chính, chỉ thêm self-heal khi `thirdg` treo.
+- Build pass (`dotnet build`, 0 error).
+
+## Log tham chiếu chính
+- `C:\Users\Admin\AppData\Local\BaccaratWM\logs\20260524.log`
+- Dấu cần theo dõi:
+- `NewWindowRequested -> thirdg.html`
+- `PopupWeb NavigationStarting/Completed`
+- `[PopupWeb][thirdg-watch] timeout -> retry once`
+- `NavigationCompleted: OK | https://wmvn.m8810.com/?sid=...`
 
 ## Công nghệ sử dụng
 - C#: WPF, async/await, `Dispatcher`, lock gate theo domain.
@@ -46,6 +61,7 @@
 - Dedupe/finalize theo table-session là bắt buộc.
 - Overlay chỉ là lớp thao tác UI, không phải source of truth duy nhất.
 - Không sửa/chuyển mã tiếng Việt UI/comment nếu không liên quan nghiệp vụ.
+- Không đụng flow mở game chính khi tối ưu hiệu năng; chỉ thêm guard/watchdog nội bộ phạm vi hẹp.
 
 ## WebSocket flow
 - JS hook `WebSocket/fetch/XHR` gửi signal về host.

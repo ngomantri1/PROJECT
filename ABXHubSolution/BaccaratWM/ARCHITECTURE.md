@@ -11,6 +11,7 @@
 ## Module chính
 - UI Orchestrator: điều phối state tổng, timer, pending, room, popup.
 - Popup Navigation Guard: kiểm soát retry/cooldown/fallback khi điều hướng game popup.
+- Popup Thirdg Watchdog (mới): theo dõi `thirdg.html`, timeout thì retry đúng 1 lần.
 - Network Parser: parse packet CDP/WS/HTTP thành room/game state.
 - Strategy Engine: quyết định side/stake theo chuỗi kết quả.
 - JS Bridge Layer: thực thi thao tác DOM/game và trả signal về host.
@@ -19,7 +20,7 @@
 - Orchestrator phụ thuộc JS Bridge để thao tác bàn.
 - Orchestrator phụ thuộc Network Parser để lấy room realtime ổn định.
 - Strategy Engine nhận `GameContext` do Orchestrator cấp và gọi ngược UI/bet callbacks.
-- Popup Guard nằm trong Orchestrator, phụ thuộc trạng thái popup + watchdog + source URL.
+- Popup Guard + Thirdg Watchdog nằm trong Orchestrator, phụ thuộc trạng thái popup + source URL + timer.
 
 ## File nào phụ trách gì
 - `MainWindow.xaml.cs`: runtime chính, parse feed, popup route, pending/finalize, state UI.
@@ -33,22 +34,23 @@
 - Strategy đọc state + history -> tạo lệnh cược -> gọi JS bet.
 - Bet result/session end -> finalize pending -> cập nhật UI/stat/log.
 
-## WebSocket packet flow
-- Bắt `Network.webSocketFrameReceived/Sent` và HTTP response payload.
-- Lọc packet liên quan WM/protocol.
-- Parse vào room state, ưu tiên nguồn tin cậy cao.
-- Fallback DOM/table_update nếu packet thiếu hoặc đổi schema.
+## Popup/game navigation flow
+- `NewWindowRequested` route sang `PopupWeb`.
+- Popup mở `thirdg.html` rồi hop sang `wmvn.m8810.com`.
+- Nếu gặp `blockmsg.greennet` thì cancel redirect và recover theo budget/cooldown.
+- Nếu `thirdg` không completed trong timeout (`8s`), watchdog tự retry URL `thirdg` đúng 1 lần.
+- Watchdog dừng khi đã hop sang `wmvn` hoặc khi có `NavigationCompleted` hợp lệ.
+
+## JS auto-open stabilization (24/05/2026)
+- Guard mở game tăng lên `7000ms`.
+- Auto-retry lobby giảm còn `1000ms`.
+- Có cờ `busy` để tránh callback `setInterval(async...)` chồng lặp.
+- Mục tiêu: giảm `double-open` và giảm race lúc popup đang transition.
 
 ## UI update flow
 - Tất cả update UI đi qua `Dispatcher`.
 - Callback từ task chỉ push state, không trực tiếp chạm control từ worker thread.
 - Overlay update qua JS API (`window.__abxTableOverlay.*`) và đồng bộ với state C#.
-
-## Popup/game navigation flow
-- `NewWindowRequested` route sang `PopupWeb`.
-- Popup mở `thirdg.html` rồi hop sang `wmvn.m8810.com`.
-- Nếu gặp `blockmsg.greennet` thì cancel redirect và recover theo budget/cooldown.
-- Watchdog chỉ fallback về main khi không còn trong cửa sổ `block-recover`.
 
 ## OCR/canvas flow
 - Không có OCR native.
