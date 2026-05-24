@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
     'use strict';
     const HOME_JS_REV = 'wm-bet-20260412-v3';
     const BET_QUEUE_NEXT_DELAY_MS = 100;
@@ -21,7 +21,7 @@
         if (typeof window.__abx_chip_active_verified === 'undefined')
             window.__abx_chip_active_verified = false;
     } catch (_) {}
-    // Muốn hiện và ẩn bảng điều khiển home watch thì tìm dòng sau : showPanel: false // ⬅️ false = ẩn panel; true = hiện panel
+    // Muá»‘n hiá»‡n vÃ  áº©n báº£ng Ä‘iá»u khiá»ƒn home watch thÃ¬ tÃ¬m dÃ²ng sau : showPanel: false // â¬…ï¸ false = áº©n panel; true = hiá»‡n panel
     if (window.self !== window.top) {
         if (!/^games\./i.test(location.hostname)) {
             return;
@@ -31,14 +31,14 @@
         try {
             const href = typeof u === 'string' ? u : (u && u.url) || '';
             const url = new URL(href, location.href);
-            // chặn MỌI request tới host ap.stape.info (kể cả events_cfc…)
+            // cháº·n Má»ŒI request tá»›i host ap.stape.info (ká»ƒ cáº£ events_cfcâ€¦)
             return url.hostname === 'stape.info' || url.hostname.endsWith('.stape.info');
         } catch (_) {
             return /(^|\.)stape\.info/.test(String(u || ''));
         }
     }
 
-    // --- MUTE TELEMETRY SỚM NHẤT (fetch, XHR, sendBeacon) ---
+    // --- MUTE TELEMETRY Sá»šM NHáº¤T (fetch, XHR, sendBeacon) ---
     (function installTelemetryMutes() {
         if (window.__abx_telemetry_hooked)
             return;
@@ -78,7 +78,7 @@
                     try {
                         this.abort();
                     } catch (_) {}
-                    return; // nuốt luôn
+                    return; // nuá»‘t luÃ´n
                 }
                 return send.apply(this, arguments);
             };
@@ -141,18 +141,18 @@
         } catch (_) {}
             }
 
-    // --- Hết: MUTE TELEMETRY ---
-    // === BEGIN TEXTMAP GUARD (đặt trước khi return ở games.*) ===
+    // --- Háº¿t: MUTE TELEMETRY ---
+    // === BEGIN TEXTMAP GUARD (Ä‘áº·t trÆ°á»›c khi return á»Ÿ games.*) ===
     (function installTextMapGuard() {
         if (window.__cw_tm_installed)
             return;
         window.__cw_tm_installed = true;
 
-        // Map sống chung toàn trang (không thay thế, chỉ merge)
+        // Map sá»‘ng chung toÃ n trang (khÃ´ng thay tháº¿, chá»‰ merge)
         let _map = window.__cw_textMap || {};
         window.__cw_textMap = _map;
 
-        // Setter tiện dụng cho code bên ngoài muốn nạp thêm map
+        // Setter tiá»‡n dá»¥ng cho code bÃªn ngoÃ i muá»‘n náº¡p thÃªm map
         window.__cw_setTextMap = function (partial) {
             try {
                 if (!partial || typeof partial !== 'object')
@@ -166,7 +166,7 @@
             } catch (_) {}
         };
 
-        // Getter an toàn (có mặc định)
+        // Getter an toÃ n (cÃ³ máº·c Ä‘á»‹nh)
         window.__cw_getText = function (key, fallback = "") {
             try {
                 const v = _map && _map[key];
@@ -176,8 +176,8 @@
             }
         };
 
-        // Chặn các đoạn script reset về {} hoặc set map rỗng
-        // - Trường hợp page dùng biến toàn cục TextMap => ta bọc bằng accessor
+        // Cháº·n cÃ¡c Ä‘oáº¡n script reset vá» {} hoáº·c set map rá»—ng
+        // - TrÆ°á»ng há»£p page dÃ¹ng biáº¿n toÃ n cá»¥c TextMap => ta bá»c báº±ng accessor
         try {
             let backing = _map;
             Object.defineProperty(window, 'TextMap', {
@@ -197,15 +197,15 @@
                             console.warn("SKIPPED setting TextMap: empty/small mapping");
                             return;
                         }
-                        // không replace, chỉ merge để không mất key cũ
+                        // khÃ´ng replace, chá»‰ merge Ä‘á»ƒ khÃ´ng máº¥t key cÅ©
                         Object.assign(backing, v);
                     } catch (_) {}
                         }
             });
-        } catch (_) { /* nếu trang đã định nghĩa sẵn thì bỏ qua */
+        } catch (_) { /* náº¿u trang Ä‘Ã£ Ä‘á»‹nh nghÄ©a sáºµn thÃ¬ bá» qua */
                 }
 
-        // Tiện ích chờ map “đủ lớn” trước khi dùng
+        // Tiá»‡n Ã­ch chá» map â€œÄ‘á»§ lá»›nâ€ trÆ°á»›c khi dÃ¹ng
         window.__cw_waitForTextMap = async function (minKeys = 50, timeout = 8000, step = 80) {
             const t0 = Date.now();
             while (Date.now() - t0 < timeout) {
@@ -218,7 +218,7 @@
             throw new Error("TextMap not ready");
         };
 
-        // (Optional) xuất ra global để debug nhanh: __cw_textMap
+        // (Optional) xuáº¥t ra global Ä‘á»ƒ debug nhanh: __cw_textMap
     })();
     // === END TEXTMAP GUARD ===
 
@@ -3295,7 +3295,7 @@
         } catch (_) {}
     }
 
-    // Skip toàn bộ Home Watch ở domain game
+    // Skip toÃ n bá»™ Home Watch á»Ÿ domain game
     try { startGameBalanceWatch(); } catch (_) {}
     if (/^games\./i.test(location.hostname)) {
         try { startGameBalanceWatch(); } catch (_) {}
@@ -3303,9 +3303,9 @@
         return;
             }
 
-    // Chạy 1 lần duy nhất và chỉ ở top window (không chạy trong iframe)
+    // Cháº¡y 1 láº§n duy nháº¥t vÃ  chá»‰ á»Ÿ top window (khÃ´ng cháº¡y trong iframe)
     if (window.__abx_hw_installed)
-        return; // chỉ kiểm tra, KHÔNG set ở đây
+        return; // chá»‰ kiá»ƒm tra, KHÃ”NG set á»Ÿ Ä‘Ã¢y
 
     // ======= Config =======
     const CFG = {
@@ -3318,16 +3318,16 @@
         retryBtnId: 'bretry',
         linksBtnId: 'blinks',
         textsBtnId: 'btext',
-        closePopupBtnId: 'bclosepopup', // NEW: nút ClosePopup
+        closePopupBtnId: 'bclosepopup', // NEW: nÃºt ClosePopup
         scanLinksBtnId: 'bscanl200',
         scanTextsBtnId: 'bscant200',
-        scanClosePopupBtnId: 'bscanclose200', // NEW: nút Scan200ClosePopup
+        scanClosePopupBtnId: 'bscanclose200', // NEW: nÃºt Scan200ClosePopup
         resultMapBtnId: 'bresultmap',
         scanResultMapBtnId: 'bscanresult200',
         overlayToggleBtnId: 'boverlay',
         loginBtnId: 'blogin',
         xocBtnId: 'bxoc',
-        copyInfoBtnId: 'bcopyinfo', // ← THÊM DÒNG NÀY
+        copyInfoBtnId: 'bcopyinfo', // â† THÃŠM DÃ’NG NÃ€Y
         autoRetryIntervalMs: 5000,
         maxRetries: 6,
         watchdogMs: 1000,
@@ -3336,25 +3336,25 @@
         autoRetryOnBoot: false
     };
 
-    // ABS selector cho Username (đường dẫn tuyệt đối bạn yêu cầu)
+    // ABS selector cho Username (Ä‘Æ°á»ng dáº«n tuyá»‡t Ä‘á»‘i báº¡n yÃªu cáº§u)
     const ABS_USERNAME_TAIL =
         'div.user-profile[1]/div.main[2]/div.user-profile__left[1]/div.user-profile__form-input[1]/div.full-name[2]/div.base-input.disabled[1]/div.base-input__wrap.has-value[1]/input[1]';
-    // --- ABS selector cho số dư (đường dẫn tuyệt đối bạn yêu cầu)
+    // --- ABS selector cho sá»‘ dÆ° (Ä‘Æ°á»ng dáº«n tuyá»‡t Ä‘á»‘i báº¡n yÃªu cáº§u)
     const ABS_BALANCE_SEL =
         'div.d-flex.align-items-center:nth-of-type(2) > div.menu__right > div.user-logged.d-flex > div.user-logged__info > div.base-dropdown-header > button.btn.btn-secondary > div.left > p.base-dropdown-header__user__amount';
 
     // --- host helpers ---
     const isGameHost = () => /^games\./i.test(location.hostname);
 
-    // Root popup đăng nhập (lấy từ Scan200ClosePopup bên bản Copy)
+    // Root popup Ä‘Äƒng nháº­p (láº¥y tá»« Scan200ClosePopup bÃªn báº£n Copy)
     const TAIL_LOGIN_POPUP_ROOT =
         'html.windows-os[1]/body._style[1]/div[2]/div.header[1]/div.v--modal-overlay[3]/div.v--modal-background-click[1]/div.v--modal-box.v--modal[2]/div.tcg_modal_wrap.loginPopupModal[1]';
 
-    // Danh sách popup quảng cáo/thông báo cần auto tắt
+    // Danh sÃ¡ch popup quáº£ng cÃ¡o/thÃ´ng bÃ¡o cáº§n auto táº¯t
     const CLOSE_POPUP_ROOT_TAILS = [
-        // Popup thông báo RR88 HƯỚNG VỀ MIỀN LŨ...
+        // Popup thÃ´ng bÃ¡o RR88 HÆ¯á»šNG Vá»€ MIá»€N LÅ¨...
         'html.windows-os[1]/body._style[1]/div[2]/div.br_index_main.br_main[3]/div.v--modal-overlay[2]/div.v--modal-background-click[1]/div.v--modal-box.v--modal[2]/div.tcg_modal_wrap.publicModal[1]',
-        // Overlay bọc ngoài
+        // Overlay bá»c ngoÃ i
         'html.windows-os[1]/body._style[1]/div[2]/div.br_index_main.br_main[3]/div.v--modal-overlay[2]'
     ];
 
@@ -3364,14 +3364,14 @@
     const TAIL_XOCDIA_BTN =
         'div.livestream-section__live[2]/div.item-live[2]/div.live-stream[1]/div.player-wrapper[1]/div[1]/div.play-button[4]/div.play-overlay[1]/button.base-button.btn[1]';
 
-    // Nút "PP trực tuyến" trên header (Casino LIVE)
+    // NÃºt "PP trá»±c tuyáº¿n" trÃªn header (Casino LIVE)
     const TAIL_PP_TRUC_TUYEN =
         'div.header_nav[1]/div.header_nav_list[1]/div.nav_item.active[2]/div.dropdown_menu.LIVE[2]/div.drop_bg[1]/ul.drop_ul.noCenter[2]/li[2]/span.desc[2]';
 
-    // Bản dự phòng nếu lúc đó tab Casino chưa có class "active"
+    // Báº£n dá»± phÃ²ng náº¿u lÃºc Ä‘Ã³ tab Casino chÆ°a cÃ³ class "active"
     const TAIL_PP_TRUC_TUYEN_ALT =
         'div.header_nav[1]/div.header_nav_list[1]/div.nav_item[2]/div.dropdown_menu.LIVE[2]/div.drop_bg[1]/ul.drop_ul.noCenter[2]/li[1]/span.desc[2]';
-    // Tìm nút "PP trực tuyến" theo tail + text, chỉ nhận khi đang visible
+    // TÃ¬m nÃºt "PP trá»±c tuyáº¿n" theo tail + text, chá»‰ nháº­n khi Ä‘ang visible
     function findPPProviderButton() {
         const normalizePPText = (value) => {
             try {
@@ -3389,7 +3389,7 @@
         const pickClickable = (el) =>
             (el && (el.closest('a,button,[role=button],li') || el)) || null;
 
-        // 1) Ưu tiên tìm theo 2 tail đã cấu hình
+        // 1) Æ¯u tiÃªn tÃ¬m theo 2 tail Ä‘Ã£ cáº¥u hÃ¬nh
         const tails = [TAIL_PP_TRUC_TUYEN, TAIL_PP_TRUC_TUYEN_ALT];
 
         for (const t of tails) {
@@ -3401,7 +3401,7 @@
             }
         }
 
-        // 2) Fallback: quét theo text "PP trực tuyến" trong header
+        // 2) Fallback: quÃ©t theo text "PP trá»±c tuyáº¿n" trong header
         const candidates = Array.from(
             document.querySelectorAll('span.desc, li, a, button, div'));
         const menu = document.querySelector('.dropdown_menu.LIVE');
@@ -3425,7 +3425,7 @@
         return null;
     }
 
-    // ======= Game Regex (dùng trên chuỗi đã norm() — không dấu, lowercase) =======
+    // ======= Game Regex (dÃ¹ng trÃªn chuá»—i Ä‘Ã£ norm() â€” khÃ´ng dáº¥u, lowercase) =======
     const RE_XOCDIA_POS = /\bxoc(?:[-\s]*dia)?\b/; // "xoc", "xoc dia", "xoc-dia", "xocdia"
     const RE_XOCDIA_NEG = /\b(?:tai|xiu|taixiu|sicbo|dice)\b/; // "tai", "xiu", "taixiu", "sicbo", "dice"
 
@@ -3437,7 +3437,7 @@
         items: {
             link: [],
             text: [],
-            popup: []// NEW: danh sách popup
+            popup: []// NEW: danh sÃ¡ch popup
         },
         selected: null,
         username: '',
@@ -3453,8 +3453,12 @@
         missStreak: 0,
         authGateOpened: false,
         loginPopupTimer: null, // NEW: timer auto click login
-        loginPostProbeStarted: false, // NEW: tránh start probe trùng
+        loginPostProbeStarted: false, // NEW: tr??nh start probe tr??ng
+        loggedInCacheAt: 0,
+        loggedInCacheVal: false,
+        profilePathFail: Object.create(null),
         loginInputScanTid: 0,
+        loginInputLastRunAt: 0,
         loginInputObserver: null,
         overlayLog: ''
     };
@@ -3485,7 +3489,7 @@
     };
     const norm = s => (s || '').toString().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
     const wait = ms => new Promise(r => setTimeout(r, ms));
-    // log tiện dụng cho luồng baccarat
+    // log tiá»‡n dá»¥ng cho luá»“ng baccarat
     const bLog = (msg) => {
         try {
             updateInfo && updateInfo('[bacc] ' + msg);
@@ -3516,19 +3520,19 @@
         }
         }
 
-    // đặt gần nhóm utils (trước/hoặc sau textOf)
+    // Ä‘áº·t gáº§n nhÃ³m utils (trÆ°á»›c/hoáº·c sau textOf)
     function isLikelyUsername(s) {
         const t = String(s || '').trim();
         if (!t)
             return false;
-        // loại các nhãn phổ biến / label
-        if (/(tên\s*hiển\s*thị|tên\s*đăng\s*nhập|đăng\s*nhập|login|email|mật\s*khẩu|vip)/i.test(t))
+        // loáº¡i cÃ¡c nhÃ£n phá»• biáº¿n / label
+        if (/(tÃªn\s*hiá»ƒn\s*thá»‹|tÃªn\s*Ä‘Äƒng\s*nháº­p|Ä‘Äƒng\s*nháº­p|login|email|máº­t\s*kháº©u|vip)/i.test(t))
             return false;
-        // độ dài hợp lý cho tên nhân vật
+        // Ä‘á»™ dÃ i há»£p lÃ½ cho tÃªn nhÃ¢n váº­t
         if (t.length < 2 || t.length > 40)
             return false;
-        // phải có ít nhất 1 chữ hoặc số (kể cả có dấu tiếng Việt)
-        if (!/[A-Za-zÀ-ỹ0-9]/.test(t))
+        // pháº£i cÃ³ Ã­t nháº¥t 1 chá»¯ hoáº·c sá»‘ (ká»ƒ cáº£ cÃ³ dáº¥u tiáº¿ng Viá»‡t)
+        if (!/[A-Za-z0-9]/.test(t))
             return false;
         return true;
     }
@@ -3642,20 +3646,23 @@
             }
         } catch (_) {}
 
-        try {
-            document.querySelectorAll(modalSel).forEach(r => {
-                if (r && r.isConnected)
-                    roots.push(r);
-            });
-        } catch (_) {}
+        const popupVisible = isLoginPopupVisible();
+        if (popupVisible) {
+            try {
+                document.querySelectorAll(modalSel).forEach(r => {
+                    if (r && r.isConnected)
+                        roots.push(r);
+                });
+            } catch (_) {}
 
-        try {
-            document.querySelectorAll('input[type="password"]').forEach(pwd => {
-                const root = pwd.closest(modalSel + ', form, .login, .signin, .sign-in, .login-form, .signin-form, .auth, .auth-form') || pwd.parentElement;
-                if (root)
-                    roots.push(root);
-            });
-        } catch (_) {}
+            try {
+                document.querySelectorAll('input[type="password"]').forEach(pwd => {
+                    const root = pwd.closest(modalSel + ', form, .login, .signin, .sign-in, .login-form, .signin-form, .auth, .auth-form') || pwd.parentElement;
+                    if (root)
+                        roots.push(root);
+                });
+            } catch (_) {}
+        }
 
         try {
             document.querySelectorAll('.hd_login, .user-not-login').forEach(r => {
@@ -3694,8 +3701,23 @@
         return inputs;
     }
 
+    function shouldScanLoginInputs() {
+        try {
+            if (isLoginPopupVisible())
+                return true;
+            if (document.querySelector('.hd_login, .user-not-login'))
+                return true;
+            const ae = document.activeElement;
+            if (ae && /^(input|textarea)$/i.test(ae.tagName || ''))
+                return true;
+        } catch (_) {}
+        return false;
+    }
+
     function scanLoginInputsNow(reason) {
         try {
+            if (!shouldScanLoginInputs())
+                return '';
             const inputs = collectLoginInputs();
             for (const input of inputs) {
                 const hasPwd = hasPasswordNear(input);
@@ -3726,12 +3748,18 @@
     }
 
     function scheduleLoginInputScan(reason) {
+        if (!shouldScanLoginInputs())
+            return;
+        const now = Date.now();
+        if (now - (S.loginInputLastRunAt || 0) < 900)
+            return;
         if (S.loginInputScanTid)
             return;
         S.loginInputScanTid = setTimeout(() => {
             S.loginInputScanTid = 0;
+            S.loginInputLastRunAt = Date.now();
             scanLoginInputsNow(reason);
-        }, 200);
+        }, 220);
     }
 
     function ensureLoginInputObserver() {
@@ -3896,7 +3924,7 @@
     function dumpBaccarat3Characters(limitPerCard = 150) {
         const cards = collectBaccarat3Cards();
         if (!cards.length)
-            return 'Không tìm thấy thẻ Baccarat 3.';
+            return 'KhÃ´ng tÃ¬m tháº¥y tháº» Baccarat 3.';
         const segments = cards.map((card, index) => {
             const cardIdInfo = extractBaccCardId(card);
             const identifier = cardIdInfo.id || card.getAttribute('data-table-id') || card.dataset.tableId || '';
@@ -3923,7 +3951,7 @@
             const displayed = filteredNodes.slice(0, limitPerCard);
             const nodeLines = displayed.map((node, idx) => describeBaccarat3Node(node, idx + 1));
             if (!nodeLines.length)
-                nodeLines.push('  (Không tìm thấy node phù hợp)');
+                nodeLines.push('  (KhÃ´ng tÃ¬m tháº¥y node phÃ¹ há»£p)');
             const info = [
                 heading,
                 `stable_id: ${identifier || '(none)'}${cardIdInfo.source ? ' (' + cardIdInfo.source + ')' : ''}`,
@@ -3933,7 +3961,7 @@
                 ...nodeLines
             ];
             if (filteredNodes.length > displayed.length)
-                info.push(`  ...hiển thị ${displayed.length}/${filteredNodes.length} node`);
+                info.push(`  ...hiá»ƒn thá»‹ ${displayed.length}/${filteredNodes.length} node`);
             return info.join('\n');
             });
         return segments.join('\n\n---\n\n');
@@ -4250,33 +4278,51 @@
     const $panel = () => document.getElementById(CFG.panelId);
     const $overlay = () => document.getElementById(CFG.overlayId);
 
-    // Bật/tắt log khi debug số dư
-    const DEBUG_BAL = false; // đổi true khi cần theo dõi
+    // Báº­t/táº¯t log khi debug sá»‘ dÆ°
+    const DEBUG_BAL = false; // Ä‘á»•i true khi cáº§n theo dÃµi
 
     function balLog(...args) {
         if (!DEBUG_BAL)
             return;
-        // Dùng mức debug để không làm bẩn console khi không cần
-        console.debug('[HW][BAL]', ...args); // hiển thị khi bật Verbose/Debug. :contentReference[oaicite:2]{index=2}
+        // DÃ¹ng má»©c debug Ä‘á»ƒ khÃ´ng lÃ m báº©n console khi khÃ´ng cáº§n
+        console.debug('[HW][BAL]', ...args); // hiá»ƒn thá»‹ khi báº­t Verbose/Debug. :contentReference[oaicite:2]{index=2}
     }
 
     function isLoggedInFromDOM() {
-        // 1) Có tên -> chắc chắn logged-in
+        if (S.loggedInCacheAt && Date.now() - S.loggedInCacheAt < 250)
+            return !!S.loggedInCacheVal;
+
+        // 1) CÃ³ tÃªn -> cháº¯c cháº¯n logged-in
         const v = findUserFromDOM();
-        if (v && v.trim())
+        if (v && v.trim()) {
+            S.loggedInCacheAt = Date.now();
+            S.loggedInCacheVal = true;
             return true;
-        // 2) Có khối user đang HIỂN THỊ -> tạm xem là logged-in
+        }
+        // 2) CÃ³ khá»‘i user Ä‘ang HIá»‚N THá»Š -> táº¡m xem lÃ  logged-in
         const block = document.querySelector('.user-logged, .base-dropdown-header__user__name, .user__name, .header .user-info, .hd_login .user-name, .logined_wrap');
-        if (block && block.offsetParent !== null)
+        if (block && block.offsetParent !== null) {
+            S.loggedInCacheAt = Date.now();
+            S.loggedInCacheVal = true;
             return true;
-        // 3) Thấy nút/khối Đăng xuất hoặc số dư trên header
-        const logoutBtn = Array.from(document.querySelectorAll('a,button')).find(el => /dang\s*xuat|logout/i.test(norm(textOf(el))));
-        if (logoutBtn && logoutBtn.offsetParent !== null)
+        }
+        // 3) Tháº¥y nÃºt/khá»‘i ÄÄƒng xuáº¥t hoáº·c sá»‘ dÆ° trong vÃ¹ng header Ä‘á»ƒ trÃ¡nh quÃ©t toÃ n trang
+        const headerRoot = document.querySelector('header, .header, .hd_login, .user-logged, .logined_wrap') || document;
+        const logoutBtn = Array.from(headerRoot.querySelectorAll('a,button,[role="button"]')).find(el => /dang\s*xuat|logout/i.test(norm(textOf(el))));
+        if (logoutBtn && logoutBtn.offsetParent !== null) {
+            S.loggedInCacheAt = Date.now();
+            S.loggedInCacheVal = true;
             return true;
-        const balanceNode = Array.from(document.querySelectorAll('.balance, .balance-text, .user-balance, .nav_item .balance, .balance-box .balance, .logined_wrap .balance-box'))
+        }
+        const balanceNode = Array.from(headerRoot.querySelectorAll('.balance, .balance-text, .user-balance, .nav_item .balance, .balance-box .balance, .logined_wrap .balance-box'))
             .find(el => /\d/.test(norm(textOf(el))));
-        if (balanceNode && balanceNode.offsetParent !== null)
+        if (balanceNode && balanceNode.offsetParent !== null) {
+            S.loggedInCacheAt = Date.now();
+            S.loggedInCacheVal = true;
             return true;
+        }
+        S.loggedInCacheAt = Date.now();
+        S.loggedInCacheVal = false;
         return false;
     }
     function closeLoginPopupIfLoggedIn() {
@@ -4284,7 +4330,7 @@
             if (!isLoggedInFromDOM())
             return;
 
-            // Xóa overlay/modal nếu đang che
+            // XÃ³a overlay/modal náº¿u Ä‘ang che
             const hideOverlays = () => {
                 const sels = [
                     '.v--modal-overlay', '.v--modal-box',
@@ -4294,7 +4340,7 @@
                 const nodes = Array.from(document.querySelectorAll(sels.join(',')));
                 nodes.forEach(n => { try { n.style.display = 'none'; n.remove(); } catch (_) {} });
                 try { document.body.classList.remove('modal-open', 'overflow-hidden'); document.body.style.overflow = ''; } catch (_) {}
-                try { console && console.warn && console.warn('[HomeWatch] removed overlays:', nodes.length); } catch (_) {}
+                try { if (nodes.length > 0 && console && console.warn) console.warn('[HomeWatch] removed overlays:', nodes.length); } catch (_) {}
             };
 
             const roots = [];
@@ -4308,13 +4354,13 @@
                 ...Array.from(document.querySelectorAll(
                     '.tcg_modal_wrap.loginPopupModal, .tcg_modal_wrap.publicModal, .tcg_modal_wrap, .loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay'))
             );
-            // thêm: tìm modal chứa input password để ẩn cha gần nhất
+            // thÃªm: tÃ¬m modal chá»©a input password Ä‘á»ƒ áº©n cha gáº§n nháº¥t
             const pwdParents = Array.from(document.querySelectorAll('input[type="password"]'))
                 .map(i => i.closest('.v--modal-box, .v--modal-overlay, .tcg_modal_wrap, .modal, .popup, .loginPopupModal, .login-popup, .modal-login'))
                 .filter(Boolean);
             roots.push(...pwdParents);
 
-            // thử click nút X nếu có; nếu không, gỡ nguyên overlay cha
+            // thá»­ click nÃºt X náº¿u cÃ³; náº¿u khÃ´ng, gá»¡ nguyÃªn overlay cha
             const closeBtn = Array.from(document.querySelectorAll('.v--modal__close, .tcg_modal_wrap .close, .tcg_modal_wrap .icon-close, .loginPopupModal .icon-close, .loginPopupModal .close'))
                 .find(isVisibleAndClickable);
             if (closeBtn) {
@@ -4333,11 +4379,13 @@
             } catch (_) {}
                 }
 
-    // Tick định kỳ để đóng popup login nếu đã đăng nhập mà popup vẫn còn
+    // Tick Ä‘á»‹nh ká»³ Ä‘á»ƒ Ä‘Ã³ng popup login náº¿u Ä‘Ã£ Ä‘Äƒng nháº­p mÃ  popup váº«n cÃ²n
     if (!window.__abx_close_login_timer) {
         window.__abx_close_login_timer = setInterval(() => {
                     try {
                 if (!isLoggedInFromDOM())
+                    return;
+                if (!isLoginPopupVisible())
                     return;
                 closeLoginPopupIfLoggedIn();
                     } catch (_) {}
@@ -4348,13 +4396,13 @@
             const cfgHost = (window.__abx_cfg_url_host || '').toLowerCase();
             const currHost = (location && location.host || '').toLowerCase();
             if (cfgHost && currHost && cfgHost !== currHost) {
-                alert('Host khác với cấu hình:\nĐã đăng nhập ở: ' + cfgHost + '\nNhưng hiện tại: ' + currHost + '\nCookie sẽ không dùng chung, có thể bật lại popup đăng nhập.');
+                alert('Host khÃ¡c vá»›i cáº¥u hÃ¬nh:\nÄÃ£ Ä‘Äƒng nháº­p á»Ÿ: ' + cfgHost + '\nNhÆ°ng hiá»‡n táº¡i: ' + currHost + '\nCookie sáº½ khÃ´ng dÃ¹ng chung, cÃ³ thá»ƒ báº­t láº¡i popup Ä‘Äƒng nháº­p.');
             }
         } catch (_) { }
     }
 
     function isClearlyLoggedOut() {
-        // Chỉ coi như logged-out khi có nút/khối đăng nhập HIỂN THỊ rõ ràng
+        // Chá»‰ coi nhÆ° logged-out khi cÃ³ nÃºt/khá»‘i Ä‘Äƒng nháº­p HIá»‚N THá»Š rÃµ rÃ ng
         const n = document.querySelector(
                 '.user-not-login, .btn-login, a[href*="/login"], button[onclick*="login"], [data-action="login"]');
         return !!(n && (n.offsetParent !== null));
@@ -4364,22 +4412,22 @@
         try {
             scheduleLoginInputScan('auth');
         } catch (_) {}
-        // Chỉ cho phép chạy khi cổng đã mở (đã nhìn thấy nút "Đăng nhập")
+        // Chá»‰ cho phÃ©p cháº¡y khi cá»•ng Ä‘Ã£ má»Ÿ (Ä‘Ã£ nhÃ¬n tháº¥y nÃºt "ÄÄƒng nháº­p")
         if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop()) {
                     return;
     }
 
-        // Nếu đã có tên rồi thì luôn "giữ" cho đến khi CHẮC CHẮN logout
+        // Náº¿u Ä‘Ã£ cÃ³ tÃªn rá»“i thÃ¬ luÃ´n "giá»¯" cho Ä‘áº¿n khi CHáº®C CHáº®N logout
         const hadName = !!S.username;
 
-        // Heuristic "đã login?"
+        // Heuristic "Ä‘Ã£ login?"
         const loggedIn = !!document.querySelector('.user-logged, .base-dropdown-header__user__name, [class*="user-logged"]');
 
         if (loggedIn) {
                 closeLoginPopupIfLoggedIn();
-            // Nếu đã nhận diện là login nhưng chưa có tên → ép kéo 1 lần
+            // Náº¿u Ä‘Ã£ nháº­n diá»‡n lÃ  login nhÆ°ng chÆ°a cÃ³ tÃªn â†’ Ã©p kÃ©o 1 láº§n
             if (!S.username) {
-                S.fetchDone = false; // cho phép fetch lại
+                S.fetchDone = false; // cho phÃ©p fetch láº¡i
         try {
                     await tryFetchUserProfile();
             } catch (_) {}
@@ -4387,14 +4435,14 @@
                     probeIframeOnce(); // fallback iframe
     }
 
-            // ĐANG LOGIN: đọc lại ngay và cập nhật số dư
+            // ÄANG LOGIN: Ä‘á»c láº¡i ngay vÃ  cáº­p nháº­t sá»‘ dÆ°
             const u = findUserFromDOM();
             if (u)
                 updateUsername(u);
             const b = findBalance();
             if (b)
                 updateBalance(b);
-            // Nếu chưa ra tên thì thử fetch trang profile (nếu cùng origin)
+            // Náº¿u chÆ°a ra tÃªn thÃ¬ thá»­ fetch trang profile (náº¿u cÃ¹ng origin)
             if (!S.username) {
                 try {
                     await tryFetchUserProfile();
@@ -4405,28 +4453,28 @@
             return;
             }
 
-        // KHÔNG THẤY DẤU VẾT LOGIN: chỉ coi là logout khi chắc chắn trong khoảng dài hơn
-        const CONFIRM_MS = 1800; // trước đây 600ms → tăng để tránh false positive
+        // KHÃ”NG THáº¤Y Dáº¤U Váº¾T LOGIN: chá»‰ coi lÃ  logout khi cháº¯c cháº¯n trong khoáº£ng dÃ i hÆ¡n
+        const CONFIRM_MS = 1800; // trÆ°á»›c Ä‘Ã¢y 600ms â†’ tÄƒng Ä‘á»ƒ trÃ¡nh false positive
         const start = Date.now();
         while (Date.now() - start < CONFIRM_MS) {
-            // Nếu trong thời gian chờ mà thấy dấu hiệu login lại thì thôi
+            // Náº¿u trong thá»i gian chá» mÃ  tháº¥y dáº¥u hiá»‡u login láº¡i thÃ¬ thÃ´i
             const back = !!document.querySelector('.user-logged, .base-dropdown-header__user__name, [class*="user-logged"]');
             if (back)
             return;
             await new Promise(r => setTimeout(r, 120));
             }
 
-        // Đến đây mới coi như logout thật.
+        // Äáº¿n Ä‘Ã¢y má»›i coi nhÆ° logout tháº­t.
         if (hadName) {
-            // Giữ tên cũ trên UI cho đến khi lần sau lấy được tên mới
-            // (KHÔNG gọi updateUsername('') để không hiển thị (?))
+            // Giá»¯ tÃªn cÅ© trÃªn UI cho Ä‘áº¿n khi láº§n sau láº¥y Ä‘Æ°á»£c tÃªn má»›i
+            // (KHÃ”NG gá»i updateUsername('') Ä‘á»ƒ khÃ´ng hiá»ƒn thá»‹ (?))
         } else {
-            // Chưa từng có tên → để panel hiển thị (?)
+            // ChÆ°a tá»«ng cÃ³ tÃªn â†’ Ä‘á»ƒ panel hiá»ƒn thá»‹ (?)
             }
-        // Balance cũng không "đè 88" nếu không chắc
+        // Balance cÅ©ng khÃ´ng "Ä‘Ã¨ 88" náº¿u khÃ´ng cháº¯c
         }
 
-    // === DOM Ready helper (thêm mới) ===
+    // === DOM Ready helper (thÃªm má»›i) ===
     function onDomReady(cb) {
         const ready = document.readyState;
         if (ready === 'interactive' || ready === 'complete') {
@@ -4488,7 +4536,7 @@
     }
     }
 
-    // NEW: nhận biết popup đăng nhập đã hiển thị hay chưa
+    // NEW: nháº­n biáº¿t popup Ä‘Äƒng nháº­p Ä‘Ã£ hiá»ƒn thá»‹ hay chÆ°a
     function isLoginPopupVisible() {
         try {
             if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
@@ -4496,7 +4544,7 @@
                 if (el && el.offsetParent !== null)
                     return true;
         }
-            // fallback heuristics: một số class/modal phổ biến
+            // fallback heuristics: má»™t sá»‘ class/modal phá»• biáº¿n
             const sel = '.tcg_modal_wrap.loginPopupModal, .loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup';
             const el2 = document.querySelector(sel);
             return !!(el2 && el2.offsetParent !== null);
@@ -4506,7 +4554,7 @@
     }
 
     function findLoginButton() {
-        // Ưu tiên tail cố định (header RR88 mới)
+        // Æ¯u tiÃªn tail cá»‘ Ä‘á»‹nh (header RR88 má»›i)
         let btn = null;
         try {
             if (typeof TAIL_LOGIN_BTN === 'string' && TAIL_LOGIN_BTN) {
@@ -4514,20 +4562,23 @@
     }
         } catch (_) {}
 
-        // Fallback: layout header mới
+        // Fallback: layout header má»›i
         if (!btn) {
             btn = document.querySelector('div.header .hd_login .submit_btn, header .hd_login .submit_btn');
             }
 
-        // Fallback cũ: header.menu + nút base-button
+        // Fallback cÅ©: header.menu + nÃºt base-button
         if (!btn) {
             btn = document.querySelector('header.menu .user-not-login .base-button.btn');
         }
 
-        // Fallback cuối: quét theo text "Đăng nhập"
+        // Fallback cuá»‘i: quÃ©t theo text "ÄÄƒng nháº­p"
         if (!btn) {
-            btn = Array.from(document.querySelectorAll('button, a, [role="button"], span.submit_btn'))
-                .find(el => norm(textOf(el)).includes('dang nhap'));
+            const scope = document.querySelector('header, .header, .hd_login, .user-not-login');
+            if (scope) {
+                btn = Array.from(scope.querySelectorAll('button, a, [role="button"], span.submit_btn'))
+                    .find(el => norm(textOf(el)).includes('dang nhap'));
+            }
     }
 
         return btn && btn.isConnected ? btn : null;
@@ -4537,14 +4588,14 @@
         if (S.authGateOpened)
                     return true;
 
-        // ✅ MỞ CỔNG nếu nhận diện trạng thái đã login (không cần đợi thấy nút)
+        // âœ… Má»ž Cá»”NG náº¿u nháº­n diá»‡n tráº¡ng thÃ¡i Ä‘Ã£ login (khÃ´ng cáº§n Ä‘á»£i tháº¥y nÃºt)
         const loggedInBlock = document.querySelector('.user-logged, .base-dropdown-header__user__name, .user__name');
         if (loggedInBlock && loggedInBlock.offsetParent !== null) {
             S.authGateOpened = true;
             return true;
         }
 
-        // Cơ chế cũ: mở khi nhìn thấy nút Đăng nhập
+        // CÆ¡ cháº¿ cÅ©: má»Ÿ khi nhÃ¬n tháº¥y nÃºt ÄÄƒng nháº­p
         const btn = findLoginButton();
         if (btn)
             S.authGateOpened = true;
@@ -4560,28 +4611,28 @@
             window.__abx_hw_installed = true;
             return;
     }
-        // Nếu inject ở document_start, body có thể chưa có
+        // Náº¿u inject á»Ÿ document_start, body cÃ³ thá»ƒ chÆ°a cÃ³
         const mount = document.body || document.documentElement;
         if (!mount) {
-            console.warn('[HomeWatch] ensureRoot: <body> chưa có, sẽ đợi DOM...');
+            console.warn('[HomeWatch] ensureRoot: <body> chÆ°a cÃ³, sáº½ Ä‘á»£i DOM...');
             onDomReady(ensureRoot);
             return;
         }
-        // Nếu cấu hình ẩn panel thì chỉ cần "ẩn nếu đã có" và thoát
+        // Náº¿u cáº¥u hÃ¬nh áº©n panel thÃ¬ chá»‰ cáº§n "áº©n náº¿u Ä‘Ã£ cÃ³" vÃ  thoÃ¡t
         if (CFG.showPanel === false) {
             const maybe = document.getElementById('__abx_hw_root')
                  || document.querySelector('.abx-homewatch-root,[data-abx-root="homewatch"]');
             if (maybe)
                 maybe.style.display = 'none';
-            window.__abx_hw_installed = true; // ⬅️ đánh dấu đã cài, tránh gọi lại
+            window.__abx_hw_installed = true; // â¬…ï¸ Ä‘Ã¡nh dáº¥u Ä‘Ã£ cÃ i, trÃ¡nh gá»i láº¡i
             return;
     }
 
         const root = document.createElement('div');
-        // đảm bảo dễ điều khiển/toggle bằng id & class cố định
-        root.id = CFG.panelId; // sẽ là "__abx_hw_root" sau khi đổi ở Bước 1
-        root.classList.add('abx-homewatch-root'); // class dấu hiệu (phòng khi id đổi)
-        root.style.display = ''; // bật hiển thị khi showPanel === true
+        // Ä‘áº£m báº£o dá»… Ä‘iá»u khiá»ƒn/toggle báº±ng id & class cá»‘ Ä‘á»‹nh
+        root.id = CFG.panelId; // sáº½ lÃ  "__abx_hw_root" sau khi Ä‘á»•i á»Ÿ BÆ°á»›c 1
+        root.classList.add('abx-homewatch-root'); // class dáº¥u hiá»‡u (phÃ²ng khi id Ä‘á»•i)
+        root.style.display = ''; // báº­t hiá»ƒn thá»‹ khi showPanel === true
 
         root.id = CFG.panelId;
         root.style.cssText = [
@@ -4601,9 +4652,9 @@
             '  <button id="' + CFG.scanClosePopupBtnId + '">Scan200ClosePopup</button>',
             '  <button id="' + CFG.resultMapBtnId + '">ResultMap</button>',
             '  <button id="' + CFG.scanResultMapBtnId + '">Scan200ResultMap</button>',
-            '  <button id="' + CFG.loginBtnId + '">Click Đăng Nhập</button>',
-            '  <button id="' + CFG.xocBtnId + '">Mở Game Live (cũ)</button>',
-            '  <button id="' + CFG.retryBtnId + '">Thử lại (tự động)</button>',
+            '  <button id="' + CFG.loginBtnId + '">Click ÄÄƒng Nháº­p</button>',
+            '  <button id="' + CFG.xocBtnId + '">Má»Ÿ Game Live (cÅ©)</button>',
+            '  <button id="' + CFG.retryBtnId + '">Thá»­ láº¡i (tá»± Ä‘á»™ng)</button>',
             '  <button id="' + CFG.overlayToggleBtnId + '">Overlay</button>',
             '  <button id="' + CFG.copyInfoBtnId + '">Copy Info</button>',
             '</div>',
@@ -4620,11 +4671,11 @@
             b.style.cssText = 'background:#0b122e;border:1px solid #334155;color:#e5e7eb;padding:6px 10px;border-radius:8px;cursor:pointer';
             b.addEventListener('mouseenter', () => b.style.borderColor = '#60a5fa');
             b.addEventListener('mouseleave', () => b.style.borderColor = '#334155');
-            // Không cho kéo panel khi bấm nút
+            // KhÃ´ng cho kÃ©o panel khi báº¥m nÃºt
             b.addEventListener('pointerdown', e => e.stopPropagation());
         });
 
-        // Devtools-lite: cho phép chạy JS tùy ý và xem kết quả (trong top window)
+        // Devtools-lite: cho phÃ©p cháº¡y JS tÃ¹y Ã½ vÃ  xem káº¿t quáº£ (trong top window)
         (function attachDevRunner() {
             if (root.querySelector('#hw_dev_runner'))
                 return;
@@ -4634,7 +4685,7 @@
 
             const ta = document.createElement('textarea');
             ta.id = 'hw_dev_code';
-            ta.placeholder = 'Dán JS rồi bấm Run (chạy trong top window)';
+            ta.placeholder = 'DÃ¡n JS rá»“i báº¥m Run (cháº¡y trong top window)';
             ta.style.width = '100%';
             ta.style.height = '82px';
             ta.style.background = '#0b122e';
@@ -4697,7 +4748,7 @@
             out.style.borderRadius = '8px';
             out.style.whiteSpace = 'pre-wrap';
             out.style.marginTop = '4px';
-            out.textContent = 'Kết quả sẽ hiển thị ở đây...';
+            out.textContent = 'Káº¿t quáº£ sáº½ hiá»ƒn thá»‹ á»Ÿ Ä‘Ã¢y...';
 
             const dump = (val) => {
                 try {
@@ -4734,7 +4785,7 @@
                         document.execCommand('copy');
                         document.body.removeChild(taTmp);
                     }
-                    out.textContent = txt || '(đã copy chuỗi rỗng)';
+                    out.textContent = txt || '(Ä‘Ã£ copy chuá»—i rá»—ng)';
                 } catch (e) {
                     out.textContent = 'Copy error: ' + e;
                 }
@@ -4767,9 +4818,9 @@
             const parseCounts = (text) => {
                 const result = { player: null, banker: null, tie: null };
                 const patterns = {
-                    player: [/player(?:\s*\d*)?\s*(\d+)/i, /người chơi\s*(\d+)/i],
-                    banker: [/banker(?:\s*\d*)?\s*(\d+)/i, /nhà cái\s*(\d+)/i],
-                    tie: [/tie(?:\s*\d*)?\s*(\d+)/i, /hòa\s*(\d+)/i]
+                    player: [/player(?:\s*\d*)?\s*(\d+)/i, /ngÆ°á»i chÆ¡i\s*(\d+)/i],
+                    banker: [/banker(?:\s*\d*)?\s*(\d+)/i, /nhÃ  cÃ¡i\s*(\d+)/i],
+                    tie: [/tie(?:\s*\d*)?\s*(\d+)/i, /hÃ²a\s*(\d+)/i]
             };
                 for (const [key, regs] of Object.entries(patterns)) {
                     for (const re of regs) {
@@ -4793,9 +4844,9 @@
             const parseBets = (text) => {
                 const result = { player: null, banker: null, tie: null };
                 const patterns = {
-                    player: [/người chơi[^\d]*(\d[\d.,]*)/i],
-                    banker: [/nhà cái[^\d]*(\d[\d.,]*)/i],
-                    tie: [/hòa[^\d]*(\d[\d.,]*)/i]
+                    player: [/ngÆ°á»i chÆ¡i[^\d]*(\d[\d.,]*)/i],
+                    banker: [/nhÃ  cÃ¡i[^\d]*(\d[\d.,]*)/i],
+                    tie: [/hÃ²a[^\d]*(\d[\d.,]*)/i]
                 };
                 for (const [key, regs] of Object.entries(patterns)) {
                     for (const re of regs) {
@@ -4841,8 +4892,8 @@
                         counts: parseCounts(textSnapshot),
                         bets: parseBets(textSnapshot),
                         status: textSnapshot.toLowerCase().includes('betting') ? 'betting' : textSnapshot.toLowerCase().includes('result') ? 'result' : 'waiting',
-                        playerSpot: findSpot(card, ['player', 'người chơi']),
-                        bankerSpot: findSpot(card, ['banker', 'nhà cái']),
+                        playerSpot: findSpot(card, ['player', 'ngÆ°á»i chÆ¡i']),
+                        bankerSpot: findSpot(card, ['banker', 'nhÃ  cÃ¡i']),
                         rect: formatRect(rectOf(card))
             };
                 }).filter(entry => entry && entry.name);
@@ -4889,17 +4940,17 @@
             const scanAndPost = () => {
                 const payload = createPayload();
                 if (!payload) {
-                    updateTableStatus('Không tìm thấy bàn chơi nào.');
+                    updateTableStatus('KhÃ´ng tÃ¬m tháº¥y bÃ n chÆ¡i nÃ o.');
                     return;
                     }
                 const text = JSON.stringify(payload);
                 if (text === lastPayload) {
-                    updateTableStatus('Payload chưa thay đổi.');
+                    updateTableStatus('Payload chÆ°a thay Ä‘á»•i.');
                     return;
                     }
                 sendPayload(payload);
                 lastPayload = text;
-                updateTableStatus(`Đã gửi ${payload.tables.length} bảng (${new Date().toLocaleTimeString()})`);
+                updateTableStatus(`ÄÃ£ gá»­i ${payload.tables.length} báº£ng (${new Date().toLocaleTimeString()})`);
             };
 
             autoScanBtn.onclick = () => {
@@ -4907,13 +4958,13 @@
                     clearInterval(tableScanTimer);
                     tableScanTimer = null;
                     autoScanBtn.textContent = 'Auto Scan';
-                    updateTableStatus('Auto scan dừng.');
+                    updateTableStatus('Auto scan dá»«ng.');
                         return;
                 }
                 scanAndPost();
                 tableScanTimer = setInterval(scanAndPost, 2500);
-                autoScanBtn.textContent = 'Dừng Auto';
-                updateTableStatus('Auto scan đang chạy...');
+                autoScanBtn.textContent = 'Dá»«ng Auto';
+                updateTableStatus('Auto scan Ä‘ang cháº¡y...');
             };
             dumpBaccaratBtn.onclick = () => {
                 const text = dumpBaccarat3Characters();
@@ -4923,11 +4974,11 @@
             };
         })();
 
-        // drag bằng title
+        // drag báº±ng title
         (function () {
             const bar = root.querySelector('#hwtitle');
             if (!bar) {
-                console.warn('[HomeWatch] ensureRoot: thiếu #hwtitle');
+                console.warn('[HomeWatch] ensureRoot: thiáº¿u #hwtitle');
                     return;
                 }
             let down = false,
@@ -4976,13 +5027,13 @@
             e.stopPropagation();
             clearSelected();
 
-            // Khi bấm ClosePopup: thử đóng tất cả popup / overlay hiện có
+            // Khi báº¥m ClosePopup: thá»­ Ä‘Ã³ng táº¥t cáº£ popup / overlay hiá»‡n cÃ³
                 try {
                 console.debug('[HomeWatch] ClosePopup button -> closeAdsAndCovers()');
                 closeAdsAndCovers();
                 } catch (_) {}
 
-            // Vẫn bật overlay popup map để bạn nhìn được vùng đã xử lý
+            // Váº«n báº­t overlay popup map Ä‘á»ƒ báº¡n nhÃ¬n Ä‘Æ°á»£c vÃ¹ng Ä‘Ã£ xá»­ lÃ½
             toggle('popup');
         };
 
@@ -5022,7 +5073,7 @@
         root.querySelector('#' + CFG.copyInfoBtnId).onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            copyInfoBox(); // gọi hàm copy bên dưới
+            copyInfoBox(); // gá»i hÃ m copy bÃªn dÆ°á»›i
         };
         root.querySelector('#' + CFG.retryBtnId).onclick = (e) => {
             e.preventDefault();
@@ -5030,7 +5081,7 @@
             if (!isGameHost()) {
                 startAutoRetry(true);
             } else {
-                updateInfo('⚠ Đang ở trang game — bỏ qua auto-retry để tránh request /account/* trên game host.');
+                updateInfo('âš  Äang á»Ÿ trang game â€” bá» qua auto-retry Ä‘á»ƒ trÃ¡nh request /account/* trÃªn game host.');
             }
         };
         root.querySelector('#' + CFG.loginBtnId).onclick = (e) => {
@@ -5063,7 +5114,7 @@
                 const r = fn.apply(this, arguments);
                 try {
                     onAuthStateMaybeChanged('history');
-                    pumpAuthProbe(6000, 200); // ⬅️ bơm đọc 6s sau mỗi điều hướng SPA
+                    pumpAuthProbe(6000, 200); // â¬…ï¸ bÆ¡m Ä‘á»c 6s sau má»—i Ä‘iá»u hÆ°á»›ng SPA
                 } catch (_) {}
                 return r;
         };
@@ -5076,7 +5127,7 @@
         addEventListener('popstate', () => {
                 try {
                 onAuthStateMaybeChanged('popstate');
-                pumpAuthProbe(6000, 200); // ⬅️ bơm 6s sau thao tác back/forward
+                pumpAuthProbe(6000, 200); // â¬…ï¸ bÆ¡m 6s sau thao tÃ¡c back/forward
                 } catch (_) {}
         }); // back/forward
 
@@ -5085,7 +5136,7 @@
     function updateInfo(extra) {
         if (CFG.showPanel === false)
             return; // panel dang ?n -> b? qua render
-        // Tính trạng thái hiển thị thật sự của khu vực xóc đĩa
+        // TÃ­nh tráº¡ng thÃ¡i hiá»ƒn thá»‹ tháº­t sá»± cá»§a khu vá»±c xÃ³c Ä‘Ä©a
         const live = (() => {
             const s = document.querySelector('.livestream-section__live');
             return !!(s && s.offsetParent !== null);
@@ -5093,11 +5144,11 @@
         const loggedIn = isLoggedInFromDOM();
         const balText = S.balance ? S.balance : (loggedIn ? '0' : '(?)');
         const L = [
-            '• URL : ' + location.href,
-            '• Tên nhân vật: ' + (getBestUsername() ? getBestUsername() : '(?)'),
-            '• Tài khoản: ' + balText,
-            '• Title: ' + document.title,
-            '• Has Xóc Đĩa: ' + String(live)
+            'â€¢ URL : ' + location.href,
+            'â€¢ TÃªn nhÃ¢n váº­t: ' + (getBestUsername() ? getBestUsername() : '(?)'),
+            'â€¢ TÃ i khoáº£n: ' + balText,
+            'â€¢ Title: ' + document.title,
+            'â€¢ Has XÃ³c ÄÄ©a: ' + String(live)
         ];
 
         if (S.overlayLog)
@@ -5125,12 +5176,12 @@
             if (!txt)
                 return;
 
-            // Ưu tiên Clipboard API
+            // Æ¯u tiÃªn Clipboard API
             if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-                navigator.clipboard.writeText(txt).catch(() => { /* nuốt lỗi */
+                navigator.clipboard.writeText(txt).catch(() => { /* nuá»‘t lá»—i */
                 });
             } else {
-                // Fallback execCommand cho WebView2 / trình duyệt cũ
+                // Fallback execCommand cho WebView2 / trÃ¬nh duyá»‡t cÅ©
                 const ta = document.createElement('textarea');
                 ta.value = txt;
                 ta.setAttribute('readonly', 'readonly');
@@ -5177,13 +5228,13 @@
         ].join(';');
         el.innerHTML = `
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <strong style="font-size:14px">Alert dữ liệu</strong>
-                <button id="${ALERT_ID}-close" style="border:none;background:none;color:#fff;font-size:18px;cursor:pointer">×</button>
+                <strong style="font-size:14px">Alert dá»¯ liá»‡u</strong>
+                <button id="${ALERT_ID}-close" style="border:none;background:none;color:#fff;font-size:18px;cursor:pointer">Ã—</button>
             </div>
             <textarea id="${ALERT_ID}-ta" style="width:100%;height:140px;background:#0b1525;border:1px solid rgba(255,255,255,0.15);color:#fefefe;padding:6px;border-radius:6px;resize:none;font:13px/1.4 Consolas,monospace"></textarea>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
                 <button id="${ALERT_ID}-copy" style="border:none;padding:6px 12px;border-radius:6px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer">Copy</button>
-                <span style="font-size:11px;opacity:.7">Copy nhanh để gửi</span>
+                <span style="font-size:11px;opacity:.7">Copy nhanh Ä‘á»ƒ gá»­i</span>
             </div>`;
         document.body.appendChild(el);
         const closeBtn = document.getElementById(`${ALERT_ID}-close`);
@@ -5428,14 +5479,14 @@
             } catch (_) {}
             return orig.apply(this, arguments);
         };
-        appendDevLog('Đã bật log postMessage (overlay).');
-        setOverlayLog('Đã bật log overlay.');
+        appendDevLog('ÄÃ£ báº­t log postMessage (overlay).');
+        setOverlayLog('ÄÃ£ báº­t log overlay.');
         }
 
     // === Automino Home <-> C# bridge (non-intrusive) ===
     (function () {
             try {
-            // Gửi an toàn lên host (WebView2)
+            // Gá»­i an toÃ n lÃªn host (WebView2)
             function safePost(d) {
             try {
                     if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
@@ -5450,10 +5501,10 @@
             } catch (_) {}
                 }
 
-            // Lấy state hiện tại để C# có thể poll
+            // Láº¥y state hiá»‡n táº¡i Ä‘á»ƒ C# cÃ³ thá»ƒ poll
             window.__abx_hw_getState = function () {
             try {
-                    // ---- Fallback DOM: đọc nhanh trong header khi S.* đang rỗng ----
+                    // ---- Fallback DOM: Ä‘á»c nhanh trong header khi S.* Ä‘ang rá»—ng ----
                     function quickPickUsername() {
             try {
                             const ICON_TAILS = [
@@ -5649,7 +5700,7 @@
                             const el = header.querySelector('.base-dropdown-header__user__amount, .user__amount, .user-amount, .balance, [class*="amount"]');
                             if (el) {
                                 const raw = (el.textContent || '').replace(/\s+/g, ' ').trim();
-                                const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫|k|K|m|M))?/);
+                                const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|Ä‘|â‚«|k|K|m|M))?/);
                                 if (m)
                                     return m[1].replace(/[^\d]/g, '');
         }
@@ -5700,7 +5751,7 @@
                 }
             }
 
-            // Đẩy một gói ngay lập tức
+            // Äáº©y má»™t gÃ³i ngay láº­p tá»©c
             window.__abx_hw_pushNow = function (forcePush) {
                 try {
                     var st = (typeof window.__abx_hw_getState === 'function') ? window.__abx_hw_getState() : null;
@@ -5709,7 +5760,7 @@
                 } catch (_) {}
             };
 
-            // Đẩy định kỳ state về C#
+            // Äáº©y Ä‘á»‹nh ká»³ state vá» C#
             window.__abx_hw_startPush = function (intervalMs) {
                 try {
                     intervalMs = Math.max(1200, Math.floor(+intervalMs || 2200));
@@ -5744,7 +5795,7 @@
                 } catch (_) {}
     })();
 
-    // ===== Public APIs để C# gọi theo "hàm" =====
+    // ===== Public APIs Ä‘á»ƒ C# gá»i theo "hÃ m" =====
     window.__abx_hw_clickLogin = function () {
                 try {
             if (typeof clickLoginButton === 'function') {
@@ -5778,8 +5829,8 @@
         }
     };
 
-    // ===== Nghe lệnh từ host để "gọi theo nút" =====
-    // (C# sẽ PostWebMessageAsJson({cmd: '...'}) xuống đây)
+    // ===== Nghe lá»‡nh tá»« host Ä‘á»ƒ "gá»i theo nÃºt" =====
+    // (C# sáº½ PostWebMessageAsJson({cmd: '...'}) xuá»‘ng Ä‘Ã¢y)
     if (window.chrome && window.chrome.webview && !window.__abx_cmd_listener) {
         window.__abx_cmd_listener = true;
         window.chrome.webview.addEventListener('message', (e) => {
@@ -5826,15 +5877,15 @@
 
     // ======= Overlay / Map =======
     function ensureOverlay() {
-        // Nếu đã có overlay thì dùng lại
+        // Náº¿u Ä‘Ã£ cÃ³ overlay thÃ¬ dÃ¹ng láº¡i
         let ov = $overlay();
         if (!ov) {
-            // Tạo host overlay
+            // Táº¡o host overlay
             ov = document.createElement('div');
             ov.id = CFG.overlayId;
             ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:' + (ROOT_Z - 1) + ';pointer-events:none';
 
-            // Fallback mount: body chưa có thì đợi DOM rồi gọi lại
+            // Fallback mount: body chÆ°a cÃ³ thÃ¬ Ä‘á»£i DOM rá»“i gá»i láº¡i
             const mount = document.body || document.documentElement;
             if (!mount) {
                 onDomReady(ensureOverlay);
@@ -5843,7 +5894,7 @@
             mount.appendChild(ov);
     }
 
-        // Gắn listeners chỉ 1 lần (idempotent)
+        // Gáº¯n listeners chá»‰ 1 láº§n (idempotent)
         if (!window.__abx_overlay_listeners) {
             window.__abx_overlay_listeners = true;
 
@@ -5855,7 +5906,7 @@
                 } catch (_) {}
             };
 
-            // Cập nhật overlay khi cuộn / đổi kích thước / tab quay lại
+            // Cáº­p nháº­t overlay khi cuá»™n / Ä‘á»•i kÃ­ch thÆ°á»›c / tab quay láº¡i
             window.addEventListener('scroll', rerender, {
                 passive: true
         });
@@ -5898,7 +5949,7 @@
         d.dataset.ord = item.ord || '';
         d.appendChild(mkBadge(item.ord || ''));
         d.addEventListener('mouseenter', () => showInfo(kind, item));
-        // Click box không làm panel di chuyển
+        // Click box khÃ´ng lÃ m panel di chuyá»ƒn
         d.addEventListener('click', (ev) => {
             ev.stopPropagation();
             selectBox(d);
@@ -5963,15 +6014,15 @@
                 text: (node.nodeValue || '').trim()
         });
     }
-        // ===== DEEP SOURCES: thêm "text chìm" =====
-        // helper: push item text cho cùng element, có gắn nguồn (src)
+        // ===== DEEP SOURCES: thÃªm "text chÃ¬m" =====
+        // helper: push item text cho cÃ¹ng element, cÃ³ gáº¯n nguá»“n (src)
         function pushDeep(el, text, srcTag) {
             const t = (text || '').toString().trim();
             if (!t)
                 return;
             const r = rectOf(el);
             if (r.w <= 0 || r.h <= 0)
-                return; // vẫn ưu tiên phần tử có hình chữ nhật hiển thị
+                return; // váº«n Æ°u tiÃªn pháº§n tá»­ cÃ³ hÃ¬nh chá»¯ nháº­t hiá»ƒn thá»‹
             arr.push({
                 idx: ++i,
                 el,
@@ -5990,9 +6041,9 @@
                 pushDeep(img, img.getAttribute('title'), 'img@title');
         });
 
-        // 2) Bất kỳ phần tử có title
+        // 2) Báº¥t ká»³ pháº§n tá»­ cÃ³ title
         document.querySelectorAll('[title]').forEach(el => {
-            // tránh lặp lại với IMG (đã lấy bên trên)
+            // trÃ¡nh láº·p láº¡i vá»›i IMG (Ä‘Ã£ láº¥y bÃªn trÃªn)
             if (el.tagName.toLowerCase() === 'img')
                 return;
             pushDeep(el, el.getAttribute('title'), 'el@title');
@@ -6033,7 +6084,7 @@
     }
         });
 
-        // 5) DATA-* label thường gặp
+        // 5) DATA-* label thÆ°á»ng gáº·p
         document.querySelectorAll('[data-label],[data-title],[data-text],[data-name]').forEach(el => {
             ['data-label', 'data-title', 'data-text', 'data-name'].forEach(k => {
                 if (el.hasAttribute(k))
@@ -6041,13 +6092,13 @@
         });
         });
 
-        // 6) Pseudo-element ::before / ::after (nếu có content)
+        // 6) Pseudo-element ::before / ::after (náº¿u cÃ³ content)
         function unquote(s) {
             const m = /^['"](.*)['"]$/.exec(s || '');
             return m ? m[1] : s;
     }
         document.querySelectorAll('body *').forEach(el => {
-            // bỏ qua các node quá lớn để tránh chậm (có thể giữ nguyên nếu cần)
+            // bá» qua cÃ¡c node quÃ¡ lá»›n Ä‘á»ƒ trÃ¡nh cháº­m (cÃ³ thá»ƒ giá»¯ nguyÃªn náº¿u cáº§n)
             if (!(el instanceof HTMLElement))
                 return;
             const cs = getComputedStyle(el, '::before').content;
@@ -6061,7 +6112,7 @@
         return arr;
     }
 
-    // NEW: thu thập các popup/modal lớn đang che màn hình (quảng cáo, thông báo,...)
+    // NEW: thu tháº­p cÃ¡c popup/modal lá»›n Ä‘ang che mÃ n hÃ¬nh (quáº£ng cÃ¡o, thÃ´ng bÃ¡o,...)
     function collectPopups() {
         if (!document.body)
             return [];
@@ -6099,14 +6150,14 @@
             const cy = r.y + r.h / 2;
             const centerish = (cx > vw * 0.2 && cx < vw * 0.8 && cy > vh * 0.15 && cy < vh * 0.85);
 
-            // nhỏ quá và không nằm giữa màn hình thì bỏ
+            // nhá» quÃ¡ vÃ  khÃ´ng náº±m giá»¯a mÃ n hÃ¬nh thÃ¬ bá»
             if (!centerish && ratio < 0.05)
                 return;
 
             const name = ((el.className || '') + ' ' + (el.id || '')).toLowerCase();
             const hasKeyword = /(modal|popup|dialog|overlay|backdrop|login|signin|sign-in|dangnhap|dang\s*nhap|quangcao|banner)/.test(name);
 
-            // nếu không có keyword thì yêu cầu to hơn
+            // náº¿u khÃ´ng cÃ³ keyword thÃ¬ yÃªu cáº§u to hÆ¡n
             if (!hasKeyword && ratio < 0.1)
                 return;
 
@@ -6363,7 +6414,7 @@
 
     function showResultMap() {
         const snapshot = buildResultMapSnapshot(1);
-        const summary = snapshot.tables ? `[Scan200ResultMap] ${snapshot.tables} bàn` : '[Scan200ResultMap] không tìm thấy bàn';
+        const summary = snapshot.tables ? `[Scan200ResultMap] ${snapshot.tables} bÃ n` : '[Scan200ResultMap] khÃ´ng tÃ¬m tháº¥y bÃ n';
         appendDevLog(summary);
         setOverlayLog(summary);
         logToOverlayConsole(summary, 'info');
@@ -6372,7 +6423,7 @@
 
     function scanResultMap(limit = 200) {
         const snapshot = buildResultMapSnapshot(limit);
-        const summary = snapshot.tables ? `[Scan200ResultMap] ${snapshot.tables} bàn` : '[Scan200ResultMap] không tìm thấy bàn';
+        const summary = snapshot.tables ? `[Scan200ResultMap] ${snapshot.tables} bÃ n` : '[Scan200ResultMap] khÃ´ng tÃ¬m tháº¥y bÃ n';
         appendDevLog(summary);
         setOverlayLog(summary);
         logToOverlayConsole(summary, 'info');
@@ -6382,7 +6433,7 @@
     // ======= Username & Balance =======
     function findUserFromDOM() {
                 try {
-            // Ưu tiên tail tuyệt đối nếu có
+            // Æ¯u tiÃªn tail tuyá»‡t Ä‘á»‘i náº¿u cÃ³
             if (typeof ABS_USERNAME_TAIL === 'string' && ABS_USERNAME_TAIL) {
                 const abs = findByTail(ABS_USERNAME_TAIL);
                 const v = abs && (abs.value || abs.textContent || '').trim();
@@ -6390,7 +6441,7 @@
                     return v;
                 }
 
-            // Quét các vị trí có thể chứa username thật sự (không quét label)
+            // QuÃ©t cÃ¡c vá»‹ trÃ­ cÃ³ thá»ƒ chá»©a username tháº­t sá»± (khÃ´ng quÃ©t label)
             const cand = document.querySelectorAll([
                         'header .user-logged .base-dropdown-header__user__name',
                         '.menu-account__info--user .display-name .full-name span',
@@ -6420,16 +6471,18 @@
                 const res = await fetch(u, {
                     credentials: 'include'
         });
-                if (!res.ok)
+                if (!res.ok) {
+                    if (res.status === 404) S.profilePathFail[u] = (S.profilePathFail[u] || 0) + 1;
                     continue;
+                }
 
                 const html = await res.text();
                 const doc = new DOMParser().parseFromString(html, 'text/html');
 
-                // --- Username (ƯU TIÊN ABS PATH) ---
+                // --- Username (Æ¯U TIÃŠN ABS PATH) ---
                 let name = '';
         try {
-                    const abs = findByTailIn(ABS_USERNAME_TAIL, doc); // dùng trên tài liệu fetch được
+                    const abs = findByTailIn(ABS_USERNAME_TAIL, doc); // dÃ¹ng trÃªn tÃ i liá»‡u fetch Ä‘Æ°á»£c
                     if (abs) {
                         name = (abs.value != null ? String(abs.value)
                              : (abs.getAttribute && abs.getAttribute('value')) || abs.textContent || '').trim();
@@ -6437,7 +6490,7 @@
                 } catch (_) {}
 
                 if (!name) {
-                    // fallback cÅ© theo class
+                    // fallback cÃ…Â© theo class
                     const namePick = doc.querySelector('.base-dropdown-header__user__name, .full-name, .display-name, .username .full-name, [class*="display-name"]');
                     name = namePick ? (namePick.textContent || '').trim() : '';
         }
@@ -6450,7 +6503,7 @@
                         '.base-dropdown-header__user__amount, .user__amount, .user-amount, .balance, [class*="amount"]');
                 if (balPick) {
                     const raw = (balPick.textContent || '').replace(/\s+/g, ' ').trim();
-                    const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫|k|K|m|M))?/);
+                    const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|Ä‘|â‚«|k|K|m|M))?/);
                     if (m)
                         bal = m[1].replace(/[^\d]/g, '');
         }
@@ -6458,7 +6511,7 @@
                     updateBalance(bal);
 
                 if (name || bal)
-                    return true; // lấy được ít nhất 1 thẻ là coi như thành công
+                    return true; // láº¥y Ä‘Æ°á»£c Ã­t nháº¥t 1 tháº» lÃ  coi nhÆ° thÃ nh cÃ´ng
             } catch (_) { /* th? URL k? */
     }
     }
@@ -6466,7 +6519,7 @@
     }
 
     function guessProfileUrls() {
-        // Thu link “account|profile|user” trong DOM cùng origin
+        // Thu link â€œaccount|profile|userâ€ trong DOM cÃ¹ng origin
         const fromDom = Array.from(document.querySelectorAll('a[href]'))
             .map(a => a.getAttribute('href'))
             .map(h => {
@@ -6479,19 +6532,21 @@
             .filter(u =>
                 u
                  && u.origin === location.origin
-                 && /(\/|^)(account|profile|user)(\/|$)/i.test(u.pathname) // chỉ nhận path "trang" tài khoản
-                 && !/^\/api\//i.test(u.pathname) // loại mọi API
-                 && !/\.(json|js|css|png|jpe?g|gif|webp|svg)$/i.test(u.pathname) // loại file tĩnh
+                 && /(\/|^)(account|profile|user)(\/|$)/i.test(u.pathname) // chá»‰ nháº­n path "trang" tÃ i khoáº£n
+                 && !/^\/api\//i.test(u.pathname) // loáº¡i má»i API
+                 && !/\.(json|js|css|png|jpe?g|gif|webp|svg)$/i.test(u.pathname) // loáº¡i file tÄ©nh
             )
 
             .map(u => u.pathname);
 
-        // Mặc định: chỉ /account/user-profile để console sạch
+        // Máº·c Ä‘á»‹nh: chá»‰ /account/user-profile Ä‘á»ƒ console sáº¡ch
         const defaults = ['/account/user-profile'];
 
-        // Gộp + khử trùng lặp (ưu tiên defaults trước)
+        // Gá»™p + khá»­ trÃ¹ng láº·p (Æ°u tiÃªn defaults trÆ°á»›c)
         const seen = new Set();
         return [...defaults, ...fromDom].filter(p => {
+            if ((S.profilePathFail[p] || 0) >= 1)
+                return false;
             if (seen.has(p))
                 return false;
             seen.add(p);
@@ -6499,21 +6554,21 @@
         });
     }
 
-    // ƯU TIÊN: selector lấy trực tiếp số dư trong header (của NET88)
-    // Ưu tiên selector số dư (đường dẫn cụ thể bạn muốn trước tiên)
+    // Æ¯U TIÃŠN: selector láº¥y trá»±c tiáº¿p sá»‘ dÆ° trong header (cá»§a NET88)
+    // Æ¯u tiÃªn selector sá»‘ dÆ° (Ä‘Æ°á»ng dáº«n cá»¥ thá»ƒ báº¡n muá»‘n trÆ°á»›c tiÃªn)
 
     function findBalance() {
-        // (Gate) Chỉ cho phép khi đã "thấy" nút Đăng nhập (header đã sẵn)
+        // (Gate) Chá»‰ cho phÃ©p khi Ä‘Ã£ "tháº¥y" nÃºt ÄÄƒng nháº­p (header Ä‘Ã£ sáºµn)
         if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop()) {
             return S.balance || '';
     }
 
-        // Chỉ soi trong header để tránh dính jackpot/số khác
+        // Chá»‰ soi trong header Ä‘á»ƒ trÃ¡nh dÃ­nh jackpot/sá»‘ khÃ¡c
         const header = document.querySelector('header.menu, header');
         if (!header)
             return S.balance || '';
 
-        // ⬇️ DÙNG DUY NHẤT selector path cố định bạn yêu cầu
+        // â¬‡ï¸ DÃ™NG DUY NHáº¤T selector path cá»‘ Ä‘á»‹nh báº¡n yÃªu cáº§u
         let el = null;
         try {
             el = header.querySelector(ABS_BALANCE_SEL);
@@ -6521,11 +6576,11 @@
             el = null;
             }
 
-        // Không tìm thấy đúng path → giữ giá trị cũ
+        // KhÃ´ng tÃ¬m tháº¥y Ä‘Ãºng path â†’ giá»¯ giÃ¡ trá»‹ cÅ©
         if (!el)
             return S.balance || '';
 
-        // Né các vùng không phải header-balance
+        // NÃ© cÃ¡c vÃ¹ng khÃ´ng pháº£i header-balance
         if (el.closest('.livestream-section, .slots, .jackpot, .bingo, .lottery, .mini-games')) {
             return S.balance || '';
     }
@@ -6534,10 +6589,10 @@
         if (!raw)
             return S.balance || '';
 
-        // Cho phép "0" hoặc số có nhóm nghìn / ≥1 chữ số
-        // (Nếu muốn chặt như trước: thay \d{1,} -> \d{4,})
+        // Cho phÃ©p "0" hoáº·c sá»‘ cÃ³ nhÃ³m nghÃ¬n / â‰¥1 chá»¯ sá»‘
+        // (Náº¿u muá»‘n cháº·t nhÆ° trÆ°á»›c: thay \d{1,} -> \d{4,})
         const m = raw.replace(/\s+/g, ' ')
-            .match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫))?/i);
+            .match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|Ä‘|â‚«))?/i);
         if (!m)
             return S.balance || '';
 
@@ -6553,7 +6608,7 @@
                 return;
         const val = String(u).trim();
         if (!isLikelyUsername(val))
-            return; // ✨ thêm dòng này
+            return; // âœ¨ thÃªm dÃ²ng nÃ y
 
         S.username = val;
         if (S.usernameDraft) {
@@ -6562,13 +6617,13 @@
         }
         updateInfo();
 
-        // 🔔 NEW: đẩy ngay 1 gói lên C# (không chờ interval)
+        // ðŸ”” NEW: Ä‘áº©y ngay 1 gÃ³i lÃªn C# (khÃ´ng chá» interval)
             try {
             if (typeof window.__abx_hw_pushNow === 'function') {
-                // Nếu bạn đã có bridge pushNow thì dùng luôn
+                // Náº¿u báº¡n Ä‘Ã£ cÃ³ bridge pushNow thÃ¬ dÃ¹ng luÃ´n
                 window.__abx_hw_pushNow();
             } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
-                // Fallback: tự gửi JSON theo format mà C# đang parse
+                // Fallback: tá»± gá»­i JSON theo format mÃ  C# Ä‘ang parse
                 window.chrome.webview.postMessage(JSON.stringify({
                         abx: 'home_tick',
                         username: getBestUsername() || '',
@@ -6578,7 +6633,7 @@
                         ts: Date.now()
                     }));
                         }
-        } catch (_) { /* nuốt lại, không ảnh hưởng UI */
+        } catch (_) { /* nuá»‘t láº¡i, khÃ´ng áº£nh hÆ°á»Ÿng UI */
                         }
                         }
 
@@ -6618,12 +6673,12 @@
                 return;
         const val = String(b).replace(/\s+/g, ' ').trim();
         if (!val)
-            return; // giữ nguyên triệt là không xoá giá trị cũ
+            return; // giá»¯ nguyÃªn triá»‡t lÃ  khÃ´ng xoÃ¡ giÃ¡ trá»‹ cÅ©
 
         S.balance = val;
         updateInfo();
 
-        // 🔔 NEW: đẩy ngay 1 gói lên C# (không chờ interval)
+        // ðŸ”” NEW: Ä‘áº©y ngay 1 gÃ³i lÃªn C# (khÃ´ng chá» interval)
                     try {
             if (typeof window.__abx_hw_pushNow === 'function') {
                 window.__abx_hw_pushNow();
@@ -6642,23 +6697,28 @@
 
     function probeIframeOnce() {
         if (isGameHost())
-            return; // không chạy ở trang game
+            return; // khÃ´ng cháº¡y á»Ÿ trang game
         if (S.username && S.balance)
-            return; // ⬅️ chỉ bỏ qua khi đã có cả tên lẫn số dư
+            return; // â¬…ï¸ chá»‰ bá» qua khi Ä‘Ã£ cÃ³ cáº£ tÃªn láº«n sá»‘ dÆ°
 
         if (S.retries >= CFG.maxRetries)
             return;
         if (S.inflightProbe)
-            return; // đang chạy rồi
+            return; // Ä‘ang cháº¡y rá»“i
 
         let paths = guessProfileUrls().filter(p => !/^\/api\//i.test(p) && !/\.(json|js|css|png|jpe?g|gif|webp|svg)$/i.test(p));
-        if (!paths || !paths.length)
-            paths = ['/account/user-profile']; // fallback cứng sang HTML
+        if (!paths || !paths.length) {
+            const fallback = '/account/user-profile';
+            // KhÃ´ng probe fallback náº¿u path nÃ y Ä‘Ã£ fail (trÃ¡nh láº·p 404 + iframe warning)
+            if ((S.profilePathFail[fallback] || 0) >= 1)
+                return;
+            paths = [fallback];
+        }
 
         if (!paths || !paths.length)
             return;
 
-        S.inflightProbe = true; // khóa re-entrance
+        S.inflightProbe = true; // khÃ³a re-entrance
 
         const idx = S.retries % paths.length;
         const iframe = document.createElement('iframe');
@@ -6682,7 +6742,7 @@
                 try {
                 const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
                 try {
-                    // Username (ƯU TIÊN ABS PATH trong tài liệu iframe)
+                    // Username (Æ¯U TIÃŠN ABS PATH trong tÃ i liá»‡u iframe)
                     let valU = '';
                 try {
                         const abs = findByTailIn(ABS_USERNAME_TAIL, doc);
@@ -6704,7 +6764,7 @@
                             '.base-dropdown-header__user__amount, .user__amount, .user-amount, .balance, [class*="amount"]');
                     if (pickB) {
                         const raw = (pickB.textContent || '').replace(/\s+/g, ' ').trim();
-                        const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|đ|₫|k|K|m|M))?/);
+                        const m = raw.match(/(\d{1,3}(?:[.,]\d{3})+|\d{1,})(?:\s*(VND|Ä‘|â‚«|k|K|m|M))?/);
                         if (m)
                             updateBalance(m[1].replace(/[^\d]/g, ''));
     }
@@ -6719,18 +6779,18 @@
         (document.body || document.documentElement).appendChild(iframe);
     }
 
-    // Cấu hình đề xuất:
-    CFG.autoRetryOnBoot = false; // KHÔNG tự chạy khi boot
+    // Cáº¥u hÃ¬nh Ä‘á» xuáº¥t:
+    CFG.autoRetryOnBoot = false; // KHÃ”NG tá»± cháº¡y khi boot
 
     function startAutoRetry(force = false) {
             if (isGameHost())
-            return; // không auto-retry ở domain games.*
+            return; // khÃ´ng auto-retry á»Ÿ domain games.*
         if (typeof canRunAuthLoop === 'function' && !canRunAuthLoop())
             return; //
         if (S.username && !force)
             return;
 
-        // dọn timer cũ (nếu có)
+        // dá»n timer cÅ© (náº¿u cÃ³)
         if (S.autoTimer) {
             clearTimeout(S.autoTimer);
                     S.autoTimer = null;
@@ -6738,16 +6798,16 @@
         S.retries = 0;
                     S.fetchDone = false;
 
-        let interval = CFG.autoRetryIntervalMs || 5000; // 5s mặc định
+        let interval = CFG.autoRetryIntervalMs || 5000; // 5s máº·c Ä‘á»‹nh
 
         const loop = async() => {
-            // đã có username → dừng
+            // Ä‘Ã£ cÃ³ username â†’ dá»«ng
             if (S.username) {
                     S.autoTimer = null;
             return;
         }
 
-            // nếu đạt trần cố gắng → dừng
+            // náº¿u Ä‘áº¡t tráº§n cá»‘ gáº¯ng â†’ dá»«ng
             if (S.retries >= CFG.maxRetries) {
                     S.autoTimer = null;
             return;
@@ -6763,13 +6823,13 @@
             }
             }
 
-            // 2) thử fetch trang profile (êm hơn) — CHỈ 1 LẦN
+            // 2) thá»­ fetch trang profile (Ãªm hÆ¡n) â€” CHá»ˆ 1 Láº¦N
             if (!S.fetchDone) {
                 let ok = false;
                     try {
                     ok = await tryFetchUserProfile();
                     } catch (_) {}
-                S.fetchDone = true; // không lặp lại fetch ở các vòng sau
+                S.fetchDone = true; // khÃ´ng láº·p láº¡i fetch á»Ÿ cÃ¡c vÃ²ng sau
                 if (ok) {
                     S.autoTimer = null;
                 return;
@@ -6777,24 +6837,24 @@
                 }
             probeIframeOnce();
 
-            // backoff tăng dần, tối đa 60s
+            // backoff tÄƒng dáº§n, tá»‘i Ä‘a 60s
             interval = Math.min(interval * 2, 60000);
             S.autoTimer = setTimeout(loop, interval);
         };
 
-        // chạy vòng đầu tiên
+        // cháº¡y vÃ²ng Ä‘áº§u tiÃªn
         S.autoTimer = setTimeout(loop, 0);
             }
 
     function pumpAuthProbe(durationMs = 12000, step = 350) {
         if (!canRunAuthLoop())
-            return; // ⬅️ chỉ cho phép auto-retry khi thấy "Đăng nhập"
+            return; // â¬…ï¸ chá»‰ cho phÃ©p auto-retry khi tháº¥y "ÄÄƒng nháº­p"
         const t0 = Date.now();
         if (S.pumpTimer)
                     clearInterval(S.pumpTimer);
         S.pumpTimer = setInterval(async() => {
                 try {
-                // 1) DOM trước
+                // 1) DOM trÆ°á»›c
             const u = findUserFromDOM();
                 if (u)
                 updateUsername(u);
@@ -6802,7 +6862,7 @@
             if (b)
                 updateBalance(b);
 
-                // 2) Nếu vẫn chưa có username, thử fetch 1 lần (êm)
+                // 2) Náº¿u váº«n chÆ°a cÃ³ username, thá»­ fetch 1 láº§n (Ãªm)
                 if (!S.username && !S.fetchDone) {
                     S.fetchDone = true;
         try {
@@ -6810,8 +6870,8 @@
                 } catch (_) {}
                 }
 
-                // 3) Nếu đã có tên + (có hoặc chưa có số dư), cứ tiếp tục đọc số dư trong khoảng thời gian
-                //    Khi đã có tên và đã có lần đọc số dư hợp lệ, hoặc quá thời gian → dừng
+                // 3) Náº¿u Ä‘Ã£ cÃ³ tÃªn + (cÃ³ hoáº·c chÆ°a cÃ³ sá»‘ dÆ°), cá»© tiáº¿p tá»¥c Ä‘á»c sá»‘ dÆ° trong khoáº£ng thá»i gian
+                //    Khi Ä‘Ã£ cÃ³ tÃªn vÃ  Ä‘Ã£ cÃ³ láº§n Ä‘á»c sá»‘ dÆ° há»£p lá»‡, hoáº·c quÃ¡ thá»i gian â†’ dá»«ng
                 if ((S.username && S.balance) || (Date.now() - t0 > durationMs)) {
                     clearInterval(S.pumpTimer);
                     S.pumpTimer = null;
@@ -6823,7 +6883,7 @@
     function startUsernameWatchdog() {
         if (!canRunAuthLoop())
                 return;
-        // clear trước
+        // clear trÆ°á»›c
         if (S.watchdogTimer) {
             clearInterval(S.watchdogTimer);
             S.watchdogTimer = null;
@@ -6832,19 +6892,19 @@
 
         const tick = async() => {
             if (isGameHost())
-                return; // chỉ chạy ở Home
-            if (isClearlyLoggedOut()) { // đang logout rõ ràng -> reset miss
+                return; // chá»‰ cháº¡y á»Ÿ Home
+            if (isClearlyLoggedOut()) { // Ä‘ang logout rÃµ rÃ ng -> reset miss
                     S.missStreak = 0;
                 return;
                             }
 
-            // 1) Ưu tiên đọc DOM nhanh
+            // 1) Æ¯u tiÃªn Ä‘á»c DOM nhanh
             const u = findUserFromDOM();
             if (u) {
                 updateUsername(u);
                     S.missStreak = 0;
             } else {
-                // 2) Không thấy -> bơm đọc ngắn + thỉnh thoảng fetch
+                // 2) KhÃ´ng tháº¥y -> bÆ¡m Ä‘á»c ngáº¯n + thá»‰nh thoáº£ng fetch
                 S.missStreak++;
                 pumpAuthProbe(5000, 200);
                 if (!S.fetchDone && (S.missStreak % 2 === 1)) {
@@ -6852,7 +6912,7 @@
                     await tryFetchUserProfile();
         } catch (_) {}
     }
-                // 3) Quá 3 nhịp vẫn "?" -> gọi auto-retry theo đề xuất
+                // 3) QuÃ¡ 3 nhá»‹p váº«n "?" -> gá»i auto-retry theo Ä‘á» xuáº¥t
                 if (S.missStreak >= (CFG.maxWatchdogMiss || 3)) {
                     S.fetchDone = false;
                     startAutoRetry(true);
@@ -6860,11 +6920,11 @@
     }
     }
 
-            // Luôn cố cập nhật số dư theo DOM mỗi nhịp
+            // LuÃ´n cá»‘ cáº­p nháº­t sá»‘ dÆ° theo DOM má»—i nhá»‹p
                 const b = findBalance();
             if (b)
                     updateBalance(b);
-            // Nếu vẫn chưa có balance, thỉnh thoảng thử kéo từ /account/*
+            // Náº¿u váº«n chÆ°a cÃ³ balance, thá»‰nh thoáº£ng thá»­ kÃ©o tá»« /account/*
             if (!S.balance && (S.missStreak % 3 === 0)) {
             try {
                     await tryFetchUserProfile();
@@ -6878,15 +6938,22 @@
 
     function ensureObserver() {
         if (!canRunAuthLoop())
-            return; // ⬅️ chưa mở cổng thì không đọc DOM
+            return; // â¬…ï¸ chÆ°a má»Ÿ cá»•ng thÃ¬ khÃ´ng Ä‘á»c DOM
                 try {
             if (S.mo)
-                return S.mo; // chỉ gắn 1 lần
+                return S.mo; // chá»‰ gáº¯n 1 láº§n
             let t = null;
+            let lastProbeKickAt = 0;
+            let lastIframeMuteScanAt = 0;
+            let lastRunAt = 0;
             const run = () => {
                 t = null;
+                const now = Date.now();
+                if (now - lastRunAt < 320)
+                    return;
+                lastRunAt = now;
 
-                // 1) DOM trước
+                // 1) DOM trÆ°á»›c
                 if (!S.username) {
                     const v = findUserFromDOM();
                     if (v)
@@ -6896,40 +6963,47 @@
                 if (b && b !== S.balance)
                     updateBalance(b);
 
-                // 2) Nếu DOM vừa thay đổi, thử “bơm” đọc nhanh (SPA thường render trễ)
+                // 2) Chá»‰ kick auth probe theo nhá»‹p Ä‘á»ƒ trÃ¡nh bÃ£o timer khi DOM mutation dÃ y.
         try {
-                    onAuthStateMaybeChanged('mut'); // ⬅️ kích hoạt fetch/iframe fallback khi cần
-                    pumpAuthProbe(4000, 300); // ⬅️ bơm 4s để chốt Username/Balance sớm
+                    const now = Date.now();
+                    const needProbeKick = !S.username || !S.balance;
+                    if (needProbeKick && (now - lastProbeKickAt) >= 1200) {
+                        lastProbeKickAt = now;
+                        onAuthStateMaybeChanged('mut');
+                        pumpAuthProbe(2500, 350);
+                    }
         } catch (_) {}
         };
 
             const onMut = () => {
                 clearTimeout(t);
                 t = setTimeout(run, 150);
-                // Cài mute telemetry cho những iframe same-origin mới xuất hiện
+                // CÃ i mute telemetry cho nhá»¯ng iframe same-origin má»›i xuáº¥t hiá»‡n
         try {
-                    document.querySelectorAll('iframe:not([data-abx-tmuted="1"])').forEach(f => {
-        try {
-                            const w = f.contentWindow;
-                            if (w && w.location && w.location.origin === location.origin) {
-                                installTelemetryMutesInFrame(w);
-                                f.setAttribute('data-abx-tmuted', '1');
-                                f.addEventListener('load', () => installTelemetryMutesInFrame(f.contentWindow));
-            }
-        } catch (_) {}
-        });
+                    const now = Date.now();
+                    if ((now - lastIframeMuteScanAt) >= 1500) {
+                        lastIframeMuteScanAt = now;
+                        document.querySelectorAll('iframe:not([data-abx-tmuted="1"])').forEach(f => {
+            try {
+                                const w = f.contentWindow;
+                                if (w && w.location && w.location.origin === location.origin) {
+                                    installTelemetryMutesInFrame(w);
+                                    f.setAttribute('data-abx-tmuted', '1');
+                                    f.addEventListener('load', () => installTelemetryMutesInFrame(f.contentWindow));
+                }
+            } catch (_) {}
+            });
+                    }
         } catch (_) {}
 
         };
             const mo = new MutationObserver(onMut);
-            // 👇 BẮT BUỘC: bắt mọi thay đổi DOM để cập nhật username/balance
+            // ðŸ‘‡ Báº®T BUá»˜C: báº¯t má»i thay Ä‘á»•i DOM Ä‘á»ƒ cáº­p nháº­t username/balance
             mo.observe(document.documentElement, {
                 subtree: true,
-                childList: true,
-                characterData: true,
-                attributes: true
+                childList: true
         });
-            onAuthStateMaybeChanged('mo'); // phát hiện trạng thái có thể thay đổi
+            onAuthStateMaybeChanged('mo'); // phÃ¡t hiá»‡n tráº¡ng thÃ¡i cÃ³ thá»ƒ thay Ä‘á»•i
             S.mo = mo;
             return mo;
             } catch (_) {}
@@ -6937,7 +7011,7 @@
 
     // ======= Overlay handling (close / peel / force click) =======
     function tryCloseCommonOverlays() {
-        // Chỉ đóng các popup/modal thực sự, bỏ qua phần tử nằm trong header/nav để không chạm dropdown Casino/PP
+        // Chá»‰ Ä‘Ã³ng cÃ¡c popup/modal thá»±c sá»±, bá» qua pháº§n tá»­ náº±m trong header/nav Ä‘á»ƒ khÃ´ng cháº¡m dropdown Casino/PP
         const shouldSkip = (el) => {
             try {
                 return !!el.closest('.header, .header_nav, .header_nav_list, .nav_item, .nav_item_btn, .dropdown_menu');
@@ -6959,34 +7033,34 @@
             });
         }
 
-    // NEW: tìm root popup theo tail & auto đóng các popup đã biết (thông báo / quảng cáo)
+    // NEW: tÃ¬m root popup theo tail & auto Ä‘Ã³ng cÃ¡c popup Ä‘Ã£ biáº¿t (thÃ´ng bÃ¡o / quáº£ng cÃ¡o)
     function findPopupRootFromTail(tail) {
         if (!tail)
             return null;
 
         let root = null;
 
-        // 1) thử tail tuyệt đối
+        // 1) thá»­ tail tuyá»‡t Ä‘á»‘i
         try {
             root = findByTail(tail);
         } catch (_) {}
                 if (root && root.isConnected)
                     return root;
 
-        // 2) fallback: lấy segment cuối cùng trong tail -> selector theo class
+        // 2) fallback: láº¥y segment cuá»‘i cÃ¹ng trong tail -> selector theo class
         try {
             const parts = String(tail).split('/').filter(Boolean);
             const last = parts[parts.length - 1] || '';
             const m = last.match(/^([a-zA-Z0-9_-]+)((?:\.[a-zA-Z0-9_-]+)+)/);
             if (m) {
-                const css = m[1] + m[2]; // ví dụ: div.tcg_modal_wrap.publicModal
+                const css = m[1] + m[2]; // vÃ­ dá»¥: div.tcg_modal_wrap.publicModal
                 root = document.querySelector(css);
                 if (root && root.isConnected)
                     return root;
         }
         } catch (_) {}
 
-        // 3) fallback đặc biệt cho publicModal RR88
+        // 3) fallback Ä‘áº·c biá»‡t cho publicModal RR88
         try {
             if (String(tail).includes('publicModal')) {
                 root = document.querySelector('.tcg_modal_wrap.publicModal');
@@ -6998,7 +7072,7 @@
             return null;
         }
 
-    // Helper: tìm nút close (X / Close / Exit...) gần một popup root
+    // Helper: tÃ¬m nÃºt close (X / Close / Exit...) gáº§n má»™t popup root
     function findCloseButtonForRoot(root) {
         if (!root || !(root instanceof HTMLElement))
             return null;
@@ -7018,12 +7092,12 @@
             return null;
         };
 
-        // 1) Ưu tiên tìm ngay bên trong root
+        // 1) Æ¯u tiÃªn tÃ¬m ngay bÃªn trong root
         let target = tryQuery(root);
             if (target)
                 return target;
 
-        // 2) Thử trên các ancestor gần (box, overlay...)
+        // 2) Thá»­ trÃªn cÃ¡c ancestor gáº§n (box, overlay...)
         let p = root.parentElement;
         while (p && p !== document.body) {
             target = tryQuery(p);
@@ -7032,7 +7106,7 @@
             p = p.parentElement;
             }
 
-        // 3) Fallback: tìm các element nhỏ có text / label giống nút đóng
+        // 3) Fallback: tÃ¬m cÃ¡c element nhá» cÃ³ text / label giá»‘ng nÃºt Ä‘Ã³ng
         const vw = Math.max(innerWidth || 0, document.documentElement.clientWidth || 0);
         const vh = Math.max(innerHeight || 0, document.documentElement.clientHeight || 0);
 
@@ -7056,7 +7130,7 @@
                 norm(el.className || '') + ' ' +
                 norm(el.id || '')).trim();
 
-            const hasXOnly = /^[x×✕✖✗✘]{1,2}$/i.test(raw);
+            const hasXOnly = /^[xÃ—âœ•âœ–âœ—âœ˜]{1,2}$/i.test(raw);
             const hasKeyword =
                 /(^x$|\bdong\b|\btat\b|\bthoat\b|close|exit|cancel|\bhuy\b)/.test(mix);
 
@@ -7088,7 +7162,7 @@
         if (!cand.length)
             return null;
 
-        // Chọn candidate gần góc phải trên màn hình (thường là nút X)
+        // Chá»n candidate gáº§n gÃ³c pháº£i trÃªn mÃ n hÃ¬nh (thÆ°á»ng lÃ  nÃºt X)
         const tx = vw * 0.95;
         const ty = vh * 0.05;
         let best = cand[0];
@@ -7115,14 +7189,14 @@
                     try {
             const nodes = document.querySelectorAll('.tcg_modal_wrap.publicModal');
             nodes.forEach(root => {
-                // không hiển thị thì bỏ qua
+                // khÃ´ng hiá»ƒn thá»‹ thÃ¬ bá» qua
                 if (!root || root.offsetParent === null)
                     return;
 
-                // 1) Ưu tiên nút X / Close / Exit... gần popup
+                // 1) Æ¯u tiÃªn nÃºt X / Close / Exit... gáº§n popup
                 let target = findCloseButtonForRoot(root);
 
-                // 2) Nếu vẫn chưa có, fallback nút "Kiểm tra" (logic cũ)
+                // 2) Náº¿u váº«n chÆ°a cÃ³, fallback nÃºt "Kiá»ƒm tra" (logic cÅ©)
                 if (!target) {
                     try {
                         const candBtns =
@@ -7137,7 +7211,7 @@
                     } catch (_) {}
                 }
 
-                // 3) Nếu vẫn chưa có -> click nền overlay
+                // 3) Náº¿u váº«n chÆ°a cÃ³ -> click ná»n overlay
                 if (!target) {
                     const bg = root.closest('.v--modal-background-click');
                     const ov = root.closest('.v--modal-overlay');
@@ -7166,7 +7240,7 @@
 
         let closed = false;
 
-        // Ưu tiên đóng popup "Thông báo RR88" theo class, không phụ thuộc tail tuyệt đối
+        // Æ¯u tiÃªn Ä‘Ã³ng popup "ThÃ´ng bÃ¡o RR88" theo class, khÃ´ng phá»¥ thuá»™c tail tuyá»‡t Ä‘á»‘i
         if (forceClosePublicModalRR88())
                         closed = true;
 
@@ -7176,10 +7250,10 @@
                 if (!root || root.offsetParent === null)
                 return;
 
-                // 1) Ưu tiên nút X / Close / Exit... gần popup
+                // 1) Æ¯u tiÃªn nÃºt X / Close / Exit... gáº§n popup
                 let target = findCloseButtonForRoot(root);
 
-                // 2) Nếu chưa có thì quét thêm các button có text đóng
+                // 2) Náº¿u chÆ°a cÃ³ thÃ¬ quÃ©t thÃªm cÃ¡c button cÃ³ text Ä‘Ã³ng
                 if (!target) {
                     try {
                         const btns =
@@ -7195,7 +7269,7 @@
         } catch (_) {}
     }
 
-                // 3) Nếu vẫn chưa có -> click vùng nền overlay (v--modal-background-click)
+                // 3) Náº¿u váº«n chÆ°a cÃ³ -> click vÃ¹ng ná»n overlay (v--modal-background-click)
                 if (!target) {
                     let p = root;
                     while (p && p !== document.body) {
@@ -7208,7 +7282,7 @@
     }
     }
 
-                // 4) Cuối cùng: click luôn root
+                // 4) Cuá»‘i cÃ¹ng: click luÃ´n root
                 if (!target)
                     target = root;
 
@@ -7249,7 +7323,7 @@
             return;
             const r = n.getBoundingClientRect();
             if (r.width * r.height < vw * vh * 0.2)
-                return; // chỉ ẩn những lớp che lớn >20% màn hình
+                return; // chá»‰ áº©n nhá»¯ng lá»›p che lá»›n >20% mÃ n hÃ¬nh
             if (n.contains(target) || target.contains(n))
             return;
             const prevDisp = n.style.display,
@@ -7350,15 +7424,15 @@
             try {
             doClick();
         } finally {
-            setTimeout(restorePE, 0); /* big overlays restore tự động sau holdMs */
+            setTimeout(restorePE, 0); /* big overlays restore tá»± Ä‘á»™ng sau holdMs */
             }
             }
 
-    // Bọc tiện ích theo tên bạn yêu cầu
+    // Bá»c tiá»‡n Ã­ch theo tÃªn báº¡n yÃªu cáº§u
     function closeAdsAndCovers() {
         tryCloseCommonOverlays();
-        closeKnownPopupRoots(); // NEW: đóng thêm các popup/thông báo theo tail cố định
-        // Không giữ ẩn quá lâu tại trang Home, chỉ peel khi click
+        closeKnownPopupRoots(); // NEW: Ä‘Ã³ng thÃªm cÃ¡c popup/thÃ´ng bÃ¡o theo tail cá»‘ Ä‘á»‹nh
+        // KhÃ´ng giá»¯ áº©n quÃ¡ lÃ¢u táº¡i trang Home, chá»‰ peel khi click
                         }
 
 
@@ -7505,9 +7579,9 @@
             }
     })();
 
-    // === Login helpers: auto click nút "Đăng nhập" cho tới khi popup hiện ra ===
+    // === Login helpers: auto click nÃºt "ÄÄƒng nháº­p" cho tá»›i khi popup hiá»‡n ra ===
     function clickLoginButtonOnce() {
-        // Nếu đã đăng nhập thì không click nữa
+        // Náº¿u Ä‘Ã£ Ä‘Äƒng nháº­p thÃ¬ khÃ´ng click ná»¯a
             if (isLoggedInFromDOM()) {
                 return false;
             }
@@ -7521,16 +7595,16 @@
                 return false;
             }
 
-    // API public để host (C#) có thể bấm nút "Đăng nhập" ngay trên popup đăng nhập
-    // Trả về true nếu tìm được nút và đã click, false nếu không tìm thấy.
+    // API public Ä‘á»ƒ host (C#) cÃ³ thá»ƒ báº¥m nÃºt "ÄÄƒng nháº­p" ngay trÃªn popup Ä‘Äƒng nháº­p
+    // Tráº£ vá» true náº¿u tÃ¬m Ä‘Æ°á»£c nÃºt vÃ  Ä‘Ã£ click, false náº¿u khÃ´ng tÃ¬m tháº¥y.
     window.__cw_clickPopupLogin = function () {
                 try {
-            // Nếu đã đăng nhập hoặc nút/khối logout/username đã hiển thị → bỏ qua
+            // Náº¿u Ä‘Ã£ Ä‘Äƒng nháº­p hoáº·c nÃºt/khá»‘i logout/username Ä‘Ã£ hiá»ƒn thá»‹ â†’ bá» qua
         if (isLoggedInFromDOM()) {
             return false;
         }
 
-            // 1) Xác định root của popup đăng nhập
+            // 1) XÃ¡c Ä‘á»‹nh root cá»§a popup Ä‘Äƒng nháº­p
             let root = null;
                 try {
                 if (typeof TAIL_LOGIN_POPUP_ROOT === 'string' && TAIL_LOGIN_POPUP_ROOT) {
@@ -7544,9 +7618,9 @@
                         '.loginPopupModal, .popup-login, .login-popup, .modal-login, .login__popup, .v--modal-box, .v--modal-overlay');
             }
 
-            // Nếu popup chưa mở thì không làm gì
+            // Náº¿u popup chÆ°a má»Ÿ thÃ¬ khÃ´ng lÃ m gÃ¬
             if (!root || !root.isConnected || root.offsetParent === null) {
-                // fallback: tìm modal chứa input password
+                // fallback: tÃ¬m modal chá»©a input password
                 const pwParent = Array.from(document.querySelectorAll('input[type="password"]'))
                     .map(i => i.closest('.v--modal-box, .v--modal-overlay, .tcg_modal_wrap, .modal, .popup, .loginPopupModal, .login-popup, .modal-login'))
                     .find(Boolean);
@@ -7555,19 +7629,19 @@
                 root = pwParent;
             }
 
-            // 2) Nếu user/pass chưa được điền → không click, tránh mở popup nếu đã login
+            // 2) Náº¿u user/pass chÆ°a Ä‘Æ°á»£c Ä‘iá»n â†’ khÃ´ng click, trÃ¡nh má»Ÿ popup náº¿u Ä‘Ã£ login
             const userFilled = !!(root.querySelector('input[name="username"], input[type="text"]')?.value || '').trim();
             const passFilled = !!(root.querySelector('input[type="password"]')?.value || '').trim();
             if (!userFilled || !passFilled) {
             return false;
         }
 
-            // 3) Tìm nút submit trong popup
+            // 3) TÃ¬m nÃºt submit trong popup
             const candSel =
                 'button.submit_btn, .submit_btn[role="button"], button[type="submit"], .btn-login, .base-button.btn';
             let btn = Array.from(root.querySelectorAll(candSel)).find(isVisibleAndClickable) || null;
 
-            // Fallback: quét toàn bộ button theo text "Đăng nhập"
+            // Fallback: quÃ©t toÃ n bá»™ button theo text "ÄÄƒng nháº­p"
             if (!btn) {
                 const all = Array.from(
                         root.querySelectorAll('button, a, [role="button"], input[type="submit"]'));
@@ -7581,7 +7655,7 @@
             return false;
         }
 
-            // 4) Thực hiện click xuyên overlay nếu cần
+            // 4) Thá»±c hiá»‡n click xuyÃªn overlay náº¿u cáº§n
             peelAndClick(btn, {
                 holdMs: 400
         });
@@ -7593,15 +7667,15 @@
         };
 
     function startLoginPostProbe() {
-        // tránh bị start trùng nhiều lần cho 1 phiên login
+        // trÃ¡nh bá»‹ start trÃ¹ng nhiá»u láº§n cho 1 phiÃªn login
         if (S.loginPostProbeStarted)
                 return;
         S.loginPostProbeStarted = true;
 
-        // giống logic cũ trong clickLoginButton: chờ header có user-logged rồi mới kéo info
+        // giá»‘ng logic cÅ© trong clickLoginButton: chá» header cÃ³ user-logged rá»“i má»›i kÃ©o info
         waitFor(() => !!document.querySelector('.user-logged, .base-dropdown-header__user__name'), 15000, 250)
         .then(async ok => {
-            S.loginPostProbeStarted = false; // reset cho lần sau
+            S.loginPostProbeStarted = false; // reset cho láº§n sau
             if (!ok)
                 return;
 
@@ -7666,7 +7740,7 @@
                 }
             const u = await waitForUsernameFromHome(10000);
             if (!u) {
-                try { alert('Không lấy được tên đăng nhập, hãy click vào nút \"Đăng nhập Tool\" lại'); } catch (_) {}
+                try { alert('KhÃ´ng láº¥y Ä‘Æ°á»£c tÃªn Ä‘Äƒng nháº­p, hÃ£y click vÃ o nÃºt \"ÄÄƒng nháº­p Tool\" láº¡i'); } catch (_) {}
                 return 'no-username';
     }
             return await clickBaccNhieuBanFromHome();
@@ -7684,81 +7758,81 @@
         }
 
     function startLoginAutoClick() {
-        // Nếu đã có timer auto-click rồi thì thôi, tránh tạo nhiều vòng lặp trùng
+        // Náº¿u Ä‘Ã£ cÃ³ timer auto-click rá»“i thÃ¬ thÃ´i, trÃ¡nh táº¡o nhiá»u vÃ²ng láº·p trÃ¹ng
         if (S.loginPopupTimer)
                     return;
 
-        // Nếu đã login thì khỏi auto click nữa
+        // Náº¿u Ä‘Ã£ login thÃ¬ khá»i auto click ná»¯a
             if (isLoggedInFromDOM()) {
-                stopLoginAutoClick('Đã đăng nhập — không auto click nút "Đăng nhập".');
+                stopLoginAutoClick('ÄÃ£ Ä‘Äƒng nháº­p â€” khÃ´ng auto click nÃºt "ÄÄƒng nháº­p".');
                     return;
         }
 
-        // Nếu popup login đang mở sẵn thì không cần auto click
+        // Náº¿u popup login Ä‘ang má»Ÿ sáºµn thÃ¬ khÃ´ng cáº§n auto click
                 if (isLoginPopupVisible()) {
-            // chưa start timer nên chỉ bỏ qua
+            // chÆ°a start timer nÃªn chá»‰ bá» qua
                     return;
         }
 
-        // bóc bớt quảng cáo/cover che nút login
+        // bÃ³c bá»›t quáº£ng cÃ¡o/cover che nÃºt login
         closeAdsAndCovers();
 
         const started = Date.now();
-        const MAX_MS = 15000; // tối đa ~15s
+        const MAX_MS = 15000; // tá»‘i Ä‘a ~15s
 
         const tick = () => {
-            // 1) Nếu trong lúc đang chạy mà đã login → dừng hẳn
+            // 1) Náº¿u trong lÃºc Ä‘ang cháº¡y mÃ  Ä‘Ã£ login â†’ dá»«ng háº³n
             if (isLoggedInFromDOM()) {
-                    stopLoginAutoClick('Đã đăng nhập (sau chờ) — không auto click nút "Đăng nhập".');
+                    stopLoginAutoClick('ÄÃ£ Ä‘Äƒng nháº­p (sau chá») â€” khÃ´ng auto click nÃºt "ÄÄƒng nháº­p".');
                     return;
     }
 
-            // 2) Nếu popup login đang mở → chờ người dùng thao tác,
-            //    KHÔNG click thêm nhưng vẫn giữ timer để sau khi đóng popup sẽ click lại
+            // 2) Náº¿u popup login Ä‘ang má»Ÿ â†’ chá» ngÆ°á»i dÃ¹ng thao tÃ¡c,
+            //    KHÃ”NG click thÃªm nhÆ°ng váº«n giá»¯ timer Ä‘á»ƒ sau khi Ä‘Ã³ng popup sáº½ click láº¡i
                 if (isLoginPopupVisible()) {
                     return;
     }
 
-            // 3) Hết thời gian mà vẫn chưa thấy popup -> dừng để tránh spam
+            // 3) Háº¿t thá»i gian mÃ  váº«n chÆ°a tháº¥y popup -> dá»«ng Ä‘á»ƒ trÃ¡nh spam
             if (Date.now() - started > MAX_MS) {
-                stopLoginAutoClick('Auto click nút \"Đăng nhập\" quá ' + Math.round(MAX_MS / 1000) + 's nhưng chưa thấy popup.');
+                stopLoginAutoClick('Auto click nÃºt \"ÄÄƒng nháº­p\" quÃ¡ ' + Math.round(MAX_MS / 1000) + 's nhÆ°ng chÆ°a tháº¥y popup.');
                     return;
     }
 
-            // 4) Thử click 1 lần
+            // 4) Thá»­ click 1 láº§n
             const ok = clickLoginButtonOnce();
             if (ok)
-                startLoginPostProbe(); // bắt đầu vòng lấy Username/Balance sau khi login
+                startLoginPostProbe(); // báº¯t Ä‘áº§u vÃ²ng láº¥y Username/Balance sau khi login
         };
 
-        // bắn ngay 1 phát đầu tiên
+        // báº¯n ngay 1 phÃ¡t Ä‘áº§u tiÃªn
         tick();
-        // sau đó 1.2s click lại 1 lần cho tới khi popup mở / timeout / đã login
+        // sau Ä‘Ã³ 1.2s click láº¡i 1 láº§n cho tá»›i khi popup má»Ÿ / timeout / Ä‘Ã£ login
         S.loginPopupTimer = setInterval(tick, 1200);
-        updateInfo('Đang auto click nút \"Đăng nhập\" trong tối đa ' + Math.round(MAX_MS / 1000) + 's (1.2s/lần)...');
+        updateInfo('Äang auto click nÃºt \"ÄÄƒng nháº­p\" trong tá»‘i Ä‘a ' + Math.round(MAX_MS / 1000) + 's (1.2s/láº§n)...');
     }
 
     // ======= Actions =======
     function clickLoginButton() {
         try {
-            // Nếu đã login thì không auto-click nút Đăng nhập nữa
+            // Náº¿u Ä‘Ã£ login thÃ¬ khÃ´ng auto-click nÃºt ÄÄƒng nháº­p ná»¯a
             if (isLoggedInFromDOM()) {
-                stopLoginAutoClick('Đã đăng nhập — không auto click nút \"Đăng nhập\".');
+                stopLoginAutoClick('ÄÃ£ Ä‘Äƒng nháº­p â€” khÃ´ng auto click nÃºt \"ÄÄƒng nháº­p\".');
                     return;
         }
-            // Thử chờ ngắn xem có nhận diện login sau khi DOM đầy đủ không
+            // Thá»­ chá» ngáº¯n xem cÃ³ nháº­n diá»‡n login sau khi DOM Ä‘áº§y Ä‘á»§ khÃ´ng
             waitFor(() => isLoggedInFromDOM(), 2500, 150).then((ok) => {
                 if (ok) {
-                    stopLoginAutoClick('Đã đăng nhập (sau chờ) — không auto click nút \"Đăng nhập\".');
+                    stopLoginAutoClick('ÄÃ£ Ä‘Äƒng nháº­p (sau chá») â€” khÃ´ng auto click nÃºt \"ÄÄƒng nháº­p\".');
                     return;
     }
-                // Nếu popup login đã hiện rồi thì KHÔNG click nút nữa
-                // và cũng KHÔNG dừng timer (nếu đang chạy), để khi anh đóng popup
-                // timer vẫn tiếp tục click lại nút "Đăng nhập".
+                // Náº¿u popup login Ä‘Ã£ hiá»‡n rá»“i thÃ¬ KHÃ”NG click nÃºt ná»¯a
+                // vÃ  cÅ©ng KHÃ”NG dá»«ng timer (náº¿u Ä‘ang cháº¡y), Ä‘á»ƒ khi anh Ä‘Ã³ng popup
+                // timer váº«n tiáº¿p tá»¥c click láº¡i nÃºt "ÄÄƒng nháº­p".
                 if (isLoginPopupVisible()) {
                     return;
         }
-                // Bắt đầu vòng auto-click
+                // Báº¯t Ä‘áº§u vÃ²ng auto-click
                 startLoginAutoClick();
             });
         } catch (e) {
@@ -7767,18 +7841,18 @@
     }
 
     async function ensureOnHome() {
-        // Ưu tiên: nếu header + tab Casino đã render thì coi như đang ở Home
+        // Æ¯u tiÃªn: náº¿u header + tab Casino Ä‘Ã£ render thÃ¬ coi nhÆ° Ä‘ang á»Ÿ Home
         const headerCasino = document.querySelector(
                 'div.header div.header_title div.header_bottom div.header_nav div.header_nav_list div.nav_item div.nav_item_btn.LIVE div.name1');
         if (headerCasino && headerCasino.offsetParent !== null)
                 return true;
 
-        // Đã ở Home và khu vực live hiển thị -> OK (fallback cũ)
+        // ÄÃ£ á»Ÿ Home vÃ  khu vá»±c live hiá»ƒn thá»‹ -> OK (fallback cÅ©)
         const sec0 = document.querySelector('.livestream-section__live');
         if (sec0 && sec0.offsetParent !== null)
                 return true;
 
-        // 1) Đóng overlay/ads trước để click logo không bị chặn
+        // 1) ÄÃ³ng overlay/ads trÆ°á»›c Ä‘á»ƒ click logo khÃ´ng bá»‹ cháº·n
         tryCloseCommonOverlays();
 
         // 2) Th? click logo d? v? "/"
@@ -7788,17 +7862,17 @@
                 logo.click();
             } catch (_) {}
         } else if (location.pathname !== '/') {
-            // Không có logo -> điều hướng thẳng về Home
+            // KhÃ´ng cÃ³ logo -> Ä‘iá»u hÆ°á»›ng tháº³ng vá» Home
             location.assign('/');
             }
 
-        // 3) Đợi phần live render (tối đa 12s)
+        // 3) Äá»£i pháº§n live render (tá»‘i Ä‘a 12s)
         const ok = await waitFor(() => {
             const s = document.querySelector('.livestream-section__live');
             return s && s.offsetParent !== null;
         }, 12000, 150);
 
-        // 4) Fallback cứng: chưa thấy thì ép về Home một lần nữa
+        // 4) Fallback cá»©ng: chÆ°a tháº¥y thÃ¬ Ã©p vá» Home má»™t láº§n ná»¯a
         if (!ok && location.pathname !== '/') {
             location.assign('/');
             await wait(1200);
@@ -7810,21 +7884,21 @@
     function isXocDiaLaunched() {
         const t = norm(document.title || '');
 
-        // Nếu title có từ khóa Tài/Xỉu/Sicbo mà KHÔNG có "xóc" → chắc chắn sai game
+        // Náº¿u title cÃ³ tá»« khÃ³a TÃ i/Xá»‰u/Sicbo mÃ  KHÃ”NG cÃ³ "xÃ³c" â†’ cháº¯c cháº¯n sai game
         if (RE_XOCDIA_NEG.test(t) && !RE_XOCDIA_POS.test(t))
             return false;
 
-        // Đúng tiêu đề "xóc đĩa" → đúng game
+        // ÄÃºng tiÃªu Ä‘á» "xÃ³c Ä‘Ä©a" â†’ Ä‘Ãºng game
         if (RE_XOCDIA_POS.test(t))
                         return true;
 
-        // Thử soi src của iframe (nếu game chạy trong iframe)
+        // Thá»­ soi src cá»§a iframe (náº¿u game cháº¡y trong iframe)
         const ifr = Array.from(document.querySelectorAll('iframe'))
             .find(f => RE_XOCDIA_POS.test(norm(f.src || '')));
         if (ifr)
                         return true;
 
-        // Mặc định: chưa xác nhận được
+        // Máº·c Ä‘á»‹nh: chÆ°a xÃ¡c nháº­n Ä‘Æ°á»£c
             return false;
                     }
 
@@ -7844,7 +7918,7 @@
         return isOk();
             }
 
-    // Chờ tối đa maxWaitMs cho nút render trước khi click
+    // Chá» tá»‘i Ä‘a maxWaitMs cho nÃºt render trÆ°á»›c khi click
     async function waitButtonUpTo(resolveBtn, maxWaitMs = 10000, step = 200) {
         const t0 = Date.now();
         let found = null;
@@ -7927,7 +8001,7 @@
                 } catch (_) { }
         }
 
-            // Bám text nhưng chấm điểm để tránh trúng container lớn
+            // BÃ¡m text nhÆ°ng cháº¥m Ä‘iá»ƒm Ä‘á»ƒ trÃ¡nh trÃºng container lá»›n
             const nodes = collectNodes();
             const cands = [];
             for (const el of nodes) {
@@ -7942,8 +8016,8 @@
                 let score = 0;
                 if (['A', 'BUTTON'].includes(clickable.tagName)) score += 10;
                 if ((clickable.getAttribute('role') || '').toLowerCase() === 'button') score += 6;
-                score += Math.max(0, 2000 - Math.min(area, 2000)) / 200; // ưu tiên diện tích nhỏ
-                score += Math.max(0, 120 - Math.min(textLen, 120)) / 20; // ưu tiên text ngắn
+                score += Math.max(0, 2000 - Math.min(area, 2000)) / 200; // Æ°u tiÃªn diá»‡n tÃ­ch nhá»
+                score += Math.max(0, 120 - Math.min(textLen, 120)) / 20; // Æ°u tiÃªn text ngáº¯n
                 cands.push({ el: clickable, score, area, textLen });
             }
             if (!cands.length)
@@ -7988,9 +8062,9 @@
         return 'no-card';
                     }
     async function clickBaccNhieuBanFromHome() {
-        // Guard: tránh click lặp khi đang load vào game
+        // Guard: trÃ¡nh click láº·p khi Ä‘ang load vÃ o game
         const now = Date.now();
-        const guardMs = 3000; // 3s hạn chế lặp
+        const guardMs = 3000; // 3s háº¡n cháº¿ láº·p
         const logStep = (m) => {
             try { updateInfo && updateInfo('[bacc] ' + m); } catch (_) {}
             try { console && console.warn && console.warn('[BaccMulti]', m); } catch (_) {}
@@ -7998,7 +8072,7 @@
         logStep('start, url=' + (location.href || '') + ', guard_until=' + (window.__abx_bacc_loading_until || 0));
         if (window.__abx_bacc_loading_until && now < window.__abx_bacc_loading_until) {
             logStep('Dang trong chu ky vao game, bo qua. guard_until=' + window.__abx_bacc_loading_until + ', now=' + now);
-            try { updateInfo && updateInfo('? Đang trong chu kỳ vào game (guard), bỏ qua.'); } catch (_) {}
+            try { updateInfo && updateInfo('? Äang trong chu ká»³ vÃ o game (guard), bá» qua.'); } catch (_) {}
             return 'skip-guard';
                 }
         window.__abx_bacc_loading_until = now + guardMs;
@@ -8085,7 +8159,7 @@
 
             const ensurePPDropdownOpen = () => {
                     try {
-                    // click/hover nav LIVE thêm lần nữa để dropdown chắc chắn mở
+                    // click/hover nav LIVE thÃªm láº§n ná»¯a Ä‘á»ƒ dropdown cháº¯c cháº¯n má»Ÿ
                     const nav = document.querySelector('.nav_item_btn.LIVE, .nav_item.LIVE, .nav_item_btn');
                     if (nav) {
                         nav.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
@@ -8185,7 +8259,7 @@
                 updateInfo('Da click PP truc tuyen (strategy: ' + usedStrat + ')');
 
             await wait(800); // cho danh sach game PP load
-            // đợi listing render + đóng overlay để tránh click sớm khi còn /seamless
+            // Ä‘á»£i listing render + Ä‘Ã³ng overlay Ä‘á»ƒ trÃ¡nh click sá»›m khi cÃ²n /seamless
             const ensurePpListingReady = async () => {
                 const DEADLINE = 6000;
                 const start = Date.now();
@@ -8268,7 +8342,7 @@
             const WAIT_GAME_MS = 12000;
             let card = await waitButtonUpTo(resolveGameCard, WAIT_GAME_MS, 200);
 
-            // fallback scan đơn giản nếu chưa thấy
+            // fallback scan Ä‘Æ¡n giáº£n náº¿u chÆ°a tháº¥y
             if (!card)
                 card = resolveGameCardSimple();
 
@@ -8295,7 +8369,7 @@
                 return isVisibleAndClickable(btn2) ? btn2 : null;
     };
 
-            // thử điều hướng thẳng nếu card có href/data-url (để tránh bị kẹt ở seamless)
+            // thá»­ Ä‘iá»u hÆ°á»›ng tháº³ng náº¿u card cÃ³ href/data-url (Ä‘á»ƒ trÃ¡nh bá»‹ káº¹t á»Ÿ seamless)
             const directHref =
                     (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
                     (card && card.closest('a') ? card.closest('a').href : '');
@@ -8315,7 +8389,7 @@
                     updateInfo(info);
       }
                 logStep('no-click after retries, url=' + (location.href || ''));
-                // fallback: nếu card có href/data-url thì điều hướng thẳng
+                // fallback: náº¿u card cÃ³ href/data-url thÃ¬ Ä‘iá»u hÆ°á»›ng tháº³ng
                 const href =
                     (card && (card.getAttribute('href') || (card.dataset && (card.dataset.href || card.dataset.url)))) ||
                     (card && card.closest('a') ? card.closest('a').href : '');
@@ -8363,7 +8437,7 @@
     }
         return;
     }
-                  // tránh spam khi vừa click/đang load game
+                  // trÃ¡nh spam khi vá»«a click/Ä‘ang load game
                   if (window.__abx_bacc_loading_until && Date.now() < window.__abx_bacc_loading_until) {
                       if (__abx_bacc_auto_state !== 'guard') {
                           try { updateInfo && updateInfo('[bacc-auto] Guard active, doi het thoi gian...'); } catch (_) {}
@@ -8384,24 +8458,24 @@
     }
 
     async function clickXocDiaLive() {
-    // 1) Đảm bảo đang ở Home
+    // 1) Äáº£m báº£o Ä‘ang á»Ÿ Home
     await ensureOnHome();
 
-    // 2) Tìm nút đúng (ưu tiên tail cố định)
+    // 2) TÃ¬m nÃºt Ä‘Ãºng (Æ°u tiÃªn tail cá»‘ Ä‘á»‹nh)
     const resolveBtnFallback = () => {
-        // 1) Thử tail cố định trước
+        // 1) Thá»­ tail cá»‘ Ä‘á»‹nh trÆ°á»›c
         const items = Array.from(document.querySelectorAll('.livestream-section__live .item-live'));
         const cand = [];
 
         items.forEach((it, idx) => {
-            // văn bản toàn item + alt/title ảnh
+            // vÄƒn báº£n toÃ n item + alt/title áº£nh
             const scopeTxt = norm([
                         it.innerText,
                         ...Array.from(it.querySelectorAll('img[alt],img[title]'))
                         .map(img => img.alt || img.title || '')
                     ].join(' '));
 
-            // Tài Xỉu / Sicbo / Dice => điểm dương, Xóc Đĩa => điểm âm
+            // TÃ i Xá»‰u / Sicbo / Dice => Ä‘iá»ƒm dÆ°Æ¡ng, XÃ³c ÄÄ©a => Ä‘iá»ƒm Ã¢m
             const wCtxPos = RE_XOCDIA_POS.test(scopeTxt) ? 6 : 0;
             const wCtxNeg = RE_XOCDIA_NEG.test(scopeTxt) ? -10 : 0;
 
@@ -8413,9 +8487,9 @@
                 const wBtnPos = RE_XOCDIA_POS.test(lbl) ? 4 : 0;
                 const wBtnNeg = RE_XOCDIA_NEG.test(lbl) ? -10 : 0;
 
-                // 🔥 ƯU TIÊN THỨ TỰ ITEM:
-                // - idx === 0: Tài Xỉu Live (item đầu tiên) -> +3
-                // - idx 1, 2: vẫn được cộng nhẹ +1
+                // ðŸ”¥ Æ¯U TIÃŠN THá»¨ Tá»° ITEM:
+                // - idx === 0: TÃ i Xá»‰u Live (item Ä‘áº§u tiÃªn) -> +3
+                // - idx 1, 2: váº«n Ä‘Æ°á»£c cá»™ng nháº¹ +1
                 const idxBoost = (idx === 0 ? 3 : (idx <= 2 ? 1 : 0));
 
                 const score = wCtxPos + wCtxNeg + wBtnPos + wBtnNeg + idxBoost;
@@ -8427,20 +8501,20 @@
             });
             });
 
-        // Sắp xếp theo score, lấy cái tốt nhất và còn click được
+        // Sáº¯p xáº¿p theo score, láº¥y cÃ¡i tá»‘t nháº¥t vÃ  cÃ²n click Ä‘Æ°á»£c
         cand.sort((a, b) => b.score - a.score);
         const top = cand.find(c => c.score > 0 && isVisibleAndClickable(c.el));
-        return top ? top.el : null; // ⛔ KHÔNG fallback nút thứ 2 nữa
+        return top ? top.el : null; // â›” KHÃ”NG fallback nÃºt thá»© 2 ná»¯a
         };
 
-    // 3) Đóng quảng cáo/cover phổ biến trước
+    // 3) ÄÃ³ng quáº£ng cÃ¡o/cover phá»• biáº¿n trÆ°á»›c
     closeAdsAndCovers();
 
-    // 4) Chờ nút theo 2 pha: 5s chỉ tail, rồi phần còn lại cho fallback (tổng ≤12s)
+    // 4) Chá» nÃºt theo 2 pha: 5s chá»‰ tail, rá»“i pháº§n cÃ²n láº¡i cho fallback (tá»•ng â‰¤12s)
     const WAIT_MS = 12000;
     const TAIL_ONLY_MS = 5000;
 
-    // Pha 1: chỉ đợi tail cố định
+    // Pha 1: chá»‰ Ä‘á»£i tail cá»‘ Ä‘á»‹nh
     const tailBtn = await waitButtonUpTo(() => {
         const b = findByTail(TAIL_XOCDIA_BTN);
         return (b && isVisibleAndClickable(b)) ? b : null;
@@ -8448,27 +8522,27 @@
 
     let btn = tailBtn;
 
-    // Pha 2: nếu chưa có tail, đợi phần còn lại cho các điều kiện fallback
+    // Pha 2: náº¿u chÆ°a cÃ³ tail, Ä‘á»£i pháº§n cÃ²n láº¡i cho cÃ¡c Ä‘iá»u kiá»‡n fallback
     if (!btn) {
         const restMs = Math.max(0, WAIT_MS - TAIL_ONLY_MS);
         btn = await waitButtonUpTo(resolveBtnFallback, restMs, 200);
         }
 
     if (!btn) {
-        updateInfo('[legacy] Không tìm thấy nút mở game live trong =' + Math.round(WAIT_MS / 1000) + 's sau khi về trang Home.');
+        updateInfo('[legacy] KhÃ´ng tÃ¬m tháº¥y nÃºt má»Ÿ game live trong =' + Math.round(WAIT_MS / 1000) + 's sau khi vá» trang Home.');
                 return;
         }
 
-    // Resolver click: ưu tiên nút đã tìm thấy (tail hoặc fallback); nếu không còn khả dụng, fallback tiếp
+    // Resolver click: Æ°u tiÃªn nÃºt Ä‘Ã£ tÃ¬m tháº¥y (tail hoáº·c fallback); náº¿u khÃ´ng cÃ²n kháº£ dá»¥ng, fallback tiáº¿p
     const resolveBtnFallbackSafe = () => resolveBtnFallback();
     const resolverForClick = () => (btn && isVisibleAndClickable(btn)) ? btn : resolveBtnFallbackSafe();
 
-    // 5) Click 1–3 lần (auto) + xuyên overlay
+    // 5) Click 1â€“3 láº§n (auto) + xuyÃªn overlay
     const ok = await multiTryClick(resolverForClick, 3, isXocDiaLaunched);
     if (ok) {
-        updateInfo('[legacy] Đã tự động click (đợi nút trong =' + Math.round(WAIT_MS / 1000) + 's, sau đó click 1–3 lần) để mở game live.');
+        updateInfo('[legacy] ÄÃ£ tá»± Ä‘á»™ng click (Ä‘á»£i nÃºt trong =' + Math.round(WAIT_MS / 1000) + 's, sau Ä‘Ã³ click 1â€“3 láº§n) Ä‘á»ƒ má»Ÿ game live.');
     } else {
-        updateInfo('[legacy] Không thể mở game live. Nút có thể bị khóa hoặc trang chặn điều hướng.');
+        updateInfo('[legacy] KhÃ´ng thá»ƒ má»Ÿ game live. NÃºt cÃ³ thá»ƒ bá»‹ khÃ³a hoáº·c trang cháº·n Ä‘iá»u hÆ°á»›ng.');
         }
         }
 
@@ -10124,8 +10198,8 @@
                     setPinSync(roomId, false);
                     return;
                 }
-                if (shouldPin)
-                    scrollCardIntoView(roomId, { behavior: 'auto', block: 'center', highlight: false });
+                // KhÃ´ng gá»i scrollCardIntoView á»Ÿ nhÃ¡nh not-found:
+                // hÃ m nÃ y sáº½ quÃ©t DOM láº·p láº¡i vÃ´ Ã­ch khi card chÆ°a tá»“n táº¡i, gÃ¢y lag lÃºc má»›i vÃ o.
                 schedulePinRetry(roomId, shouldPin);
                 return;
         }
@@ -11317,7 +11391,7 @@
         window.__abxRunResultMapRawHistory = (limit = 1) => {
             const entries = collectBaccaratHistoryEntries();
             if (!entries.length) {
-                const text = 'Không tìm thấy bàn để xuất raw history.';
+                const text = 'KhÃ´ng tÃ¬m tháº¥y bÃ n Ä‘á»ƒ xuáº¥t raw history.';
                 showTestAlert(text);
                 return [];
             }
@@ -11326,7 +11400,7 @@
                 const raw = collectRawHistoryNodes(entry.root);
                 const lines = raw.map((node, j) =>
                     `${j + 1}. [row=${node.row},col=${node.col}] tail=${node.tail} tag=${node.tag} color=${node.color || '(attr)'} computed=${node.computed || '(comp)'} href=${node.href || '(none)'} symbol=${node.symbolCode || '(none)'} tie=${node.tieCount || 0} text=${node.text || '(empty)'}`);
-                const summary = `${idx + 1}. ${entry.name} (${raw.length} ô lịch sử)`;
+                const summary = `${idx + 1}. ${entry.name} (${raw.length} Ã´ lá»‹ch sá»­)`;
                 return `${summary}\n${lines.join('\n')}`;
                 });
             const payload = ['Raw ResultMap history (row/col)', '', ...docs].join('\n\n');
@@ -11343,12 +11417,12 @@
             const matches = collectBaccarat3Cards();
             const tableNode = matches[0] || null;
             if (!tableNode) {
-                showTestAlert('Không tìm thấy Baccarat 3 trên trang.');
+                showTestAlert('KhÃ´ng tÃ¬m tháº¥y Baccarat 3 trÃªn trang.');
                 return [];
             }
             const list = Array.from(tableNode.querySelectorAll('svg circle, svg rect, svg path'));
             if (!list.length) {
-                const msg = 'Không tìm thấy node SVG nào.';
+                const msg = 'KhÃ´ng tÃ¬m tháº¥y node SVG nÃ o.';
                 showTestAlert(msg);
                 return [];
             }
@@ -11569,19 +11643,19 @@
         function buildResultMapSnapshot(limit = 1) {
             const entries = collectBaccaratHistoryEntries();
             if (!entries.length) {
-                const text = 'Không tìm thấy bàn Baccarat để hiển thị lịch sử.';
+                const text = 'KhÃ´ng tÃ¬m tháº¥y bÃ n Baccarat Ä‘á»ƒ hiá»ƒn thá»‹ lá»‹ch sá»­.';
                 return { tables: 0, text, entries: [] };
         }
             const list = entries.slice(0, Math.max(1, limit || entries.length));
             const lines = list.map((entry, idx) => formatHistoryLine(entry, idx + 1, 60));
-            const header = `ResultMap snapshot (${list.length} bàn)`;
+            const header = `ResultMap snapshot (${list.length} bÃ n)`;
             const payload = [header, '', ...lines].join('\n\n');
             return { tables: list.length, text: payload, entries: list };
         }
 
         window.__abxRunResultMapTest = (limit = 1) => {
             const snapshot = buildResultMapSnapshot(limit);
-            const summary = snapshot.tables ? `[ResultMap] ${snapshot.tables} bàn` : '[ResultMap] không tìm thấy bàn';
+            const summary = snapshot.tables ? `[ResultMap] ${snapshot.tables} bÃ n` : '[ResultMap] khÃ´ng tÃ¬m tháº¥y bÃ n';
             appendDevLog(summary + ' (test run)');
             setOverlayLog(summary + ' (test run)');
             logToOverlayConsole(summary, 'info');
@@ -11834,10 +11908,10 @@
             const btn = st.view.playBtn;
             if (isRunning) {
                 btn.classList.add('is-running');
-                btn.textContent = 'Dừng';
+                btn.textContent = 'Dá»«ng';
             } else {
                 btn.classList.remove('is-running');
-                btn.textContent = 'Chạy';
+                btn.textContent = 'Cháº¡y';
         }
             return true;
         }
@@ -11935,9 +12009,9 @@
 
                     if (st.view && st.view.winLoseValue) {
                         if (outcome === 'win') {
-                            st.view.winLoseValue.textContent = 'THẮNG';
+                            st.view.winLoseValue.textContent = 'THáº®NG';
                             st.view.winLoseValue.style.color = '#22c55e';
-                            st.lastWinLoseText = 'THẮNG';
+                            st.lastWinLoseText = 'THáº®NG';
                             st.lastWinLoseColor = '#22c55e';
                         } else if (outcome === 'loss') {
                             st.view.winLoseValue.textContent = 'THUA';
@@ -11945,9 +12019,9 @@
                             st.lastWinLoseText = 'THUA';
                             st.lastWinLoseColor = '#ef4444';
                         } else if (outcome === 'tie') {
-                            st.view.winLoseValue.textContent = 'HÒA';
+                            st.view.winLoseValue.textContent = 'HÃ’A';
                             st.view.winLoseValue.style.color = '#f59e0b';
-                            st.lastWinLoseText = 'HÒA';
+                            st.lastWinLoseText = 'HÃ’A';
                             st.lastWinLoseColor = '#f59e0b';
                         } else {
                             st.view.winLoseValue.textContent = '--';
@@ -12074,9 +12148,9 @@
             };
             };
             return {
-                player: readArea('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt', 'Người Chơi'),
-                tie: readArea('.pu_pv .qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN.qC_qV, .pu_pv [data-betcode="2"].qC_lC, [data-betcode="2"].qC_lC, .qE_lp.qE_qO', 'Hòa'),
-                banker: readArea('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru', 'Nhà Cái')
+                player: readArea('.pu_pv .qC_lC.qC_q0.qC_qV, .qC_lC.qC_q0.qC_qV, .pu_pv [data-betcode="0"].qC_lC, [data-betcode="0"].qC_lC, .qE_lp.qE_q1, .qX_lc.qX_rt.qX_rq, .qX_lc.qX_rt.qX_ro, .qX_lc.qX_rt', 'NgÆ°á»i ChÆ¡i'),
+                tie: readArea('.pu_pv .qC_lC.qC_qN.qC_qV, .qC_lC.qC_qN.qC_qV, .pu_pv [data-betcode="2"].qC_lC, [data-betcode="2"].qC_lC, .qE_lp.qE_qO', 'HÃ²a'),
+                banker: readArea('.pu_pv .qC_lC.qC_q1.qC_qV, .qC_lC.qC_q1.qC_qV, .pu_pv [data-betcode="1"].qC_lC, [data-betcode="1"].qC_lC, .qE_lp.qE_ra, .qX_lc.qX_ru.qX_rq, .qX_lc.qX_ru', 'NhÃ  CÃ¡i')
             };
                     }
 
@@ -12697,17 +12771,17 @@
 
         function deriveStatusFromText(text) {
             if (!text)
-                return 'Chưa có dữ liệu';
+                return 'ChÆ°a cÃ³ dá»¯ liá»‡u';
             const lowered = norm(text);
             if (lowered.includes('khong tim thay'))
-                return 'Không tìm thấy bàn';
+                return 'KhÃ´ng tÃ¬m tháº¥y bÃ n';
             if (lowered.includes('bat dau dat cuoc') || lowered.includes('dat cuoc'))
-                return 'Bắt đầu đặt cược';
+                return 'Báº¯t Ä‘áº§u Ä‘áº·t cÆ°á»£c';
             if (lowered.includes('chia bai'))
-                return 'Chia bài';
+                return 'Chia bÃ i';
             if (lowered.includes('cho ket qua') || lowered.includes('ket qua') || lowered.includes('dang doi') || lowered.includes('dang cho'))
-                return 'Chờ kết quả';
-                return 'Bắt đầu đặt cược';
+                return 'Chá» káº¿t quáº£';
+                return 'Báº¯t Ä‘áº§u Ä‘áº·t cÆ°á»£c';
         }
 
         function countRenderableHistoryTotal(history, historyRaw) {
@@ -12758,12 +12832,12 @@
                 ? countdown
                 : null;
             if (normalized !== null && normalized > 0) {
-                return { text: 'Bắt đầu đặt cược', color: '#22c55e' };
+                return { text: 'Báº¯t Ä‘áº§u Ä‘áº·t cÆ°á»£c', color: '#22c55e' };
         }
             if (!total) {
-                return { text: 'Đang xáo bài', color: '#f59e0b' };
+                return { text: 'Äang xÃ¡o bÃ i', color: '#f59e0b' };
             }
-            return { text: 'Đợi kết quả chia bài', color: '#ef4444' };
+            return { text: 'Äá»£i káº¿t quáº£ chia bÃ i', color: '#ef4444' };
         }
 
         function derivePanelStatusInfo(data, liveCountdown, st) {
@@ -12790,20 +12864,20 @@
             const isShufflePhase = wantsShuffle || pendingShuffleForSession || gameStage === 0 || gameStage === 4;
             const hasLiveSyncHint = hasRenderableLiveData(data, st);
             if (st && !st.hasRoadSynced && !historyCount && !hasLiveSyncHint)
-                return { phase: 'sync', text: 'Đang đồng bộ dữ liệu...', color: '#f59e0b' };
+                return { phase: 'sync', text: 'Äang Ä‘á»“ng bá»™ dá»¯ liá»‡u...', color: '#f59e0b' };
             if (isResultPhase)
-                return { phase: 'result', text: 'Đợi kết quả chia bài', color: '#ef4444' };
+                return { phase: 'result', text: 'Äá»£i káº¿t quáº£ chia bÃ i', color: '#ef4444' };
             if (countdownActive || gameStage === 1)
-                return { phase: 'betting', text: 'Bắt đầu đặt cược', color: '#22c55e' };
+                return { phase: 'betting', text: 'Báº¯t Ä‘áº§u Ä‘áº·t cÆ°á»£c', color: '#22c55e' };
             if (isShufflePhase)
-                return { phase: 'shuffle', text: 'Đang xáo bài', color: '#f59e0b' };
+                return { phase: 'shuffle', text: 'Äang xÃ¡o bÃ i', color: '#f59e0b' };
             if (!historyCount) {
                 if (hasLiveSyncHint)
-                    return { phase: 'result', text: 'Đợi kết quả chia bài', color: '#ef4444' };
-                return { phase: st && st.hasRoadSynced ? 'result' : 'sync', text: st && st.hasRoadSynced ? 'Đợi kết quả chia bài' : 'Đang đồng bộ dữ liệu...', color: st && st.hasRoadSynced ? '#ef4444' : '#f59e0b' };
+                    return { phase: 'result', text: 'Äá»£i káº¿t quáº£ chia bÃ i', color: '#ef4444' };
+                return { phase: st && st.hasRoadSynced ? 'result' : 'sync', text: st && st.hasRoadSynced ? 'Äá»£i káº¿t quáº£ chia bÃ i' : 'Äang Ä‘á»“ng bá»™ dá»¯ liá»‡u...', color: st && st.hasRoadSynced ? '#ef4444' : '#f59e0b' };
             }
             const fallback = deriveStatusFromCountdown(countdown, data && data.stats || null, data && data.history || [], data && data.historyRaw || []);
-            return { phase: fallback.text === 'Bắt đầu đặt cược' ? 'betting' : (fallback.text === 'Đang xáo bài' ? 'shuffle' : 'result'), text: fallback.text, color: fallback.color };
+            return { phase: fallback.text === 'Báº¯t Ä‘áº§u Ä‘áº·t cÆ°á»£c' ? 'betting' : (fallback.text === 'Äang xÃ¡o bÃ i' ? 'shuffle' : 'result'), text: fallback.text, color: fallback.color };
         }
 
         function deriveStatusFromServer(data) {
@@ -12883,11 +12957,11 @@
             if (view.statsT)
                 view.statsT.textContent = '0';
             if (view.statusLineValue && showSync) {
-                view.statusLineValue.textContent = 'Đang đồng bộ dữ liệu...';
+                view.statusLineValue.textContent = 'Äang Ä‘á»“ng bá»™ dá»¯ liá»‡u...';
                 view.statusLineValue.style.color = '#f59e0b';
             }
             if (showSync) {
-                st.lastStatusText = 'Đang đồng bộ dữ liệu...';
+                st.lastStatusText = 'Äang Ä‘á»“ng bá»™ dá»¯ liá»‡u...';
                 st.lastStatusColor = '#f59e0b';
             }
             st.lastCenterResult = '';
@@ -12897,27 +12971,27 @@
 
         function deriveMetricInfo(text) {
             if (!text)
-                return 'Chưa có dữ liệu';
+                return 'ChÆ°a cÃ³ dá»¯ liá»‡u';
             const lowered = norm(text);
             const match = lowered.match(/van\\s*#?(\\d+)/);
             if (match)
-                return 'Ván #' + match[1];
+                return 'VÃ¡n #' + match[1];
             if (lowered.includes('ban nhieu'))
-                return 'Đa bàn';
-            return 'Đang đồng bộ';
+                return 'Äa bÃ n';
+            return 'Äang Ä‘á»“ng bá»™';
         }
 
         function deriveBetInfo(text) {
             if (!text)
-                return 'Chưa đặt';
+                return 'ChÆ°a Ä‘áº·t';
             const lowered = norm(text);
             if (lowered.includes('chuong') || lowered.includes('banker'))
-                return 'Nhà cái';
+                return 'NhÃ  cÃ¡i';
             if (lowered.includes('nguoi') || lowered.includes('player'))
-                return 'Người chơi';
+                return 'NgÆ°á»i chÆ¡i';
             if (lowered.includes('hoa') || lowered.includes('tie'))
-                return 'Cửa hòa';
-                return 'Chưa đặt';
+                return 'Cá»­a hÃ²a';
+                return 'ChÆ°a Ä‘áº·t';
             }
 
 function deriveWinLoseValue(text) {
@@ -12925,11 +12999,11 @@ function deriveWinLoseValue(text) {
                 return '--';
             const lowered = norm(text);
             if (lowered.includes('thang'))
-                return 'THẮNG';
+                return 'THáº®NG';
             if (lowered.includes('thua'))
                 return 'THUA';
             if (lowered.includes('hoa') || lowered.includes('tie'))
-                return 'HÒA';
+                return 'HÃ’A';
             return '--';
         }
 
@@ -12966,14 +13040,14 @@ function deriveWinLoseColor(text) {
                 if (betAreas.banker && betAreas.banker.active)
                 return 'BANKER';
                 if (betAreas.tie && betAreas.tie.active)
-                return 'HÒA';
+                return 'HÃ’A';
             }
             if (betChips) {
                 const hasPlayer = !!betChips.player;
                 const hasBanker = !!betChips.banker;
                 const hasTie = !!betChips.tie;
                 if (hasTie && !hasPlayer && !hasBanker)
-                    return 'HÒA';
+                    return 'HÃ’A';
                 if (hasPlayer && !hasBanker)
                     return 'PLAYER';
                 if (hasBanker && !hasPlayer)
@@ -12989,7 +13063,7 @@ function deriveWinLoseColor(text) {
             if (lowered.includes('banker') || lowered.includes('nha cai'))
                 return 'BANKER';
             if (lowered.includes('hoa') || lowered.includes('tie'))
-                    return 'HÒA';
+                    return 'HÃ’A';
             return '--';
         }
 
@@ -13628,24 +13702,24 @@ function deriveWinLoseColor(text) {
                 }
                 const outcome = String(st.lastBetOutcome || '').trim().toLowerCase();
                 if (outcome === 'win') {
-                    resolvedWinLoseText = 'THẮNG';
+                    resolvedWinLoseText = 'THáº®NG';
                     resolvedWinLoseColor = '#22c55e';
                 } else if (outcome === 'loss') {
                     resolvedWinLoseText = 'THUA';
                     resolvedWinLoseColor = '#ef4444';
                 } else if (outcome === 'tie') {
-                    resolvedWinLoseText = 'HÒA';
+                    resolvedWinLoseText = 'HÃ’A';
                     resolvedWinLoseColor = '#f59e0b';
                 }
             } else if (st.lastBetOutcome) {
                 if (st.lastBetOutcome === 'win') {
-                    resolvedWinLoseText = 'THẮNG';
+                    resolvedWinLoseText = 'THáº®NG';
                     resolvedWinLoseColor = '#22c55e';
                 } else if (st.lastBetOutcome === 'loss') {
                     resolvedWinLoseText = 'THUA';
                     resolvedWinLoseColor = '#ef4444';
                 } else if (st.lastBetOutcome === 'tie') {
-                    resolvedWinLoseText = 'HÒA';
+                    resolvedWinLoseText = 'HÃ’A';
                     resolvedWinLoseColor = '#f59e0b';
                 }
             }
@@ -13775,9 +13849,9 @@ function deriveWinLoseColor(text) {
                         view.statsB.textContent = String(statCounts.banker || 0);
                     if (view.statsT)
                         view.statsT.textContent = String(statCounts.tie || 0);
-                    updateBetItem(view.betPlayer, betAreas && betAreas.player, 'Người Chơi');
-                    updateBetItem(view.betTie, betAreas && betAreas.tie, 'Hòa');
-                    updateBetItem(view.betBanker, betAreas && betAreas.banker, 'Nhà Cái');
+                    updateBetItem(view.betPlayer, betAreas && betAreas.player, 'NgÆ°á»i ChÆ¡i');
+                    updateBetItem(view.betTie, betAreas && betAreas.tie, 'HÃ²a');
+                    updateBetItem(view.betBanker, betAreas && betAreas.banker, 'NhÃ  CÃ¡i');
                 }
             }
             const statCounts = summarizeHistoryStats(data.history || [], data.stats || null, data.historyRaw || []);
@@ -13962,7 +14036,7 @@ function deriveWinLoseColor(text) {
             actions.className = 'actions';
             const btnPlay = document.createElement('button');
             btnPlay.className = 'play-btn';
-            btnPlay.textContent = 'Chạy';
+            btnPlay.textContent = 'Cháº¡y';
             const sendPlayRequest = () => {
                 try {
                     window.chrome?.webview?.postMessage?.({
@@ -14107,21 +14181,21 @@ function deriveWinLoseColor(text) {
                 cell.append(input);
                 return { cell, value: input };
             };
-            const winLoseLabel = createStatusCell('THẮNG/THUA', true);
+            const winLoseLabel = createStatusCell('THáº®NG/THUA', true);
             const winLoseValue = createStatusCell('--');
-            const betDoorLabel = createStatusCell('CỬA ĐẶT', true);
+            const betDoorLabel = createStatusCell('Cá»¬A Äáº¶T', true);
             const betDoorValue = createStatusCell('--');
-            const betAmountLabel = createStatusCell('TIỀN CƯỢC', true);
+            const betAmountLabel = createStatusCell('TIá»€N CÆ¯á»¢C', true);
             const betAmountValue = createStatusCell('--');
-            const moneyLevelLabel = createStatusCell('MỨC TIỀN', true);
+            const moneyLevelLabel = createStatusCell('Má»¨C TIá»€N', true);
             const moneyLevelValue = createStatusCell('--');
-            const winAmountLabel = createStatusCell('TIỀN THẮNG', true);
+            const winAmountLabel = createStatusCell('TIá»€N THáº®NG', true);
             const winAmountValue = createStatusCell('0');
-            const totalWinLoseLabel = createStatusCell('TỔNG THẮNG/THUA', true);
+            const totalWinLoseLabel = createStatusCell('Tá»”NG THáº®NG/THUA', true);
             const totalWinLoseValue = createStatusCell('--');
-            const cutProfitLabel = createStatusCell('CẮT LÃI', true);
+            const cutProfitLabel = createStatusCell('Cáº®T LÃƒI', true);
             const cutProfitValue = createStatusInputCell('');
-            const cutLossLabel = createStatusCell('CẮT LỖ', true);
+            const cutLossLabel = createStatusCell('Cáº®T Lá»–', true);
             const cutLossValue = createStatusInputCell('');
             statusGrid.append(
                 winLoseLabel.cell,
@@ -14148,7 +14222,7 @@ function deriveWinLoseColor(text) {
             statusLine.style.gridRow = '7 / span 1';
             const statusLineLabel = document.createElement('div');
             statusLineLabel.className = 'label';
-            statusLineLabel.textContent = 'TRẠNG THÁI';
+            statusLineLabel.textContent = 'TRáº NG THÃI';
             const statusLineValue = document.createElement('div');
             statusLineValue.className = 'value';
             statusLineValue.textContent = '--';
@@ -14159,7 +14233,7 @@ function deriveWinLoseColor(text) {
             betRow.style.gridRow = '8 / span 1';
             const betPlayer = document.createElement('div');
             betPlayer.className = 'bet-item bet-player';
-            betPlayer.textContent = 'Người Chơi';
+            betPlayer.textContent = 'NgÆ°á»i ChÆ¡i';
             const betPlayerScore = document.createElement('span');
             betPlayerScore.className = 'bet-score player';
             betPlayer.appendChild(betPlayerScore);
@@ -14174,7 +14248,7 @@ function deriveWinLoseColor(text) {
             betPlayer.appendChild(betPlayerChip);
             const betTie = document.createElement('div');
             betTie.className = 'bet-item bet-tie';
-            betTie.textContent = 'Hòa';
+            betTie.textContent = 'HÃ²a';
             const betTieExtra = document.createElement('span');
             betTieExtra.className = 'bet-extra tie';
             betTie.appendChild(betTieExtra);
@@ -14186,7 +14260,7 @@ function deriveWinLoseColor(text) {
             betTie.appendChild(betTieChip);
             const betBanker = document.createElement('div');
             betBanker.className = 'bet-item bet-banker';
-            betBanker.textContent = 'Nhà Cái';
+            betBanker.textContent = 'NhÃ  CÃ¡i';
             const betBankerScore = document.createElement('span');
             betBankerScore.className = 'bet-score banker';
             betBanker.appendChild(betBankerScore);
@@ -14210,7 +14284,7 @@ function deriveWinLoseColor(text) {
             const closeBtn = document.createElement('button');
             closeBtn.className = 'panel-close';
             closeBtn.innerHTML = '&times;';
-            closeBtn.title = 'Đóng bàn';
+            closeBtn.title = 'ÄÃ³ng bÃ n';
             closeBtn.addEventListener('click', () => closePanel(room.id));
             panel.appendChild(closeBtn);
                 bringToFront(panel);
@@ -14669,18 +14743,22 @@ function deriveWinLoseColor(text) {
 
     // ======= Boot =======
     function ensureOverlayHost() {
-    // đảm bảo overlay tồn tại và listeners đã gắn
+    // Ä‘áº£m báº£o overlay tá»“n táº¡i vÃ  listeners Ä‘Ã£ gáº¯n
     return ensureOverlay();
 }
-    // NEW: loop định kỳ để tự động đóng popup/thông báo
+    // NEW: loop Ä‘á»‹nh ká»³ Ä‘á»ƒ tá»± Ä‘á»™ng Ä‘Ã³ng popup/thÃ´ng bÃ¡o
     function ensureAutoClosePopups() {
     if (window.__abx_auto_close_popup)
         return;
     window.__abx_auto_close_popup = setInterval(() => {
         try {
+            const maybePopup = document.querySelector(
+                '.tcg_modal_wrap.publicModal, .tcg_modal_wrap.loginPopupModal, .swal2-container, .v--modal-overlay, .modal-backdrop, .modal-mask');
+            if (!maybePopup || maybePopup.offsetParent === null)
+                return;
             closeAdsAndCovers();
         } catch (_) {}
-    }, 2000); // 2s/lần, đủ để tắt popup mà không spam
+    }, 2000); // 2s/láº§n, Ä‘á»§ Ä‘á»ƒ táº¯t popup mÃ  khÃ´ng spam
 }
 
     function boot() {
@@ -14689,7 +14767,7 @@ function deriveWinLoseColor(text) {
             ensureRoot();
             installPostMessageLogger();
             ensureOverlayHost();
-            ensureAutoClosePopups(); // NEW: auto đóng popup/thông báo
+            ensureAutoClosePopups(); // NEW: auto Ä‘Ã³ng popup/thÃ´ng bÃ¡o
             try {
                 ensureLoginInputObserver();
                 if (!window.__abx_login_input_listener) {
@@ -14700,19 +14778,19 @@ function deriveWinLoseColor(text) {
                 }
                 scheduleLoginInputScan('boot');
             } catch (_) {}
-            // Nếu đã nhận diện đang đăng nhập -> mở cổng ngay
+            // Náº¿u Ä‘Ã£ nháº­n diá»‡n Ä‘ang Ä‘Äƒng nháº­p -> má»Ÿ cá»•ng ngay
             try {
                 if (isLoggedInFromDOM()) {
                     S.authGateOpened = true;
                 }
             } catch (_) {}
 
-            // Sau boot – kiểm tra lại khi tab trở lại foreground (login popup/redirect)
+            // Sau boot â€“ kiá»ƒm tra láº¡i khi tab trá»Ÿ láº¡i foreground (login popup/redirect)
             if (!window.__abx_vis_listener) {
                 window.__abx_vis_listener = true;
                 document.addEventListener('visibilitychange', () => {
                     if (!document.hidden) {
-                        onAuthStateMaybeChanged('vis'); // cập nhật username -> fetch/iframe nếu cần
+                        onAuthStateMaybeChanged('vis'); // cáº­p nháº­t username -> fetch/iframe náº¿u cáº§n
                         const bv = findBalance();
                         if (bv)
                             updateBalance(bv);
@@ -14721,15 +14799,15 @@ function deriveWinLoseColor(text) {
 
             }
 
-            // Chỉ khi nhìn thấy nút "Đăng nhập" mới bắt đầu các tiến trình Username/Balance
+            // Chá»‰ khi nhÃ¬n tháº¥y nÃºt "ÄÄƒng nháº­p" má»›i báº¯t Ä‘áº§u cÃ¡c tiáº¿n trÃ¬nh Username/Balance
             waitFor(() => !!findLoginButton(), 30000, 150).then(ok => {
                 if (ok) {
                     S.authGateOpened = true;
-                    // có thể bơm nhẹ một vòng để điền nhanh
+                    // cÃ³ thá»ƒ bÆ¡m nháº¹ má»™t vÃ²ng Ä‘á»ƒ Ä‘iá»n nhanh
                     pumpAuthProbe(4000, 300);
 
-                    // NEW: nếu CHƯA login và popup đăng nhập CHƯA hiển thị
-                    // thì tự động bật vòng auto click nút "Đăng nhập"
+                    // NEW: náº¿u CHÆ¯A login vÃ  popup Ä‘Äƒng nháº­p CHÆ¯A hiá»ƒn thá»‹
+                    // thÃ¬ tá»± Ä‘á»™ng báº­t vÃ²ng auto click nÃºt "ÄÄƒng nháº­p"
                     try {
                         if (!isLoginPopupVisible() && !isLoggedInFromDOM()) {
                             startLoginAutoClick();
@@ -14738,20 +14816,20 @@ function deriveWinLoseColor(text) {
                 }
             });
 
-            // Cài mute telemetry trong các iframe cùng origin
+            // CÃ i mute telemetry trong cÃ¡c iframe cÃ¹ng origin
             Array.from(document.querySelectorAll('iframe')).forEach(f => {
                 try {
                     const w = f.contentWindow;
                     if (w && w.location && w.location.origin === location.origin) {
                         installTelemetryMutesInFrame(w);
-                        f.setAttribute('data-abx-tmuted', '1'); // đánh dấu đã mute
+                        f.setAttribute('data-abx-tmuted', '1'); // Ä‘Ã¡nh dáº¥u Ä‘Ã£ mute
                         f.addEventListener('load', () => installTelemetryMutesInFrame(f.contentWindow));
 
                     }
                 } catch (_) {}
             });
 
-            // cập nhật ngay lần đầu theo DOM hiện có (chỉ set khi có giá trị)
+            // cáº­p nháº­t ngay láº§n Ä‘áº§u theo DOM hiá»‡n cÃ³ (chá»‰ set khi cÃ³ giÃ¡ trá»‹)
             const u0 = canRunAuthLoop() ? findUserFromDOM() : '';
             if (u0)
                 updateUsername(u0);
@@ -14760,10 +14838,10 @@ function deriveWinLoseColor(text) {
             if (b0)
                 updateBalance(b0);
 
-            updateInfo(); // <— render panel
+            updateInfo(); // <â€” render panel
             startUsernameWatchdog();
 
-            // one-shot: sau 500ms nếu vẫn chưa có username thì fetch profile / iframe
+            // one-shot: sau 500ms náº¿u váº«n chÆ°a cÃ³ username thÃ¬ fetch profile / iframe
             setTimeout(async() => {
                 if (!S.username) {
                     const ok = await tryFetchUserProfile();
@@ -14772,7 +14850,7 @@ function deriveWinLoseColor(text) {
                 }
             }, 500);
 
-            // one-shot: khi trang “pageshow” (SPA quay lại / điều hướng xong) thử lại 1 lần
+            // one-shot: khi trang â€œpageshowâ€ (SPA quay láº¡i / Ä‘iá»u hÆ°á»›ng xong) thá»­ láº¡i 1 láº§n
             window.addEventListener('pageshow', async() => {
                 if (!S.username) {
                     const ok = await tryFetchUserProfile();
@@ -14795,6 +14873,8 @@ function deriveWinLoseColor(text) {
 }
     boot();
     })();
+
+
 
 
 

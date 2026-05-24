@@ -394,6 +394,7 @@ namespace BaccaratWM
         private readonly SemaphoreSlim _domActionLock = new(1, 1);
         private readonly SemaphoreSlim _gameReadyGate = new(1, 1);
         private readonly SemaphoreSlim _licenseGate = new(1, 1);
+        private readonly SemaphoreSlim _injectDocGate = new(1, 1);
         private Task<bool>? _licenseCheckTask;
         private string? _licenseCheckUser;
         private int _runAllInProgress = 0;
@@ -496,6 +497,7 @@ namespace BaccaratWM
         private string _lastHomeTickSig = "";
         private string _lastDashboardAccountSig = "";
         private bool _homeLoggedIn = false; // chỉ true khi phát hiện có nút Đăng xuất (đã login)
+        private DateTime _lastHomeLoggedProbeUtc = DateTime.MinValue;
         private bool _navModeHooked = false;   // đã gắn handler NavigationCompleted để cập nhật UI nhanh về Home?
 
 
@@ -541,6 +543,7 @@ namespace BaccaratWM
 
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
+        private static readonly TimeSpan HomeLoggedProbeMinGap = TimeSpan.FromMilliseconds(1500);
         // Master switch: đặt false để bỏ qua kiểm tra Trial/License (không UI, không config, true kiểm tra bình thường)
         private bool CheckLicense = true;
 
@@ -1651,7 +1654,7 @@ Ví dụ không hợp lệ:
         timerId = setInterval(function(){ try { postRooms(false); } catch (_) {} }, interval);
         if (!observer && window.MutationObserver && document.documentElement) {
           observer = new MutationObserver(function(){ schedulePush(250); });
-          observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+          observer.observe(document.documentElement, { subtree: true, childList: true });
         }
         schedulePush(50);
         return true;
@@ -4978,36 +4981,44 @@ Ví dụ không hợp lệ:
             await _cfgWriteGate.WaitAsync();
             try
             {
-                _cfg.Url = T(TxtUrl);
-                _cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
-                _cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
-                _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? _cfg.BetStrategyIndex;
-                _cfg.BetSeq = T(TxtChuoiCau, _cfg.BetSeq);
-                _cfg.BetPatterns = T(TxtTheCau, _cfg.BetPatterns);
-
-                var remember = (ChkRemember?.IsChecked == true);
-                _cfg.RememberCreds = remember;
-                if (remember)
+                void CaptureConfigFromUi()
                 {
-                    _cfg.EncUser = ProtectString(T(TxtUser));
-                    _cfg.EncPass = ProtectString(P(TxtPass));
-                    _cfg.Username = "";
-                }
-                else { _cfg.EncUser = ""; _cfg.EncPass = ""; _cfg.Username = ""; }
+                    _cfg.Url = T(TxtUrl);
+                    _cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
+                    _cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
+                    _cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? _cfg.BetStrategyIndex;
+                    _cfg.BetSeq = T(TxtChuoiCau, _cfg.BetSeq);
+                    _cfg.BetPatterns = T(TxtTheCau, _cfg.BetPatterns);
 
-                _cfg.LockMouse = (ChkLockMouse?.IsChecked == true);
-                _cfg.UseTrial = IsTrialModeRequestedOrActive();
-                _cfg.LeaseClientId = _leaseClientId;
-                _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
-                if (ChkS7ResetOnProfit != null)
-                    _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
-                if (ChkAutoResetOnCut != null)
-                    _cfg.AutoResetOnCut = (ChkAutoResetOnCut.IsChecked == true);
-                if (ChkAutoResetOnWinGeTotal != null)
-                    _cfg.AutoResetOnWinGeTotal = (ChkAutoResetOnWinGeTotal.IsChecked == true);
-                if (ChkWaitCutLossBeforeBet != null)
-                    _cfg.WaitCutLossBeforeBet = (ChkWaitCutLossBeforeBet.IsChecked == true);
-                _cfg.SelectedRooms = _selectedRooms.ToList();
+                    var remember = (ChkRemember?.IsChecked == true);
+                    _cfg.RememberCreds = remember;
+                    if (remember)
+                    {
+                        _cfg.EncUser = ProtectString(T(TxtUser));
+                        _cfg.EncPass = ProtectString(P(TxtPass));
+                        _cfg.Username = "";
+                    }
+                    else { _cfg.EncUser = ""; _cfg.EncPass = ""; _cfg.Username = ""; }
+
+                    _cfg.LockMouse = (ChkLockMouse?.IsChecked == true);
+                    _cfg.UseTrial = IsTrialModeRequestedOrActive();
+                    _cfg.LeaseClientId = _leaseClientId;
+                    _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
+                    if (ChkS7ResetOnProfit != null)
+                        _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
+                    if (ChkAutoResetOnCut != null)
+                        _cfg.AutoResetOnCut = (ChkAutoResetOnCut.IsChecked == true);
+                    if (ChkAutoResetOnWinGeTotal != null)
+                        _cfg.AutoResetOnWinGeTotal = (ChkAutoResetOnWinGeTotal.IsChecked == true);
+                    if (ChkWaitCutLossBeforeBet != null)
+                        _cfg.WaitCutLossBeforeBet = (ChkWaitCutLossBeforeBet.IsChecked == true);
+                    _cfg.SelectedRooms = _selectedRooms.ToList();
+                }
+
+                if (Dispatcher.CheckAccess())
+                    CaptureConfigFromUi();
+                else
+                    await Dispatcher.InvokeAsync(CaptureConfigFromUi);
 
 
                 var dir = Path.GetDirectoryName(_cfgPath);
@@ -7034,9 +7045,13 @@ Ví dụ không hợp lệ:
                                             RefreshDashboardAccountUi(homeUname, null, "home_tick");
                                         });
 
-                                        try
+                                        var nowUtc = DateTime.UtcNow;
+                                        if ((nowUtc - _lastHomeLoggedProbeUtc) >= HomeLoggedProbeMinGap)
                                         {
-                                            var jsLogged = @"
+                                            _lastHomeLoggedProbeUtc = nowUtc;
+                                            try
+                                            {
+                                                var jsLogged = @"
 (function(){
   try{
     const rm=s=>{try{return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');}catch(_){return s||'';}};
@@ -7053,10 +7068,11 @@ Ví dụ không hợp lệ:
     return (hasLogoutVis && !hasLoginVis) ? '1' : '0';
   }catch(e){ return '0'; }
 })();";
-                                            var st = await ExecJsAsyncStr(jsLogged);
-                                            _homeLoggedIn = (st == "1");
+                                                var st = await ExecJsAsyncStr(jsLogged);
+                                                _homeLoggedIn = (st == "1");
+                                            }
+                                            catch { }
                                         }
-                                        catch { }
                                     }
                                     catch { }
 
@@ -10800,10 +10816,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
         }
 
         private static bool ShouldSkipProbeByHintUri(string? uriHint)
-            => IsNoiseFrameUri(uriHint);
+            => string.IsNullOrWhiteSpace(uriHint) || IsNoiseFrameUri(uriHint);
 
         private static bool ShouldSkipInjectByHintUri(string? uriHint)
-            => IsNoiseFrameUri(uriHint);
+            => string.IsNullOrWhiteSpace(uriHint) || IsNoiseFrameUri(uriHint);
 
         private static bool TryEnterFrameProbe(FrameBridgeState state, string stage, string uriHint)
         {
@@ -19094,18 +19110,21 @@ private async Task<CancellationTokenSource> DebounceAsync(
         private async Task InjectOnNewDocAsync()
         {
             if (Web?.CoreWebView2 == null) return;
-
-            string key = "";
+            await _injectDocGate.WaitAsync();
             try
             {
-                var json = await Web.CoreWebView2.ExecuteScriptAsync(
-                    "(function(){try{return String(performance.timeOrigin)}catch(_){return String(Date.now())}})()");
-                key = JsonSerializer.Deserialize<string>(json) ?? "";
-            }
-            catch { }
+                string key = "";
+                try
+                {
+                    var json = await Web.CoreWebView2.ExecuteScriptAsync(
+                        "(function(){try{return String(performance.timeOrigin)}catch(_){return String(Date.now())}})()");
+                    key = JsonSerializer.Deserialize<string>(json) ?? "";
+                }
+                catch { }
 
-            if (!string.IsNullOrEmpty(key) && key != _lastDocKey)
-            {
+                if (string.IsNullOrEmpty(key) || key == _lastDocKey)
+                    return;
+
                 ResetHomeFlowFlags();
                 ClearMainGameFrameCache("main-doc-changed");
                 // Tiêm lại ngay trên tài liệu hiện tại (phòng khi AddScript chưa kịp chạy vì timing)
@@ -19123,9 +19142,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 // Nếu KHÔNG phải host games.* thì khởi động push của js_home_v2
                 await Web.CoreWebView2.ExecuteScriptAsync(BuildHomeAutostartJs(_homePushMs));
 
-
                 _lastDocKey = key;
                 Log("[Bridge] Injected on current doc, key=" + key);
+            }
+            finally
+            {
+                _injectDocGate.Release();
             }
 
 
@@ -19201,6 +19223,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 {
                     try
                     {
+                        if (IsNoiseFrameUri(lastFrameNavUri))
+                            return;
                         var state = e2.IsSuccess ? "OK" : ("Err " + e2.WebErrorStatus);
                         Log($"[Frame NavDone] id={f.Name} status={state} uri={lastFrameNavUri}");
                         if (!e2.IsSuccess)
@@ -19251,7 +19275,10 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 if (f == null) return;
 
                 var state = _mainFrameBridgeStates.GetValue(f, _ => new FrameBridgeState());
-                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "dom-ready", GetFrameStateUriHint(state));
+                var uriHint = GetFrameStateUriHint(state);
+                if (IsNoiseFrameUri(uriHint))
+                    return;
+                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "dom-ready", uriHint);
                 _ = EnsureMainFrameBridgeOnceAsync(f, "dom-ready");
 
                 Log("[Bridge] Frame DOMContentLoaded -> conditional inject/probe.");
@@ -19269,14 +19296,17 @@ private async Task<CancellationTokenSource> DebounceAsync(
             {
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
+                var state = _mainFrameBridgeStates.GetValue(f, _ => new FrameBridgeState());
+                var uriHint = GetFrameStateUriHint(state);
+                if (IsNoiseFrameUri(uriHint))
+                    return;
                 if (!e.IsSuccess)
                 {
                     Log($"[Bridge] Frame NavigationCompleted error: id={f.Name} webError={e.WebErrorStatus}");
                     return;
                 }
 
-                var state = _mainFrameBridgeStates.GetValue(f, _ => new FrameBridgeState());
-                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "nav-complete", GetFrameStateUriHint(state));
+                _ = ProbeAndMaybeRememberMainGameFrameAsync(f, "nav-complete", uriHint);
                 _ = EnsureMainFrameBridgeOnceAsync(f, "nav-complete");
 
                 Log("[Bridge] Frame NavigationCompleted -> conditional inject/probe.");
