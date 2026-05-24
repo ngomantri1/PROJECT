@@ -1,47 +1,48 @@
 ﻿# BUGS
 
 ## Bug hiện tại
-- Vào game WM chưa ổn định tuyệt đối.
-- Triệu chứng: có phiên vẫn chậm hoặc không vào sâu game dù app đã bớt lag.
-- Dấu hiệu log: xuất hiện cụm loop điều hướng popup và redirect chặn mạng.
+- Vào game WM chưa ổn định tuyệt đối theo từng phiên chạy.
+- Triệu chứng còn gặp:
+- Có phiên chỉ tới `PopupWeb NavigationStarting: .../thirdg.html` rồi không thấy `NavigationCompleted`.
+- Có phiên vào được bình thường tới `NavigationCompleted OK | wmvn...`.
 
-- Room feed có thể trống sau chuỗi điều hướng lỗi.
-- Triệu chứng UI: danh sách bàn có lúc rỗng (`Không có mục nào`) dù đã login.
+## Bug đã giảm/đã khắc phục một phần
+- Giảm mạnh hiện tượng `double-open` do retry quá dày ở lobby.
+- Giảm race lúc popup transition nhờ:
+- Guard mở game tăng từ `3000ms` -> `7000ms`.
+- Retry loop từ `200ms` -> `1000ms`.
+- Cờ `busy` chặn callback async chồng lặp.
 
-## Bug đã fix
-- Lag nặng lúc vào trang do loop điều hướng dày đã được giảm mạnh.
-- Đã thêm guard runtime:
-- Retry budget + cooldown cho `about:blank`.
-- Recover budget + cooldown cho `blockmsg -> wm`.
-- Suppress `fallback-main` trong cửa sổ `block-recover`.
-
-- Lỗi ký tự tiếng Việt bị sai mã trong phần chỉnh sửa trước đã được cảnh báo và yêu cầu tránh tái diễn.
+## Bug đã fix bổ sung (24/05/2026)
+- Thêm self-heal cho case `thirdg` treo:
+- Nếu `thirdg` không completed trong `8s` -> retry đúng `1` lần.
+- Không lặp vô hạn, không đụng flow mở game chính.
 
 ## Bug chưa fix
-- Vẫn còn case không ổn định khi hop từ `thirdg.html` sang WM game host.
-- Chưa có dashboard metric gọn theo phiên popup để nhìn nhanh nguyên nhân fail.
-- Một số warning build cũ của solution vẫn tồn tại (không chặn build nhưng tăng nhiễu).
+- Vẫn còn case intermittent liên quan runtime phiên popup (có thể close/restart giữa chừng trước khi `thirdg` complete).
+- Chưa có dashboard metric tổng hợp theo phiên popup để nhìn nhanh tỉ lệ thành công/thất bại.
+- Warning build cũ của solution vẫn nhiều (không chặn build nhưng gây nhiễu khi điều tra).
 
-## Nguyên nhân bug
-- Luồng popup phụ thuộc redirect nhiều bước và môi trường mạng chặn trung gian (`blockmsg.greennet`).
-- Trước đây policy retry/recover quá nhanh gây vòng lặp dày, bào tài nguyên UI/thread.
-- Runtime có nhiều nguồn tín hiệu song song (JS/CDP/popup/main) dễ tạo race nếu không có guard.
+## Nguyên nhân bug (theo log gần nhất)
+- Vấn đề hiện tại chủ yếu nằm ở pha chuyển tiếp popup (`thirdg -> wmvn`) chứ không phải pinRooms.
+- Trong log mới không thấy `POPUPNAV [BLOCK]`, nên không phải do nav block guard chặn nhầm.
+- Cert fail từng xuất hiện ở log cũ; log mới nhất không còn cert fail nhưng vẫn có phiên dừng ở `thirdg`.
 
 ## Workaround tạm thời
-- Khi game chưa vào ổn định, ưu tiên quan sát log phiên mới nhất trước khi chạy nhiều bàn.
-- Giữ số bàn chạy thấp trong lúc tune threshold popup guard.
-- Nếu room rỗng, refresh đúng sau khi popup đã ổn định URL game host.
+- Khi gặp popup đen/kẹt, xem ngay log phiên mới nhất tại:
+- `C:\Users\Admin\AppData\Local\BaccaratWM\logs\20260524.log`
+- Theo dõi các marker:
+- `NewWindowRequested thirdg`
+- `[PopupWeb][thirdg-watch] timeout -> retry once`
+- `NavigationCompleted: OK | wmvn...`
 
 ## Vùng code dễ lỗi
 - `MainWindow.xaml.cs`:
+- `PopupWeb_NewWindowRequested`
 - `PopupWeb_NavigationStarting`
 - `PopupWeb_NavigationCompleted`
-- `StartPopupNavigationWatchdog`
-- `FallbackPopupToMainAsync`
+- `StartPopupThirdgTimeoutWatch` / `StopPopupThirdgTimeoutWatch`
 
 - `js_home_v2.js`:
-- hook websocket/xhr/fetch
-- bridge `__cw_bet`
-- overlay state sync
-
-- Parser room feed protocol (ưu tiên/fallback giữa nhiều nguồn).
+- `clickBaccNhieuBanFromHome` (guard mở game)
+- `__abx_bacc_lobby_retry` (interval retry + busy guard)
