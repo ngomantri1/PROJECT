@@ -1177,6 +1177,11 @@ Ví dụ không hợp lệ:
         private DateTime _popupRefreshGraceUntilUtc = DateTime.MinValue;
         private string _popupRefreshEntryUrl = "";
         private const int PopupRefreshGraceSeconds = 90;
+        private CancellationTokenSource? _popupTransitWatchCts;
+        private DateTime _popupTransitWatchStartedUtc = DateTime.MinValue;
+        private int _popupTransitRecoverAttempts = 0;
+        private const int PopupTransitWatchdogSeconds = 12;
+        private const int PopupTransitMaxRecoverAttempts = 1;
         private readonly object _playerFlowCacheLock = new();
         private string _lastPlayerFlowGameUrl = "";
         private DateTime _lastPlayerFlowGameAtUtc = DateTime.MinValue;
@@ -4500,6 +4505,8 @@ try{
             var deferral = e.GetDeferral();
             try
             {
+                _popupTransitRecoverAttempts = 0;
+                CancelPopupTransitWatch("new-window-requested");
                 var target = (e.Uri ?? "").Trim();
                 var targetIsBlank = string.Equals(target, "about:blank", StringComparison.OrdinalIgnoreCase);
                 var targetLooksGame = IsLikelyBetGameUrl(target);
@@ -4620,6 +4627,7 @@ try{
 
             popupWeb.CoreWebView2.NewWindowRequested += PopupWeb_NewWindowRequested;
             popupWeb.CoreWebView2.WindowCloseRequested += PopupWeb_WindowCloseRequested;
+            popupWeb.CoreWebView2.ProcessFailed += PopupWeb_ProcessFailed;
             popupWeb.NavigationStarting += PopupWeb_NavigationStarting;
             popupWeb.NavigationCompleted += PopupWeb_NavigationCompleted;
             _popupWebHooked = true;
@@ -6379,12 +6387,18 @@ try{
                     _popupRefreshArmed = true;
                     _popupRefreshGraceUntilUtc = now.AddSeconds(PopupRefreshGraceSeconds);
                     _popupRefreshEntryUrl = src;
+                    ArmPopupTransitWatch("thirdg-entry", src);
                     Log("[PopupWeb][REFRESH-NORMAL] phase=entry | url=" + Shrink(src, 220) +
                         " | grace=" + PopupRefreshGraceSeconds.ToString(CultureInfo.InvariantCulture) + "s");
                 }
                 else if (_popupRefreshArmed && IsProviderLoginTransitUrl(src))
                 {
+                    ArmPopupTransitWatch("provider-hop", src);
                     Log("[PopupWeb][REFRESH-NORMAL] phase=provider-hop | url=" + Shrink(src, 220));
+                }
+                else if (IsLikelyBetGameReadyUrl(src))
+                {
+                    CancelPopupTransitWatch("nav-start-game-ready");
                 }
 
                 var refreshGraceActive = IsPopupRefreshGraceActive();
@@ -6444,6 +6458,7 @@ try{
                 {
                     if (!isBlank && srcLooksGame)
                     {
+                        CancelPopupTransitWatch("nav-completed-game-ready");
                         await Dispatcher.InvokeAsync(() =>
                         {
                             if (Web != null)
@@ -6464,6 +6479,7 @@ try{
                     }
                     else if (deferredOpenActive)
                     {
+                        ArmPopupTransitWatch("deferred-open-active", src);
                         await Dispatcher.InvokeAsync(() =>
                         {
                             if (Web != null)
@@ -6481,6 +6497,7 @@ try{
                     }
                     else if (refreshGraceActive || thirdgEntry || IsProviderLoginTransitUrl(src))
                     {
+                        ArmPopupTransitWatch("non-game-hold", src);
                         await Dispatcher.InvokeAsync(() =>
                         {
                             if (Web != null)
@@ -6530,6 +6547,7 @@ try{
                 {
                     if (refreshGraceActive || thirdgEntry || _popupRefreshArmed)
                     {
+                        ArmPopupTransitWatch("navigation-error", src);
                         Log("[PopupWeb][REFRESH-FAIL] type=navigation-error | action=hold-no-reset | err=" +
                             e.WebErrorStatus.ToString() +
                             " | entry=" + (string.IsNullOrWhiteSpace(_popupRefreshEntryUrl) ? "<empty>" : Shrink(_popupRefreshEntryUrl, 220)) +
@@ -6568,11 +6586,32 @@ try{
             try
             {
                 Log("[PopupWeb] WindowCloseRequested");
+                if (IsPopupRefreshGraceActive())
+                {
+                    Log("[PopupWeb][TRANSIT-GRACE] ignore WindowCloseRequested during popup transit grace.");
+                    return;
+                }
                 Dispatcher.BeginInvoke(new Action(ClosePopupHost));
             }
             catch (Exception ex)
             {
                 Log("[PopupWeb.WindowCloseRequested] " + ex.Message);
+            }
+        }
+
+        private void PopupWeb_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+        {
+            try
+            {
+                var src = GetBetWebViewSource(_popupWeb);
+                Log("[PopupWeb][PROCESS-FAILED] kind=" + e.ProcessFailedKind.ToString() +
+                    " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                if (!IsLikelyBetGameReadyUrl(src))
+                    ArmPopupTransitWatch("process-failed", src);
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb][PROCESS-FAILED][ERR] " + ex.Message);
             }
         }
 
@@ -6596,6 +6635,7 @@ try{
 
         private void DestroyPopupWeb()
         {
+            CancelPopupTransitWatch("destroy-popup");
             var popupWeb = _popupWeb;
             _popupWeb = null;
             _popupWebHooked = false;
@@ -6606,6 +6646,7 @@ try{
             _popupRefreshArmed = false;
             _popupRefreshGraceUntilUtc = DateTime.MinValue;
             _popupRefreshEntryUrl = "";
+            _popupTransitRecoverAttempts = 0;
             _popupFrameRefs.Clear();
             _betWebNavigatingSinceUtc = DateTime.MinValue;
             _betWebLastNavDoneUtc = DateTime.MinValue;
@@ -6621,6 +6662,7 @@ try{
                     popupWeb.CoreWebView2.WebResourceResponseReceived -= CoreWebView2_WebResourceResponseReceived;
                     popupWeb.CoreWebView2.NewWindowRequested -= PopupWeb_NewWindowRequested;
                     popupWeb.CoreWebView2.WindowCloseRequested -= PopupWeb_WindowCloseRequested;
+                    popupWeb.CoreWebView2.ProcessFailed -= PopupWeb_ProcessFailed;
                     popupWeb.CoreWebView2.FrameCreated -= PopupCore_FrameCreated_Bridge;
                     popupWeb.CoreWebView2.DOMContentLoaded -= PopupCore_DOMContentLoaded_Bridge;
                     try { popupWeb.CoreWebView2.Stop(); } catch { }
@@ -15592,6 +15634,8 @@ try{
             var host = (u.Host ?? "").ToLowerInvariant();
             if (host.StartsWith("bpweb.") || host.StartsWith("games."))
                 return true;
+            if (host.StartsWith("wm.") || host.StartsWith("wmvn.") || host.EndsWith(".m8810.com", StringComparison.OrdinalIgnoreCase))
+                return true;
             if (IsLikelyGame8bPopupUrl(rawUrl))
                 return true;
             var path = u.AbsolutePath ?? "";
@@ -15649,6 +15693,99 @@ try{
             return _popupRefreshArmed &&
                    _popupRefreshGraceUntilUtc != DateTime.MinValue &&
                    DateTime.UtcNow <= _popupRefreshGraceUntilUtc;
+        }
+
+        private void CancelPopupTransitWatch(string reason)
+        {
+            var cts = _popupTransitWatchCts;
+            _popupTransitWatchCts = null;
+            if (cts != null)
+            {
+                try { cts.Cancel(); } catch { }
+                try { cts.Dispose(); } catch { }
+                if (!string.IsNullOrWhiteSpace(reason))
+                    Log("[PopupWeb][STUCK-WATCH] cancel reason=" + reason);
+            }
+            _popupTransitWatchStartedUtc = DateTime.MinValue;
+        }
+
+        private void ArmPopupTransitWatch(string reason, string currentUrl)
+        {
+            CancelPopupTransitWatch("");
+            var cts = new CancellationTokenSource();
+            _popupTransitWatchCts = cts;
+            _popupTransitWatchStartedUtc = DateTime.UtcNow;
+            Log("[PopupWeb][STUCK-WATCH] arm reason=" + reason +
+                " | timeoutSec=" + PopupTransitWatchdogSeconds.ToString(CultureInfo.InvariantCulture) +
+                " | url=" + (string.IsNullOrWhiteSpace(currentUrl) ? "<empty>" : Shrink(currentUrl, 220)));
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(PopupTransitWatchdogSeconds), cts.Token);
+                    if (cts.IsCancellationRequested)
+                        return;
+
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (cts.IsCancellationRequested)
+                            return;
+
+                        var popup = _popupWeb;
+                        var src = GetBetWebViewSource(popup);
+                        var ready = IsLikelyBetGameReadyUrl(src);
+                        if (ready)
+                        {
+                            Log("[PopupWeb][STUCK-WATCH] skip recovery reason=already-game-ready | url=" +
+                                (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                            CancelPopupTransitWatch("already-game-ready");
+                            return;
+                        }
+
+                        if (_popupTransitRecoverAttempts >= PopupTransitMaxRecoverAttempts)
+                        {
+                            Log("[PopupWeb][STUCK-RECOVERY][SKIP] reason=max-attempts | attempts=" +
+                                _popupTransitRecoverAttempts.ToString(CultureInfo.InvariantCulture) +
+                                " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                            return;
+                        }
+
+                        _popupTransitRecoverAttempts++;
+                        var recoverUrl = !string.IsNullOrWhiteSpace(_popupRefreshEntryUrl)
+                            ? _popupRefreshEntryUrl
+                            : "https://new.wencheng.cc/home/thirdg.html";
+
+                        _popupRefreshArmed = true;
+                        _popupRefreshGraceUntilUtc = DateTime.UtcNow.AddSeconds(PopupRefreshGraceSeconds);
+                        _popupDeferredOpenUntilUtc = DateTime.UtcNow.AddSeconds(PopupDeferredOpenGraceSeconds);
+                        _popupDeferredOpenTarget = recoverUrl;
+
+                        Log("[PopupWeb][STUCK-RECOVERY] action=navigate-retry | attempt=" +
+                            _popupTransitRecoverAttempts.ToString(CultureInfo.InvariantCulture) +
+                            " | from=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)) +
+                            " | to=" + Shrink(recoverUrl, 220));
+
+                        try
+                        {
+                            if (popup?.CoreWebView2 != null)
+                            {
+                                try { popup.CoreWebView2.Stop(); } catch { }
+                                popup.CoreWebView2.Navigate(recoverUrl);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log("[PopupWeb][STUCK-RECOVERY][ERR] " + ex.Message);
+                        }
+                    });
+                }
+                catch (TaskCanceledException) { }
+                catch (Exception ex)
+                {
+                    Log("[PopupWeb][STUCK-WATCH][ERR] " + ex.Message);
+                }
+            });
         }
 
         private static bool TryParseProviderErrorUrl(string? rawUrl, out string status, out string desc, out string externalUrl)
@@ -18005,11 +18142,32 @@ try{
         {
             if (tab == null) return;
 
+            string prevLevelText = tab.LastLevelText ?? "";
+            int prevLevel = ParseLevelNumber(prevLevelText);
+            int prevTotal = ParseLevelTotal(prevLevelText);
+
             long rounded = (long)Math.Round(amount);
             tab.LastStakeAmount = rounded;
             int levelIndex = Array.FindIndex(stakeSeq, s => s == rounded);
             string levelText = (levelIndex >= 0) ? $"{levelIndex + 1}/{stakeSeq.Length}" : "";
             tab.LastLevelText = levelText;
+
+            bool wrappedToLevel1 =
+                !string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase) &&
+                stakeSeq != null && stakeSeq.Length > 1 &&
+                prevTotal == stakeSeq.Length &&
+                prevLevel == stakeSeq.Length &&
+                levelIndex == 0;
+            if (wrappedToLevel1)
+            {
+                tab.WinTotal = 0;
+                if (ReferenceEquals(_activeTab, tab))
+                {
+                    _winTotal = 0;
+                    if (LblWin != null) LblWin.Text = "0";
+                }
+                Log($"[MONEY][WRAP-RESET-WIN] action=reset-win-total | from={prevLevelText} | to={levelText} | strategy={(string.IsNullOrWhiteSpace(moneyStrategyId) ? "-" : moneyStrategyId)} | tab={tab.Id}");
+            }
 
             if (ReferenceEquals(_activeTab, tab))
             {
@@ -18021,6 +18179,22 @@ try{
                 UpdateStatsUi(tab);
             }
             _ = SaveStatsAsync();
+        }
+
+        private static int ParseLevelNumber(string levelText)
+        {
+            if (string.IsNullOrWhiteSpace(levelText)) return -1;
+            var parts = levelText.Split('/');
+            if (parts.Length != 2) return -1;
+            return int.TryParse(parts[0], out var level) ? level : -1;
+        }
+
+        private static int ParseLevelTotal(string levelText)
+        {
+            if (string.IsNullOrWhiteSpace(levelText)) return -1;
+            var parts = levelText.Split('/');
+            if (parts.Length != 2) return -1;
+            return int.TryParse(parts[1], out var total) ? total : -1;
         }
 
         private void RecordValidBet(StrategyTabState tab, long amount)
