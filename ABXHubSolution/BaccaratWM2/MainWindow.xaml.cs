@@ -4289,6 +4289,30 @@ Ví dụ không hợp lệ:
                 }
                 catch { }
 
+                var isTransitOnlySource = popupRoomHost &&
+                                          IsWmProviderTransitUrl(targetUrl) &&
+                                          !IsLikelyWmGameReadyUrl(targetUrl);
+                if (isTransitOnlySource)
+                {
+                    var supplierSignalFresh =
+                        _popupTransitSupplierFrameSeenUtc != DateTime.MinValue &&
+                        (DateTime.UtcNow - _popupTransitSupplierFrameSeenUtc) <= TimeSpan.FromSeconds(PopupTransitSupplierSignalWindowSeconds);
+                    if (supplierSignalFresh)
+                        _ = TryPromotePopupTransitToRecover("refresh-click", targetUrl, _popupTransitSupplierFrameUrl);
+
+                    if (userTriggered)
+                    {
+                        Log("[ROOM] Đang ở trang transit WM, chưa có feed bàn. Vui lòng chờ vào game WM rồi bấm lại.");
+                        LogWmTrace(
+                            "refresh.skip-transit",
+                            $"scope={traceScope} url={ClipForLog(targetUrl, 180)} signalFresh={(supplierSignalFresh ? 1 : 0)} promoted={(_popupTransitTopRecoverPromoted ? 1 : 0)}",
+                            "refresh.skip-transit",
+                            300,
+                            force: true);
+                    }
+                    return;
+                }
+
                 if (userTriggered)
                 {
                     EnsureWmTrace("refresh-click", targetUrl, traceScope);
@@ -9680,6 +9704,13 @@ private async Task<CancellationTokenSource> DebounceAsync(
                         signalSig,
                         $"[PopupWeb][TRANSIT-SIGNAL] kind=supplier-frame-http status={statusCode} url={ClipForLog(url, 180)} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 140)}",
                         700);
+
+                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        var popupSrc = (_popupWeb?.CoreWebView2?.Source ?? "").Trim();
+                        if (IsWmProviderTransitUrl(popupSrc))
+                            TryPromotePopupTransitToRecover("supplier-signal", popupSrc, url);
+                    }));
                 }
             }
             catch (Exception ex)
@@ -9775,6 +9806,42 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             return string.IsNullOrWhiteSpace(rawUrl) ||
                    string.Equals((rawUrl ?? "").Trim(), "about:blank", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool TryPromotePopupTransitToRecover(string reason, string? sourceUrlHint = null, string? signalUrlHint = null)
+        {
+            try
+            {
+                if (_popupWeb?.CoreWebView2 == null)
+                    return false;
+                if (_popupTransitTopRecoverPromoted)
+                    return false;
+
+                var src = (sourceUrlHint ?? _popupWeb.CoreWebView2.Source ?? "").Trim();
+                if (!IsWmProviderTransitUrl(src) || IsLikelyWmGameReadyUrl(src))
+                    return false;
+                if (!TryBuildLobbyNavigationFallbackUrl(src, out var promoteTarget))
+                    return false;
+                if (string.IsNullOrWhiteSpace(promoteTarget))
+                    return false;
+
+                _popupTransitTopRecoverPromoted = true;
+                _popupDeferredOpenUntilUtc = DateTime.UtcNow.AddSeconds(PopupDeferredOpenGraceSeconds);
+                _popupDeferredOpenTarget = promoteTarget;
+                _popupTransitRecoverUrl = promoteTarget;
+                Log("[PopupWeb][TRANSIT-PROMOTE] action=navigate-top-recover | reason=" + ClipForLog(reason, 64) +
+                    " | from=" + ClipForLog(src, 220) +
+                    " | to=" + ClipForLog(promoteTarget, 220) +
+                    " | signalUrl=" + ClipForLog(signalUrlHint ?? _popupTransitSupplierFrameUrl, 180));
+                try { _popupWeb.CoreWebView2.Stop(); } catch { }
+                _popupWeb.CoreWebView2.Navigate(promoteTarget);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb][TRANSIT-PROMOTE][ERR] " + ex.Message);
+                return false;
+            }
         }
 
         private async Task<bool> TryRecreatePopupForTransitRecoveryAsync(string recoverUrl, string reason)
@@ -10043,20 +10110,9 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             var supplierSignalFresh =
                                 _popupTransitSupplierFrameSeenUtc != DateTime.MinValue &&
                                 (DateTime.UtcNow - _popupTransitSupplierFrameSeenUtc) <= TimeSpan.FromSeconds(PopupTransitSupplierSignalWindowSeconds);
-                            if (!_popupTransitTopRecoverPromoted &&
-                                supplierSignalFresh &&
-                                TryBuildLobbyNavigationFallbackUrl(src, out var promoteTarget) &&
-                                !string.IsNullOrWhiteSpace(promoteTarget))
+                            if (supplierSignalFresh &&
+                                TryPromotePopupTransitToRecover("supplier-frame-http", src, _popupTransitSupplierFrameUrl))
                             {
-                                _popupTransitTopRecoverPromoted = true;
-                                _popupDeferredOpenUntilUtc = DateTime.UtcNow.AddSeconds(PopupDeferredOpenGraceSeconds);
-                                _popupDeferredOpenTarget = promoteTarget;
-                                _popupTransitRecoverUrl = promoteTarget;
-                                Log("[PopupWeb][TRANSIT-PROMOTE] action=navigate-top-recover | reason=supplier-frame-http | from=" +
-                                    ClipForLog(src, 220) + " | to=" + ClipForLog(promoteTarget, 220) +
-                                    " | signalUrl=" + ClipForLog(_popupTransitSupplierFrameUrl, 180));
-                                try { _popupWeb?.CoreWebView2?.Stop(); } catch { }
-                                _popupWeb?.CoreWebView2?.Navigate(promoteTarget);
                                 return;
                             }
                         }
