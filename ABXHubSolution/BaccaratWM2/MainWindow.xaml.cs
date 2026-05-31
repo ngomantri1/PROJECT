@@ -14,8 +14,8 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-using BaccaratWM;
-using BaccaratWM.Tasks;
+using BaccaratWM2;
+using BaccaratWM2.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Globalization;
@@ -32,14 +32,14 @@ using Microsoft.Win32;
 using System.Net.NetworkInformation;
 using System.Collections.ObjectModel;
 using System.Windows.Data;
-using static BaccaratWM.MainWindow;
+using static BaccaratWM2.MainWindow;
 using System.Windows.Input;
 using System.Runtime.CompilerServices;
 
 
 
 
-namespace BaccaratWM
+namespace BaccaratWM2
 {
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Assets (pack URI).
     // Fallback loader: nếu SharedIcons chưa có, nạp từ Resources (pack URI).
@@ -309,7 +309,7 @@ namespace BaccaratWM
             public string Href { get; set; } = "";
         }
 
-        private const string AppLocalDirName = "BaccaratWM"; // đổi thành tên bạn muốn
+        private const string AppLocalDirName = "BaccaratWM2"; // đổi thành tên bạn muốn
         // ====== App paths ======
         private readonly string _appDataDir;
         private readonly string _cfgPath;
@@ -423,6 +423,24 @@ namespace BaccaratWM
         private bool _popupBridgeRegistered;
         private bool _popupWebMsgHooked;
         private string? _popupLastDocKey;
+        private DateTime _popupDeferredOpenUntilUtc = DateTime.MinValue;
+        private string _popupDeferredOpenTarget = "";
+        private bool _popupTransitArmed = false;
+        private DateTime _popupTransitGraceUntilUtc = DateTime.MinValue;
+        private string _popupTransitEntryUrl = "";
+        private string _popupTransitRecoverUrl = "";
+        private CancellationTokenSource? _popupTransitWatchCts;
+        private int _popupTransitRecoverAttempts = 0;
+        private bool _popupTransitRecreateUsed = false;
+        private DateTime _popupTransitSupplierFrameSeenUtc = DateTime.MinValue;
+        private string _popupTransitSupplierFrameUrl = "";
+        private bool _popupTransitTopRecoverPromoted = false;
+        private const int PopupDeferredOpenGraceSeconds = 30;
+        private const int PopupTransitGraceSeconds = 900;
+        private const int PopupTransitWatchdogSeconds = 45;
+        private const int PopupTransitHoldWatchdogSeconds = 900;
+        private const int PopupTransitMaxRecoverAttempts = 2;
+        private const int PopupTransitSupplierSignalWindowSeconds = 90;
         private CoreWebView2Frame? _popupGameFrame;
         private string _popupGameFrameName = "";
         private string _popupGameFrameLastHref = "";
@@ -451,7 +469,7 @@ namespace BaccaratWM
                                                  // Bridge đăng ký toàn cục
         private string? _autoStartId;        // id script FRAME_AUTOSTART (đăng ký toàn cục)
         private bool _domHooked;             // đã gắn DOMContentLoaded cho top chưa
-        private const string BuildMarker = "diag-probe-matrix-v1";
+        private const string BuildMarker = "diag-probe-matrix-v9-passive-transit-hold";
         private sealed class FrameBridgeState
         {
             public string LastNavUri = "";
@@ -459,12 +477,15 @@ namespace BaccaratWM
             public DateTime LastInjectUtc = DateTime.MinValue;
             public string LastProbeKey = "";
             public DateTime LastProbeUtc = DateTime.MinValue;
+            public string LastTransitKickKey = "";
+            public DateTime LastTransitKickUtc = DateTime.MinValue;
         }
 
         private readonly ConditionalWeakTable<CoreWebView2Frame, FrameBridgeState> _mainFrameBridgeStates = new();
         private readonly ConditionalWeakTable<CoreWebView2Frame, FrameBridgeState> _popupFrameBridgeStates = new();
         private static readonly TimeSpan FrameInjectMinGap = TimeSpan.FromMilliseconds(900);
         private static readonly TimeSpan FrameProbeMinGap = TimeSpan.FromMilliseconds(700);
+        private static readonly TimeSpan FrameTransitKickMinGap = TimeSpan.FromMilliseconds(1500);
 
         // === License/Trial run state ===
 
@@ -575,7 +596,7 @@ namespace BaccaratWM
 
 
 
-        private const string DEFAULT_URL = "https://new.wencheng.cc/"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "https://shbett7.vip/"; // URL mặc định bạn muốn
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
@@ -955,7 +976,7 @@ Ví dụ không hợp lệ:
         private double _winTotal = 0;
         private CoreWebView2Environment? _webEnv;
         private bool _webInitDone;
-        private const string Wv2ZipResNameX64 = "BaccaratWM.ThirdParty.WebView2Fixed_win-x64.zip";
+        private const string Wv2ZipResNameX64 = "BaccaratWM2.ThirdParty.WebView2Fixed_win-x64.zip";
         // Thư mục cache bền vững cho runtime (không bị dọn như %TEMP%)
         private static string Wv2BaseDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -977,6 +998,170 @@ Ví dụ không hợp lệ:
         }
       }catch(_){}
     }, true);
+  }catch(_){}
+})();";
+
+        private const string WM_TRANSIT_DIAG_JS = @"
+(function(){
+  try{
+    if (window.__abx_wm_transit_diag_hooked) return;
+    window.__abx_wm_transit_diag_hooked = 1;
+
+    function isTransitHref(href){
+      try{
+        var s = String(href || '');
+        if (!s) return false;
+        if (/\/Lobby\/Navigation/i.test(s) && /SupplierType%3DWM|SupplierType=WM/i.test(s)) return true;
+        if (/\/Account\/LoginToSupplier/i.test(s) && /SupplierType=WM/i.test(s)) return true;
+        if (/\/player\/login\/apiLogin/i.test(s)) return true;
+      }catch(_){}
+      return false;
+    }
+
+    function tryText(v){
+      try{ return String(v == null ? '' : v); }catch(_){ return ''; }
+    }
+
+    function sampleText(){
+      try{
+        var text = '';
+        if (document.body) text = document.body.innerText || document.body.textContent || '';
+        text = tryText(text).replace(/\s+/g, ' ').trim();
+        if (text.length > 220) text = text.slice(0, 220);
+        return text;
+      }catch(_){ return ''; }
+    }
+
+    function bodyStyle(){
+      try{
+        if (!document.body) return '';
+        var cs = getComputedStyle(document.body);
+        return [tryText(cs.display), tryText(cs.visibility), tryText(cs.backgroundColor)].join('/');
+      }catch(_){ return ''; }
+    }
+
+    var openCount = 0;
+    var submitCount = 0;
+    var lastOpenUrl = '';
+    var lastSubmit = '';
+    var lastError = '';
+    var lastReject = '';
+
+    function send(stage, extra){
+      try{
+        var href = tryText(location.href);
+        if (!isTransitHref(href)) return;
+        var forms = Array.prototype.slice.call(document.forms || []);
+        var firstForm = forms.length ? forms[0] : null;
+        var iframes = Array.prototype.slice.call(document.querySelectorAll('iframe'));
+        var metaRefresh = '';
+        try{
+          var meta = document.querySelector('meta[http-equiv=""refresh""]');
+          metaRefresh = meta ? tryText(meta.getAttribute('content') || '') : '';
+        }catch(_){}
+        var payload = {
+          abx: 'popup_transit_diag',
+          stage: stage,
+          href: href,
+          title: tryText(document.title),
+          ready: tryText(document.readyState),
+          referrer: tryText(document.referrer),
+          isTop: (window.top === window.self),
+          frameDepth: (window.top === window.self ? 0 : 1),
+          parentHref: (function(){ try { return window.parent && window.parent !== window ? tryText(window.parent.location.href) : ''; } catch(_) { return 'cross-origin'; } })(),
+          iframeCount: iframes.length,
+          scriptCount: (document.scripts || []).length,
+          formCount: forms.length,
+          formAction: firstForm ? tryText(firstForm.action || '') : '',
+          formMethod: firstForm ? tryText(firstForm.method || '') : '',
+          formTarget: firstForm ? tryText(firstForm.target || '') : '',
+          passCount: document.querySelectorAll('input[type=""password""]').length,
+          hiddenCount: document.querySelectorAll('input[type=""hidden""]').length,
+          submitCount: submitCount,
+          openCount: openCount,
+          lastOpenUrl: lastOpenUrl,
+          lastSubmit: lastSubmit,
+          metaRefresh: metaRefresh,
+          bodyStyle: bodyStyle(),
+          textSample: sampleText(),
+          error: lastError,
+          reject: lastReject
+        };
+        if (extra && typeof extra === 'object') {
+          for (var k in extra) payload[k] = extra[k];
+        }
+        if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function'){
+          window.chrome.webview.postMessage(JSON.stringify(payload));
+        }
+      }catch(_){}
+    }
+
+    try{
+      var origOpen = window.open;
+      window.open = function(url, name, specs){
+        try{
+          openCount++;
+          lastOpenUrl = tryText(url);
+          send('window-open', { openName: tryText(name), openSpecs: tryText(specs) });
+        }catch(_){}
+        return origOpen ? origOpen.apply(this, arguments) : null;
+      };
+    }catch(_){}
+
+    try{
+      document.addEventListener('submit', function(ev){
+        try{
+          var form = ev && ev.target ? ev.target : null;
+          submitCount++;
+          lastSubmit = form ? [tryText(form.action || ''), tryText(form.method || ''), tryText(form.target || '')].join('|') : '';
+          send('form-submit');
+        }catch(_){}
+      }, true);
+    }catch(_){}
+
+    try{
+      window.addEventListener('error', function(ev){
+        try{
+          lastError = tryText((ev && (ev.message || ev.error)) || '');
+          send('error');
+        }catch(_){}
+      });
+    }catch(_){}
+
+    try{
+      window.addEventListener('unhandledrejection', function(ev){
+        try{
+          var reason = ev ? ev.reason : '';
+          lastReject = tryText(reason && reason.message ? reason.message : reason);
+          send('unhandledrejection');
+        }catch(_){}
+      });
+    }catch(_){}
+
+    try{
+      var origPush = history.pushState;
+      history.pushState = function(){
+        var ret = origPush ? origPush.apply(this, arguments) : undefined;
+        send('history-push');
+        return ret;
+      };
+    }catch(_){}
+
+    try{
+      var origReplace = history.replaceState;
+      history.replaceState = function(){
+        var ret = origReplace ? origReplace.apply(this, arguments) : undefined;
+        send('history-replace');
+        return ret;
+      };
+    }catch(_){}
+
+    send('init');
+    try{ document.addEventListener('DOMContentLoaded', function(){ send('domcontentloaded'); }); }catch(_){}
+    try{ window.addEventListener('load', function(){ send('load'); }); }catch(_){}
+    setTimeout(function(){ send('t+400'); }, 400);
+    setTimeout(function(){ send('t+1500'); }, 1500);
+    setTimeout(function(){ send('t+4000'); }, 4000);
   }catch(_){}
 })();";
 
@@ -1896,6 +2081,11 @@ Ví dụ không hợp lệ:
             this.Loaded += MainWindow_Loaded;
             InitRoomDropdown();
             Log("[BUILD] " + BuildMarker);
+            Log("[WM_POPUP_CFG] deferSec=" + PopupDeferredOpenGraceSeconds.ToString(CultureInfo.InvariantCulture) +
+                " | transitGraceSec=" + PopupTransitGraceSeconds.ToString(CultureInfo.InvariantCulture) +
+                " | stuckWatchSec=" + PopupTransitWatchdogSeconds.ToString(CultureInfo.InvariantCulture) +
+                " | holdWatchSec=" + PopupTransitHoldWatchdogSeconds.ToString(CultureInfo.InvariantCulture) +
+                " | maxRecover=" + PopupTransitMaxRecoverAttempts.ToString(CultureInfo.InvariantCulture));
 
         }
 
@@ -3149,7 +3339,7 @@ Ví dụ không hợp lệ:
 
         private string GetAiNGramStatePath()
         {
-            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratWM
+            // _appDataDir bạn đã tạo ở Startup: %LOCALAPPDATA%\BaccaratWM2
             var aiDir = System.IO.Path.Combine(_appDataDir, "ai");
             System.IO.Directory.CreateDirectory(aiDir);
             return System.IO.Path.Combine(aiDir, "ngram_state_v1.json");
@@ -7461,6 +7651,8 @@ Ví dụ không hợp lệ:
                 if (settings != null)
                 {
                     settings.IsWebMessageEnabled = true;
+                    settings.UserAgent = BuildDesktopEdgeUserAgent();
+                    Log("[Web] UA=" + settings.UserAgent);
                     // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
                     settings.AreDefaultContextMenusEnabled = false;
                     settings.AreDevToolsEnabled = true;
@@ -7537,7 +7729,7 @@ Ví dụ không hợp lệ:
                 // Bỏ qua lỗi detect host, sẽ fallback sang runtime riêng bên dưới
             }
 
-            // 1) Runtime riêng của BaccaratWM (dùng khi chạy EXE độc lập)
+            // 1) Runtime riêng của BaccaratWM2 (dùng khi chạy EXE độc lập)
             var baseDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 AppLocalDirName, "WebView2Fixed");
@@ -7583,6 +7775,27 @@ Ví dụ không hợp lệ:
                 return false;
             }
             return true;
+        }
+
+        private static string BuildDesktopEdgeUserAgent()
+        {
+            var version = "140.0.0.0";
+            try
+            {
+                var raw = CoreWebView2Environment.GetAvailableBrowserVersionString();
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    var token = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0].Trim();
+                    if (!string.IsNullOrWhiteSpace(token))
+                        version = token;
+                }
+            }
+            catch
+            {
+                // keep fallback
+            }
+
+            return $"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36 Edg/{version}";
         }
 
 private async Task<CancellationTokenSource> DebounceAsync(
@@ -8907,22 +9120,55 @@ private async Task<CancellationTokenSource> DebounceAsync(
             var deferral = e.GetDeferral();
             try
             {
+                _popupTransitRecoverAttempts = 0;
+                _popupTransitRecreateUsed = false;
+                _popupTransitSupplierFrameSeenUtc = DateTime.MinValue;
+                _popupTransitSupplierFrameUrl = "";
+                _popupTransitTopRecoverPromoted = false;
+                CancelPopupTransitWatch("new-window-requested");
                 var target = (e.Uri ?? "").Trim();
-                Log("[NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
+                var targetIsBlank = string.Equals(target, "about:blank", StringComparison.OrdinalIgnoreCase);
+                var targetLooksGame = IsLikelyWmGameReadyUrl(target);
+                var deferReason = "";
+                if (string.IsNullOrWhiteSpace(target))
+                    deferReason = "empty-target";
+                else if (targetIsBlank)
+                    deferReason = "about:blank";
+                else if (!targetLooksGame)
+                    deferReason = "non-game-url";
+                var deferPopupActivation = !string.IsNullOrWhiteSpace(deferReason);
+                Log("[NewWindowRequested] target=" + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target) +
+                    " | defer=" + (deferPopupActivation ? "1" : "0") +
+                    " | reason=" + (string.IsNullOrWhiteSpace(deferReason) ? "-" : deferReason));
 
                 var popupWeb = await EnsurePopupWebReadyAsync();
                 if (popupWeb?.CoreWebView2 != null)
                 {
+                    if (deferPopupActivation)
+                    {
+                        _popupDeferredOpenUntilUtc = DateTime.UtcNow.AddSeconds(PopupDeferredOpenGraceSeconds);
+                        _popupDeferredOpenTarget = target;
+                    }
+                    else
+                    {
+                        _popupDeferredOpenUntilUtc = DateTime.MinValue;
+                        _popupDeferredOpenTarget = "";
+                    }
+
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        if (Web != null)
-                            Web.Visibility = Visibility.Collapsed;
-                        if (PopupHost != null)
-                            PopupHost.Visibility = Visibility.Visible;
+                        if (!deferPopupActivation)
+                        {
+                            if (Web != null)
+                                Web.Visibility = Visibility.Collapsed;
+                            if (PopupHost != null)
+                                PopupHost.Visibility = Visibility.Visible;
+                        }
                     });
 
                     e.NewWindow = popupWeb.CoreWebView2;
-                    popupWeb.Focus();
+                    if (!deferPopupActivation)
+                        popupWeb.Focus();
                 }
                 else
                 {
@@ -8981,6 +9227,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (settings != null)
             {
                 settings.IsWebMessageEnabled = true;
+                settings.UserAgent = BuildDesktopEdgeUserAgent();
+                Log("[PopupWeb] UA=" + settings.UserAgent);
                 settings.AreDefaultContextMenusEnabled = false;
                 settings.AreDevToolsEnabled = true;
             }
@@ -9021,16 +9269,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             LogHomeJsSignatureIfAny();
 
             await _popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TOP_FORWARD);
-
-            if (!string.IsNullOrEmpty(_appJs))
-                await _popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_appJs);
-
-            if (!string.IsNullOrEmpty(_homeJs))
-                await _popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_homeJs);
-            await _popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(GAME_TABLE_PUSH_JS);
-
-            await _popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(FRAME_AUTOSTART);
-            await _popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(BuildHomeAutostartJs(_homePushMs));
+            await _popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(WM_TRANSIT_DIAG_JS);
             _popupWeb.CoreWebView2.FrameCreated += PopupCoreWebView2_FrameCreated_Bridge;
             _popupWeb.CoreWebView2.DOMContentLoaded += PopupCore_DOMContentLoaded_Bridge;
             Log("[PopupWeb] bridge registered");
@@ -9049,6 +9288,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 if (TryHandleFrameNetTapMessage(root, "popup"))
                     return;
+                if (TryHandlePopupTransitDiagMessage(root))
+                    return;
                 LogBetBridgeDiagnostic(root, "popup");
 
                 if (await TryHandleOverlayBridgeMessageAsync(root))
@@ -9066,9 +9307,89 @@ private async Task<CancellationTokenSource> DebounceAsync(
             }
         }
 
+        private bool TryHandlePopupTransitDiagMessage(JsonElement root)
+        {
+            try
+            {
+                if (!root.TryGetProperty("abx", out var abxEl))
+                    return false;
+
+                var abx = (abxEl.GetString() ?? "").Trim();
+                if (!string.Equals(abx, "popup_transit_diag", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                string S(string name) => root.TryGetProperty(name, out var el) ? JsonElementToString(el) : "";
+                int N(string name)
+                {
+                    if (!root.TryGetProperty(name, out var el))
+                        return 0;
+                    if (el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var n))
+                        return n;
+                    return I(el.ToString(), 0);
+                }
+                bool B(string name) => root.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.True;
+
+                var href = S("href");
+                var stage = S("stage");
+                var title = S("title");
+                var ready = S("ready");
+                var referrer = S("referrer");
+                var parentHref = S("parentHref");
+                var formAction = S("formAction");
+                var formMethod = S("formMethod");
+                var formTarget = S("formTarget");
+                var lastOpenUrl = S("lastOpenUrl");
+                var lastSubmit = S("lastSubmit");
+                var metaRefresh = S("metaRefresh");
+                var bodyStyle = S("bodyStyle");
+                var sample = S("textSample");
+                var error = S("error");
+                var reject = S("reject");
+
+                var signature = string.Join("|",
+                    stage,
+                    href,
+                    ready,
+                    title,
+                    parentHref,
+                    formAction,
+                    lastOpenUrl,
+                    lastSubmit,
+                    metaRefresh,
+                    sample,
+                    error,
+                    reject);
+
+                var msg =
+                    $"[WM_TRANSIT_DIAG] stage={ClipForLog(stage, 28)} top={(B("isTop") ? 1 : 0)} depth={N("frameDepth")} " +
+                    $"ready={ClipForLog(ready, 20)} forms={N("formCount")} iframes={N("iframeCount")} scripts={N("scriptCount")} " +
+                    $"pass={N("passCount")} hidden={N("hiddenCount")} submit={N("submitCount")} open={N("openCount")} " +
+                    $"href={ClipForLog(href, 180)} parent={ClipForLog(parentHref, 140)} ref={ClipForLog(referrer, 120)} " +
+                    $"title={ClipForLog(title, 80)} form={ClipForLog(formMethod + "|" + formTarget + "|" + formAction, 180)} " +
+                    $"meta={ClipForLog(metaRefresh, 80)} lastOpen={ClipForLog(lastOpenUrl, 160)} lastSubmit={ClipForLog(lastSubmit, 160)} " +
+                    $"body={ClipForLog(bodyStyle, 64)} err={ClipForLog(error, 120)} rej={ClipForLog(reject, 120)} " +
+                    $"sample={ClipForLog(sample, 220)}";
+
+                LogChangedOrThrottled("WM_TRANSIT_DIAG:" + ClipForLog(href, 120) + ":" + ClipForLog(stage, 24), signature, msg, 600);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("[WM_TRANSIT_DIAG] " + ex.Message);
+                return true;
+            }
+        }
+
         private async Task InjectOnPopupDocAsync()
         {
             if (_popupWeb?.CoreWebView2 == null) return;
+
+            var src = (_popupWeb.CoreWebView2.Source ?? "").Trim();
+            if (IsWmProviderTransitUrl(src))
+            {
+                Log("[PopupWeb] bridge inject skipped: transit-url | " + ClipForLog(src, 220));
+                return;
+            }
 
             string key = "";
             try
@@ -9177,6 +9498,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var target = (e.Uri ?? "").Trim();
+                var targetBlank = string.IsNullOrWhiteSpace(target) ||
+                                  string.Equals(target, "about:blank", StringComparison.OrdinalIgnoreCase);
                 if (IsBetPathNavBlocked(out var remainMs, out var blockReason))
                 {
                     e.Handled = true;
@@ -9184,11 +9507,36 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     return;
                 }
                 Log("[PopupWeb.NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
-                if (!string.IsNullOrWhiteSpace(target))
+
+                if (targetBlank)
                 {
-                    e.Handled = true;
-                    _popupWeb?.CoreWebView2?.Navigate(target);
+                    if (_popupWeb?.CoreWebView2 != null)
+                    {
+                        try
+                        {
+                            // Preserve popup-open flow when provider opens about:blank first, then writes/navigates later.
+                            e.NewWindow = _popupWeb.CoreWebView2;
+                            Log("[PopupWeb.NewWindowRequested] attach-self target=about:blank");
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log("[PopupWeb.NewWindowRequested] attach-self failed: " + ex.Message);
+                        }
+                    }
+
+                    var recover = (_popupTransitRecoverUrl ?? "").Trim();
+                    if (!string.IsNullOrWhiteSpace(recover))
+                    {
+                        e.Handled = true;
+                        _popupWeb?.CoreWebView2?.Navigate(recover);
+                        Log("[PopupWeb.NewWindowRequested] fallback-navigate recover=" + ClipForLog(recover, 220));
+                    }
+                    return;
                 }
+
+                e.Handled = true;
+                _popupWeb?.CoreWebView2?.Navigate(target);
             }
             catch (Exception ex)
             {
@@ -9214,6 +9562,400 @@ private async Task<CancellationTokenSource> DebounceAsync(
             catch { }
         }
 
+        private bool IsLikelyWmGameReadyUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (IsWmUrl(rawUrl))
+                return true;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+                return false;
+            var path = uri.AbsolutePath ?? "";
+            if (path.IndexOf("/player/webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (path.IndexOf("/player/singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (path.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
+        }
+
+        private bool IsLikelyWmGameUrl(string? rawUrl)
+        {
+            return IsLikelyWmGameReadyUrl(rawUrl) || IsWmProviderTransitUrl(rawUrl);
+        }
+
+        private static bool QueryContainsWmSupplier(string? queryText)
+        {
+            var q = (queryText ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(q))
+                return false;
+            if (q.IndexOf("SupplierType=WM", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            try
+            {
+                var decoded = Uri.UnescapeDataString(q);
+                if (decoded.IndexOf("SupplierType=WM", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            catch { }
+            return false;
+        }
+
+        private static bool IsWmProviderTransitPath(Uri uri)
+        {
+            var path = uri.AbsolutePath ?? "";
+            if (string.Equals(path, "/Lobby/Navigation", StringComparison.OrdinalIgnoreCase))
+                return QueryContainsWmSupplier(uri.Query);
+            if (path.IndexOf("/Account/LoginToSupplier", StringComparison.OrdinalIgnoreCase) >= 0)
+                return QueryContainsWmSupplier(uri.Query);
+            if (path.IndexOf("/player/login/apiLogin", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (path.IndexOf("/api/player/", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                path.IndexOf("/login", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
+        }
+
+        private bool IsWmProviderTransitUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+                return false;
+            return IsWmProviderTransitPath(uri);
+        }
+
+        private bool ShouldLogWmTransitUrl(string? rawUrl)
+        {
+            return IsWmProviderTransitUrl(rawUrl);
+        }
+
+        private static bool IsWmSupplierLoginFrameUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+                return false;
+
+            var path = uri.AbsolutePath ?? "";
+            if (path.IndexOf("/Account/LoginToSupplier", StringComparison.OrdinalIgnoreCase) >= 0)
+                return QueryContainsWmSupplier(uri.Query);
+            if (path.IndexOf("/player/login/apiLogin", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
+        }
+
+        private void LogWmTransitHttpResponseDiagIfNeeded(string scope, string url, string status, string type, string protocol, string frameId, string frameHint, JsonElement headersEl)
+        {
+            try
+            {
+                if (!string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase))
+                    return;
+                if (!ShouldLogWmTransitUrl(url))
+                    return;
+
+                var location = TryGetHeaderValue(headersEl, "location");
+                var csp = TryGetHeaderValue(headersEl, "content-security-policy");
+                var xfo = TryGetHeaderValue(headersEl, "x-frame-options");
+                var setCookie = TryGetHeaderValue(headersEl, "set-cookie");
+                var cacheControl = TryGetHeaderValue(headersEl, "cache-control");
+
+                var signature = string.Join("|", url, status, location, csp, xfo, cacheControl, setCookie);
+                var msg =
+                    $"[WM_TRANSIT_HTTP] stage=response scope={scope} status={status} type={ClipForLog(type, 24)} protocol={ClipForLog(protocol, 24)} " +
+                    $"url={ClipForLog(url, 180)} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 140)} " +
+                    $"location={ClipForLog(location, 180)} xfo={ClipForLog(xfo, 80)} csp={ClipForLog(csp, 180)} cache={ClipForLog(cacheControl, 80)} cookie={ClipForLog(setCookie, 120)}";
+                LogChangedOrThrottled("WM_TRANSIT_HTTP_RESP:" + ClipForLog(url, 120), signature, msg, 700);
+
+                if (IsWmSupplierLoginFrameUrl(url) &&
+                    int.TryParse(status, NumberStyles.Integer, CultureInfo.InvariantCulture, out var statusCode) &&
+                    statusCode >= 200 && statusCode < 400)
+                {
+                    _popupTransitSupplierFrameSeenUtc = DateTime.UtcNow;
+                    _popupTransitSupplierFrameUrl = url;
+                    var signalSig = string.Join("|", statusCode.ToString(CultureInfo.InvariantCulture), url, frameId, frameHint);
+                    LogChangedOrThrottled(
+                        "WM_TRANSIT_SUPPLIER_SIGNAL",
+                        signalSig,
+                        $"[PopupWeb][TRANSIT-SIGNAL] kind=supplier-frame-http status={statusCode} url={ClipForLog(url, 180)} frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 140)}",
+                        700);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[WM_TRANSIT_HTTP] response " + ex.Message);
+            }
+        }
+
+        private void LogWmTransitHttpBodyDiagIfNeeded(string scope, string url, string mime, string body, string frameId, string frameHint)
+        {
+            try
+            {
+                if (!string.Equals(scope, "popup", StringComparison.OrdinalIgnoreCase))
+                    return;
+                if (!ShouldLogWmTransitUrl(url))
+                    return;
+
+                var raw = (body ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(raw))
+                    return;
+
+                var collapsed = Regex.Replace(raw, "\\s+", " ").Trim();
+                var sample = collapsed.Length > 260 ? collapsed.Substring(0, 260) : collapsed;
+                var hasWindowOpen = raw.IndexOf("window.open", StringComparison.OrdinalIgnoreCase) >= 0;
+                var hasLocation = raw.IndexOf("location.", StringComparison.OrdinalIgnoreCase) >= 0
+                    || raw.IndexOf("location=", StringComparison.OrdinalIgnoreCase) >= 0;
+                var hasSubmit = raw.IndexOf(".submit(", StringComparison.OrdinalIgnoreCase) >= 0
+                    || raw.IndexOf("submit()", StringComparison.OrdinalIgnoreCase) >= 0;
+                var hasSupplier = raw.IndexOf("SupplierType=WM", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                var signature = string.Join("|", url, mime, hasWindowOpen, hasLocation, hasSubmit, hasSupplier, sample);
+                var msg =
+                    $"[WM_TRANSIT_HTTP] stage=body scope={scope} mime={ClipForLog(mime, 40)} url={ClipForLog(url, 180)} " +
+                    $"frameId={ClipForLog(frameId, 48)} frame={ClipForLog(frameHint, 140)} " +
+                    $"windowOpen={(hasWindowOpen ? 1 : 0)} location={(hasLocation ? 1 : 0)} submit={(hasSubmit ? 1 : 0)} supplier={(hasSupplier ? 1 : 0)} " +
+                    $"sample={ClipForLog(sample, 260)}";
+                LogChangedOrThrottled("WM_TRANSIT_HTTP_BODY:" + ClipForLog(url, 120), signature, msg, 700);
+            }
+            catch (Exception ex)
+            {
+                Log("[WM_TRANSIT_HTTP] body " + ex.Message);
+            }
+        }
+
+        private static bool TryBuildLobbyNavigationFallbackUrl(string? lobbyUrl, out string fallbackUrl)
+        {
+            fallbackUrl = "";
+            var raw = (lobbyUrl ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+            if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+                return false;
+            if (!string.Equals(uri.AbsolutePath, "/Lobby/Navigation", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            var query = uri.Query;
+            if (string.IsNullOrWhiteSpace(query))
+                return false;
+            if (query.StartsWith("?", StringComparison.Ordinal))
+                query = query.Substring(1);
+
+            foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var idx = part.IndexOf('=');
+                if (idx <= 0)
+                    continue;
+                var key = part.Substring(0, idx);
+                if (!string.Equals(key, "url", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var value = part.Substring(idx + 1);
+                if (string.IsNullOrWhiteSpace(value))
+                    return false;
+
+                var decoded = Uri.UnescapeDataString(value).Trim();
+                if (string.IsNullOrWhiteSpace(decoded))
+                    return false;
+                if (Uri.TryCreate(decoded, UriKind.Absolute, out var abs))
+                {
+                    fallbackUrl = abs.ToString();
+                    return true;
+                }
+
+                if (!decoded.StartsWith("/", StringComparison.Ordinal))
+                    decoded = "/" + decoded;
+                fallbackUrl = $"{uri.Scheme}://{uri.Authority}{decoded}";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsAboutBlankUrl(string? rawUrl)
+        {
+            return string.IsNullOrWhiteSpace(rawUrl) ||
+                   string.Equals((rawUrl ?? "").Trim(), "about:blank", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private async Task<bool> TryRecreatePopupForTransitRecoveryAsync(string recoverUrl, string reason)
+        {
+            var target = (recoverUrl ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(target))
+                return false;
+            try
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (PopupHost != null)
+                        PopupHost.Visibility = Visibility.Visible;
+                    if (Web != null)
+                        Web.Visibility = Visibility.Collapsed;
+                    DestroyPopupWeb();
+                });
+
+                _popupTransitRecreateUsed = true;
+
+                var popup = await EnsurePopupWebReadyAsync();
+                if (popup?.CoreWebView2 == null)
+                {
+                    Log("[PopupWeb][STUCK-RECOVERY][ERR] recreate failed: popup-not-ready");
+                    return false;
+                }
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    popup.CoreWebView2.Navigate(target);
+                    popup.Focus();
+                });
+
+                Log("[PopupWeb][STUCK-RECOVERY] action=recreate-popup-navigate | reason=" +
+                    ClipForLog(reason, 48) +
+                    " | to=" + ClipForLog(target, 220));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb][STUCK-RECOVERY][ERR] recreate: " + ex.Message);
+                return false;
+            }
+        }
+
+        private bool IsPopupTransitGraceActive()
+        {
+            return _popupTransitArmed &&
+                   _popupTransitGraceUntilUtc != DateTime.MinValue &&
+                   DateTime.UtcNow <= _popupTransitGraceUntilUtc;
+        }
+
+        private void CancelPopupTransitWatch(string reason)
+        {
+            var cts = Interlocked.Exchange(ref _popupTransitWatchCts, null);
+            if (cts != null)
+            {
+                try { cts.Cancel(); } catch { }
+                try { cts.Dispose(); } catch { }
+                if (!string.IsNullOrWhiteSpace(reason))
+                    Log("[PopupWeb][STUCK-WATCH] cancel reason=" + reason);
+            }
+        }
+
+        private void SetPopupTransitPassiveHold(string reason, string currentUrl, string recoverUrl = "")
+        {
+            CancelPopupTransitWatch("passive-" + reason);
+            _popupTransitArmed = true;
+            _popupTransitGraceUntilUtc = DateTime.UtcNow.AddSeconds(PopupTransitGraceSeconds);
+            if (!string.IsNullOrWhiteSpace(currentUrl))
+                _popupTransitEntryUrl = currentUrl;
+            if (!string.IsNullOrWhiteSpace(recoverUrl))
+                _popupTransitRecoverUrl = recoverUrl;
+            else if (string.IsNullOrWhiteSpace(_popupTransitRecoverUrl))
+                _popupTransitRecoverUrl = _popupTransitEntryUrl;
+            Log("[PopupWeb][TRANSIT-HOLD] reason=" + reason +
+                " | graceSec=" + PopupTransitGraceSeconds.ToString(CultureInfo.InvariantCulture) +
+                " | url=" + ClipForLog(currentUrl, 220) +
+                " | recover=" + ClipForLog(_popupTransitRecoverUrl, 220));
+        }
+
+        private void ArmPopupTransitWatch(string reason, string currentUrl, string recoverUrl = "")
+        {
+            CancelPopupTransitWatch("");
+            _popupTransitArmed = true;
+            _popupTransitGraceUntilUtc = DateTime.UtcNow.AddSeconds(PopupTransitGraceSeconds);
+            var timeoutSec = string.Equals(reason, "non-game-hold", StringComparison.OrdinalIgnoreCase)
+                ? PopupTransitHoldWatchdogSeconds
+                : PopupTransitWatchdogSeconds;
+            if (!string.IsNullOrWhiteSpace(currentUrl))
+                _popupTransitEntryUrl = currentUrl;
+            if (!string.IsNullOrWhiteSpace(recoverUrl))
+                _popupTransitRecoverUrl = recoverUrl;
+            else if (string.IsNullOrWhiteSpace(_popupTransitRecoverUrl))
+                _popupTransitRecoverUrl = _popupTransitEntryUrl;
+            var cts = new CancellationTokenSource();
+            _popupTransitWatchCts = cts;
+            Log("[PopupWeb][STUCK-WATCH] arm reason=" + reason +
+                " | timeoutSec=" + timeoutSec.ToString(CultureInfo.InvariantCulture) +
+                " | url=" + ClipForLog(currentUrl, 220));
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(timeoutSec), cts.Token);
+                    if (cts.IsCancellationRequested)
+                        return;
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (cts.IsCancellationRequested)
+                            return;
+                        if (_popupWeb?.CoreWebView2 == null)
+                            return;
+                        var src = (_popupWeb.CoreWebView2.Source ?? "").Trim();
+                        if (IsLikelyWmGameReadyUrl(src))
+                        {
+                            Log("[PopupWeb][STUCK-WATCH] skip recovery reason=already-game-ready | url=" + ClipForLog(src, 220));
+                            CancelPopupTransitWatch("already-game-ready");
+                            _popupTransitArmed = false;
+                            _popupTransitGraceUntilUtc = DateTime.MinValue;
+                            return;
+                        }
+
+                        var next = (_popupTransitRecoverUrl ?? "").Trim();
+                        if (string.IsNullOrWhiteSpace(next) && TryBuildLobbyNavigationFallbackUrl(src, out var fallback))
+                            next = fallback;
+                        if (string.IsNullOrWhiteSpace(next))
+                            next = (_popupTransitEntryUrl ?? "").Trim();
+
+                        if (_popupTransitRecoverAttempts >= PopupTransitMaxRecoverAttempts)
+                        {
+                            if (!_popupTransitRecreateUsed && IsAboutBlankUrl(src) && !string.IsNullOrWhiteSpace(next))
+                            {
+                                _popupTransitRecreateUsed = true;
+                                _popupTransitRecoverAttempts = 0;
+                                _popupDeferredOpenUntilUtc = DateTime.UtcNow.AddSeconds(PopupDeferredOpenGraceSeconds);
+                                _popupDeferredOpenTarget = next;
+                                _popupTransitArmed = true;
+                                _popupTransitGraceUntilUtc = DateTime.UtcNow.AddSeconds(PopupTransitGraceSeconds);
+                                _popupTransitRecoverUrl = next;
+                                Log("[PopupWeb][STUCK-RECOVERY] action=recreate-popup | from=" +
+                                    ClipForLog(src, 220) + " | to=" + ClipForLog(next, 220));
+                                _ = TryRecreatePopupForTransitRecoveryAsync(next, "max-attempt-about-blank");
+                                return;
+                            }
+
+                            Log("[PopupWeb][STUCK-RECOVERY][SKIP] reason=max-attempts | attempts=" +
+                                _popupTransitRecoverAttempts.ToString(CultureInfo.InvariantCulture) +
+                                " | url=" + ClipForLog(src, 220));
+                            return;
+                        }
+
+                        _popupTransitRecoverAttempts++;
+                        if (string.IsNullOrWhiteSpace(next))
+                        {
+                            Log("[PopupWeb][STUCK-RECOVERY][SKIP] reason=no-recover-url | src=" + ClipForLog(src, 220));
+                            return;
+                        }
+
+                        _popupDeferredOpenUntilUtc = DateTime.UtcNow.AddSeconds(PopupDeferredOpenGraceSeconds);
+                        _popupDeferredOpenTarget = next;
+                        _popupTransitArmed = true;
+                        _popupTransitGraceUntilUtc = DateTime.UtcNow.AddSeconds(PopupTransitGraceSeconds);
+                        _popupTransitRecoverUrl = next;
+
+                        Log("[PopupWeb][STUCK-RECOVERY] action=navigate-retry | attempt=" +
+                            _popupTransitRecoverAttempts.ToString(CultureInfo.InvariantCulture) +
+                            " | from=" + ClipForLog(src, 220) +
+                            " | to=" + ClipForLog(next, 220));
+                        try { _popupWeb.CoreWebView2.Stop(); } catch { }
+                        _popupWeb.CoreWebView2.Navigate(next);
+                    });
+                }
+                catch (TaskCanceledException) { }
+                catch (Exception ex)
+                {
+                    Log("[PopupWeb][STUCK-WATCH][ERR] " + ex.Message);
+                }
+            });
+        }
+
         private void PopupWeb_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
         {
             try
@@ -9224,8 +9966,27 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     Log($"[POPUPNAV][BLOCK] stage=nav-start remainMs={remainMs} reason={ClipForLog(blockReason, 48)} uri={ClipForLog(e.Uri ?? "", 180)}");
                     return;
                 }
+                var navUrl = (e.Uri ?? "").Trim();
+                if (TryBuildLobbyNavigationFallbackUrl(navUrl, out var fallbackUrl))
+                {
+                    SetPopupTransitPassiveHold("lobby-entry", navUrl, fallbackUrl);
+                    Log("[PopupWeb][TRANSIT] phase=lobby-entry | url=" + ClipForLog(navUrl, 220) +
+                        " | recover=" + ClipForLog(fallbackUrl, 220));
+                }
+                else if (IsWmProviderTransitUrl(navUrl))
+                {
+                    SetPopupTransitPassiveHold("provider-hop", navUrl);
+                    Log("[PopupWeb][TRANSIT] phase=provider-hop | url=" + ClipForLog(navUrl, 220));
+                }
+                else if (IsLikelyWmGameReadyUrl(navUrl))
+                {
+                    CancelPopupTransitWatch("nav-start-game-ready");
+                    _popupTransitArmed = false;
+                    _popupTransitGraceUntilUtc = DateTime.MinValue;
+                    _popupTransitRecoverUrl = "";
+                }
                 ClearLatestNetworkRooms("popup-nav-start");
-                Log("[PopupWeb] NavigationStarting: " + (e.Uri ?? ""));
+                Log("[PopupWeb] NavigationStarting: " + navUrl);
             }
             catch { }
         }
@@ -9235,11 +9996,92 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var src = _popupWeb?.CoreWebView2?.Source ?? "";
+                var srcLooksGame = IsLikelyWmGameReadyUrl(src);
+                var deferredOpenActive = _popupDeferredOpenUntilUtc != DateTime.MinValue &&
+                                         DateTime.UtcNow <= _popupDeferredOpenUntilUtc;
+                var transitGraceActive = IsPopupTransitGraceActive();
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
                 if (e.IsSuccess)
                 {
+                    if (srcLooksGame)
+                    {
+                        CancelPopupTransitWatch("nav-completed-game-ready");
+                        _popupTransitArmed = false;
+                        _popupTransitGraceUntilUtc = DateTime.MinValue;
+                        _popupTransitEntryUrl = "";
+                        _popupTransitRecoverUrl = "";
+                        _popupDeferredOpenUntilUtc = DateTime.MinValue;
+                        _popupDeferredOpenTarget = "";
+                        _popupTransitSupplierFrameSeenUtc = DateTime.MinValue;
+                        _popupTransitSupplierFrameUrl = "";
+                        _popupTransitTopRecoverPromoted = false;
+                    }
+                    else if (deferredOpenActive || transitGraceActive || IsWmProviderTransitUrl(src))
+                    {
+                        var blankTransit = IsAboutBlankUrl(src);
+                        if (blankTransit)
+                        {
+                            var recover = (_popupDeferredOpenTarget ?? "").Trim();
+                            if (string.IsNullOrWhiteSpace(recover))
+                                recover = (_popupTransitRecoverUrl ?? "").Trim();
+                            ArmPopupTransitWatch("about-blank-hold", src, recover);
+                        }
+                        else
+                        {
+                            if (_popupDeferredOpenUntilUtc != DateTime.MinValue || !string.IsNullOrWhiteSpace(_popupDeferredOpenTarget))
+                            {
+                                // Popup da vao transit page that su, khong de deferred 30s tiep tuc ghi de state hold.
+                                _popupDeferredOpenUntilUtc = DateTime.MinValue;
+                                _popupDeferredOpenTarget = "";
+                            }
+                            SetPopupTransitPassiveHold("non-game-hold", src);
+                            var recover = (_popupTransitRecoverUrl ?? "").Trim();
+                            if (string.IsNullOrWhiteSpace(recover))
+                                recover = src;
+                            ArmPopupTransitWatch("non-game-hold", src, recover);
+
+                            var supplierSignalFresh =
+                                _popupTransitSupplierFrameSeenUtc != DateTime.MinValue &&
+                                (DateTime.UtcNow - _popupTransitSupplierFrameSeenUtc) <= TimeSpan.FromSeconds(PopupTransitSupplierSignalWindowSeconds);
+                            if (!_popupTransitTopRecoverPromoted &&
+                                supplierSignalFresh &&
+                                TryBuildLobbyNavigationFallbackUrl(src, out var promoteTarget) &&
+                                !string.IsNullOrWhiteSpace(promoteTarget))
+                            {
+                                _popupTransitTopRecoverPromoted = true;
+                                _popupDeferredOpenUntilUtc = DateTime.UtcNow.AddSeconds(PopupDeferredOpenGraceSeconds);
+                                _popupDeferredOpenTarget = promoteTarget;
+                                _popupTransitRecoverUrl = promoteTarget;
+                                Log("[PopupWeb][TRANSIT-PROMOTE] action=navigate-top-recover | reason=supplier-frame-http | from=" +
+                                    ClipForLog(src, 220) + " | to=" + ClipForLog(promoteTarget, 220) +
+                                    " | signalUrl=" + ClipForLog(_popupTransitSupplierFrameUrl, 180));
+                                try { _popupWeb?.CoreWebView2?.Stop(); } catch { }
+                                _popupWeb?.CoreWebView2?.Navigate(promoteTarget);
+                                return;
+                            }
+                        }
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (Web != null)
+                                Web.Visibility = Visibility.Collapsed;
+                            if (PopupHost != null)
+                                PopupHost.Visibility = Visibility.Visible;
+                            _popupWeb?.Focus();
+                        });
+                        var remainMs = _popupTransitGraceUntilUtc != DateTime.MinValue
+                            ? (_popupTransitGraceUntilUtc - DateTime.UtcNow).TotalMilliseconds
+                            : (_popupDeferredOpenUntilUtc - DateTime.UtcNow).TotalMilliseconds;
+                        Log("[PopupWeb][TRANSIT] phase=non-game-hold | remainMs=" +
+                            Math.Max(0, (int)remainMs).ToString(CultureInfo.InvariantCulture) +
+                            " | blank=" + (blankTransit ? "1" : "0") +
+                            " | url=" + ClipForLog(src, 220));
+                    }
                     await InjectOnPopupDocAsync();
                     Dispatcher.BeginInvoke(new Action(ApplyMouseShieldFromCheck));
+                }
+                else if (transitGraceActive || IsWmProviderTransitUrl(src))
+                {
+                    ArmPopupTransitWatch("navigation-error", src);
                 }
             }
             catch (Exception ex)
@@ -9920,6 +10762,18 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             try
             {
+                CancelPopupTransitWatch("popup-close");
+                _popupTransitArmed = false;
+                _popupTransitGraceUntilUtc = DateTime.MinValue;
+                _popupTransitEntryUrl = "";
+                _popupTransitRecoverUrl = "";
+                _popupDeferredOpenUntilUtc = DateTime.MinValue;
+                _popupDeferredOpenTarget = "";
+                _popupTransitRecoverAttempts = 0;
+                _popupTransitRecreateUsed = false;
+                _popupTransitSupplierFrameSeenUtc = DateTime.MinValue;
+                _popupTransitSupplierFrameUrl = "";
+                _popupTransitTopRecoverPromoted = false;
                 _ = SetWrapperOverlayLockAsync(false, "popup-close");
                 ClearLatestNetworkRooms("popup-close");
                 if (PopupHost != null)
@@ -9938,12 +10792,24 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
         private void DestroyPopupWeb()
         {
+            CancelPopupTransitWatch("popup-destroy");
             var popupWeb = _popupWeb;
             _popupWeb = null;
             _popupWebHooked = false;
             _popupBridgeRegistered = false;
             _popupLastDocKey = null;
             _cdpNetworkOnPopup = false;
+            _popupTransitArmed = false;
+            _popupTransitGraceUntilUtc = DateTime.MinValue;
+            _popupTransitEntryUrl = "";
+            _popupTransitRecoverUrl = "";
+            _popupDeferredOpenUntilUtc = DateTime.MinValue;
+            _popupDeferredOpenTarget = "";
+            _popupTransitRecoverAttempts = 0;
+            _popupTransitRecreateUsed = false;
+            _popupTransitSupplierFrameSeenUtc = DateTime.MinValue;
+            _popupTransitSupplierFrameUrl = "";
+            _popupTransitTopRecoverPromoted = false;
             ClearPopupGameFrameCache("destroy-popup");
 
             if (popupWeb == null)
@@ -10343,6 +11209,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                                 LogPacket($"{scope}.HTTP.response", url, $"status={status} mime={mime} ce={contentEncoding} len={contentLength}", false);
                             if (IsWmUrl(url) || IsWmFrameHint(frameHint) || IsLaunchGameUrl(url))
                                 LogPacket($"{scope}.WM.response", url, $"status={status} mime={mime} ce={contentEncoding} len={contentLength} type={type} protocol={protocol} fromDisk={fromDisk} frameId={frameId} frame={frameHint}", false);
+                            LogWmTransitHttpResponseDiagIfNeeded(scope, url, status, type, protocol, frameId, frameHint, headersEl);
                         }
                         catch (Exception ex) { Log($"[CDP {scope} responseReceived] " + ex.Message); }
                     };
@@ -10380,6 +11247,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                            var frameHint = DescribeCdpFrame(scope, frameId);
                            LogHttpBodyCodecDiagIfNeeded(scope, "HTTP.body", url, mime, rawBody, base64Encoded, contentEncoding, contentLength, frameId, frameHint);
                            LogWmPacketDiagIfNeeded(scope, "HTTP.body", url, mime, body, false, frameId, frameHint);
+                           LogWmTransitHttpBodyDiagIfNeeded(scope, url, mime, body, frameId, frameHint);
                            LogLaunchGameDiagIfNeeded(scope, "HTTP.body", url, body, frameId, frameHint);
                            TryUpdateLatestNetworkRoomsFromPayload(scope, "HTTP.body", url, body, false, frameId);
                        }
@@ -10819,7 +11687,18 @@ private async Task<CancellationTokenSource> DebounceAsync(
             => string.IsNullOrWhiteSpace(uriHint) || IsNoiseFrameUri(uriHint);
 
         private static bool ShouldSkipInjectByHintUri(string? uriHint)
-            => string.IsNullOrWhiteSpace(uriHint) || IsNoiseFrameUri(uriHint);
+        {
+            var raw = (uriHint ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw) || IsNoiseFrameUri(raw))
+                return true;
+            try
+            {
+                if (Uri.TryCreate(raw, UriKind.Absolute, out var uri) && IsWmProviderTransitPath(uri))
+                    return true;
+            }
+            catch { }
+            return false;
+        }
 
         private static bool TryEnterFrameProbe(FrameBridgeState state, string stage, string uriHint)
         {
@@ -10831,6 +11710,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 return false;
             state.LastProbeKey = key;
             state.LastProbeUtc = now;
+            return true;
+        }
+
+        private static bool TryEnterFrameTransitKick(FrameBridgeState state, string stage, string uriHint)
+        {
+            var normUri = (uriHint ?? "").Trim();
+            var key = $"{stage}:{normUri}";
+            var now = DateTime.UtcNow;
+            if (string.Equals(state.LastTransitKickKey, key, StringComparison.Ordinal) &&
+                (now - state.LastTransitKickUtc) < FrameTransitKickMinGap)
+                return false;
+            state.LastTransitKickKey = key;
+            state.LastTransitKickUtc = now;
             return true;
         }
 
@@ -10997,6 +11889,216 @@ private async Task<CancellationTokenSource> DebounceAsync(
             catch (Exception ex)
             {
                 Log($"[POPUPFRAME][PROBE] stage={stage} err={ClipForLog(ex.Message, 160)}");
+            }
+        }
+
+        private async Task ProbeAndKickPopupTransitFrameAsync(CoreWebView2Frame? frame, string stage, string? uriHint = null)
+        {
+            try
+            {
+                if (frame == null)
+                    return;
+
+                var state = _popupFrameBridgeStates.GetValue(frame, _ => new FrameBridgeState());
+                var effectiveUriHint = string.IsNullOrWhiteSpace(uriHint) ? GetFrameStateUriHint(state) : uriHint;
+                if (!IsWmSupplierLoginFrameUrl(effectiveUriHint))
+                    return;
+                if (!TryEnterFrameTransitKick(state, stage, effectiveUriHint ?? ""))
+                    return;
+
+                const string js = @"(function(){
+  try{
+    const href = String(location.href || '');
+    const title = String(document.title || '');
+    const ready = String(document.readyState || '');
+    const text = String((document.body && (document.body.innerText || document.body.textContent)) || '').replace(/\s+/g,' ').trim();
+    const forms = Array.from(document.forms || []);
+    const form = forms.length ? forms[0] : null;
+    const inputs = form ? Array.from(form.querySelectorAll('input')) : [];
+    const hiddenNames = inputs.filter(function(x){ return String(x.type||'').toLowerCase() === 'hidden'; }).map(function(x){ return String(x.name||x.id||'').trim(); }).filter(Boolean).slice(0,12);
+    const passCount = document.querySelectorAll('input[type=""password""]').length;
+    const hiddenCount = document.querySelectorAll('input[type=""hidden""]').length;
+    const iframeEls = Array.from(document.querySelectorAll('iframe')).slice(0,6);
+    const iframeSrc = iframeEls.map(function(x){
+      try { return String(x.src || x.getAttribute('src') || '').trim(); } catch(_) { return ''; }
+    }).filter(Boolean)[0] || '';
+    const anchors = Array.from(document.querySelectorAll('a[href],button,input[type=""button""],input[type=""submit""]')).slice(0,12);
+    const anchorHint = anchors.map(function(el){
+      try{
+        var txt = String(el.innerText || el.textContent || el.value || '').replace(/\s+/g,' ').trim();
+        var href2 = String(el.href || el.getAttribute('href') || '').trim();
+        var oc = String(el.getAttribute('onclick') || '').trim();
+        return [txt, href2, oc].filter(Boolean).join('|');
+      }catch(_){ return ''; }
+    }).filter(Boolean)[0] || '';
+    const scriptSample = Array.from(document.scripts || []).map(function(s){
+      try { return String(s.textContent || '').replace(/\s+/g,' ').trim(); } catch(_) { return ''; }
+    }).filter(Boolean).join(' ').slice(0,2400);
+    const html = String((document.documentElement && document.documentElement.outerHTML) || '').slice(0,120000);
+
+    function makeAbs(raw){
+      try{
+        var s = String(raw || '').trim();
+        if (!s) return '';
+        return new URL(s, href).href;
+      }catch(_){ return String(raw || '').trim(); }
+    }
+
+    function firstGroupMatch(re){
+      try{
+        var m = re.exec(html) || re.exec(scriptSample);
+        return m && m[1] ? makeAbs(m[1]) : '';
+      }catch(_){ return ''; }
+    }
+
+    function firstDirectUrlMatch(re){
+      try{
+        var m = html.match(re) || scriptSample.match(re);
+        return m && m[0] ? makeAbs(m[0]) : '';
+      }catch(_){ return ''; }
+    }
+
+    var formAction = makeAbs(form ? (form.action || '') : '');
+    var providerCandidate =
+      makeAbs(iframeSrc) ||
+      firstGroupMatch(/window\.open\(\s*['""]([^'""]+)['""]/i) ||
+      firstGroupMatch(/location(?:\.href|\.replace|\.assign)?\s*\(?\s*['""]([^'""]+)['""]/i) ||
+      firstDirectUrlMatch(/https?:\/\/[^'""]*(?:wmvn\.|m8810\.com|qqhrsbjx)[^'"">\s]*/i);
+
+    if (!providerCandidate && anchorHint) {
+      var pipeParts = anchorHint.split('|');
+      for (var i = 0; i < pipeParts.length; i++) {
+        var part = makeAbs(pipeParts[i]);
+        if (part && !/^javascript:/i.test(part) && /(wmvn\.|m8810\.com|qqhrsbjx|SupplierType=WM|LoginToSupplier)/i.test(part)) {
+          providerCandidate = part;
+          break;
+        }
+      }
+    }
+
+    var actionTaken = '';
+    var actionOk = 0;
+
+    if (!window.__abx_wm_login_supplier_kicked && passCount === 0) {
+      window.__abx_wm_login_supplier_kicked = 1;
+      try{
+        if (form && hiddenCount > 0) {
+          actionTaken = 'submit-form';
+          form.submit();
+          actionOk = 1;
+        } else if (anchors.length > 0) {
+          var launchEl = anchors.find(function(el){
+            try{
+              var href3 = makeAbs(el.href || el.getAttribute('href') || '');
+              var blob = [el.innerText || el.textContent || '', el.value || '', href3, el.getAttribute('onclick') || ''].join(' ');
+              if (/(wmvn\.|m8810\.com|qqhrsbjx|SupplierType=WM|LoginToSupplier)/i.test(href3)) return true;
+              return /(wm|casino|live|game|launch|supplier|open|enter|play|submit)/i.test(blob) &&
+                     /(wm|live|casino|supplier|play|open)/i.test(blob);
+            }catch(_){ return false; }
+          });
+          if (launchEl) {
+            actionTaken = 'click-launch';
+            if (typeof launchEl.click === 'function') launchEl.click();
+            actionOk = 1;
+          }
+        } else if (providerCandidate && !/LoginToSupplier/i.test(providerCandidate) && /(wmvn\.|m8810\.com|qqhrsbjx)/i.test(providerCandidate)) {
+          actionTaken = 'navigate-provider-candidate';
+          location.href = providerCandidate;
+          actionOk = 1;
+        }
+      }catch(_kickErr){}
+    }
+
+    return JSON.stringify({
+      href: href,
+      title: title,
+      ready: ready,
+      formCount: forms.length,
+      passCount: passCount,
+      hiddenCount: hiddenCount,
+      iframeCount: iframeEls.length,
+      formAction: formAction,
+      formMethod: form ? String(form.method || '') : '',
+      formTarget: form ? String(form.target || '') : '',
+      hiddenNames: hiddenNames.join(','),
+      iframeSrc: iframeSrc,
+      anchorHint: anchorHint,
+      candidateUrl: providerCandidate,
+      actionTaken: actionTaken,
+      actionOk: actionOk,
+      textSample: text.slice(0,220),
+      scriptSample: scriptSample.slice(0,220)
+    });
+  }catch(e){
+    return JSON.stringify({ err: String((e && e.message) || e || 'kick-probe-failed') });
+  }
+})();";
+
+                var raw = await frame.ExecuteScriptAsync(js);
+                raw = (raw ?? "").Trim();
+                if (raw.StartsWith("\"", StringComparison.Ordinal) && raw.EndsWith("\"", StringComparison.Ordinal))
+                    raw = JsonSerializer.Deserialize<string>(raw) ?? raw;
+
+                using var doc = JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+                var err = root.TryGetProperty("err", out var errEl) ? (errEl.GetString() ?? "") : "";
+                if (!string.IsNullOrWhiteSpace(err))
+                {
+                    Log($"[POPUPFRAME][TRANSIT] stage={stage} name={ClipForLog(frame.Name, 48)} err={ClipForLog(err, 160)}");
+                    return;
+                }
+
+                string S(string name) => root.TryGetProperty(name, out var el) ? JsonElementToString(el) : "";
+                int N(string name)
+                {
+                    if (!root.TryGetProperty(name, out var el))
+                        return 0;
+                    if (el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var n))
+                        return n;
+                    return I(el.ToString(), 0);
+                }
+
+                var href = S("href");
+                var ready = S("ready");
+                var title = S("title");
+                var formAction = S("formAction");
+                var formMethod = S("formMethod");
+                var formTarget = S("formTarget");
+                var hiddenNames = S("hiddenNames");
+                var iframeSrc = S("iframeSrc");
+                var anchorHint = S("anchorHint");
+                var candidateUrl = S("candidateUrl");
+                var actionTaken = S("actionTaken");
+                var actionOk = N("actionOk");
+                var textSample = S("textSample");
+                var scriptSample = S("scriptSample");
+                var name = (frame.Name ?? "").Trim();
+                var formCount = N("formCount");
+                var passCount = N("passCount");
+                var hiddenCount = N("hiddenCount");
+                var iframeCount = N("iframeCount");
+                var formSummary = formMethod + "|" + formTarget + "|" + formAction;
+
+                Log($"[POPUPFRAME][TRANSIT] stage={stage} name={ClipForLog(name, 48)} ready={ClipForLog(ready, 20)} title={ClipForLog(title, 80)} forms={formCount} pass={passCount} hidden={hiddenCount} iframes={iframeCount} action={ClipForLog(actionTaken, 32)} ok={actionOk} href={ClipForLog(href, 180)} form={ClipForLog(formSummary, 180)} hiddenNames={ClipForLog(hiddenNames, 140)} iframeSrc={ClipForLog(iframeSrc, 160)} candidate={ClipForLog(candidateUrl, 180)} anchor={ClipForLog(anchorHint, 180)} sample={ClipForLog(textSample, 180)} script={ClipForLog(scriptSample, 180)}");
+
+                if (!string.IsNullOrWhiteSpace(candidateUrl) &&
+                    !IsWmProviderTransitUrl(candidateUrl) &&
+                    (IsWmUrl(candidateUrl) || IsLikelyWmGameReadyUrl(candidateUrl)))
+                {
+                    try
+                    {
+                        _popupWeb?.CoreWebView2?.Navigate(candidateUrl);
+                        Log($"[POPUPFRAME][TRANSIT][PROMOTE] stage={stage} url={ClipForLog(candidateUrl, 220)}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[POPUPFRAME][TRANSIT][PROMOTE] stage={stage} err={ClipForLog(ex.Message, 160)}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[POPUPFRAME][TRANSIT] stage={stage} err={ClipForLog(ex.Message, 160)}");
             }
         }
 
@@ -17665,21 +18767,21 @@ private async Task<CancellationTokenSource> DebounceAsync(
         {
             return strategyIndex switch
             {
-                0 => new BaccaratWM.Tasks.SeqParityFollowTask(),
-                1 => new BaccaratWM.Tasks.PatternParityTask(),
-                2 => new BaccaratWM.Tasks.SmartPrevTask(),
-                3 => new BaccaratWM.Tasks.RandomParityTask(),
-                4 => new BaccaratWM.Tasks.AiStatParityTask(),
-                5 => new BaccaratWM.Tasks.StateTransitionBiasTask(),
-                6 => new BaccaratWM.Tasks.RunLengthBiasTask(),
-                7 => new BaccaratWM.Tasks.EnsembleMajorityTask(),
-                8 => new BaccaratWM.Tasks.TimeSlicedHedgeTask(),
-                9 => new BaccaratWM.Tasks.KnnSubsequenceTask(),
-                10 => new BaccaratWM.Tasks.DualScheduleHedgeTask(),
-                11 => new BaccaratWM.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()),
-                12 => new BaccaratWM.Tasks.AiExpertPanelTask(),
-                13 => new BaccaratWM.Tasks.Top10PatternFollowTask(),
-                _ => new BaccaratWM.Tasks.SmartPrevTask(),
+                0 => new BaccaratWM2.Tasks.SeqParityFollowTask(),
+                1 => new BaccaratWM2.Tasks.PatternParityTask(),
+                2 => new BaccaratWM2.Tasks.SmartPrevTask(),
+                3 => new BaccaratWM2.Tasks.RandomParityTask(),
+                4 => new BaccaratWM2.Tasks.AiStatParityTask(),
+                5 => new BaccaratWM2.Tasks.StateTransitionBiasTask(),
+                6 => new BaccaratWM2.Tasks.RunLengthBiasTask(),
+                7 => new BaccaratWM2.Tasks.EnsembleMajorityTask(),
+                8 => new BaccaratWM2.Tasks.TimeSlicedHedgeTask(),
+                9 => new BaccaratWM2.Tasks.KnnSubsequenceTask(),
+                10 => new BaccaratWM2.Tasks.DualScheduleHedgeTask(),
+                11 => new BaccaratWM2.Tasks.AiOnlineNGramTask(GetAiNGramStatePath()),
+                12 => new BaccaratWM2.Tasks.AiExpertPanelTask(),
+                13 => new BaccaratWM2.Tasks.Top10PatternFollowTask(),
+                _ => new BaccaratWM2.Tasks.SmartPrevTask(),
             };
         }
 
@@ -18468,7 +19570,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return (s.Length <= take) ? s : s.Substring(s.Length - take, take);
         }
 
-        // đặt trong MainWindow.xaml.cs (project BaccaratWM)
+        // đặt trong MainWindow.xaml.cs (project BaccaratWM2)
 
         // load thử lần lượt các uri, cái nào được thì dùng, không được thì trả về null
         private static ImageSource? LoadImgSafe(params string[] uris)
@@ -19027,7 +20129,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             try
             {
                 var resName = FindResourceName("js_home_v2.js")
-                              ?? "BaccaratWM.js_home_v2.js"; // fallback tên logic
+                              ?? "BaccaratWM2.js_home_v2.js"; // fallback tên logic
                 var text = ReadEmbeddedText(resName);   // helper sẵn có
                 text = RemoveUtf8Bom(text);             // helper sẵn có
 

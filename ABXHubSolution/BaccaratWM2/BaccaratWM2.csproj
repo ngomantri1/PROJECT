@@ -1,0 +1,174 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <!-- ===== Common ===== -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Prefer32Bit>false</Prefer32Bit>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <AssemblyName>BaccaratWM2</AssemblyName>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**;artifacts2\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <!-- Stamp cho Release đổi tên EXE -->
+  <PropertyGroup>
+    <BuildStamp Condition="'$(BuildStamp)'==''">$([System.DateTime]::Now.ToString("yyMMdd-HHmmss"))</BuildStamp>
+  </PropertyGroup>
+
+  <!-- ===== Debug: build DLL plugin cho Hub ===== -->
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <!-- WPF app compile as Library để Hub load như plugin -->
+    <OutputType>WinExe</OutputType>
+
+    <DefineConstants>$(DefineConstants);DEBUG;TRACE;ABX_HUB</DefineConstants>
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+    <Deterministic>false</Deterministic>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+
+    <!-- Bind đúng bản ABX.Core.dll mà Hub đang chạy -->
+    <AbxCorePath>$(MSBuildProjectDirectory)\..\AutoBetHub\bin\$(Configuration)\net8.0-windows\ABX.Core.dll</AbxCorePath>
+    <AbxCoreFallbackPath>$(MSBuildProjectDirectory)\..\ABX.Core\bin\$(Configuration)\net8.0-windows\ABX.Core.dll</AbxCoreFallbackPath>
+  </PropertyGroup>
+
+  <!-- ===== Release: 1-file EXE độc lập (giữ nguyên nghiệp vụ) ===== -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DefineConstants>$(DefineConstants);STANDALONE</DefineConstants>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <!-- ===== Packages & resources ===== -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Loại trừ artifacts phụ và root-level intermediate cũ để tránh duplicate generated partials -->
+  <ItemGroup>
+    <Compile Remove="artifacts\**\*.cs" />
+    <Compile Remove="artifacts2\**\*.cs" />
+    <Compile Remove="obj\Debug\*.g.cs" />
+    <Compile Remove="obj\Debug\*.g.i.cs" />
+    <Compile Remove="obj\Debug\*.AssemblyInfo.cs" />
+    <Compile Remove="obj\Debug\.NETCoreApp,Version=v8.0.AssemblyAttributes.cs" />
+    <Compile Remove="obj\Release\*.g.cs" />
+    <Compile Remove="obj\Release\*.g.i.cs" />
+    <Compile Remove="obj\Release\*.AssemblyInfo.cs" />
+    <Compile Remove="obj\Release\.NETCoreApp,Version=v8.0.AssemblyAttributes.cs" />
+    <EmbeddedResource Remove="artifacts\**" />
+    <EmbeddedResource Remove="artifacts2\**" />
+    <None Remove="artifacts\**" />
+    <None Remove="artifacts2\**" />
+    <Page Remove="artifacts\**\*.xaml" />
+    <Page Remove="artifacts2\**\*.xaml" />
+  </ItemGroup>
+
+<!-- Nhúng JS vào resource -->
+<ItemGroup>
+  <None Remove="js_home_v2.js" />
+</ItemGroup>
+<ItemGroup>
+  <EmbeddedResource Include="js_home_v2.js" />
+</ItemGroup>
+
+  <!-- Release mới nhúng ZIP môi trường -->
+  <ItemGroup Condition="'$(Configuration)'=='Release'">
+    <None Remove="ThirdParty\WebView2Fixed_win-x64.zip" />
+    <EmbeddedResource Include="ThirdParty\WebView2Fixed_win-x64.zip">
+      <LogicalName>BaccaratWM2.ThirdParty.WebView2Fixed_win-x64.zip</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Tài nguyên ảnh/icon -->
+  <ItemGroup>
+    <Resource Include="Assets\**\*.png" />
+    <Resource Include="Assets\**\*.jpg" />
+    <Resource Include="Assets\AppIcon.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+  </ItemGroup>
+
+  <!-- ===== RẤT QUAN TRỌNG: Debug chuyển App.xaml từ ApplicationDefinition -> Page ===== -->
+
+  <!-- ===== Kiểm soát file plugin để tránh duplicate compile ===== -->
+  <!-- Bỏ mặc định trước, rồi Debug sẽ Include lại -->
+  <ItemGroup>
+    <Compile Remove="BaccaratWM2Plugin.cs" />
+    <Compile Remove="BaccaratWM2Plugin.Hub.cs" />
+    <Compile Remove="PluginProbe.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)'=='Debug'">
+    <Compile Include="BaccaratWM2Plugin.cs" />
+    <Compile Include="PluginProbe.cs" />
+    <Compile Include="BaccaratWM2Plugin.Hub.cs" Condition="Exists('BaccaratWM2Plugin.Hub.cs')" />
+  </ItemGroup>
+
+  <!-- ===== Tham chiếu ABX.Core: ưu tiên DLL của Hub nếu có, ngược lại fallback sang ProjectReference ===== -->
+  <ItemGroup Condition="'$(Configuration)'=='Debug' and Exists('$(AbxCorePath)')">
+    <Reference Include="ABX.Core">
+      <HintPath>$(AbxCorePath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)'!='Debug' or !Exists('$(AbxCorePath)')">
+    <ProjectReference Include="..\ABX.Core\ABX.Core.csproj" />
+  </ItemGroup>
+
+  <!-- ===== Guard: chỉ nhắc khi muốn bind DLL của Hub nhưng file chưa có ===== -->
+  <Target Name="CheckAbxCorePath" BeforeTargets="Build" Condition="'$(Configuration)'=='Debug'">
+    <Message Condition="Exists('$(AbxCorePath)')" Text="Using ABX.Core from Hub: $(AbxCorePath)" Importance="high" />
+    <Message Condition="!Exists('$(AbxCorePath)')" Text="Hub ABX.Core.dll not found at '$(AbxCorePath)'. Falling back to ProjectReference (local ABX.Core)." Importance="high" />
+  </Target>
+
+  <!-- ===== Echo đường dẫn output để dễ kiểm tra ===== -->
+  <Target Name="EchoBuiltPath" AfterTargets="Build">
+    <Message Text="Built plugin at: $(TargetPath)" Importance="high" />
+  </Target>
+
+  <!-- ===== Copy plugin sang Hub (ép overwrite + đóng dấu) ===== -->
+  <Target Name="CopyPluginToHubDebug" AfterTargets="Build" Condition="'$(Configuration)'=='Debug'">
+    <PropertyGroup>
+      <HubPluginsDir>$(MSBuildProjectDirectory)\..\AutoBetHub\Plugins\</HubPluginsDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(HubPluginsDir)" />
+    <ItemGroup>
+      <_AbxCoreInPlugins Include="$(HubPluginsDir)ABX.Core*.dll" />
+    </ItemGroup>
+    <Delete Files="@(_AbxCoreInPlugins)" />
+    <Message Text="Copying $(TargetPath) -&gt; $(HubPluginsDir)" Importance="high" />
+    <Delete Files="$(HubPluginsDir)$(TargetFileName)" ContinueOnError="true" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(HubPluginsDir)" SkipUnchangedFiles="false" OverwriteReadOnlyFiles="true" />
+  </Target>
+
+  <!-- ===== Release rename & cleanup (giữ nguyên) ===== -->
+  <Target Name="RenamePublishedExeWithStamp" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
+    <PropertyGroup>
+      <PublishedExe>$(PublishDir)$(AssemblyName).exe</PublishedExe>
+      <StampedExe>$(PublishDir)$(AssemblyName)_$(BuildStamp).exe</StampedExe>
+    </PropertyGroup>
+    <Move SourceFiles="$(PublishedExe)" DestinationFiles="$(StampedExe)" Condition="Exists('$(PublishedExe)')" />
+  </Target>
+
+  <Target Name="CleanWebView2LooseDlls" AfterTargets="Publish" Condition="'$(Configuration)'=='Release'">
+    <ItemGroup>
+      <_Wv2Loose Include="$(PublishDir)Microsoft.Web.WebView2*.dll" />
+      <_TfmsDir Include="$(PublishDir)net8.0-windows\" />
+    </ItemGroup>
+    <Delete Files="@(_Wv2Loose)" />
+    <RemoveDir Directories="@(_TfmsDir)" Condition="Exists('%(_TfmsDir.Identity)')" />
+  </Target>
+
+</Project>

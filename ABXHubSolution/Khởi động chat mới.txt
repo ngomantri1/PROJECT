@@ -4,4 +4,8 @@
 - TODO.md
 - BUGS.md
 
-Sau đó mới bắt đầu task mới.
+Trong quá trình sửa không được encoding sang dạng mã khác. Tôi đang dùng UTF8 (tiếng việt)
+Hãy giải thích file nào cần sửa và patch tối thiểu.
+
+Xem lý do tại sao vẫn không load được sảnh WM mặc dù đã mở cửa sổ ok rồi ! Mới bắt đầu load thôi ! Tôi muốn tìm đúng cách vào không mơ hồ
+Hãy xem log và đề xuất fix triệt để
