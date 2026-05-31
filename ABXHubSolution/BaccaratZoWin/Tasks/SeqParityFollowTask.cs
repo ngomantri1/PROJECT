@@ -1,0 +1,60 @@
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
+using static BaccaratZoWin.Tasks.TaskUtil;
+
+namespace BaccaratZoWin.Tasks
+{
+    public sealed class SeqParityFollowTask : IBetTask
+    {
+        public string DisplayName => "1) Chuỗi B/P tự nhập";
+        public string Id => "seq-parity";               // 1) Chuỗi B/P tự nhập
+
+        public async Task RunAsync(GameContext ctx, CancellationToken ct)
+        {
+            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var raw = (ctx.BetSeq ?? "").Trim().ToUpperInvariant().Replace(" ", "");
+            if (string.IsNullOrEmpty(raw)) throw new InvalidOperationException("Chưa nhập CHUỖI CẦU (B/P).");
+
+            // chi giu B hoac P
+            char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'B' || ch == 'P');
+            if (seq.Length == 0) throw new InvalidOperationException("CHUỖI CẦU không hợp lệ.");
+
+            int k = 0;
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                // chờ tới cửa đặt
+                await WaitUntilNewRoundStart(ctx, ct);
+
+                var snap = ctx.GetSnap();
+                string baseSeq = snap?.seq ?? string.Empty;
+
+                string side = ParityCharToSide(seq[k]);
+                long stake;
+                if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
+                {
+                    stake = MoneyHelper.CalcAmountMultiChain(
+                        ctx.StakeChains,
+                        ctx.MoneyChainIndex,
+                        ctx.MoneyChainStep);
+                }
+                else
+                {
+                    stake = money.GetStakeForThisBet();
+                }
+                await PlaceBet(ctx, side, stake, ct);
+
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                var netDelta = CalcNetDelta(side, stake, win);
+                await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, win, netDelta, ct);
+
+                // quay chuỗi
+                k = (k + 1) % seq.Length;
+            }
+        }
+    }
+}
+
+

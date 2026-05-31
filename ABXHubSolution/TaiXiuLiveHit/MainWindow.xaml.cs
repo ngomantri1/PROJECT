@@ -315,6 +315,7 @@ namespace TaiXiuLiveHit
 
         // 3) Giữ pending bet để chờ kết quả
         private readonly List<BetRow> _pendingRows = new();
+        private string _pendingBaseSeq = "";
         private const int MaxHistory = 1000;   // tổng số bản ghi giữ trong bộ nhớ & khi load
 
 
@@ -2401,6 +2402,33 @@ Ví dụ không hợp lệ:
                                             double progNow = snap.prog ?? 0;
                                             var seqStr = snap.seq ?? "";
 
+                                            // Finalize pending khi seq đã đổi so với lúc tạo pending.
+                                            // Không phụ thuộc lock NI/prog==0 để tránh bỏ lỡ chốt kết quả.
+                                            if (_pendingRows.Count > 0)
+                                            {
+                                                if (string.IsNullOrWhiteSpace(_pendingBaseSeq))
+                                                {
+                                                    _pendingBaseSeq = seqStr;
+                                                }
+                                                else if (!string.Equals(seqStr, _pendingBaseSeq, StringComparison.Ordinal))
+                                                {
+                                                    char tailPending = (seqStr.Length > 0) ? seqStr[^1] : '\0';
+                                                    string? pendingResult = tailPending == 'T' ? "TAI"
+                                                        : tailPending == 'X' ? "XIU"
+                                                        : null;
+                                                    if (!string.IsNullOrWhiteSpace(pendingResult))
+                                                    {
+                                                        long accForFinalize = snap?.totals?.A ?? 0;
+                                                        if (accForFinalize <= 0)
+                                                        {
+                                                            try { accForFinalize = (long)ParseMoneyOrZero(LblAmount?.Text ?? "0"); } catch { accForFinalize = 0; }
+                                                        }
+                                                        FinalizeLastBet(pendingResult, accForFinalize);
+                                                        _pendingBaseSeq = "";
+                                                    }
+                                                }
+                                            }
+
                                             // Nếu đang khóa theo dõi và chuỗi đã thay đổi so với _baseSeq => ván cũ khép
                                             if (_lockMajorMinorUpdates == true &&
                                                 !string.Equals(seqStr, _baseSeq, StringComparison.Ordinal))
@@ -2564,6 +2592,10 @@ Ví dụ không hợp lệ:
                                     _betAll.Insert(0, row);
                                     if (_betAll.Count > MaxHistory) _betAll.RemoveAt(_betAll.Count - 1);
                                     _pendingRows.Add(row);
+                                    if (_pendingRows.Count == 1)
+                                    {
+                                        lock (_snapLock) _pendingBaseSeq = _lastSnap?.seq ?? "";
+                                    }
 
                                     if (_autoFollowNewest)
                                     {
@@ -7168,6 +7200,7 @@ Ví dụ không hợp lệ:
             }
 
             _pendingRows.Clear(); // sẵn sàng ván tiếp theo
+            _pendingBaseSeq = "";
         }
 
         public void FinalizePendingBetsWithWinners(HashSet<string> winners, string? displayResult = null)

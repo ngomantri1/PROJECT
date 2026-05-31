@@ -1,5 +1,13 @@
 ﻿# PROJECT_CONTEXT
 
+## Cập nhật hôm nay (2026-05-27)
+- Đã fix lỗi: có kết quả rồi nhưng bản ghi lịch sử cược `pending` không cập nhật `Result` và `WinLose`.
+- Nguyên nhân chính: finalize pending đang phụ thuộc lock `NI` (`_lockMajorMinorUpdates`) + mốc `prog==0`, nên có trường hợp `seq` đã đổi nhưng không vào nhánh finalize.
+- Đã thêm state nội bộ `_pendingBaseSeq` để bám `seq` tại thời điểm tạo lô pending.
+- Đã bổ sung nhánh finalize trực tiếp theo điều kiện `seq` đổi so với `_pendingBaseSeq` (không phụ thuộc lock `NI`).
+- Sau finalize: reset `_pendingBaseSeq` cùng `_pendingRows.Clear()` để tránh dính state sang ván sau.
+- Phạm vi sửa: chỉ `MainWindow.xaml.cs` (logic giao diện và đồng bộ state nội bộ), không can thiệp hệ thống bên ngoài.
+
 ## Cập nhật hôm nay (2026-05-13)
 - Đã thêm `Task 18) Bám cầu trước nâng cao` (`SmartPrevAdvancedTask`).
 - Tổng số chiến lược hiện tại: `18` (index `0..17`).
@@ -61,7 +69,9 @@
 
 ## Pending flow
 - `abx='bet'` -> tạo `BetRow` placeholder và thêm `_pendingRows`.
-- Khi round chốt (`seq` đổi) -> `FinalizeLastBet(...)` hoặc `FinalizePendingBetsWithWinners(...)`.
+- Khi round chốt (`seq` đổi):
+- Luồng thường: finalize bằng `FinalizeLastBet(...)` theo `_pendingBaseSeq`.
+- Luồng multi-side: finalize bằng `FinalizePendingBetsWithWinners(...)`.
 - Sau finalize phải `Clear` pending để tránh dính ván sau.
 
 ## Threading/UI rules

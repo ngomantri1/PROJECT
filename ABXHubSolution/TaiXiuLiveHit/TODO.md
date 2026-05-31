@@ -1,5 +1,9 @@
 ﻿# TODO
 
+## Cập nhật hôm nay (2026-05-27)
+- Đã hoàn thành: fix pending history không cập nhật `Result/WinLose` sau khi có kết quả.
+- Đã hoàn thành: tách trigger finalize pending khỏi lock `NI` bằng `_pendingBaseSeq`.
+
 ## Cập nhật hôm nay (2026-05-13)
 - Đã hoàn thành: thêm `Task 18) Bám cầu trước nâng cao` từ Task 5.
 - Đã hoàn thành: nối UI + mapping runtime cho index `17`.
@@ -27,6 +31,7 @@
 - Quyết định lại heartbeat lease (đang tắt bằng `if(false)`).
 
 ## Task cần test lại
+- Test lại luồng pending: tạo bet -> chờ `seq` đổi -> kiểm tra `Result/WinLose/Account` được chốt đúng cho mọi dòng pending.
 - Regression Task 5 vs Task 18 trên cùng dữ liệu đầu vào.
 - Play/Stop liên tục khi nhiều tab chạy song song.
 - Reinject bridge khi iframe/navigation thay đổi nhanh.

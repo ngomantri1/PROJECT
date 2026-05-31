@@ -1,5 +1,11 @@
 ﻿# ARCHITECTURE
 
+## Cập nhật hôm nay (2026-05-27)
+- Đã chỉnh cơ chế finalize bet history pending trong `MainWindow.xaml.cs`.
+- Thêm state `_pendingBaseSeq` để neo round của lô pending.
+- Thêm nhánh finalize theo `seq` đổi độc lập với lock `NI`.
+- Mục tiêu: đồng bộ UI/history state ổn định khi có kết quả ván.
+
 ## Cập nhật hôm nay (2026-05-13)
 - Thêm `Tasks/SmartPrevAdvancedTask.cs` cho chiến lược 18.
 - `CmbBetStrategy` đã có item `18) Bám cầu trước nâng cao`.
@@ -57,7 +63,7 @@
 3. Task đọc snapshot qua `GameContext.GetSnap()`.
 4. Task quyết định side/stake -> `PlaceBet`.
 5. JS xử lý queue cược và trả event.
-6. C# finalize pending rows khi round chốt.
+6. C# finalize pending rows khi round chốt (`seq` đổi) theo `_pendingBaseSeq` hoặc theo winners của multi-side.
 
 ## Websocket packet flow
 - CDP `Network.enable` bật receiver cho:

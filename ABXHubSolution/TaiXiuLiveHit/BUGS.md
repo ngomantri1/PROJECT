@@ -1,5 +1,8 @@
 ﻿# BUGS
 
+## Cập nhật hôm nay (2026-05-27)
+- Đã phát hiện và fix bug pending history không chốt `Result/WinLose` dù đã có kết quả ván.
+
 ## Cập nhật hôm nay (2026-05-13)
 - Chưa phát hiện bug mới do việc thêm Task 18.
 - Thay đổi hôm nay chỉ thêm chiến lược mới + mapping index/UI.
@@ -12,6 +15,7 @@
 - Lease heartbeat bị vô hiệu hóa (`if (false)`), nhưng flow start/stop heartbeat vẫn tồn tại.
 
 ## Bug đã fix (đã có trong code)
+- `MainWindow.xaml.cs`: fix finalize pending theo `_pendingBaseSeq` khi `seq` đổi, không còn phụ thuộc riêng lock `NI`/`prog==0`.
 - Guard start strategy bằng `WaitForBridgeAndGameDataAsync(...)`.
 - Bridge reinject theo lifecycle top doc + frame.
 - Save config/stats dạng atomic (`.tmp` -> `File.Move`).
