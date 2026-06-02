@@ -1,5 +1,12 @@
 ﻿# ARCHITECTURE
 
+## Cập nhật hôm nay (2026-06-02)
+- Đã chỉnh luồng money runtime để chuỗi tiền có thể đổi live khi task đang chạy.
+- `StrategyTabState` vẫn giữ state chạy hiện tại, nhưng `RunStakeSeq`/`RunStakeChains`/`RunStakeChainTotals` giờ có thể được refresh trong lúc run.
+- `GameContext` không còn chỉ là snapshot bất biến cho chuỗi tiền; phần `StakeSeq`/`StakeChains`/`StakeChainTotals` có thể được cập nhật từ `MainWindow`.
+- `MoneyManager` không giữ cố định `_seq` từ lúc khởi tạo nữa; thay vào đó đọc chuỗi tiền hiện hành theo provider ở mỗi lần tính stake.
+- Mục tiêu: giữ nguyên level/state quản lý vốn, chỉ thay nguồn dữ liệu chuỗi tiền cho các ván kế tiếp.
+
 ## Cập nhật hôm nay (2026-05-27)
 - Đã chỉnh cơ chế finalize bet history pending trong `MainWindow.xaml.cs`.
 - Thêm state `_pendingBaseSeq` để neo round của lô pending.
@@ -36,6 +43,7 @@
 - `MainWindow` -> WebView2 -> JS bridge -> `postMessage` -> `MainWindow`.
 - `MainWindow` -> money engine cho stake/result update.
 - `MainWindow` -> filesystem cho config/stats/log/state.
+- `MainWindow` -> runtime tab state / `GameContext` cho refresh chuỗi tiền live khi đang chạy.
 
 ## File trách nhiệm chính
 - `MainWindow.xaml.cs`:
@@ -43,6 +51,7 @@
 - `WebMessageReceived`
 - tab runtime
 - play/stop/finalize
+- cập nhật `TxtStakeCsv` vào runtime đang chạy
 - `Tasks/TaskUtil.cs`:
 - wait bet window
 - place bet (`__cw_bet`)
@@ -64,6 +73,7 @@
 4. Task quyết định side/stake -> `PlaceBet`.
 5. JS xử lý queue cược và trả event.
 6. C# finalize pending rows khi round chốt (`seq` đổi) theo `_pendingBaseSeq` hoặc theo winners của multi-side.
+7. Nếu `TxtStakeCsv` đổi trong lúc run, `MainWindow` đẩy chuỗi mới vào `StrategyTabState` và `GameContext`; từ ván kế tiếp `MoneyManager` lấy stake từ chuỗi mới theo đúng level hiện tại.
 
 ## Websocket packet flow
 - CDP `Network.enable` bật receiver cho:
@@ -77,6 +87,7 @@
 - Tick update: progress, status, account, seq/result.
 - Task callback update: side/stake/win-loss/level/win total/stats.
 - Tất cả update UI qua `Dispatcher`.
+- `LblLevel`/`LblStake` phải bám `RunStakeSeq` hiện hành, không được giữ mảng snapshot cũ sau khi người dùng sửa chuỗi tiền.
 
 ## OCR/canvas flow
 - Không dùng OCR lib.

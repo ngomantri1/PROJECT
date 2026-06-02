@@ -19,7 +19,7 @@ namespace XocDiaLiveHit.Tasks
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
             var raw = (ctx.BetSeq ?? "").Trim().ToUpperInvariant().Replace(" ", "");
             char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'N' || ch == 'I');
             if (seq.Length == 0) throw new InvalidOperationException("Chuỗi N/I không hợp lệ.");

@@ -12,7 +12,7 @@ namespace XocDiaLiveHit.Tasks
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
             var raw = (ctx.BetSeq ?? "").Trim().ToUpperInvariant().Replace(" ", "");
             if (string.IsNullOrEmpty(raw)) throw new InvalidOperationException("Chưa nhập CHUỖI CẦU (C/L).");
 

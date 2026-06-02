@@ -20,16 +20,16 @@ namespace XocDiaLiveHit.Tasks
         public Action<string> Log { get; init; }
 
         // Dãy tiền 1 chiều (giữ lại để tương thích)
-        public long[] StakeSeq { get; init; }
+        public long[] StakeSeq { get; set; } = Array.Empty<long>();
 
         // ====== NEW: dãy tiền nhiều chuỗi (mỗi dòng 1 chuỗi) ======
         // Ví dụ:
         // [ [1000,2000,4000,8000],
         //   [2000,4000,8000,16000] ]
-        public long[][] StakeChains { get; init; } = Array.Empty<long[]>();
+        public long[][] StakeChains { get; set; } = Array.Empty<long[]>();
 
         // Tổng tiền của từng chuỗi, dùng để so điều kiện "chuỗi sau thắng >= tổng chuỗi trước thì lùi về"
-        public long[] StakeChainTotals { get; init; } = Array.Empty<long>();
+        public long[] StakeChainTotals { get; set; } = Array.Empty<long>();
 
         // ====== NEW: trạng thái runtime riêng cho quản lý vốn đa tầng ======
         // đang ở chuỗi thứ mấy (0-based)

@@ -17904,6 +17904,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 MoneyChainStep = state.MoneyChainStep,
                 MoneyChainProfit = state.MoneyChainProfit,
                 MoneyResetVersion = state.MoneyResetVersion,
+                GetMoneyResetVersion = () => state.MoneyResetVersion,
                 IsVirtualBettingActive = () => _virtualBettingActive,
 
                 UiSetSide = s => Dispatcher.Invoke(() =>
@@ -17987,26 +17988,15 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     }
                     var isWin = delta > 0;
                     var side = (state.LastBetSide ?? "").Trim().ToUpperInvariant();
-                    double net;
-                    if (isWin)
-                    {
-                        if (side == "B" || side == "BANKER")
-                            net = Math.Round(stake * 0.95);
-                        else
-                            net = stake;
-                    }
-                    else
-                    {
-                        net = -stake;
-                    }
+                    double net = MoneyHelper.CalcNetDeltaForOutcome((long)Math.Round(stake), side, isWin);
                     if (!state.HasJsProfit)
                         state.WinTotal += net;
                     try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
                     RecomputeGlobalWinTotal();
                     RefreshRuntimeStatusTotalsUi();
                     CheckTableCutAndStopIfNeeded(setting, state);
-                    CheckCutAndStopIfNeeded();
-                    CheckWinGeTotalBetResetIfNeeded();
+                    CheckCutAndStopIfNeeded(state);
+                    CheckWinGeTotalBetResetIfNeeded(state);
                     UpdateTableStatsWin(state, net);
                 }),
                 UiWinLoss = s => Dispatcher.Invoke(() =>
@@ -18139,8 +18129,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 var setting = FindTableSetting(tableId);
                 if (setting != null)
                     CheckTableCutAndStopIfNeeded(setting, state);
-                CheckCutAndStopIfNeeded();
-                CheckWinGeTotalBetResetIfNeeded();
+                CheckCutAndStopIfNeeded(state);
+                CheckWinGeTotalBetResetIfNeeded(state);
             }));
         }
 
@@ -18996,7 +18986,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 state.MoneyChainIndex = 0;
                     state.MoneyChainStep = 0;
                     state.MoneyChainProfit = 0;
-                    state.MoneyResetVersion = MoneyHelper.GetGlobalResetVersion();
+                state.MoneyResetVersion = 0;
                     state.HoldWinTotalUntilLevel1 = false;
                     state.HoldWinTotalSkipLogged = false;
 
@@ -21146,7 +21136,82 @@ private async Task<CancellationTokenSource> DebounceAsync(
         }
 
 
-        private void CheckCutAndStopIfNeeded()
+        private static long NextMoneyResetVersion(long currentVersion)
+        {
+            return currentVersion == long.MaxValue ? 1 : currentVersion + 1;
+        }
+
+        private void ResetTableProfitAndStepsForCut(TableTaskState state, string reason, bool holdWinUntilLevel1 = false, string? alertMessage = null)
+        {
+            void DoReset()
+            {
+                try
+                {
+                    if (state == null)
+                        return;
+
+                    Log("[CUT] " + reason);
+                    var alertText = string.IsNullOrWhiteSpace(alertMessage) ? reason : alertMessage;
+                    _ = ShowCenterWebAlertAsync(alertText);
+
+                    state.WinTotal = 0;
+                    state.WinTotalFromJs = 0;
+                    state.HasJsProfit = false;
+                    state.WinTotalOverlay = 0;
+                    state.MoneyChainIndex = 0;
+                    state.MoneyChainStep = 0;
+                    state.MoneyChainProfit = 0;
+                    state.MoneyResetVersion = NextMoneyResetVersion(state.MoneyResetVersion);
+                    state.StakeLevelIndexForUi = -1;
+                    state.HoldWinTotalUntilLevel1 = holdWinUntilLevel1;
+                    state.HoldWinTotalSkipLogged = false;
+                    state.ForceStakeLevel1 = true;
+                    state.ForceStakeLevel1Applied = false;
+                    state.WinCount = 0;
+                    state.LossCount = 0;
+                    state.LastWinAmount = 0;
+                    state.RunTotalBet = 0;
+                    _ = PushBetStatsToOverlayAsync(state.TableId, 0, 0, 0);
+
+                    var tableSetting = FindTableSetting(state.TableId);
+                    var level1Stake = ResolveLevel1StakeForSetting(tableSetting);
+                    TryForceStakeLevel1OnJs(state.TableId, level1Stake);
+
+                    if (holdWinUntilLevel1)
+                        Log($"[WINHOLD] enabled: wait level 1 to resume accumulate ({state.TableId})");
+
+                    RecomputeGlobalWinTotal();
+                    if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+
+                    if (!string.IsNullOrWhiteSpace(_activeTableId) &&
+                        IsActiveTable(_activeTableId) &&
+                        string.Equals(_activeTableId, state.TableId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ResetBetMiniPanel();
+                    }
+
+                    _cutStopTriggered = false;
+                }
+                catch (Exception ex)
+                {
+                    Log("[CUT] table reset error: " + ex.Message);
+                }
+                finally
+                {
+                    ExitCutAutoReset();
+                }
+            }
+
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(DoReset);
+                return;
+            }
+
+            DoReset();
+        }
+
+        private void CheckCutAndStopIfNeeded(TableTaskState? triggeredState = null)
         {
             if (_cutStopTriggered) return;
             if (_cutAutoResetInProgress != 0) return;
@@ -21186,12 +21251,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (cutProfit <= 0 && cutLoss <= 0) return;
 
             // Ưu tiên cắt lãi
-                        if (cutProfit > 0 && _winTotal >= cutProfit)
+            if (cutProfit > 0 && _winTotal >= cutProfit)
             {
                 if (_cfg?.AutoResetOnCut == true)
                 {
-                    if (TryEnterCutAutoReset())
-                        ResetAllProfitAndStepsForCut($"Dat CAT LAI: win={_winTotal:N0} >= {cutProfit:N0}");
+                    if (triggeredState != null && TryEnterCutAutoReset())
+                        ResetTableProfitAndStepsForCut(triggeredState, $"Dat CAT LAI: win={_winTotal:N0} >= {cutProfit:N0}");
                     return;
                 }
                 _cutStopTriggered = true;
@@ -21203,12 +21268,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
             if (cutLoss > 0)
             {
                 var lossThreshold = -cutLoss;
-                                if (_winTotal <= lossThreshold)
+                if (_winTotal <= lossThreshold)
                 {
                     if (_cfg?.AutoResetOnCut == true)
                     {
-                        if (TryEnterCutAutoReset())
-                            ResetAllProfitAndStepsForCut($"Dat CAT LO: win={_winTotal:N0} <= {lossThreshold:N0}");
+                        if (triggeredState != null && TryEnterCutAutoReset())
+                            ResetTableProfitAndStepsForCut(triggeredState, $"Dat CAT LO: win={_winTotal:N0} <= {lossThreshold:N0}");
                         return;
                     }
                     _cutStopTriggered = true;
@@ -21226,7 +21291,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             return ParseMoneyOrZero(raw ?? "");
         }
 
-        private void CheckWinGeTotalBetResetIfNeeded()
+        private void CheckWinGeTotalBetResetIfNeeded(TableTaskState? triggeredState = null)
         {
             if (_cutStopTriggered) return;
             if (_cutAutoResetInProgress != 0) return;
@@ -21238,8 +21303,8 @@ private async Task<CancellationTokenSource> DebounceAsync(
 
             if (_winTotal >= totalBet)
             {
-                if (TryEnterCutAutoReset())
-                    ResetAllProfitAndStepsForCut($"Dat WIN >= TONG CUOC: win={_winTotal:N0} >= total={totalBet:N0}", true);
+                if (triggeredState != null && TryEnterCutAutoReset())
+                    ResetTableProfitAndStepsForCut(triggeredState, $"Dat WIN >= TONG CUOC: win={_winTotal:N0} >= total={totalBet:N0}", true);
             }
         }
 

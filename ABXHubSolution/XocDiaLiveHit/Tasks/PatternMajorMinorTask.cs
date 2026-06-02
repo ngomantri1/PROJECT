@@ -58,7 +58,7 @@ namespace XocDiaLiveHit.Tasks
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
             var patterns = Parse(ctx.BetPatterns);
             if (patterns.Count == 0)
                 throw new InvalidOperationException("Chưa nhập CÁC THẾ CẦU (dạng NII-I;III-IN,NNN-NNNI).");

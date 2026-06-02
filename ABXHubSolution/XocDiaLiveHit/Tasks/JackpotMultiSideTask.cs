@@ -55,7 +55,7 @@ namespace XocDiaLiveHit.Tasks
             if (!SideRateParser.TryParse(ctx.SideRateText ?? SideRateParser.DefaultText, out var plan, out var err))
                 throw new InvalidOperationException("Cửa đặt & tỉ lệ không hợp lệ: " + err);
 
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
 
             while (true)
             {

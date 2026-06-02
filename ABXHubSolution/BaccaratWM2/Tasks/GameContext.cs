@@ -38,6 +38,7 @@ namespace BaccaratWM2.Tasks
         // tiền thắng đã tích lũy được trong chuỗi hiện tại
         public double MoneyChainProfit { get; set; } = 0;
         public long MoneyResetVersion { get; set; } = 0;
+        public Func<long>? GetMoneyResetVersion { get; init; }
 
         // Virtual betting flag (wait cut loss before real bet)
         public Func<bool>? IsVirtualBettingActive { get; init; }

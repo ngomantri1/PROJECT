@@ -110,7 +110,7 @@ namespace BaccaratWM2.Tasks
         private static void ApplyGlobalResetIfNeeded(GameContext ctx)
         {
             if (ctx == null) return;
-            var resetVersion = MoneyHelper.GetGlobalResetVersion();
+            var resetVersion = ctx.GetMoneyResetVersion?.Invoke() ?? ctx.MoneyResetVersion;
             if (ctx.MoneyResetVersion == resetVersion) return;
 
             ctx.MoneyResetVersion = resetVersion;

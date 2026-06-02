@@ -234,7 +234,8 @@ namespace BaccaratWM2.Tasks
                         ref chainIndex,
                         ref chainStep,
                         ref chainProfit,
-                        okValue);
+                        okValue,
+                        MoneyHelper.CalcNetDeltaForOutcome(stake, side, okValue));
 
                     // gán ngược lại vào context
                     ctx.MoneyChainIndex = chainIndex;

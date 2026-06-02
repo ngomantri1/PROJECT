@@ -102,6 +102,18 @@ namespace BaccaratWM2.Tasks
             return v2DoublePhase ? baseAmt * 2 : baseAmt;
         }
 
+        public static double CalcNetDeltaForOutcome(long stake, string? betSide, bool isWin)
+        {
+            if (!isWin)
+                return -stake;
+
+            var side = (betSide ?? "").Trim().ToUpperInvariant();
+            if (side == "B" || side == "BANKER")
+                return Math.Round(stake * 0.95);
+
+            return stake;
+        }
+
         // Cập nhật step/phase sau khi KẾT THÚC ván (khi biết win/lose)
         // win: true = thắng, false = thua, null = không xác định/không cược
         public static void UpdateAfterRound(string strategyId, long[] seq,
@@ -201,7 +213,8 @@ namespace BaccaratWM2.Tasks
             ref int chainIndex,
             ref int levelIndex,
             ref double profitOnCurrentChain,
-            bool? win)
+            bool? win,
+            double? settledNetDelta = null)
         {
             int chainCount = chains?.Length ?? 0;
             if (chainCount == 0) return;
@@ -236,25 +249,16 @@ namespace BaccaratWM2.Tasks
                     for (int i = 0; i < wonLevel; i++)
                         spentInThisChain += curChain[i];
 
-                    double netWinOnThisChain = 0.98 * justWon - spentInThisChain;
+                    double actualWin = settledNetDelta.HasValue && settledNetDelta.Value > 0
+                        ? settledNetDelta.Value
+                        : justWon;
+                    double netWinOnThisChain = actualWin - spentInThisChain;
                     if (netWinOnThisChain < 0)
                         netWinOnThisChain = 0;
 
                     // gom lợi nhuận thực vào quỹ của chuỗi hiện tại
                     profitOnCurrentChain += netWinOnThisChain;
 
-                    // 1) tính NGƯỠNG về thẳng chuỗi 1 = tổng tất cả chuỗi từ 0..(chainIndex-1)
-                    long needAllPrev = 0;
-                    if (chainTotals != null && chainTotals.Length >= chainIndex)
-                    {
-                        for (int i = 0; i < chainIndex; i++)
-                            needAllPrev += chainTotals[i];
-                    }
-                    else
-                    {
-                        for (int i = 0; i < chainIndex; i++)
-                            needAllPrev += SumChain(chains[i]);
-                    }
                     long need = 0;
                     if (chainTotals != null && chainIndex - 1 < chainTotals.Length)
                         need = chainTotals[chainIndex - 1];

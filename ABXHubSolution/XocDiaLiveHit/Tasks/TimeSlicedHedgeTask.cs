@@ -29,7 +29,7 @@ namespace XocDiaLiveHit.Tasks
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
             ctx.Log?.Invoke("[TimeSliced] Start: 5 follow + 5 opp");
 
             while (true)

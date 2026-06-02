@@ -1,5 +1,10 @@
 ﻿# TODO
 
+## Cập nhật hôm nay (2026-06-02)
+- Đã hoàn thành: fix đổi `TxtStakeCsv` khi task đang chạy để ván kế tiếp ăn chuỗi tiền mới.
+- Đã hoàn thành: giữ nguyên level hiện tại nhưng map sang giá trị của chuỗi mới cho non-`MultiChain`.
+- Đã hoàn thành: refresh `StakeChains`/`StakeChainTotals` live cho `MultiChain` mà không cần restart task.
+
 ## Cập nhật hôm nay (2026-05-27)
 - Đã hoàn thành: fix pending history không cập nhật `Result/WinLose` sau khi có kết quả.
 - Đã hoàn thành: tách trigger finalize pending khỏi lock `NI` bằng `_pendingBaseSeq`.
@@ -31,6 +36,9 @@
 - Quyết định lại heartbeat lease (đang tắt bằng `if(false)`).
 
 ## Task cần test lại
+- Test đổi chuỗi tiền khi đang chạy:
+- đang ở mức 1 của chuỗi cũ -> sửa chuỗi mới -> ván sau lên mức 2 phải lấy mức 2 của chuỗi mới.
+- Test cả non-`MultiChain` và `MultiChain` khi sửa `TxtStakeCsv` giữa phiên.
 - Test lại luồng pending: tạo bet -> chờ `seq` đổi -> kiểm tra `Result/WinLose/Account` được chốt đúng cho mọi dòng pending.
 - Regression Task 5 vs Task 18 trên cùng dữ liệu đầu vào.
 - Play/Stop liên tục khi nhiều tab chạy song song.

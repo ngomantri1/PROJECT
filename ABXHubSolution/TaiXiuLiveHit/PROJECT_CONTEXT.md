@@ -1,5 +1,17 @@
 ﻿# PROJECT_CONTEXT
 
+## Cập nhật hôm nay (2026-06-02)
+- Đã fix lỗi: khi task nghiệp vụ đang chạy (`Bắt đầu cược` đã chuyển sang `Dừng đặt cược`), sửa `TxtStakeCsv` nhưng ván sau vẫn ăn chuỗi tiền cũ.
+- Kỳ vọng nghiệp vụ mới:
+- Nếu đang ở mức `n`, khi người dùng đổi chuỗi tiền trong lúc chạy thì ván kế tiếp phải lấy mức `n` của chuỗi mới.
+- Ví dụ: đang từ chuỗi `1000-2000-4000`, sau đó sửa thành `10000-20000-40000`, nếu ván sau lên mức `2` thì phải đánh `20000`, không còn `2000`.
+- Nguyên nhân chính: runtime đang snapshot `RunStakeSeq`/`RunStakeChains` lúc start và `MoneyManager` giữ `_seq` cố định suốt vòng đời task.
+- Đã thêm cập nhật runtime live cho chuỗi tiền:
+- `MainWindow.xaml.cs`: khi `TxtStakeCsv` đổi sẽ cập nhật lại `RunStakeSeq`, `RunStakeChains`, `RunStakeChainTotals` cho tab đang chạy.
+- `Tasks/GameContext.cs`: cho phép `StakeSeq`, `StakeChains`, `StakeChainTotals` được cập nhật trong khi task đang chạy.
+- `Tasks/MoneyManager.cs`: đổi sang đọc chuỗi tiền hiện hành theo provider mỗi ván, nhưng vẫn giữ nguyên level/state hiện tại.
+- Phạm vi sửa: `MainWindow.xaml.cs`, `Tasks/GameContext.cs`, `Tasks/MoneyManager.cs`, và các task đang khởi tạo `MoneyManager`.
+
 ## Cập nhật hôm nay (2026-05-27)
 - Đã fix lỗi: có kết quả rồi nhưng bản ghi lịch sử cược `pending` không cập nhật `Result` và `WinLose`.
 - Nguyên nhân chính: finalize pending đang phụ thuộc lock `NI` (`_lockMajorMinorUpdates`) + mốc `prog==0`, nên có trường hợp `seq` đã đổi nhưng không vào nhánh finalize.
@@ -42,6 +54,7 @@
 - Chạy `IBetTask.RunAsync(...)` theo index `0..17`.
 6. Task gọi `TaskUtil.PlaceBet` -> JS queue `__cw_bet` -> `bet/bet_error/bet_perf`.
 7. Khi ván chốt: finalize pending rows, cập nhật win/loss/stats/money.
+8. Nếu đang chạy mà người dùng sửa `TxtStakeCsv`, runtime phải ăn chuỗi tiền mới từ ván kế tiếp mà không restart task.
 
 ## Coding rules
 - UI update chỉ qua `Dispatcher`.
@@ -61,6 +74,7 @@
 - Không update UI trực tiếp từ background thread.
 - Không bỏ qua finalize `_pendingRows` khi round kết thúc.
 - Không phá sync global fields giữa tabs (`SyncGlobalFieldsFromActive`).
+- Không làm mất level/state quản lý vốn hiện tại khi chỉ đổi chuỗi tiền lúc task đang chạy.
 
 ## WebSocket/bridge flow
 - Nguồn dữ liệu nghiệp vụ chính là bridge `postMessage`.
@@ -84,5 +98,6 @@
 - Flow start an toàn: ensure web -> inject bridge -> wait data -> run task.
 - Mapping strategy index `0..17`.
 - Logic money strategy (`MoneyManager`/`MoneyHelper`) và state MultiChain trong `GameContext`.
+- Cơ chế sửa chuỗi tiền live: đổi chuỗi mới nhưng vẫn giữ level hiện tại để ván sau lấy đúng mức tương ứng của chuỗi mới.
 - Cơ chế license/trial/lease và release lease khi stop/close.
 - Atomic save config/stats.
