@@ -119,7 +119,7 @@ namespace TaiXiuLiveHit.Tasks
                 _warmed = true;
             }
 
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
 
             // ===== vòng đánh liên tục =====
             while (true)

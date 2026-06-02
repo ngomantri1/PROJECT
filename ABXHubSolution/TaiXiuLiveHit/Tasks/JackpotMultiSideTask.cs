@@ -43,7 +43,7 @@ namespace TaiXiuLiveHit.Tasks
             if (!SideRateParser.TryParse(ctx.SideRateText ?? SideRateParser.DefaultText, out var plan, out var err))
                 throw new InvalidOperationException("Cua dat & ti le khong hop le: " + err);
 
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
 
             while (true)
             {

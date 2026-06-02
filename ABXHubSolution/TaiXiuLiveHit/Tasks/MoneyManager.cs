@@ -5,20 +5,43 @@ namespace TaiXiuLiveHit.Tasks
     /// <summary>Điều phối mức tiền theo 4 kiểu quản lý vốn.</summary>
     internal sealed class MoneyManager
     {
-        private readonly long[] _seq;
+        private static readonly long[] _defaultSeq = new long[] { 1000 };
+        private readonly Func<long[]> _seqProvider;
         private readonly string _id;
         private int _i;                       // index hiện tại (0-based)
         private bool _needDoubleNext;         // Victor2: vừa thắng xong → ván tới gấp đôi
         private bool _usedDoubleThisRound;    // Victor2: ván vừa cược có gấp đôi hay không
 
         public MoneyManager(long[] seq, string id)
+            : this(() => seq, id)
         {
-            _seq = (seq != null && seq.Length > 0) ? seq : new long[] { 1000 };
+        }
+
+        public MoneyManager(Func<long[]> seqProvider, string id)
+        {
+            _seqProvider = seqProvider ?? (() => _defaultSeq);
             _id = string.IsNullOrWhiteSpace(id) ? "IncreaseWhenLose" : id;
             _i = 0;
         }
 
-        public long CurrentUnit => _seq[Math.Clamp(_i, 0, _seq.Length - 1)];
+        private long[] CurrentSeq
+        {
+            get
+            {
+                var seq = _seqProvider.Invoke();
+                return (seq != null && seq.Length > 0) ? seq : _defaultSeq;
+            }
+        }
+
+        public long CurrentUnit
+        {
+            get
+            {
+                var seq = CurrentSeq;
+                _i = Math.Clamp(_i, 0, seq.Length - 1);
+                return seq[_i];
+            }
+        }
 
         public void ResetToLevel1()
         {
@@ -42,16 +65,19 @@ namespace TaiXiuLiveHit.Tasks
         /// <summary>Gọi sau khi có kết quả WIN/LOSS (true/false).</summary>
         public void OnRoundResult(bool win)
         {
+            var seq = CurrentSeq;
+            _i = Math.Clamp(_i, 0, seq.Length - 1);
+
             switch (_id)
             {
                 case "IncreaseWhenLose":   // thua ↑1 mức, thắng → về mức 1
                     _needDoubleNext = false;
-                    _i = win ? 0 : (_i + 1 < _seq.Length ? _i + 1 : 0);
+                    _i = win ? 0 : (_i + 1 < seq.Length ? _i + 1 : 0);
                     break;
 
                 case "IncreaseWhenWin":    // thắng ↑1 mức, thua → về mức 1
                     _needDoubleNext = false;
-                    _i = win ? (_i + 1 < _seq.Length ? _i + 1 : 0) : 0;
+                    _i = win ? (_i + 1 < seq.Length ? _i + 1 : 0) : 0;
                     break;
 
                 case "Victor2":
@@ -78,18 +104,18 @@ namespace TaiXiuLiveHit.Tasks
                     {
                         // Thua → lên bậc tiếp theo, hết bậc thì về 1
                         _needDoubleNext = false;
-                        _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                        _i = (_i + 1 < seq.Length ? _i + 1 : 0);
                     }
                     break;
 
                 case "ReverseFibo":        // thua ↑1 mức (đến mức cao nhất thì giữ nguyên), thắng → về mức 1
                     _needDoubleNext = false;
-                    _i = win ? 0 : Math.Min(_i + 1, _seq.Length - 1);
+                    _i = win ? 0 : Math.Min(_i + 1, seq.Length - 1);
                     break;
 
                 case "IncreaseEveryRound": // thua/thắng đều lên mức, hết chuỗi quay về đầu
                     _needDoubleNext = false;
-                    _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                    _i = (_i + 1 < seq.Length ? _i + 1 : 0);
                     break;
 
                 case "WinUpLoseKeep":
@@ -101,7 +127,7 @@ namespace TaiXiuLiveHit.Tasks
                             var before = _i;
 
                             // th?ng => tang m?c
-                            _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                            _i = (_i + 1 < seq.Length ? _i + 1 : 0);
                             MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: WIN => step {before} -> {_i}");
 
                             // sau khi th?ng: n?u total t?m da duong => reset level 1 v… reset t?ng t?m

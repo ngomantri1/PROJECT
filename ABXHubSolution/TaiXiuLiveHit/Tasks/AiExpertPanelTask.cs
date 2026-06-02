@@ -147,7 +147,7 @@ namespace TaiXiuLiveHit.Tasks
 
             var rnd = new Random();
             var st = new PanelState();
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
 
             // EWMA/mode reset
             await WarmSeedAsync(st);

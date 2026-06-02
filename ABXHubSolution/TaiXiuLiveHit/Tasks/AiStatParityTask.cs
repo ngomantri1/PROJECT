@@ -92,7 +92,7 @@ namespace TaiXiuLiveHit.Tasks
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
             ctx.Log?.Invoke($"[AI-Stat-CL] Khởi chạy liên tục: k_max={DefaultMaxPatternLen}, vốn={ctx.MoneyStrategyId}");
 
             while (true)

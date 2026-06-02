@@ -39,7 +39,7 @@ namespace TaiXiuLiveHit.Tasks
 
         public async Task RunAsync(GameContext ctx, CancellationToken ct)
         {
-            var money = new MoneyManager(ctx.StakeSeq, ctx.MoneyStrategyId);
+            var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
             ctx.Log?.Invoke($"[StateTrans] Start: k={WindowK}");
 
             while (true)

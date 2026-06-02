@@ -626,6 +626,7 @@ Ví dụ không hợp lệ:
             public CancellationTokenSource? TaskCts { get; set; }
             public Task? RunningTask { get; set; }
             public TaiXiuLiveHit.Tasks.IBetTask? ActiveTask { get; set; }
+            public TaiXiuLiveHit.Tasks.GameContext? RunningContext { get; set; }
             public DecisionState DecisionState { get; set; } = new DecisionState();
             public bool Cooldown { get; set; } = false;
             public TabStats Stats { get; set; } = new TabStats();
@@ -4432,6 +4433,9 @@ Ví dụ không hợp lệ:
                 _cfg.StakeCsvByMoney ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 if (!string.IsNullOrWhiteSpace(id)) _cfg.StakeCsvByMoney[id] = csv;
 
+                if (_activeTab != null)
+                    ApplyStakeRuntime(_activeTab, _stakeSeq, _stakeChains, _stakeChainTotals);
+
                 await SaveConfigAsync();
                 Log($"[StakeCsv] updated[{id}]: {csv} -> seq[{_stakeSeq.Length}]");
             });
@@ -4499,7 +4503,29 @@ Ví dụ không hợp lệ:
                 SetLastSideUI(side);
         }
 
-        private void UpdateTabStake(StrategyTabState tab, double amount, long[] stakeSeq, string moneyStrategyId)
+        private void ApplyStakeRuntime(StrategyTabState tab, long[] stakeSeq, List<long[]> stakeChains, long[] stakeChainTotals)
+        {
+            if (tab == null) return;
+
+            var runStakeSeq = (stakeSeq ?? Array.Empty<long>()).ToArray();
+            var runStakeChains = (stakeChains ?? new List<long[]>())
+                .Select(a => (a ?? Array.Empty<long>()).ToArray())
+                .ToList();
+            var runStakeChainTotals = (stakeChainTotals ?? Array.Empty<long>()).ToArray();
+
+            tab.RunStakeSeq = runStakeSeq;
+            tab.RunStakeChains = runStakeChains;
+            tab.RunStakeChainTotals = runStakeChainTotals;
+
+            var ctx = tab.RunningContext;
+            if (ctx == null) return;
+
+            ctx.StakeSeq = runStakeSeq.ToArray();
+            ctx.StakeChains = runStakeChains.Select(a => a.ToArray()).ToArray();
+            ctx.StakeChainTotals = runStakeChainTotals.ToArray();
+        }
+
+        private void UpdateTabStake(StrategyTabState tab, double amount, string moneyStrategyId)
         {
             if (tab == null) return;
 
@@ -4510,8 +4536,11 @@ Ví dụ không hợp lệ:
 
             if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
             {
+                var stakeSeq = (tab.RunStakeSeq != null && tab.RunStakeSeq.Length > 0)
+                    ? tab.RunStakeSeq
+                    : (_stakeSeq ?? Array.Empty<long>());
                 int levelIndex = Array.FindIndex(stakeSeq, s => s == rounded);
-                tab.LastLevelText = (levelIndex >= 0) ? $"{levelIndex + 1}/{stakeSeq.Length}" : "";
+                tab.LastLevelText = (levelIndex >= 0 && stakeSeq.Length > 0) ? $"{levelIndex + 1}/{stakeSeq.Length}" : "";
             }
 
             if (ReferenceEquals(_activeTab, tab))
@@ -4695,7 +4724,7 @@ Ví dụ không hợp lệ:
                     try { SetLevelForMultiChain(tab, chain, level); } catch { }
                 }),
                 UiSetSide = s => Dispatcher.Invoke(() => UpdateTabSide(tab, s)),
-                UiSetStake = v => Dispatcher.Invoke(() => UpdateTabStake(tab, v, stakeSeqArr, moneyStrategyId)),
+                UiSetStake = v => Dispatcher.Invoke(() => UpdateTabStake(tab, v, moneyStrategyId)),
                 UiAddWin = delta =>
                 {
                     void Apply()
@@ -4717,16 +4746,25 @@ Ví dụ không hợp lệ:
             tab.DecisionState = new DecisionState();
             MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             var ctx = BuildContext(tab, useRawWinAmount);
-            for (int i = 0; i < 25; i++)
+            tab.RunningContext = ctx;
+            try
             {
-                ct.ThrowIfCancellationRequested();
-                var check = await ctx.EvalJsAsync("(function(){return (typeof window.__cw_bet==='function')?'ok':'no';})()");
-                if (string.Equals(check, "ok", StringComparison.OrdinalIgnoreCase))
-                    break;
-                await Task.Delay(200, ct);
-            }
+                for (int i = 0; i < 25; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var check = await ctx.EvalJsAsync("(function(){return (typeof window.__cw_bet==='function')?'ok':'no';})()");
+                    if (string.Equals(check, "ok", StringComparison.OrdinalIgnoreCase))
+                        break;
+                    await Task.Delay(200, ct);
+                }
 
-            await task.RunAsync(ctx, ct);
+                await task.RunAsync(ctx, ct);
+            }
+            finally
+            {
+                if (ReferenceEquals(tab.RunningContext, ctx))
+                    tab.RunningContext = null;
+            }
         }
 
         private void StopTask(StrategyTabState tab)
@@ -4736,6 +4774,7 @@ Ví dụ không hợp lệ:
             tab.TaskCts = null;
             tab.ActiveTask = null;
             tab.RunningTask = null;
+            tab.RunningContext = null;
             tab.IsRunning = false;
         }
 
@@ -4825,9 +4864,7 @@ Ví dụ không hợp lệ:
                 }
 
                 RebuildStakeSeq((TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim());
-                activeTab.RunStakeSeq = _stakeSeq.ToArray();
-                activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
-                activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();
+                ApplyStakeRuntime(activeTab, _stakeSeq, _stakeChains, _stakeChainTotals);
                 SyncDecisionSecondsFromUi();
                 activeTab.RunDecisionSeconds = _decisionSeconds;
                 activeTab.RunAutoResetStakeOnNonNegativeWin = _cfg.AutoResetStakeOnNonNegativeWin;
@@ -4887,6 +4924,7 @@ Ví dụ không hợp lệ:
                         tabRef.TaskCts = null;
                         tabRef.ActiveTask = null;
                         tabRef.RunningTask = null;
+                        tabRef.RunningContext = null;
                         tabRef.IsRunning = false;
 
                         if (ReferenceEquals(_activeTab, tabRef))
@@ -4931,6 +4969,7 @@ Ví dụ không hợp lệ:
                     activeTab.IsRunning = false;
                     activeTab.ActiveTask = null;
                     activeTab.RunningTask = null;
+                    activeTab.RunningContext = null;
                     SetPlayButtonState(_activeTab?.IsRunning == true);
                 }
                 Interlocked.Exchange(ref _playStartInProgress, 0);
