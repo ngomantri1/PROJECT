@@ -1,14 +1,14 @@
 ﻿(() => {
     'use strict';
     /* =========================================================
-    CanvasWatch + MoneyMap + BetMap + TextMap + Scan200Text
+    CanvasWatch + MoneyMap + BetMap + TextMap + Scan500Text
     + TK Sequence (restore): LEFT→RIGHT columns, zig-zag T↓/B↑
     (Compat build: no spread operator, no optional chaining)
     + FIX: totals CHẴN/LẺ by (x,tail) — CHẴN x=591, LẺ x=973,
     tail = 'XDLive/Canvas/Bg/footer/listLabel/totalBet'
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
-    //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
+    // Lưu ý: dòng ẩn/hiện Canvas Watch nằm trong __cw_applyRootVisibility().
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
     var CW_ROOT_ID = '__cw_root_allin';
@@ -59,6 +59,13 @@
             } catch (_) {}
         } catch (_) {}
     })();
+    function __cw_applyRootVisibility(root) {
+        if (!root)
+            return;
+        // Bỏ comment dòng dưới để ẩn Canvas Watch, comment lại để hiện bảng.
+        // root.style.display = 'none';
+    }
+
     function __cw_ensureFallbackPanel(stateText, infoText) {
         try {
             var host = document.body || document.documentElement;
@@ -70,6 +77,7 @@
                 root.id = CW_ROOT_ID;
                 root.setAttribute('data-cw-mode', 'fallback');
                 root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
+                __cw_applyRootVisibility(root);
                 host.appendChild(root);
             }
 
@@ -129,48 +137,68 @@
             return false;
         }
     }
+    function __cw_hasModernBaccaratHint(href) {
+        try {
+            var h = String(href || '').toLowerCase();
+            if (!h)
+                return false;
+            if (h.indexOf('/activations/baccarat') >= 0)
+                return true;
+            if (h.indexOf('selectedgame=baccarat') >= 0 && h.indexOf('application=lobby') === -1)
+                return true;
+            if (/xoc[\-_]?dia|baccarat/.test(h))
+                return true;
+            return false;
+        } catch (_) {
+            return false;
+        }
+    }
+    function __cw_isKnownGameShellHref(href) {
+        try {
+            var h = String(href || '').toLowerCase();
+            if (!h)
+                return false;
+            return /\/\/(?:[^\/]+\.)?zowin\.nu\//.test(h) ||
+                /\/\/(?:[^\/]+\.)?game8b\.com\//.test(h) ||
+                /\/\/bpweb\./.test(h) ||
+                /\/\/games\./.test(h) ||
+                h.indexOf('usplaynet.com') !== -1 ||
+                h.indexOf('balikko.com') !== -1 ||
+                h.indexOf('barppat.com') !== -1 ||
+                h.indexOf('restula.com') !== -1 ||
+                h.indexOf('atllat.com') !== -1;
+        } catch (_) {
+            return false;
+        }
+    }
+    function __cw_isModernGameHref(href) {
+        try {
+            var h = String(href || '').toLowerCase();
+            if (!h)
+                return false;
+            if (__cw_hasModernBaccaratHint(h) && /\/\/(?:[^\/]+\.)?vivogaming\.com\//.test(h))
+                return true;
+            if (__cw_hasModernBaccaratHint(h) && __cw_isKnownGameShellHref(h))
+                return true;
+            return false;
+        } catch (_) {
+            return false;
+        }
+    }
     function __cw_isGamePopupPage() {
         try {
             var href = String(location.href || '').toLowerCase();
             var path = String(location.pathname || '').toLowerCase();
-            var host = String(location.hostname || '').toLowerCase();
-
-            var isWebMain =
-                path.indexOf('/player/webmain.jsp') >= 0 ||
-                href.indexOf('/player/webmain.jsp') >= 0;
-            var isSingleBac =
-                path.indexOf('/player/singlebactable.jsp') >= 0 ||
-                href.indexOf('/player/singlebactable.jsp') >= 0;
-            var isGameHall =
-                path.indexOf('/player/gamehall.jsp') >= 0 ||
-                href.indexOf('/player/gamehall.jsp') >= 0;
             var isApiLogin =
                 path.indexOf('/player/login/apilogin') >= 0 ||
                 href.indexOf('/player/login/apilogin') >= 0;
-            var isVivoBaccarat =
-                host.indexOf('vivogaming.com') >= 0 &&
-                (path.indexOf('/activations/baccarat') >= 0 ||
-                 (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
-                  !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href)));
 
-            // Cho phép webMain cả top document và iframe (vipbet389 thường chạy trong iframe).
-            if (isWebMain)
-                return true;
-
-            // Mở rộng: cho phép boot trực tiếp trong frame game.
-            if (isSingleBac)
-                return true;
-
-            // Một số site bọc game qua gameHall frame cùng provider.
-            if (isGameHall && !__cw_isTopDocument())
-                return true;
-
-            // vipbet389 có thể giữ URL apiLogin trong iframe nhưng render game nội bộ theo flow SPA.
+            // Một số host vẫn giữ gateway page trong iframe trước khi game mount xong.
             if (isApiLogin && !__cw_isTopDocument())
                 return true;
 
             // ViVo: chỉ coi là game context khi đã vào baccarat thực sự.
-            if (isVivoBaccarat)
+            if (__cw_isModernGameHref(href))
                 return true;
 
             return false;
@@ -974,14 +1002,10 @@
             return false;
         }
     }
-    var COUNTDOWN_TAIL_RIGHT = 'node_in_multimode/top/right/xdtl_jackpot_anim_right/lbl_countdown';
-    var COUNTDOWN_TAIL_LEFT = 'node_in_multimode/top/left/xdtl_jackpot_anim_left/lbl_countdown';
+    var COUNTDOWN_TAIL_MAIN = 'c5_baccarat_livestream/Canvas/bacc_live/root/node_text/lbl_countdown';
     function readCountdownSec() {
-        var right = null,
-        left = null;
+        var main = null;
         walkNodes(function (n) {
-            if (!nodeInGame(n))
-                return;
             var comps = (n._components || []);
             for (var i = 0; i < comps.length; i++) {
                 var c = comps[i];
@@ -991,13 +1015,8 @@
                         continue;
                     var path = fullPath(n, 80);
                     var pathL = String(path || '').toLowerCase();
-                    if (pathL.indexOf(COUNTDOWN_TAIL_RIGHT) !== -1) {
-                        right = {
-                            text: text,
-                            tail: path
-                        };
-                    } else if (pathL.indexOf(COUNTDOWN_TAIL_LEFT) !== -1) {
-                        left = {
+                    if (pathL.indexOf(String(COUNTDOWN_TAIL_MAIN || '').toLowerCase()) !== -1) {
+                        main = {
                             text: text,
                             tail: path
                         };
@@ -1009,27 +1028,11 @@
             var m = String(txt || '').match(/(\d+)/);
             return m ? parseInt(m[1], 10) : null;
         }
-        var secR = right ? parseSec(right.text) : null;
-        var secL = left ? parseSec(left.text) : null;
-        if (secR != null && secR > 0) {
-            try { window.__cw_countdown_source = 'cocos-countdown-right'; } catch (_) {}
-            try { window.__cw_countdown_tail = right.tail || ''; } catch (_) {}
-            return secR;
-        }
-        if (secL != null && secL > 0) {
-            try { window.__cw_countdown_source = 'cocos-countdown-left'; } catch (_) {}
-            try { window.__cw_countdown_tail = left.tail || ''; } catch (_) {}
-            return secL;
-        }
-        if (secR != null) {
-            try { window.__cw_countdown_source = 'cocos-countdown-right'; } catch (_) {}
-            try { window.__cw_countdown_tail = right.tail || ''; } catch (_) {}
-            return secR;
-        }
-        if (secL != null) {
-            try { window.__cw_countdown_source = 'cocos-countdown-left'; } catch (_) {}
-            try { window.__cw_countdown_tail = left.tail || ''; } catch (_) {}
-            return secL;
+        var sec = main ? parseSec(main.text) : null;
+        if (sec != null) {
+            try { window.__cw_countdown_source = 'cocos-countdown-main'; } catch (_) {}
+            try { window.__cw_countdown_tail = main.tail || ''; } catch (_) {}
+            return sec;
         }
         try { window.__cw_countdown_source = ''; } catch (_) {}
         try { window.__cw_countdown_tail = ''; } catch (_) {}
@@ -1300,7 +1303,7 @@
                 score -= 900;
             if (href.indexOf('banner.html') !== -1)
                 score -= 1500;
-            if (href.indexOf('singlebactable.jsp') !== -1)
+            if (__cw_isModernGameHref(href))
                 score += 1800;
             if (source === 'top/frame[1]')
                 score += 120;
@@ -2005,7 +2008,7 @@
             card._ctxCardCount = Number(ctxCardCount[card._ctxKey] || 0);
             card._pickScore = 0;
             card._pickScore += Number(card._ctxTableScore || 0);
-            if (String(card._ctxHref || '').toLowerCase().indexOf('singlebactable.jsp') !== -1)
+            if (__cw_isModernGameHref(card._ctxHref || ''))
                 card._pickScore += 900;
             if (card.countdown != null)
                 card._pickScore += 280;
@@ -2282,7 +2285,7 @@
                         score += 100;
                     if (/betbox|zone_bet_bottom|bet|player|banker|tie/i.test(String((row.host.id || '') + ' ' + (row.host.className || '') + ' ' + domAttrTextOf(row.host))))
                         score += 180;
-                    if (/singlebactable\.jsp/i.test(String(ctx.href || '')))
+                    if (__cw_isModernGameHref(String(ctx.href || '')))
                         score += 120;
                     if (String(ctx.source || '') === 'top/frame[1]')
                         score += 80;
@@ -2877,18 +2880,9 @@
                 var h = String(href || '').toLowerCase();
                 if (!h)
                     return false;
-                if (h.indexOf('/player/') !== -1)
+                if (__cw_isModernGameHref(h))
                     return true;
-                if (h.indexOf('singlebactable.jsp') !== -1)
-                    return true;
-                if (h.indexOf('gamehall.jsp') !== -1)
-                    return true;
-                if (h.indexOf('webmain.jsp') !== -1)
-                    return true;
-                if (h.indexOf('vivogaming.com') !== -1 &&
-                    (h.indexOf('/activations/baccarat') !== -1 ||
-                     h.indexOf('/activations/lobby') !== -1 ||
-                     h.indexOf('selectedgame=baccarat') !== -1))
+                if (__cw_isKnownGameShellHref(h))
                     return true;
                 return false;
             }
@@ -2930,12 +2924,10 @@
                         score += 260;
                     if (/\d/.test(token))
                         score += 80;
-                    if (href.indexOf('singlebactable.jsp') !== -1)
+                    if (__cw_isModernGameHref(href))
                         score += 220;
-                    else if (href.indexOf('gamehall.jsp') !== -1)
-                        score += 180;
-                    else if (href.indexOf('webmain.jsp') !== -1)
-                        score += 120;
+                    else if (__cw_isKnownGameShellHref(href))
+                        score += 140;
                     try {
                         var r = el.getBoundingClientRect();
                         if (r && r.top >= 0 && r.top <= topBand)
@@ -3061,6 +3053,8 @@
             return false;
         if (s.length > 120)
             return false;
+        if (isMoneyText(s))
+            return true;
         if (/^[\d\s.,:;+\-/%$€£¥₫()]+$/.test(s) && !/[A-Za-zÀ-ỹ]/i.test(s))
             return false;
         if (/^[^\wA-Za-zÀ-ỹ]*$/.test(s))
@@ -3251,6 +3245,57 @@
         } catch (e) {}
         return r;
     }
+    function buildTextRectsCocos(strictGameOnly) {
+        var out = [];
+        var seen = Object.create(null);
+        walkNodes(function (n) {
+            if (strictGameOnly && !nodeInGame(n))
+                return;
+            var comps = (n._components || []);
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                if (!(c && typeof c.string !== 'undefined'))
+                    continue;
+                var s = String(c.string == null ? '' : c.string).trim();
+                if (!isTextCandidate(s))
+                    continue;
+                var r = rectForTextMap(n, s);
+                var x = Math.round(r.x),
+                y = Math.round(r.y),
+                w = Math.round(r.w),
+                h = Math.round(r.h);
+                if (w < 2 || h < 2)
+                    continue;
+                var tail = fullPath(n, 80);
+                var key = s + '|' + x + '|' + y + '|' + w + '|' + h + '|' + tail;
+                if (seen[key])
+                    continue;
+                seen[key] = 1;
+                var idx = out.length + 1;
+                out.push({
+                    idx: idx,
+                    text: s,
+                    x: x,
+                    y: y,
+                    w: w,
+                    h: h,
+                    sx: r.sx,
+                    sy: r.sy,
+                    sw: r.sw,
+                    sh: r.sh,
+                    n: {
+                        x: x / innerWidth,
+                        y: y / innerHeight,
+                        w: w / innerWidth,
+                        h: h / innerHeight
+                    },
+                    tail: tail,
+                    tl: String(tail || '').toLowerCase()
+                });
+            }
+        });
+        return out;
+    }
     function buildTextRects() {
         if (!__cw_hasCocos()) {
             var labs = collectLabels();
@@ -3279,48 +3324,13 @@
             }
             return outDom;
         }
-        var out = [];
-        walkNodes(function (n) {
-            if (!nodeInGame(n))
-                return;
-            var comps = (n._components || []);
-            for (var i = 0; i < comps.length; i++) {
-                var c = comps[i];
-                if (c && typeof c.string !== 'undefined') {
-                    var s = String(c.string == null ? '' : c.string).trim();
-                    if (!s)
-                        continue;
-                    var r = rectForTextMap(n, s);
-                    var x = Math.round(r.x),
-                    y = Math.round(r.y),
-                    w = Math.round(r.w),
-                    h = Math.round(r.h);
-                    var tail = fullPath(n, 80);
-                    var idx = out.length + 1;
-                    out.push({
-                        idx: idx,
-                        text: s,
-                        x: x,
-                        y: y,
-                        w: w,
-                        h: h,
-                        sx: r.sx,
-                        sy: r.sy,
-                        sw: r.sw,
-                        sh: r.sh,
-                        n: {
-                            x: x / innerWidth,
-                            y: y / innerHeight,
-                            w: w / innerWidth,
-                            h: h / innerHeight
-                        },
-                        tail: tail,
-                        tl: String(tail || '').toLowerCase()
-                    });
-                }
-            }
-        });
-        return out;
+        var strict = buildTextRectsCocos(true);
+        if (strict.length >= 12)
+            return strict;
+        var relaxed = buildTextRectsCocos(false);
+        if (relaxed.length > strict.length)
+            return relaxed;
+        return strict;
     }
 
     /* ------------------- TK sequence (RESTORED) ------------------- */
@@ -7962,11 +7972,11 @@
 
         var TAIL_3DO = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_3th/lbl_total_bet';
 
-        var TAIL_ACC = 'body/div#main-view.controller/div.footer/div.left.cell/div.desktop-footer.ui-text-shadow-dark-strong/span.balance-label';
+        var TAIL_ACC = 'c5_baccarat_livestream/Canvas/bacc_live/root/node_text/font_money_2/lbl_gold';
 
         var X_ACC = 303;
 
-        var TAIL_USER_NAME = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/playersview/lbl_user_name';
+        var TAIL_USER_NAME = 'c5_baccarat_livestream/Canvas/bacc_live/root/node_text/roboto_30/lbl_name';
 
         var X_USER_NAME = 274;
 
@@ -8290,6 +8300,34 @@
 
         }
 
+        function pickBalanceNearAccount(list, accountText) {
+            if (!list || !list.length || !accountText)
+                return null;
+            var ax = Number(accountText.x || 0) + Number(accountText.w || 0) / 2;
+            var ay = Number(accountText.y || 0) + Number(accountText.h || 0) / 2;
+            var best = null;
+            var bestScore = 1e18;
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                if (!it || it.val == null)
+                    continue;
+                var cx = Number(it.x || 0) + Number(it.w || 0) / 2;
+                var cy = Number(it.y || 0) + Number(it.h || 0) / 2;
+                var dx = Math.abs(cx - ax);
+                var dy = cy - ay;
+                if (dx > 260)
+                    continue;
+                if (dy < -80 || dy > 220)
+                    continue;
+                var score = Math.abs(dy) * 6 + dx;
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = it;
+                }
+            }
+            return best;
+        }
+
         function buildMoneyFromTextRects(texts) {
 
             if (!texts)
@@ -8549,6 +8587,8 @@
         var mTD = pickByTail(list, TAIL_TUDO);
         var mA = pickByTailMinY(listTextMoney, TAIL_ACC);
         var mN = pickByTailMinY(listTextAll, TAIL_USER_NAME);
+        if (!mA && mN)
+            mA = pickBalanceNearAccount(listTextMoney, mN);
         var hostUser = __cw_readHostUsername();
 
         return {
@@ -8690,8 +8730,8 @@
         selL: null,
         selAcc: null,
         focus: null,
-        showMoney: false,
-        showBet: false,
+        showMoney: true,
+        showBet: true,
         showText: false,
         stakeK: 1,
         seq: '',
@@ -8741,6 +8781,7 @@
     root.id = ROOT;
     root.setAttribute('data-cw-mode', 'full');
     root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
+    __cw_applyRootVisibility(root);
     document.body.appendChild(root);
     var panel = document.createElement('div');
     panel.style.cssText = 'position:fixed;top:10px;right:10px;width:820px;background:#08130f;color:#bff;border:1px solid #0a0;border-radius:10px;padding:8px;font:12px/1.35 Consolas,monospace;pointer-events:auto;z-index:2147483647';
@@ -8757,7 +8798,7 @@
         '<button id="bText">TextMap</button>' +
         '<button id="bScanMoney">Scan200Money</button>' +
         '<button id="bScanBet">Scan200Bet</button>' +
-        '<button id="bScanText">Scan200Text</button>' +
+        '<button id="bScanText">Scan500Text</button>' +
         '<button id="bScanTK">ScanTK</button>' +
         '</div>' +
         '<div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">' +
@@ -8766,7 +8807,7 @@
         '<button id="bBetC">Bet BANKER</button>' +
         '<button id="bBetL">Bet PLAYER</button>' +
         '</div>' +
-        '<div id="cwInfo" style="white-space:pre;color:#9f9;line-height:1.45"></div>' +
+        '<div id="cwInfo" style="white-space:pre-wrap;color:#9f9;line-height:1.45;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:320px;overflow:auto"></div>' +
         '<div style="display:flex;gap:6px;align-items:center;margin-top:6px">' +
         '<b style="color:#9f9">Log</b>' +
         '<button id="bCopyLog">CopyLog</button>' +
@@ -8774,8 +8815,6 @@
         '<span id="cwLogHint" style="color:#7aa"></span>' +
         '</div>' +
         '<div id="cwLog" style="white-space:pre-wrap;color:#bff;background:#0b1b16;border:1px solid #2a5;padding:6px;border-radius:6px;max-height:220px;overflow:auto"></div>';
-    //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
-    root.style.display='none';
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -8863,7 +8902,7 @@
         setBtnState('#bText', true, domMode ? 'DOM Baccarat mode: TextMap from HTML' : '');
         setBtnState('#bScanMoney', true, domMode ? 'DOM Baccarat mode: Scan200Money from HTML' : '');
         setBtnState('#bScanBet', true, domMode ? 'DOM Baccarat mode: Scan200Bet from HTML' : '');
-        setBtnState('#bScanText', true, domMode ? 'DOM Baccarat mode: Scan200Text from HTML' : '');
+        setBtnState('#bScanText', true, domMode ? 'DOM Baccarat mode: Scan500Text from HTML' : '');
         setBtnState('#bBetC', true, domMode ? 'DOM Baccarat mode: bet by HTML target/current chip' : '');
         setBtnState('#bBetL', true, domMode ? 'DOM Baccarat mode: bet by HTML target/current chip' : '');
         setBtnState('#bScanTK', true, domMode ? 'DOM Baccarat mode: scan road tu giao dien HTML' : '');
@@ -8923,14 +8962,41 @@
         refreshModeButtons();
     }
 
+    function applyInitialDetailLayers() {
+        try {
+            if (typeof window.__cw_panel_show_all === 'undefined')
+                window.__cw_panel_show_all = 1;
+            if (Number(window.__cw_panel_show_all || 0) !== 1)
+                return;
+
+            S.showMoney = true;
+            S.showBet = true;
+            layerMoney.style.display = '';
+            layerBet.style.display = '';
+            S.money = buildMoneyRects();
+            renderMoney();
+            renderBet();
+        } catch (_) {}
+    }
+
+    function overlayPassThrough() {
+        try {
+            if (typeof window.__cw_panel_passthrough === 'undefined')
+                window.__cw_panel_passthrough = 1;
+            return Number(window.__cw_panel_passthrough || 0) === 1;
+        } catch (_) {
+            return true;
+        }
+    }
+
     var layerMoney = document.createElement('div');
-    layerMoney.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
+    layerMoney.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:none;z-index:2147483645;';
     root.appendChild(layerMoney);
     var layerBet = document.createElement('div');
-    layerBet.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
+    layerBet.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:none;z-index:2147483645;';
     root.appendChild(layerBet);
     var layerText = document.createElement('div');
-    layerText.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:auto;z-index:2147483645;';
+    layerText.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:none;z-index:2147483645;';
     root.appendChild(layerText);
 
     var focusBox = document.createElement('div');
@@ -9004,14 +9070,15 @@
     /* ---------------- render maps ---------------- */
     function renderMoney() {
         layerMoney.innerHTML = '';
+        var interactive = !overlayPassThrough();
         var bg = document.createElement('div');
-        bg.style.cssText = 'position:absolute;inset:0;background:transparent;';
+        bg.style.cssText = 'position:absolute;inset:0;background:transparent;pointer-events:' + (interactive ? 'auto' : 'none') + ';';
         layerMoney.appendChild(bg);
         var list = S.money && S.money.length ? S.money : buildMoneyRects();
         for (var i = 0; i < list.length; i++) {
             var m = list[i];
             var d = document.createElement('div');
-            d.style.cssText = 'position:fixed;outline:1px dashed #0ff;background:#00ffff22;';
+            d.style.cssText = 'position:fixed;outline:1px dashed #0ff;background:#00ffff22;pointer-events:' + (interactive ? 'auto' : 'none') + ';';
             var st = cssRect(m);
             for (var k in st) {
                 d.style[k] = st[k];
@@ -9050,6 +9117,7 @@
     }
     function renderBet() {
         layerBet.innerHTML = '';
+        var interactive = !overlayPassThrough();
         var btns = collectButtons().filter(function (b) {
             return b.w >= 16 && b.h >= 12;
         });
@@ -9059,7 +9127,7 @@
         for (var i = 0; i < ordered.length; i++) {
             var b = ordered[i];
             var d = document.createElement('div');
-            d.style.cssText = 'position:fixed;outline:1px dashed #f80;background:#ff880022;';
+            d.style.cssText = 'position:fixed;outline:1px dashed #f80;background:#ff880022;pointer-events:' + (interactive ? 'auto' : 'none') + ';';
             var st = cssRect(b);
             for (var k in st) {
                 d.style[k] = st[k];
@@ -9098,6 +9166,7 @@
     }
     function renderText() {
         layerText.innerHTML = '';
+        var interactive = !overlayPassThrough();
         var texts = S.text || [];
         var ordered = texts.slice().sort(function (a, b) {
             return (b.w * b.h) - (a.w * a.h);
@@ -9108,7 +9177,7 @@
             if (t.idx == null)
                 t.idx = idx;
             var d = document.createElement('div');
-            d.style.cssText = 'position:fixed;outline:1px dashed #88f;background:#8888ff22;color:#ffd866;font:11px/1.2 Consolas,monospace;padding:1px 3px;box-sizing:border-box;text-shadow:0 0 2px #000;';
+            d.style.cssText = 'position:fixed;outline:1px dashed #88f;background:#8888ff22;color:#ffd866;font:11px/1.2 Consolas,monospace;padding:1px 3px;box-sizing:border-box;text-shadow:0 0 2px #000;pointer-events:' + (interactive ? 'auto' : 'none') + ';';
             var st = cssRect(t);
             for (var k in st) {
                 d.style[k] = st[k];
@@ -9225,14 +9294,20 @@
             ctxText = String(domCtx.source || 'top') + ' | ' + hrefShow;
         }
         var hudSource = (t.rawHS != null && String(t.rawHS).trim()) ? String(t.rawHS).trim() : '--';
+        var moneyCount = (S.money && S.money.length) ? S.money.length : 0;
+        var textCount = (S.text && S.text.length) ? S.text.length : 0;
+        var betCount = 0;
+        try { betCount = (collectButtons() || []).length; } catch (_) {}
         var base =
             ' Trạng thái: ' + S.status + ' | Prog: ' + progText + '\n' +
+            '• PROG META : mode=' + (S.progMode || '--') + ' | raw=' + (S.progRaw != null ? S.progRaw : '--') + ' | src=' + (S.progSource || '--') + ' | tail=' + (S.progTail || '--') + '\n' +
+            '• STATUS META : src=' + (S.statusSource || '--') + ' | tail=' + (S.statusTail || '--') + '\n' +
             '• CTX : ' + ctxText + '\n' +
             '• HUD : ' + hudSource + '\n' +
             '• TÀI KHOẢN : ' + accountName + ' | SỐ DƯ : ' + fmt(t.A) + '\n' +
             '• BÀN : ' + tableName + ' | TIỀN BÀN : ' + tableAmount + ' | BANKER: ' + fmt(bankerVal) + ' | PLAYER: ' + fmt(playerVal) + ' | TIE: ' + fmt(t.T) + '\n' +
             (!__cw_hasCocos() ? ('• BET POOL DOM : B=' + fmt(t.B) + ' | P=' + fmt(t.P) + ' | T=' + fmt(t.T) + ' | SRC=' + (t.BS || '--') + '\n') : '') +
-
+            '• MAP COUNT : money=' + moneyCount + ' | bet=' + betCount + ' | text=' + textCount + '\n' +
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
             '  idx : ' + (f && f.idx != null ? f.idx : '-') + '\n' +
             '  tail: ' + (f ? f.tail : '-') + '\n' +
@@ -9273,6 +9348,10 @@
             var last = esc(S.seq.slice(-1));
             seqHtml = 'Chuỗi kết quả : <span>' + head + '</span><span style="color:#f66">' + last + '</span>';
         }
+        base += '\n• SEQ META : len=' + String(S.seq || '').length +
+            ' | rawLen=' + String(S.rawSeq || '').length +
+            ' | ver=' + Number(S.seqVersion || 0) +
+            ' | evt=' + (S.seqEvent || '--');
         try {
             var snapUser = (t.N != null ? String(t.N) : '');
             if (!snapUser) {
@@ -9352,12 +9431,12 @@
         }
         console.log(btns);
     }
-    function scan200Text() {
+    function scan500TextMap() {
         var texts = buildTextRects().slice()
             .sort(function (a, b) {
                 return a.y - b.y || a.x - b.x || (a.text || '').localeCompare(b.text || '');
             })
-            .slice(0, 200)
+            .slice(0, 500)
             .map(function (t) {
                 return {
                     idx: t.idx,
@@ -9369,12 +9448,12 @@
                      h: Math.round(t.h)
                  };
              });
-         console.log('(TextMap index x200)\tidx\ttext\tx\ty\tw\th\ttail');
+         console.log('(TextMap index x500)\tidx\ttext\tx\ty\tw\th\ttail');
          for (var j = 0; j < texts.length; j++) {
              var r = texts[j];
              console.log(j + "\t" + r.idx + "\t'" + r.text + "'\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
          }
-         var lines = ['(TextMap index x200)\tidx\ttext\tx\ty\tw\th\ttail'];
+         var lines = ['(TextMap index x500)\tidx\ttext\tx\ty\tw\th\ttail'];
          for (var k = 0; k < texts.length; k++) {
              var r2 = texts[k];
              lines.push(k + "\t" + r2.idx + "\t'" + r2.text + "'\t" + r2.x + "\t" + r2.y + "\t" + r2.w + "\t" + r2.h + "\t'" + r2.tail + "'");
@@ -9390,6 +9469,9 @@
          }
          return texts;
      }
+    function scan200Text() {
+        return scan500TextMap();
+    }
 
     function scanTK() {
         var r = readTKSeq();
@@ -10450,13 +10532,9 @@
             var href = String(ctx.href || '').toLowerCase();
             var source = String(ctx.source || '');
             var score = 0;
-            if (href.indexOf('singlebactable.jsp') !== -1)
+            if (__cw_isModernGameHref(href))
                 score += 2400;
-            if (href.indexOf('gamehall.jsp') !== -1)
-                score += 900;
-            if (href.indexOf('webmain.jsp') !== -1)
-                score += 620;
-            if (href.indexOf('/player/') !== -1)
+            if (__cw_isKnownGameShellHref(href))
                 score += 420;
             if (href.indexOf('api/player/') !== -1)
                 score += 220;
@@ -13387,6 +13465,7 @@
         S.running = true;
         S.timer = setInterval(tick, S.tickMs);
         tick();
+        applyInitialDetailLayers();
         brInstallSeqMutationObserver();
         setStateUI();
     }
@@ -13450,7 +13529,7 @@
         scan200Bet();
     };
     panel.querySelector('#bScanText').onclick = function () {
-        scan200Text();
+        scan500TextMap();
     };
     panel.querySelector('#bScanTK').onclick = function () {
         scanTK();
@@ -13516,7 +13595,11 @@
             try {
                 if (S.running)
                     return;
-                var shouldStart = false;
+                var shouldStart = true;
+                if (typeof window.__cw_panel_autostart === 'undefined')
+                    window.__cw_panel_autostart = 1;
+                if (window.__cw_panel_autostart === 0 || window.__cw_panel_autostart === false)
+                    shouldStart = false;
                 if (window.__cw_panel_autostart === 1 || window.__cw_panel_autostart === true)
                     shouldStart = true;
                 if (typeof __cw_isGamePopupPage === 'function' && __cw_isGamePopupPage())
@@ -13744,6 +13827,21 @@
                 // Chỉ fallback theo Cocos cho trang player để tránh khởi động nhầm ở frame phụ.
                 if (/\/player\//i.test(href2) && typeof __cw_hasCocos === 'function' && __cw_hasCocos())
                     return true;
+            } catch (_) {}
+            try {
+                var href3 = String((location && location.href) || '');
+                if (!__cw_isTopDocument() && /\/\/(?:[^\/]+\.)?zowin\.nu\//i.test(href3)) {
+                    var docEl = document && document.documentElement;
+                    var body = document && document.body;
+                    var vw = Math.max((docEl && docEl.clientWidth) || 0, (body && body.clientWidth) || 0, innerWidth || 0);
+                    var vh = Math.max((docEl && docEl.clientHeight) || 0, (body && body.clientHeight) || 0, innerHeight || 0);
+                    var mediaCount = 0;
+                    try {
+                        mediaCount = document.querySelectorAll('canvas,video').length;
+                    } catch (_) {}
+                    if ((vw >= 760 && vh >= 420 && mediaCount > 0) || (vw >= 980 && vh >= 560))
+                        return true;
+                }
             } catch (_) {}
             return false;
         }
@@ -15057,15 +15155,110 @@
 
     }
 
-    if (__cw_isGamePopupPage()) {
-        if (document.body || document.documentElement) {
-            __cw_boot();
-        } else {
-            document.addEventListener('DOMContentLoaded', function () {
-                if (__cw_isGamePopupPage())
-                    __cw_boot();
-            }, { once: true });
-        }
+    function __cw_bootEntry() {
+        try {
+            if (__cw_hasCocos()) {
+                __cw_boot();
+                return;
+            }
+            if (typeof isLikelyGameContext === 'function' && isLikelyGameContext()) {
+                __cw_boot();
+                return;
+            }
+            if (__cw_isGamePopupPage()) {
+                if (__cw_isTopDocument())
+                    return;
+                __cw_waitReady();
+            }
+        } catch (_) {}
+    }
+
+    function __cw_shouldRetryBoot() {
+        try {
+            if (typeof window.__cw_startPush === 'function')
+                return false;
+            if (__cw_hasCocos())
+                return true;
+            if (typeof isLikelyGameContext === 'function' && isLikelyGameContext())
+                return true;
+            if (__cw_isGamePopupPage())
+                return true;
+        } catch (_) {}
+        return false;
+    }
+
+    function __cw_retryBootEntry() {
+        try {
+            if (!__cw_shouldRetryBoot())
+                return;
+            __cw_bootEntry();
+        } catch (_) {}
+    }
+
+    (function installBootRetryWatch() {
+        try {
+            if (window.__cw_boot_retry_watch_installed)
+                return;
+            window.__cw_boot_retry_watch_installed = 1;
+
+            var lastHref = '';
+            function check() {
+                try {
+                    var href = String((location && location.href) || '');
+                    if (href !== lastHref)
+                        lastHref = href;
+                    __cw_retryBootEntry();
+                } catch (_) {}
+            }
+
+            try {
+                var oldPushState = history && history.pushState;
+                if (typeof oldPushState === 'function' && !history.__cw_pushState_wrapped) {
+                    history.pushState = function () {
+                        var ret = oldPushState.apply(this, arguments);
+                        setTimeout(check, 0);
+                        return ret;
+                    };
+                    history.__cw_pushState_wrapped = 1;
+                }
+            } catch (_) {}
+
+            try {
+                var oldReplaceState = history && history.replaceState;
+                if (typeof oldReplaceState === 'function' && !history.__cw_replaceState_wrapped) {
+                    history.replaceState = function () {
+                        var ret = oldReplaceState.apply(this, arguments);
+                        setTimeout(check, 0);
+                        return ret;
+                    };
+                    history.__cw_replaceState_wrapped = 1;
+                }
+            } catch (_) {}
+
+            try { window.addEventListener('popstate', check, true); } catch (_) {}
+            try { window.addEventListener('hashchange', check, true); } catch (_) {}
+
+            setInterval(function () {
+                try {
+                    var href = String((location && location.href) || '');
+                    if (href !== lastHref) {
+                        lastHref = href;
+                        __cw_retryBootEntry();
+                        return;
+                    }
+                    if (typeof window.__cw_startPush !== 'function')
+                        __cw_retryBootEntry();
+                } catch (_) {}
+            }, 1000);
+        } catch (_) {}
+    })();
+
+    if (document.body || document.documentElement) {
+        __cw_bootEntry();
+    } else {
+        document.addEventListener('DOMContentLoaded', function () {
+            __cw_bootEntry();
+        }, { once: true });
     }
 
 })();

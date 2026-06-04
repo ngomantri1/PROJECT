@@ -194,6 +194,7 @@ namespace BaccaratWM2.Tasks
                     int chainIndex = ctx.MoneyChainIndex;
                     int chainStep = ctx.MoneyChainStep;
                     double chainProfit = ctx.MoneyChainProfit;
+                    double strategyWinTotal = ctx.MoneyStrategyWinTotal;
 
                     if (win.HasValue)
                     {
@@ -203,6 +204,7 @@ namespace BaccaratWM2.Tasks
                             ref chainIndex,
                             ref chainStep,
                             ref chainProfit,
+                            ref strategyWinTotal,
                             win.Value,
                             MoneyHelper.CalcNetDeltaForOutcome(stake, side, win.Value));
                     }
@@ -211,6 +213,8 @@ namespace BaccaratWM2.Tasks
                     ctx.MoneyChainIndex = chainIndex;
                     ctx.MoneyChainStep = chainStep;
                     ctx.MoneyChainProfit = chainProfit;
+                    ctx.MoneyStrategyWinTotal = strategyWinTotal;
+                    ctx.UiSetChainLevel?.Invoke(chainIndex, chainStep);
                 }
                 else
                 {

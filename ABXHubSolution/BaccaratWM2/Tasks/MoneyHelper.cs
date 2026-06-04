@@ -213,6 +213,7 @@ namespace BaccaratWM2.Tasks
             ref int chainIndex,
             ref int levelIndex,
             ref double profitOnCurrentChain,
+            ref double strategyWinTotal,
             bool? win,
             double? settledNetDelta = null)
         {
@@ -232,6 +233,16 @@ namespace BaccaratWM2.Tasks
 
             if (win == null)
                 return;
+
+            var roundNet = settledNetDelta ?? 0;
+            if (chainIndex == 0)
+            {
+                strategyWinTotal += roundNet;
+            }
+            else
+            {
+                strategyWinTotal = 0;
+            }
 
             if (win == true)
             {
@@ -271,12 +282,16 @@ namespace BaccaratWM2.Tasks
                         chainIndex--;
                         levelIndex = 0;
                         profitOnCurrentChain = 0;
+                        if (chainIndex == 0)
+                            strategyWinTotal = 0;
                     }
                 }
                 else
                 {
-                    // chuỗi 0 thì không cần gom
+                    // chuỗi 0 dùng quỹ ẩn riêng; khi đã dương thì bắt đầu lại từ đầu.
                     profitOnCurrentChain = 0;
+                    if (strategyWinTotal > 0)
+                        strategyWinTotal = 0;
                 }
             }
             else
@@ -296,6 +311,7 @@ namespace BaccaratWM2.Tasks
                         chainIndex++;
                         levelIndex = 0;
                         profitOnCurrentChain = 0;
+                        strategyWinTotal = 0;
                     }
                     else
                     {
@@ -303,6 +319,7 @@ namespace BaccaratWM2.Tasks
                         chainIndex = 0;
                         levelIndex = 0;
                         profitOnCurrentChain = 0;
+                        strategyWinTotal = 0;
                     }
                 }
             }

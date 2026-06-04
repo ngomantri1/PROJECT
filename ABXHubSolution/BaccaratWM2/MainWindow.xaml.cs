@@ -848,6 +848,7 @@ Ví dụ không hợp lệ:
             public int MoneyChainIndex;
             public int MoneyChainStep;
             public double MoneyChainProfit;
+            public double MoneyStrategyWinTotal;
             public long MoneyResetVersion;
             public int StartInProgress;
             public string LastBetSide = "";
@@ -17903,6 +17904,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 MoneyChainIndex = state.MoneyChainIndex,
                 MoneyChainStep = state.MoneyChainStep,
                 MoneyChainProfit = state.MoneyChainProfit,
+                MoneyStrategyWinTotal = state.MoneyStrategyWinTotal,
                 MoneyResetVersion = state.MoneyResetVersion,
                 GetMoneyResetVersion = () => state.MoneyResetVersion,
                 IsVirtualBettingActive = () => _virtualBettingActive,
@@ -17957,6 +17959,19 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     if (LblStake != null)
                         LblStake.Text = stakeValue.ToString("N0");
                 }),
+                UiSetChainLevel = (chainIndex, chainStep) => Dispatcher.Invoke(() =>
+                {
+                    if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    state.MoneyChainIndex = Math.Max(0, chainIndex);
+                    state.MoneyChainStep = Math.Max(0, chainStep);
+                    state.LastBetLevelText = BuildMultiChainLevelText(
+                        stakeChains,
+                        state.MoneyChainIndex,
+                        state.MoneyChainStep);
+                    _ = PushBetPlanToOverlayAsync(tableId, state.LastBetSide, state.LastBetAmount, state.LastBetLevelText);
+                }),
                 UiOnBetDispatch = (side, amount) =>
                 {
                     TryInsertBetHistoryPendingRow(
@@ -17999,6 +18014,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     CheckWinGeTotalBetResetIfNeeded(state);
                     UpdateTableStatsWin(state, net);
                 }),
+                UiClearWinLoss = () => Dispatcher.Invoke(() =>
+                {
+                    _ = PushBetStatsToOverlayAsync(tableId, state.WinTotalOverlay, state.WinCount, state.LossCount, "");
+                    if (!IsActiveTable(tableId)) return;
+                    SetWinLossUI(null);
+                }),
                 UiWinLoss = s => Dispatcher.Invoke(() =>
                 {
                     UpdateTableStatsWinLoss(state, s);
@@ -18031,6 +18052,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             state.MoneyChainIndex = ctx.MoneyChainIndex;
             state.MoneyChainStep = ctx.MoneyChainStep;
             state.MoneyChainProfit = ctx.MoneyChainProfit;
+            state.MoneyStrategyWinTotal = ctx.MoneyStrategyWinTotal;
             state.MoneyResetVersion = ctx.MoneyResetVersion;
         }
 
@@ -18984,11 +19006,12 @@ private async Task<CancellationTokenSource> DebounceAsync(
                 state.LastWinAmount = 0;
                 state.RunTotalBet = 0;
                 state.MoneyChainIndex = 0;
-                    state.MoneyChainStep = 0;
-                    state.MoneyChainProfit = 0;
+                state.MoneyChainStep = 0;
+                state.MoneyChainProfit = 0;
+                state.MoneyStrategyWinTotal = 0;
                 state.MoneyResetVersion = 0;
-                    state.HoldWinTotalUntilLevel1 = false;
-                    state.HoldWinTotalSkipLogged = false;
+                state.HoldWinTotalUntilLevel1 = false;
+                state.HoldWinTotalSkipLogged = false;
 
                 RecomputeGlobalWinTotal();
                 RefreshRuntimeStatusTotalsUi();
@@ -19078,6 +19101,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
             state.HasJsProfit = false;
             state.WinTotalFromJs = 0;
             state.WinTotal = 0;
+            state.MoneyStrategyWinTotal = 0;
 
             if (!string.IsNullOrWhiteSpace(reason))
                 Log("[TASK] stop " + reason);
@@ -21161,6 +21185,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                     state.MoneyChainIndex = 0;
                     state.MoneyChainStep = 0;
                     state.MoneyChainProfit = 0;
+                    state.MoneyStrategyWinTotal = 0;
                     state.MoneyResetVersion = NextMoneyResetVersion(state.MoneyResetVersion);
                     state.StakeLevelIndexForUi = -1;
                     state.HoldWinTotalUntilLevel1 = holdWinUntilLevel1;
@@ -21335,6 +21360,7 @@ private async Task<CancellationTokenSource> DebounceAsync(
                             state.MoneyChainIndex = 0;
                             state.MoneyChainStep = 0;
                             state.MoneyChainProfit = 0;
+                            state.MoneyStrategyWinTotal = 0;
                             state.MoneyResetVersion = resetVersion;
                             state.StakeLevelIndexForUi = -1;
                             state.HoldWinTotalUntilLevel1 = holdWinUntilLevel1;

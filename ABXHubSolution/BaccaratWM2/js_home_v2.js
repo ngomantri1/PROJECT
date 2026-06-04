@@ -11944,6 +11944,12 @@
                         st.view.winLoseValue.style.color = '';
                     }
                 }
+                try {
+                    const room = { id: tableId, name: st.roomName || tableId };
+                    const current = captureTableState(room);
+                    if (current)
+                        renderPanelState(current);
+                } catch (_) {}
             }
             return true;
         }
@@ -13677,6 +13683,8 @@ function deriveWinLoseColor(text) {
             };
             const clearBetDisplay = () => {
                 st.lastBetDoorColor = '';
+                st.lastBetChipSig = '';
+                st.lastBetExtraSig = '';
                 if (view.betDoorValue) {
                     view.betDoorValue.textContent = '--';
                     view.betDoorValue.style.color = '';

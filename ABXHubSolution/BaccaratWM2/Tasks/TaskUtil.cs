@@ -18,7 +18,11 @@ namespace BaccaratWM2.Tasks
         private static readonly ConcurrentDictionary<string, long> _lastWaitLogByTable = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         // (tùy chọn) reset khi dừng task
-        public static void ClearBetCooldown() => _lastBetOkByTable.Clear();
+        public static void ClearBetCooldown()
+        {
+            _lastBetOkByTable.Clear();
+            _uiRoundResetDoneByTable.Clear();
+        }
 
         public static string ParityCharToSide(char ch) => (ch == 'P') ? "P" : "B";
         public static char DigitToParity(char d)
@@ -32,8 +36,8 @@ namespace BaccaratWM2.Tasks
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
         private static long _lastBetMs = 0;
-        // Reset UI 1 lần ngay khi vào cửa sổ đặt (countdown >= DecisionPercent)
-        private static bool _uiRoundResetDone = false;
+        // Reset UI 1 lần cho mỗi bàn ngay khi vào cửa sổ đặt (countdown >= DecisionPercent)
+        private static readonly ConcurrentDictionary<string, byte> _uiRoundResetDoneByTable = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
         public static string SeqToParityString(string digitSeq)
         {
             if (string.IsNullOrEmpty(digitSeq)) return "";
@@ -77,16 +81,19 @@ namespace BaccaratWM2.Tasks
             }, DispatcherPriority.Render);
         }
 
-
-
+        private static string GetUiRoundResetKey(GameContext? ctx)
+        {
+            var tableId = (ctx?.TableId ?? "").Trim();
+            return string.IsNullOrWhiteSpace(tableId) ? "__global__" : tableId;
+        }
 
         // Gọi khi đã có countdown (giây) để reset đúng 1 lần
         public static void UiRoundMaybeReset(GameContext? ctx, double p, double decisionPercent)
         {
-            if (_uiRoundResetDone) return;
-            if (p >= decisionPercent)
+            var key = GetUiRoundResetKey(ctx);
+            if (_uiRoundResetDoneByTable.ContainsKey(key)) return;
+            if (p >= decisionPercent && _uiRoundResetDoneByTable.TryAdd(key, 1))
             {
-                _uiRoundResetDone = true;
                 if (ctx != null)
                 {
                     try
@@ -95,7 +102,7 @@ namespace BaccaratWM2.Tasks
                         {
                             ctx.UiSetSide?.Invoke("");
                             ctx.UiSetStake?.Invoke(0);
-                            ctx.UiWinLoss?.Invoke(null);
+                            ctx.UiClearWinLoss?.Invoke();
                         }, DispatcherPriority.Render);
                     }
                     catch { }
@@ -105,7 +112,11 @@ namespace BaccaratWM2.Tasks
         }
 
         // Gọi khi kết thúc ván (đã chấm THẮNG/THUA) để ván sau reset tiếp
-        public static void UiRoundAllowNextReset() => _uiRoundResetDone = false;
+        public static void UiRoundAllowNextReset(string? tableId)
+        {
+            var key = string.IsNullOrWhiteSpace(tableId) ? "__global__" : tableId.Trim();
+            _uiRoundResetDoneByTable.TryRemove(key, out _);
+        }
 
         private static void ApplyGlobalResetIfNeeded(GameContext ctx)
         {
@@ -117,6 +128,8 @@ namespace BaccaratWM2.Tasks
             ctx.MoneyChainIndex = 0;
             ctx.MoneyChainStep = 0;
             ctx.MoneyChainProfit = 0;
+            ctx.MoneyStrategyWinTotal = 0;
+            try { ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetChainLevel?.Invoke(0, 0), DispatcherPriority.Render); } catch { }
         }
 
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
@@ -179,6 +192,7 @@ namespace BaccaratWM2.Tasks
         public static async Task<bool> PlaceBet(GameContext ctx, string side, long amount, CancellationToken ct)
         {
             // Cập nhật UI chỉ khi thực sự được phép bắn
+            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetChainLevel?.Invoke(ctx.MoneyChainIndex, ctx.MoneyChainStep));
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
@@ -285,8 +299,7 @@ namespace BaccaratWM2.Tasks
                     bool? win = IsWin(betSide, lastDigit);
                     ctx.Log?.Invoke($"[JUDGE] table={ctx.TableId ?? ""} baseSession={baseSession} curSession={curSession} bet={betSide} last={lastDigit} result={(win.HasValue ? (win.Value ? "win" : "loss") : "tie")}");
                     await ctx.UiDispatcher.InvokeAsync(() => ctx.UiWinLoss?.Invoke(win));
-                    // cộng tiền lũy kế: +amount khi thắng, -amount khi thua (đơn giản)
-                    //TaskUtil.UiRoundAllowNextReset();
+                    UiRoundAllowNextReset(ctx.TableId);
                     return win;
                 }
                 await Task.Delay(120, ct);

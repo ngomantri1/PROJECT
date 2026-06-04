@@ -37,6 +37,7 @@ namespace BaccaratWM2.Tasks
         public int MoneyChainStep { get; set; } = 0;
         // tiền thắng đã tích lũy được trong chuỗi hiện tại
         public double MoneyChainProfit { get; set; } = 0;
+        public double MoneyStrategyWinTotal { get; set; } = 0;
         public long MoneyResetVersion { get; set; } = 0;
         public Func<long>? GetMoneyResetVersion { get; init; }
 
@@ -66,8 +67,10 @@ namespace BaccaratWM2.Tasks
         // --- UI updaters (được gán từ MainWindow) ---
         public Action<string>? UiSetSide;     // "P"/"B"
         public Action<double>? UiSetStake;    // tiền đang đánh
+        public Action<int, int>? UiSetChainLevel; // chain/step hiện tại cho MultiChain
         public Action<string, long>? UiOnBetDispatch; // hook C# dispatch để insert lịch sử sớm
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
+        public Action? UiClearWinLoss;        // reset trạng thái thắng/thua về "--"
         public Action<bool?>? UiWinLoss;      // true = win, false = loss, null = tie/unknown
     }
 }

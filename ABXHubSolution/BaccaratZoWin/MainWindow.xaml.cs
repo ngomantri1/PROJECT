@@ -1126,14 +1126,23 @@ Ví dụ không hợp lệ:
         if (!w) return false;
         if (w.__abx_force_push_start === 1 || w.__abx_force_push_start === true) return true;
         var href = String((w.location && w.location.href) || '');
-        if (/singleBacTable\.jsp/i.test(href)) return true;
-        if (/\/player\/webMain\.jsp/i.test(href)) return true;
-        if (/\/player\/gamehall\.jsp/i.test(href)) return true;
         if (/\/player\/login\/apiLogin/i.test(href)) return true;
-        if (/\/\/(?:[^\/]+\.)?vivogaming\.com\//i.test(href) &&
-            (/\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
-             (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
-              !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href)))) return true;
+        var hasModernHint =
+          /\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
+          (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
+           !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href)) ||
+          /xoc[\-_]?dia|baccarat/i.test(href);
+        var knownShell =
+          /\/\/(?:[^\/]+\.)?zowin\.nu\//i.test(href) ||
+          /\/\/(?:[^\/]+\.)?game8b\.com\//i.test(href) ||
+          /\/\/bpweb\./i.test(href) ||
+          /\/\/games\./i.test(href) ||
+          /usplaynet\.com/i.test(href) ||
+          /balikko\.com/i.test(href) ||
+          /barppat\.com/i.test(href) ||
+          /restula\.com/i.test(href) ||
+          /atllat\.com/i.test(href);
+        if (hasModernHint && (/\/\/(?:[^\/]+\.)?vivogaming\.com\//i.test(href) || knownShell)) return true;
         if (typeof w.__cw_isGamePopupPage === 'function'){
           try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
         }
@@ -1169,14 +1178,23 @@ Ví dụ không hợp lệ:
         if (!w) return false;
         if (w.__abx_force_push_start === 1 || w.__abx_force_push_start === true) return true;
         var href = String((w.location && w.location.href) || '');
-        if (/singleBacTable\.jsp/i.test(href)) return true;
-        if (/\/player\/webMain\.jsp/i.test(href)) return true;
-        if (/\/player\/gamehall\.jsp/i.test(href)) return true;
         if (/\/player\/login\/apiLogin/i.test(href)) return true;
-        if (/\/\/(?:[^\/]+\.)?vivogaming\.com\//i.test(href) &&
-            (/\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
-             (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
-              !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href)))) return true;
+        var hasModernHint =
+          /\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
+          (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
+           !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href)) ||
+          /xoc[\-_]?dia|baccarat/i.test(href);
+        var knownShell =
+          /\/\/(?:[^\/]+\.)?zowin\.nu\//i.test(href) ||
+          /\/\/(?:[^\/]+\.)?game8b\.com\//i.test(href) ||
+          /\/\/bpweb\./i.test(href) ||
+          /\/\/games\./i.test(href) ||
+          /usplaynet\.com/i.test(href) ||
+          /balikko\.com/i.test(href) ||
+          /barppat\.com/i.test(href) ||
+          /restula\.com/i.test(href) ||
+          /atllat\.com/i.test(href);
+        if (hasModernHint && (/\/\/(?:[^\/]+\.)?vivogaming\.com\//i.test(href) || knownShell)) return true;
         if (typeof w.__cw_isGamePopupPage === 'function'){
           try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
         }
@@ -1226,14 +1244,23 @@ Ví dụ không hợp lệ:
           try{
             var w = window.frames[i];
             var href = String((w.location && w.location.href) || '');
-            if ((/singleBacTable\.jsp/i.test(href) ||
-                 /\/player\/webMain\.jsp/i.test(href) ||
-                 /\/player\/gamehall\.jsp/i.test(href) ||
-                 /\/player\/login\/apiLogin/i.test(href) ||
-                 (/\/\/(?:[^\/]+\.)?vivogaming\.com\//i.test(href) &&
-                  (/\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
-                   (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
-                    !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href))))) &&
+            var hasModernHint =
+              /\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
+              (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
+               !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href)) ||
+              /xoc[\-_]?dia|baccarat/i.test(href);
+            var knownShell =
+              /\/\/(?:[^\/]+\.)?zowin\.nu\//i.test(href) ||
+              /\/\/(?:[^\/]+\.)?game8b\.com\//i.test(href) ||
+              /\/\/bpweb\./i.test(href) ||
+              /\/\/games\./i.test(href) ||
+              /usplaynet\.com/i.test(href) ||
+              /balikko\.com/i.test(href) ||
+              /barppat\.com/i.test(href) ||
+              /restula\.com/i.test(href) ||
+              /atllat\.com/i.test(href);
+            if ((/\/player\/login\/apiLogin/i.test(href) ||
+                 (hasModernHint && (/\/\/(?:[^\/]+\.)?vivogaming\.com\//i.test(href) || knownShell))) &&
                 w.__cw_startPush){
               try{ w.__cw_startPush(__abxPushMs()); }catch(_){}
               return;
@@ -1259,14 +1286,23 @@ try{
       try{
         var w = window.frames[i];
         var href = String((w.location && w.location.href) || '');
-        if ((/singleBacTable\.jsp/i.test(href) ||
-             /\/player\/webMain\.jsp/i.test(href) ||
-             /\/player\/gamehall\.jsp/i.test(href) ||
-             /\/player\/login\/apiLogin/i.test(href) ||
-             (/\/\/(?:[^\/]+\.)?vivogaming\.com\//i.test(href) &&
-              (/\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
-               (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
-                !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href))))) &&
+        var hasModernHint =
+          /\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
+          (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
+           !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href)) ||
+          /xoc[\-_]?dia|baccarat/i.test(href);
+        var knownShell =
+          /\/\/(?:[^\/]+\.)?zowin\.nu\//i.test(href) ||
+          /\/\/(?:[^\/]+\.)?game8b\.com\//i.test(href) ||
+          /\/\/bpweb\./i.test(href) ||
+          /\/\/games\./i.test(href) ||
+          /usplaynet\.com/i.test(href) ||
+          /balikko\.com/i.test(href) ||
+          /barppat\.com/i.test(href) ||
+          /restula\.com/i.test(href) ||
+          /atllat\.com/i.test(href);
+        if ((/\/player\/login\/apiLogin/i.test(href) ||
+             (hasModernHint && (/\/\/(?:[^\/]+\.)?vivogaming\.com\//i.test(href) || knownShell))) &&
             w && w.__cw_startPush){
           w.__cw_startPush(__abxPushMs());
         }
@@ -1440,7 +1476,20 @@ try{
           var hasStatus = !!(st && String(st).trim());
           var href = '';
           try{ href = String((win.location && win.location.href) || ''); }catch(_){}
-          var isSingleBac = /singleBacTable\.jsp/i.test(href);
+          var isModernShell =
+            ((/\/\/(?:[^\/]+\.)?zowin\.nu\//i.test(href) ||
+              /\/\/(?:[^\/]+\.)?game8b\.com\//i.test(href) ||
+              /\/\/bpweb\./i.test(href) ||
+              /\/\/games\./i.test(href) ||
+              /usplaynet\.com/i.test(href) ||
+              /balikko\.com/i.test(href) ||
+              /barppat\.com/i.test(href) ||
+              /restula\.com/i.test(href) ||
+              /atllat\.com/i.test(href)) &&
+             (/\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
+              (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(href) &&
+               !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(href)) ||
+              /xoc[\-_]?dia|baccarat/i.test(href)));
           var isVivoHost = /\/\/(?:[^\/]+\.)?vivogaming\.com\//i.test(href);
           var isVivoBaccarat = isVivoHost &&
             (/\/activations\/baccarat(?:\/|\?|$)/i.test(href) ||
@@ -1458,7 +1507,7 @@ try{
           if (hasStatus) score += 120;
           if (hasSeq) score += 100;
           if (hasHud) score += 10;
-          if (isSingleBac) score += 500;
+          if (isModernShell) score += 500;
           if (isVivoBaccarat) score += 700;
           if (isVivoLobby) score += 150;
           score += Math.min(40, Math.max(0, Number(depth || 0))) * 2;
@@ -1562,6 +1611,7 @@ try{
             _strategyTabs.CollectionChanged += StrategyTabs_CollectionChanged;
             this.ShowInTaskbar = true;                       // có icon riêng
             this.WindowStartupLocation = WindowStartupLocation.CenterScreen; // tuỳ, cho đẹp
+            this.PreviewKeyDown += MainWindow_PreviewKeyDown;
             // đảm bảo về Home UI lúc khởi động
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;
@@ -3615,10 +3665,10 @@ try{
                 {
                     settings.IsWebMessageEnabled = true;
                     settings.UserAgent = BuildDesktopEdgeUserAgent();
+                    settings.AreDevToolsEnabled = true;
                     Log("[Web] UA=" + settings.UserAgent);
                     // (tuỳ chọn khác, giữ nguyên nếu bạn không cần)
                     // settings.AreDefaultContextMenusEnabled = false;
-                    // settings.AreDevToolsEnabled = true;
                 }
 
                 // Khong tu mo DevTools cua Web chinh de tranh nham voi PopupWeb game.
@@ -3641,6 +3691,54 @@ try{
             catch (Exception ex)
             {
                 Log("[HookWebViewEventsOnce] " + ex);
+            }
+        }
+
+        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            bool openDevTools =
+                e.Key == Key.F12 ||
+                (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.I);
+
+            if (!openDevTools)
+                return;
+
+            e.Handled = true;
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                try
+                {
+                    await OpenActiveDevToolsAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log("[DevTools] " + ex.Message);
+                }
+            });
+        }
+
+        private async Task OpenActiveDevToolsAsync()
+        {
+            try
+            {
+                if (_popupWeb?.CoreWebView2 != null && PopupHost?.Visibility == Visibility.Visible)
+                {
+                    _popupWeb.CoreWebView2.OpenDevToolsWindow();
+                    _popupDevToolsOpened = true;
+                    Log("[DevTools] opened on PopupWeb");
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[DevTools][Popup] " + ex.Message);
+            }
+
+            await EnsureWebReadyAsync();
+            if (Web?.CoreWebView2 != null)
+            {
+                Web.CoreWebView2.OpenDevToolsWindow();
+                Log("[DevTools] opened on Web");
             }
         }
 
@@ -7762,7 +7860,7 @@ try{
                 }
             }
 
-            // 4) Fallback cuối: mở item index 1 (giống VaoXocDia_Click đang dùng)
+            // 4) Fallback cuối: mở item index 1 nếu không xác định được card tốt hơn
             try
             {
                 var res2 = await OpenLiveItemImmediatelyAsync(1, timeoutMs);
@@ -8245,9 +8343,12 @@ try{
             try
             {
                 var stage = string.IsNullOrWhiteSpace(stagePrefix) ? "play" : stagePrefix.Trim();
+                var preferSamePage = IsCurrentHostSamePageLiveFlow();
 
                 await EnsureToolBridgeInjectedAsync();
                 await LogBridgeProbeAsync(stage + "-after-ensure");
+                if (preferSamePage)
+                    Log("[PlayEnsureGame] flow=same-page");
 
                 if (HasRecentGameSignal(out var warmReason))
                 {
@@ -8294,7 +8395,7 @@ try{
                     if (!gameReady)
                         gameReady = await WaitForGameSignalAsync(1200);
 
-                    if (!gameReady && IsCurrentHostAllowUnboundHistory())
+                    if (!gameReady && !preferSamePage && IsCurrentHostAllowUnboundHistory())
                     {
                         var routedByFlowCache = await TryRouteRecentPlayerFlowGameToPopupAsync(300);
                         if (routedByFlowCache)
@@ -8303,24 +8404,24 @@ try{
                             if (!gameReady)
                                 gameReady = await WaitForGameSignalAsync(3000);
                             if (gameReady)
-                                Log("[PlayEnsureGame] ready via cached player-flow game url.");
+                                Log("[PlayEnsureGame] ready via cached game url.");
                         }
                     }
 
-                    if (!gameReady && IsCurrentHostAllowUnboundHistory())
+                    if (!gameReady && !preferSamePage && IsCurrentHostAllowUnboundHistory())
                     {
                         var reArmBeforeReload = ReArmExistingMainFrames(stage + "-wrapper-pre-reload");
                         if (reArmBeforeReload > 0)
                             gameReady = await WaitForGameSignalAsync(1500);
 
                         if (gameReady)
-                            Log("[PlayEnsureGame] wrapper re-arm existing frame ready.");
+                            Log("[PlayEnsureGame] existing frame became ready.");
                     }
 
-                    if (!gameReady && IsCurrentHostAllowUnboundHistory())
+                    if (!gameReady && !preferSamePage && IsCurrentHostAllowUnboundHistory())
                     {
                         var preReloadRes = await ForceReloadLikelyGameIframeAsync();
-                        Log("[PlayEnsureGame] pre-click-reload-frame: " + preReloadRes);
+                        Log("[PlayEnsureGame] pre-click-refresh-view: " + preReloadRes);
                         await LogHostLaunchProbeAsync(stage + "-after-preclick-reload");
                         gameReady = await WaitForBetGameUrlAsync(2500);
                         if (!gameReady)
@@ -8334,9 +8435,18 @@ try{
                     Log("[PlayEnsureGame] click-title: " + clickRes);
                     await LogHostLaunchProbeAsync(stage + "-after-click");
                     _ = TraceHostLaunchAfterClickAsync(stage + "-post-click-trace", 12000, 1500);
-                    gameReady = await WaitForBetGameUrlAsync(8000);
-                    if (!gameReady)
-                        gameReady = await WaitForGameSignalAsync(3000);
+                    if (preferSamePage)
+                    {
+                        gameReady = await WaitForGameSignalAsync(5000);
+                        if (!gameReady)
+                            gameReady = await WaitForBetGameUrlAsync(8000);
+                    }
+                    else
+                    {
+                        gameReady = await WaitForBetGameUrlAsync(8000);
+                        if (!gameReady)
+                            gameReady = await WaitForGameSignalAsync(3000);
+                    }
                 }
 
                 if (!gameReady && IsCurrentHostVipbet389())
@@ -8353,7 +8463,7 @@ try{
                 if (!gameReady)
                 {
                     var reloadRes = await ForceReloadLikelyGameIframeAsync();
-                    Log("[PlayEnsureGame] force-reload-frame: " + reloadRes);
+                    Log("[PlayEnsureGame] refresh-view: " + reloadRes);
                     await LogHostLaunchProbeAsync(stage + "-after-force-reload");
                     _ = TraceHostLaunchAfterClickAsync(stage + "-post-reload-trace", 8000, 1500);
                     gameReady = await WaitForBetGameUrlAsync(6000);
@@ -8361,7 +8471,7 @@ try{
                         gameReady = await WaitForGameSignalAsync(5000);
                 }
 
-                if (!gameReady)
+                if (!gameReady && !preferSamePage)
                 {
                     var routed = await TryRouteHostIframeToPopupAsync();
                     if (routed)
@@ -8382,7 +8492,7 @@ try{
                     }
                     else if (IsLikelyBetGatewayUrl(betSrc))
                     {
-                        Log("[PlayEnsureGame] still on gateway login URL (not game-ready): " + betSrc);
+                        Log("[PlayEnsureGame] still on gateway page (not game-ready): " + betSrc);
                     }
                 }
 
@@ -8402,7 +8512,9 @@ try{
                     Log("[PlayEnsureGame] no-data-signal | tickAge=" + (tickAge < 0 ? "-" : tickAge.ToString("0.0", CultureInfo.InvariantCulture) + "s") +
                         " | seqLen=" + (snap?.seq?.Length ?? 0) +
                         " | status=" + (string.IsNullOrWhiteSpace(snap?.status) ? "-" : Shrink(snap?.status, 80)));
-                    Log("[PlayEnsureGame] game context still not ready after click + iframe fallback.");
+                    Log(preferSamePage
+                        ? "[PlayEnsureGame] game context still not ready after same-page click flow."
+                        : "[PlayEnsureGame] game context still not ready after launch attempts.");
                 }
             }
             catch (Exception ex)
@@ -9046,25 +9158,68 @@ try{
             return string.Equals(host, "app.lucky-wheel.game8b.com", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool IsLikelyBetGameReadyUrl(string? rawUrl)
+        private static bool IsKnownModernBetShellHost(string? hostRaw)
+        {
+            var host = (hostRaw ?? "").Trim().ToLowerInvariant();
+            if (host.Length == 0)
+                return false;
+            return
+                host.EndsWith("zowin.nu", StringComparison.OrdinalIgnoreCase) ||
+                host.EndsWith("game8b.com", StringComparison.OrdinalIgnoreCase) ||
+                host.StartsWith("bpweb.", StringComparison.OrdinalIgnoreCase) ||
+                host.StartsWith("games.", StringComparison.OrdinalIgnoreCase) ||
+                host.Contains("usplaynet.com", StringComparison.OrdinalIgnoreCase) ||
+                host.Contains("balikko.com", StringComparison.OrdinalIgnoreCase) ||
+                host.Contains("barppat.com", StringComparison.OrdinalIgnoreCase) ||
+                host.Contains("restula.com", StringComparison.OrdinalIgnoreCase) ||
+                host.Contains("atllat.com", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HasModernBaccaratRouteHint(string? rawUrl)
+        {
+            var href = (rawUrl ?? "").Trim().ToLowerInvariant();
+            if (href.Length == 0)
+                return false;
+            return
+                href.Contains("/activations/baccarat", StringComparison.OrdinalIgnoreCase) ||
+                (href.Contains("selectedgame=baccarat", StringComparison.OrdinalIgnoreCase) &&
+                 !href.Contains("application=lobby", StringComparison.OrdinalIgnoreCase)) ||
+                href.Contains("xoc", StringComparison.OrdinalIgnoreCase) ||
+                href.Contains("baccarat", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsLikelyModernBetShellUrl(string? rawUrl)
         {
             if (string.IsNullOrWhiteSpace(rawUrl))
                 return false;
-            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+            if (IsLikelyBetGatewayUrl(rawUrl))
                 return false;
-            var host = (u.Host ?? "").ToLowerInvariant();
-            if (host.StartsWith("bpweb.") || host.StartsWith("games."))
-                return true;
             if (IsLikelyGame8bPopupUrl(rawUrl))
                 return true;
-            var path = u.AbsolutePath ?? "";
-            if (path.IndexOf("/player/webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-            if (path.IndexOf("/player/singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-            if (path.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+
+            var host = (u.Host ?? "").ToLowerInvariant();
+            var href = rawUrl.Trim().ToLowerInvariant();
+            var path = (u.AbsolutePath ?? "").Trim();
+            bool hasModernHint = HasModernBaccaratRouteHint(rawUrl);
+            bool hasRoutePayload =
+                !string.IsNullOrWhiteSpace(u.Query) ||
+                !string.IsNullOrWhiteSpace(u.Fragment) ||
+                (!string.IsNullOrWhiteSpace(path) && !string.Equals(path, "/", StringComparison.Ordinal));
+
+            if (host.Contains("vivogaming.com", StringComparison.OrdinalIgnoreCase))
+                return hasModernHint;
+
+            if (IsKnownModernBetShellHost(host))
+                return hasModernHint || (hasRoutePayload && !href.Contains("application=lobby", StringComparison.OrdinalIgnoreCase));
+
             return false;
+        }
+
+        private static bool IsLikelyBetGameReadyUrl(string? rawUrl)
+        {
+            return IsLikelyModernBetShellUrl(rawUrl);
         }
 
         private static bool IsLikelyBetGatewayUrl(string? rawUrl)
@@ -9131,11 +9286,37 @@ try{
                 return false;
             return
                 url.IndexOf("/player/login/apilogin", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                url.IndexOf("/player/webmain.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                url.IndexOf("/player/gamehall.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                url.IndexOf("/player/singlebactable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                IsLikelyGame8bPopupUrl(url) ||
+                IsLikelyBetGameReadyUrl(url) ||
                 url.IndexOf("/error?", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool IsCurrentHostSamePageLiveFlow()
+        {
+            try
+            {
+                var src = GetBetWebViewSource(Web);
+                if (string.IsNullOrWhiteSpace(src))
+                    src = Web?.CoreWebView2?.Source ?? "";
+                if (string.IsNullOrWhiteSpace(src))
+                    return false;
+                if (!Uri.TryCreate(src, UriKind.Absolute, out var uri))
+                    return false;
+
+                var host = (uri.Host ?? "").Trim().ToLowerInvariant();
+                if (host.EndsWith("zowin.nu", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (host.EndsWith("game8b.com", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (host.StartsWith("bpweb.", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (host.StartsWith("games.", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static string TryExtractHost(string? rawUrl)
@@ -9258,14 +9439,14 @@ try{
         {
             if (!TryGetRecentPlayerFlowGameUrl(maxAgeSeconds, out var entryUrl, out var cacheReason))
             {
-                Log("[VaoXocDia] player-flow cache miss: " + cacheReason);
+                Log("[VaoXocDia] cached game url miss: " + cacheReason);
                 return false;
             }
 
             var popup = await EnsurePopupWebReadyAsync();
             if (popup?.CoreWebView2 == null)
             {
-                Log("[VaoXocDia] player-flow cache route: popup web not ready.");
+                Log("[VaoXocDia] cached game url route: popup web not ready.");
                 return false;
             }
 
@@ -9277,7 +9458,7 @@ try{
                 popup.Focus();
             });
 
-            Log("[VaoXocDia] player-flow cache routed popup to: " + entryUrl);
+            Log("[VaoXocDia] cached game url routed popup to: " + entryUrl);
             return true;
         }
 
@@ -9291,9 +9472,8 @@ try{
       ready: String(document.readyState||''),
       frameCount: 0,
       hasApiLogin: false,
-      hasWebMain: false,
-      hasGameHall: false,
-      hasSingleBac: false,
+      hasKnownShell: false,
+      hasModernBaccarat: false,
       frames: [],
       xocDiaHits: []
     };
@@ -9304,9 +9484,8 @@ try{
       var src = String((el.getAttribute('src') || el.src || '')).trim();
       var l = src.toLowerCase();
       if (l.indexOf('/player/login/apilogin') >= 0) out.hasApiLogin = true;
-      if (l.indexOf('/player/webmain.jsp') >= 0) out.hasWebMain = true;
-      if (l.indexOf('/player/gamehall.jsp') >= 0) out.hasGameHall = true;
-      if (l.indexOf('/player/singlebactable.jsp') >= 0) out.hasSingleBac = true;
+      if (/\/\/(?:[^\/]+\.)?zowin\.nu\//i.test(l) || /\/\/(?:[^\/]+\.)?game8b\.com\//i.test(l) || /\/\/bpweb\./i.test(l) || /\/\/games\./i.test(l) || /usplaynet\.com/i.test(l) || /balikko\.com/i.test(l) || /barppat\.com/i.test(l) || /restula\.com/i.test(l) || /atllat\.com/i.test(l)) out.hasKnownShell = true;
+      if (/\/activations\/baccarat(?:\/|\?|$)/i.test(l) || (/(?:^|[?&])selectedgame=baccarat(?:[&#]|$)/i.test(l) && !/(?:^|[?&])application=lobby(?:[&#]|$)/i.test(l)) || /xoc[\-_]?dia|baccarat/i.test(l)) out.hasModernBaccarat = true;
       out.frames.push({ i:i, src:src });
     }
     var cands = Array.from(document.querySelectorAll('a,button,[role=""button""],.item-live,.item-live .title,.livestream-section__live .item-live'));
@@ -9484,15 +9663,20 @@ try{
         if (u.indexOf('doubleclick') >= 0) continue;
         if (u.indexOf('googletagmanager') >= 0) continue;
       }
-      if (u.indexOf('/player/login/apilogin') >= 0) s += 100;
-      if (u.indexOf('/player/gamehall.jsp') >= 0) s += 90;
-      if (u.indexOf('/player/singlebactable.jsp') >= 0) s += 80;
-      if (u.indexOf('/player/webmain.jsp') >= 0) s += 70;
-      if (u.indexOf('usplaynet.com') >= 0) s += 30;
-      if (u.indexOf('balikko.com') >= 0) s += 20;
-      if (u.indexOf('restula.com') >= 0) s += 20;
-      if (u.indexOf('atllat.com') >= 0) s += 20;
-      if (u.indexOf('bpweb.') >= 0) s += 20;
+      if (u.indexOf('/player/login/apilogin') >= 0) s += 35;
+      if (u.indexOf('/activations/baccarat') >= 0) s += 130;
+      if (u.indexOf('selectedgame=baccarat') >= 0 && u.indexOf('application=lobby') < 0) s += 120;
+      if (u.indexOf('xoc') >= 0 || u.indexOf('baccarat') >= 0) s += 75;
+      if (u.indexOf('zowin.nu') >= 0) s += 65;
+      if (u.indexOf('game8b.com') >= 0) s += 55;
+      if (u.indexOf('usplaynet.com') >= 0) s += 35;
+      if (u.indexOf('balikko.com') >= 0) s += 30;
+      if (u.indexOf('barppat.com') >= 0) s += 30;
+      if (u.indexOf('restula.com') >= 0) s += 25;
+      if (u.indexOf('atllat.com') >= 0) s += 25;
+      if (u.indexOf('bpweb.') >= 0) s += 40;
+      if (u.indexOf('games.') >= 0) s += 28;
+      if (u.indexOf('application=lobby') >= 0) s -= 60;
       try{
         var r = el.getBoundingClientRect();
         if (r.width > 260 && r.height > 180) s += 6;
@@ -9583,16 +9767,19 @@ try{
       if (!src) continue;
       var u = src.toLowerCase();
       var s = 0;
-      if (u.indexOf('/player/singlebactable.jsp') >= 0) s += 100;
-      if (u.indexOf('/player/webmain.jsp') >= 0) s += 90;
-      if (u.indexOf('/player/gamehall.jsp') >= 0) s += 80;
-      if (u.indexOf('/player/login/apilogin') >= 0) s += 70;
+      if (u.indexOf('/activations/baccarat') >= 0) s += 130;
+      if (u.indexOf('selectedgame=baccarat') >= 0 && u.indexOf('application=lobby') < 0) s += 120;
+      if (u.indexOf('/player/login/apilogin') >= 0) s += 35;
       if (u.indexOf('app.lucky-wheel.game8b.com') >= 0) s += 95;
-      if (u.indexOf('game8b.com') >= 0) s += 35;
-      if (u.indexOf('bpweb.') >= 0) s += 40;
-      if (u.indexOf('usplaynet.com') >= 0) s += 30;
-      if (u.indexOf('balikko.com') >= 0) s += 30;
-      if (u.indexOf('barppat.com') >= 0) s += 30;
+      if (u.indexOf('zowin.nu') >= 0) s += 72;
+      if (u.indexOf('game8b.com') >= 0) s += 55;
+      if (u.indexOf('bpweb.') >= 0) s += 48;
+      if (u.indexOf('games.') >= 0) s += 32;
+      if (u.indexOf('usplaynet.com') >= 0) s += 36;
+      if (u.indexOf('balikko.com') >= 0) s += 34;
+      if (u.indexOf('barppat.com') >= 0) s += 34;
+      if (u.indexOf('xoc') >= 0 || u.indexOf('baccarat') >= 0) s += 68;
+      if (u.indexOf('application=lobby') >= 0) s -= 60;
       if (s > bestScore){ bestScore = s; best = src; }
     }
     return best || '';
@@ -9613,20 +9800,20 @@ try{
             var entryUrl = await GetBestGameIframeUrlFromHostAsync();
             if (string.IsNullOrWhiteSpace(entryUrl))
             {
-                Log("[VaoXocDia] iframe fallback: no candidate iframe url.");
+                Log("[VaoXocDia] fallback route: no candidate frame url.");
                 return false;
             }
 
             if (IsLikelyBetGatewayUrl(entryUrl))
             {
-                Log("[VaoXocDia] iframe fallback: candidate is gateway apiLogin, skip popup routing to avoid provider token mismatch.");
+                Log("[VaoXocDia] fallback route: candidate is gateway page, skip popup navigation.");
                 return false;
             }
 
             var popup = await EnsurePopupWebReadyAsync();
             if (popup?.CoreWebView2 == null)
             {
-                Log("[VaoXocDia] iframe fallback: popup web not ready.");
+                Log("[VaoXocDia] fallback route: popup web not ready.");
                 return false;
             }
 
@@ -9638,7 +9825,7 @@ try{
                 popup.Focus();
             });
 
-            Log("[VaoXocDia] iframe fallback routed popup to: " + entryUrl);
+            Log("[VaoXocDia] fallback route navigated popup to: " + entryUrl);
             return true;
         }
 
@@ -12187,13 +12374,24 @@ try{
         {
             var href = (hrefRaw ?? "").Trim();
             if (href.Length == 0) return false;
+            if (IsLikelyModernBetShellUrl(href))
+                return true;
             return
-                href.IndexOf("singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                href.IndexOf("webMain.jsp", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                href.IndexOf("/player/", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("xoc", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("baccarat", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 href.IndexOf("table", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsLikelyGameShellFrameHref(string? hrefRaw)
+        {
+            var href = (hrefRaw ?? "").Trim();
+            if (href.Length == 0)
+                return false;
+            if (!Uri.TryCreate(href, UriKind.Absolute, out var uri))
+                return false;
+
+            var host = uri.Host ?? "";
+            return IsKnownModernBetShellHost(host);
         }
 
         private static bool TryGetBaccaratFrameKey(string? hrefRaw, out string key)
@@ -12329,7 +12527,10 @@ try{
             var probe = await ReadFrameDocProbeAsync(frame);
             if (probe == null) return false;
 
-            bool looksGame = probe.HasCocos || IsLikelyGameFrameHref(probe.Href);
+            bool byCocos = probe.HasCocos;
+            bool byHref = IsLikelyGameFrameHref(probe.Href);
+            bool byShellHref = IsLikelyGameShellFrameHref(probe.Href);
+            bool looksGame = byCocos || byHref || byShellHref;
             if (!looksGame)
                 return false;
             ObserveTableSwitchFromFrameHref(probe.Href, stage);
@@ -12354,7 +12555,12 @@ try{
             var hrefLog = probe.Href ?? "";
             if (hrefLog.Length > 160)
                 hrefLog = hrefLog.Substring(0, 160) + "...";
-            Log("[Bridge] Frame " + stage + " -> injected game frame + autostart. | href=" + hrefLog);
+            var reason =
+                byCocos ? "cocos" :
+                byHref ? "href" :
+                byShellHref ? "shell-href" :
+                "unknown";
+            Log("[Bridge] Frame " + stage + " -> injected game frame + autostart. | reason=" + reason + " | href=" + hrefLog);
             ProbeFrameBridgeAsync(frame, "Frame", stage + "-inject");
             return true;
         }
