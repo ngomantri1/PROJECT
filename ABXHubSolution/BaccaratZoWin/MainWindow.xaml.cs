@@ -573,6 +573,8 @@ namespace BaccaratZoWin
         private sealed class TickUiPayload
         {
             public double? Prog { get; set; }
+            public string ProgMode { get; set; } = "";
+            public long SnapshotTs { get; set; }
             public string StatusUi { get; set; } = "";
             public string Seq { get; set; } = "";
             public long SeqVersion { get; set; }
@@ -609,6 +611,12 @@ namespace BaccaratZoWin
         private readonly object _tickUiQueueLock = new();
         private TickUiPayload? _pendingTickUiPayload;
         private int _tickUiDispatchQueued = 0;
+        private System.Windows.Threading.DispatcherTimer? _progUiTimer;
+        private bool _progUiIsSeconds = false;
+        private bool _progUiHasValue = false;
+        private double _progUiAnchorValue = 0;
+        private DateTime _progUiAnchorUtc = DateTime.MinValue;
+        private string _progUiEmptyLabel = "-";
         private readonly object _tickIngressGateLock = new();
         private DateTime _lastPopupFrameTickIngressUtc = DateTime.MinValue;
         private DateTime _lastPopupPullTickIngressUtc = DateTime.MinValue;
@@ -631,9 +639,9 @@ namespace BaccaratZoWin
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
         private static readonly TimeSpan UiCountdownHoldFresh = TimeSpan.FromMilliseconds(1500);
         private static readonly TimeSpan UiCountdownHoldFreshPopupPull = TimeSpan.FromSeconds(8);
-        private static readonly TimeSpan TickUiMinDispatchGap = TimeSpan.FromMilliseconds(180);
+        private static readonly TimeSpan TickUiMinDispatchGap = TimeSpan.FromMilliseconds(80);
         private static readonly TimeSpan PopupFrameTickIngressMinGap = TimeSpan.FromMilliseconds(95);
-        private static readonly TimeSpan PopupPullTickIngressMinGap = TimeSpan.FromMilliseconds(320);
+        private static readonly TimeSpan PopupPullTickIngressMinGap = TimeSpan.FromMilliseconds(140);
         private static readonly TimeSpan MainFrameTickIngressMinGap = TimeSpan.FromMilliseconds(80);
         private static readonly TimeSpan GameHintUiMinGap = TimeSpan.FromMilliseconds(400);
         private static readonly TimeSpan CdpAutoFallbackMinWindow = TimeSpan.FromSeconds(20);
@@ -1054,6 +1062,8 @@ Ví dụ không hợp lệ:
         private WebView2? _popupWeb;
         private int _popupTickPullBusy = 0;
         private DateTime _lastPopupTickPullUtc = DateTime.MinValue;
+        private int _mainTickPullBusy = 0;
+        private DateTime _lastMainTickPullUtc = DateTime.MinValue;
         private readonly object _playerFlowCacheLock = new();
         private string _lastPlayerFlowGameUrl = "";
         private DateTime _lastPlayerFlowGameAtUtc = DateTime.MinValue;
@@ -1393,9 +1403,21 @@ try{
                 if (mSeq) seq = String(mSeq[1] || '').trim();
               }
 
+              var progValid = (prog != null && isFinite(Number(prog)))
+                ? Number(win.__cw_prog_valid || 1)
+                : Number(win.__cw_prog_valid || 0);
+              var progMode = String(win.__cw_prog_mode || ((prog != null && isFinite(Number(prog))) ? 'seconds' : ''));
+              var progRaw = (win.__cw_prog_raw == null)
+                ? ((prog != null && isFinite(Number(prog))) ? Number(prog) : null)
+                : Number(win.__cw_prog_raw);
+              if (progRaw != null && !isFinite(progRaw)) progRaw = null;
+
               return {
                 abx:'tick',
                 prog:prog,
+                progValid:progValid,
+                progMode:progMode,
+                progRaw:progRaw,
                 progSource:String(win.__cw_prog_source || ''),
                 progTail:String(win.__cw_prog_tail || ''),
                 totals:{
@@ -2718,7 +2740,7 @@ try{
                 _ = Dispatcher.BeginInvoke(new Action(applyFallback));
         }
 
-        private void QueueTickUiUpdate(double? progUi, string statusUiDisplay, string seqForUi, double? amountUi, string userNameUi, string source, long seqVersion, string seqEvent)
+        private void QueueTickUiUpdate(double? progUi, string progModeUi, long snapshotTsUi, string statusUiDisplay, string seqForUi, double? amountUi, string userNameUi, string source, long seqVersion, string seqEvent)
         {
             var seqFiltered = FilterResultDisplaySeqWindow(seqForUi ?? "");
             var queueKey = $"{source}|{seqFiltered.Length}|{seqVersion}|{seqEvent}|{statusUiDisplay}";
@@ -2734,6 +2756,8 @@ try{
                 _pendingTickUiPayload = new TickUiPayload
                 {
                     Prog = progUi,
+                    ProgMode = progModeUi ?? "",
+                    SnapshotTs = snapshotTsUi,
                     StatusUi = statusUiDisplay ?? "",
                     Seq = seqFiltered,
                     SeqVersion = seqVersion,
@@ -2768,25 +2792,7 @@ try{
 
                     try
                     {
-                        if (payload.Prog.HasValue)
-                        {
-                            var pct = Math.Max(0, Math.Min(100, payload.Prog.Value));
-                            var pctInt = (int)Math.Round(pct, MidpointRounding.AwayFromZero);
-                            var ratio = pct / 100.0;
-                            if (PrgBet != null)
-                            {
-                                PrgBet.Minimum = 0;
-                                PrgBet.Maximum = 1;
-                                PrgBet.Value = ratio;
-                            }
-                            if (LblProg != null) LblProg.Text = $"{pctInt}%";
-                        }
-                        else
-                        {
-                            if (PrgBet != null) PrgBet.Value = 0;
-                            if (LblProg != null)
-                                LblProg.Text = !string.IsNullOrWhiteSpace(payload.StatusUi) ? "0%" : "-";
-                        }
+                        ApplyProgUiPayload(payload);
 
                         var seqStrLocal = FilterResultDisplaySeqWindow(payload.Seq);
                         char last = (seqStrLocal.Length > 0) ? seqStrLocal[^1] : '\0';
@@ -2827,6 +2833,12 @@ try{
                             if (!string.IsNullOrWhiteSpace(payload.StatusUi))
                             {
                                 LblStatusText.Text = payload.StatusUi;
+                                if (string.Equals(payload.StatusUi, "Bắt đầu đặt cược", StringComparison.Ordinal))
+                                    LblStatusText.Foreground = Brushes.Green;
+                                else if (string.Equals(payload.StatusUi, "Đợi kết quả", StringComparison.Ordinal))
+                                    LblStatusText.Foreground = Brushes.Red;
+                                else
+                                    LblStatusText.Foreground = Brushes.Black;
                                 LblStatusText.Visibility = Visibility.Visible;
                             }
                             else
@@ -2848,6 +2860,124 @@ try{
                         _ = Dispatcher.BeginInvoke(new Action(DrainTickUiQueue));
                 }
             }
+        }
+
+        private void EnsureProgUiTimer()
+        {
+            if (_progUiTimer != null)
+                return;
+            _progUiTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(120)
+            };
+            _progUiTimer.Tick += (_, __) =>
+            {
+                try { RenderProgUiFromAnchor(); } catch { }
+            };
+        }
+
+        private static DateTime SnapshotTsToUtc(long snapshotTs)
+        {
+            if (snapshotTs <= 0)
+                return DateTime.UtcNow;
+            try
+            {
+                return DateTimeOffset.FromUnixTimeMilliseconds(snapshotTs).UtcDateTime;
+            }
+            catch
+            {
+                return DateTime.UtcNow;
+            }
+        }
+
+        private void ApplyProgUiPayload(TickUiPayload payload)
+        {
+            bool isSeconds = string.Equals(payload.ProgMode, "seconds", StringComparison.OrdinalIgnoreCase);
+
+            if (payload.Prog.HasValue)
+            {
+                _progUiHasValue = true;
+                _progUiIsSeconds = isSeconds;
+                _progUiEmptyLabel = isSeconds
+                    ? (!string.IsNullOrWhiteSpace(payload.StatusUi) ? "0s" : "-")
+                    : (!string.IsNullOrWhiteSpace(payload.StatusUi) ? "0%" : "-");
+
+                if (isSeconds)
+                {
+                    _progUiAnchorValue = Math.Clamp(payload.Prog.Value, 0, 30);
+                    _progUiAnchorUtc = SnapshotTsToUtc(payload.SnapshotTs);
+                    EnsureProgUiTimer();
+                    RenderProgUiFromAnchor();
+                    if (_progUiTimer != null && !_progUiTimer.IsEnabled)
+                        _progUiTimer.Start();
+                }
+                else
+                {
+                    _progUiAnchorValue = Math.Clamp(payload.Prog.Value, 0, 100);
+                    _progUiAnchorUtc = DateTime.UtcNow;
+                    if (_progUiTimer != null && _progUiTimer.IsEnabled)
+                        _progUiTimer.Stop();
+                    RenderProgUiFromAnchor();
+                }
+            }
+            else
+            {
+                _progUiHasValue = false;
+                _progUiIsSeconds = false;
+                _progUiAnchorValue = 0;
+                _progUiAnchorUtc = DateTime.MinValue;
+                _progUiEmptyLabel = !string.IsNullOrWhiteSpace(payload.StatusUi) ? "0s" : "-";
+                if (_progUiTimer != null && _progUiTimer.IsEnabled)
+                    _progUiTimer.Stop();
+                RenderProgUiFromAnchor();
+            }
+        }
+
+        private void RenderProgUiFromAnchor()
+        {
+            if (!_progUiHasValue)
+            {
+                if (PrgBet != null)
+                {
+                    PrgBet.Minimum = 0;
+                    PrgBet.Maximum = 30;
+                    PrgBet.Value = 0;
+                }
+                if (LblProg != null)
+                    LblProg.Text = _progUiEmptyLabel;
+                return;
+            }
+
+            if (_progUiIsSeconds)
+            {
+                var anchorUtc = _progUiAnchorUtc == DateTime.MinValue ? DateTime.UtcNow : _progUiAnchorUtc;
+                var elapsedSec = Math.Max(0, (DateTime.UtcNow - anchorUtc).TotalSeconds);
+                var remain = Math.Clamp(_progUiAnchorValue - elapsedSec, 0, 30);
+                var remainInt = remain <= 0 ? 0 : (int)Math.Ceiling(remain - 1e-9);
+                if (PrgBet != null)
+                {
+                    PrgBet.Minimum = 0;
+                    PrgBet.Maximum = 30;
+                    PrgBet.Value = remain;
+                }
+                if (LblProg != null)
+                    LblProg.Text = $"{remainInt}s";
+                if (remain <= 0 && _progUiTimer != null && _progUiTimer.IsEnabled)
+                    _progUiTimer.Stop();
+                return;
+            }
+
+            var pct = Math.Clamp(_progUiAnchorValue, 0, 100);
+            var pctInt = (int)Math.Round(pct, MidpointRounding.AwayFromZero);
+            var ratio = pct / 100.0;
+            if (PrgBet != null)
+            {
+                PrgBet.Minimum = 0;
+                PrgBet.Maximum = 1;
+                PrgBet.Value = ratio;
+            }
+            if (LblProg != null)
+                LblProg.Text = $"{pctInt}%";
         }
 
         private void SyncGlobalFieldsFromActive()
@@ -3953,12 +4083,13 @@ try{
                 {
                     _uiModeTimer = new System.Windows.Threading.DispatcherTimer
                     {
-                        Interval = TimeSpan.FromMilliseconds(450)
+                        Interval = TimeSpan.FromMilliseconds(180)
                     };
                     _uiModeTimer.Tick += (_, __) =>
                     {
                         try { RecomputeUiMode(); } catch { /* ignore */ }
                         _ = TryPullPopupTickFallbackAsync();
+                        _ = TryPullMainTickFallbackAsync();
                     };
                     _uiModeTimer.Start();
                     RecomputeUiMode();
@@ -4551,9 +4682,13 @@ try{
                         }
 
                         bool progValid = (snap.progValid ?? 0) == 1;
+                        string progModeUi = string.IsNullOrWhiteSpace(snap.progMode) ? "" : snap.progMode;
+                        long snapshotTsUi = snap.ts;
                         string statusUi = BuildStatusUiText(statusRaw, snap.prog, progValid);
                         string statusUiDisplay = statusUi;
-                        double? progUi = snap.prog ?? 0;
+                        double? progUi = (string.Equals(progModeUi, "seconds", StringComparison.OrdinalIgnoreCase) && snap.progRaw.HasValue)
+                            ? snap.progRaw
+                            : (snap.prog ?? 0);
                         if (prevUiFresh)
                         {
                             if (string.IsNullOrWhiteSpace(statusUiDisplay))
@@ -4866,7 +5001,11 @@ try{
                         var seqUiTail = Tail(seqForUiFiltered, 20);
                         var seqUiSig = $"{seqForUiFiltered.Length}:{(snap?.seqVersion ?? 0)}:{seqUiTail}";
                         int progRounded = progUi.HasValue
-                            ? (int)Math.Round(Math.Clamp(progUi.Value, 0, 100), MidpointRounding.AwayFromZero)
+                            ? (int)Math.Round(
+                                string.Equals(progModeUi, "seconds", StringComparison.OrdinalIgnoreCase)
+                                    ? Math.Clamp(progUi.Value, 0, 30)
+                                    : Math.Clamp(progUi.Value, 0, 100),
+                                MidpointRounding.AwayFromZero)
                             : -1;
                         bool shouldPushUi;
                         lock (_tickUiStateLock)
@@ -4891,6 +5030,8 @@ try{
                             var userNameUi = (snap?.totals?.N ?? "").Trim();
                             QueueTickUiUpdate(
                                 progUi,
+                                progModeUi,
+                                snapshotTsUi,
                                 statusUiDisplay ?? "",
                                 seqForUi,
                                 amountUi,
@@ -12609,10 +12750,10 @@ try{
             if (!IsPopupBetViewActive()) return;
             var now = DateTime.UtcNow;
             if (_lastPopupTickPullUtc != DateTime.MinValue &&
-                (now - _lastPopupTickPullUtc) <= TimeSpan.FromMilliseconds(900))
+                (now - _lastPopupTickPullUtc) <= TimeSpan.FromMilliseconds(220))
                 return;
             var age = now - _lastGameTickUtc;
-            if (age <= TimeSpan.FromSeconds(2.2)) return;
+            if (age <= TimeSpan.FromMilliseconds(650)) return;
             if (Interlocked.Exchange(ref _popupTickPullBusy, 1) == 1) return;
             try
             {
@@ -12627,6 +12768,33 @@ try{
             finally
             {
                 Interlocked.Exchange(ref _popupTickPullBusy, 0);
+            }
+        }
+
+        private async Task TryPullMainTickFallbackAsync()
+        {
+            if (Web?.CoreWebView2 == null) return;
+            if (IsPopupBetViewActive()) return;
+            var now = DateTime.UtcNow;
+            if (_lastMainTickPullUtc != DateTime.MinValue &&
+                (now - _lastMainTickPullUtc) <= TimeSpan.FromMilliseconds(220))
+                return;
+            var age = now - _lastGameTickUtc;
+            if (age <= TimeSpan.FromMilliseconds(650)) return;
+            if (Interlocked.Exchange(ref _mainTickPullBusy, 1) == 1) return;
+            try
+            {
+                _lastMainTickPullUtc = now;
+                var raw = await Web.CoreWebView2.ExecuteScriptAsync(PULL_POPUP_TICK_NOW);
+                var msg = JsonSerializer.Deserialize<string>(raw) ?? "";
+                if (string.IsNullOrWhiteSpace(msg))
+                    return;
+                await HandleIncomingWebMessageAsync(msg, "main-pull");
+            }
+            catch { }
+            finally
+            {
+                Interlocked.Exchange(ref _mainTickPullBusy, 0);
             }
         }
 
@@ -13016,6 +13184,12 @@ try{
                 else
                 {
                     LblStatusText.Text = status;
+                    if (string.Equals(status, "Bắt đầu đặt cược", StringComparison.Ordinal))
+                        LblStatusText.Foreground = Brushes.Green;
+                    else if (string.Equals(status, "Đợi kết quả", StringComparison.Ordinal))
+                        LblStatusText.Foreground = Brushes.Red;
+                    else
+                        LblStatusText.Foreground = Brushes.Black;
                     LblStatusText.Visibility = Visibility.Visible;
                 }
             }

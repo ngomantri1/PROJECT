@@ -8750,7 +8750,7 @@
         S.progValid = !!valid;
         try { window.__cw_prog_source = S.progSource; } catch (_) {}
         try { window.__cw_prog_tail = S.progTail; } catch (_) {}
-        try { window.__cw_prog_is_sec = 0; } catch (_) {}
+        try { window.__cw_prog_is_sec = isSec ? 1 : 0; } catch (_) {}
         try { window.__cw_prog_mode = S.progMode; } catch (_) {}
         try { window.__cw_prog_raw = S.progRaw; } catch (_) {}
         try { window.__cw_prog_valid = S.progValid ? 1 : 0; } catch (_) {}
@@ -9267,7 +9267,15 @@
             rawTA: null
         };
         var f = S.focus;
-        var progText = (!S.progValid ? '--' : ((((Number(S.prog) || 0) + 0.0001) | 0) + '%'));
+        var progText = '--';
+        if (S.progValid) {
+            if (String(S.progMode || '').toLowerCase() === 'seconds') {
+                var secShow = (S.progRaw != null && isFinite(Number(S.progRaw))) ? Number(S.progRaw) : Number(S.prog || 0);
+                progText = ((((secShow || 0) + 0.0001) | 0) + 's');
+            } else {
+                progText = ((((Number(S.prog) || 0) + 0.0001) | 0) + '%');
+            }
+        }
         var bankerVal = (t.B != null ? t.B : t.C);
         var playerVal = (t.P != null ? t.P : t.L);
         var cards = t.cards || [];
@@ -9377,8 +9385,8 @@
             };
         } catch (_) {}
         try {
-            if (window.__cw_pushPanelSnapshot)
-                window.__cw_pushPanelSnapshot();
+            if (window.__cw_pushImportantPanelSnapshot)
+                window.__cw_pushImportantPanelSnapshot('ui-update');
         } catch (_) {}
         panel.querySelector('#cwInfo').innerHTML = esc(base) + '\n' + seqHtml;
     }
@@ -13166,71 +13174,22 @@
                evt.indexOf('active-reset-seed-blocked') >= 0;
     }
     function statusByProg(p) {
-        if (!__cw_hasCocos()) {
-            try {
-                var processStatus = domReadProcessStatusInfo();
-                if (processStatus && processStatus.text) {
-                    setStatusMeta('dom-process' + (processStatus.source ? ':' + processStatus.source : ''), processStatus.tail || '');
-                    return processStatus.text;
-                }
-                clearStatusMeta();
-                return '';
-            } catch (_) {
-                clearStatusMeta();
-                return 'Baccarat DOM';
-            }
-        }
-        // Ngưỡng chống rung cho số thực gần 0
         var EPS = 0.001;
-
-        // Quy tắc ông chủ yêu cầu:
-        // - p > 0      → lấy text tail 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage'
-        // - p = 0      → lấy text tail 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting'
-        var TAIL_MSG = 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage';
-        var TAIL_WAIT = 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting';
-
-        // Chọn text theo tail, so khớp theo kiểu "đuôi" để chống thay đổi prefix
-        function pickTextByTailEnd(tailEnd) {
-            try {
-                var texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
-                var best = null,
-                bestArea = -1;
-                var tailEndL = String(tailEnd || '').toLowerCase();
-
-                for (var i = 0; i < texts.length; i++) {
-                    var t = texts[i];
-                    var tl = String(t.tail || '').toLowerCase();
-                    if (!tl.endsWith(tailEndL))
-                        continue;
-
-                    var ar = (t.w || 0) * (t.h || 0);
-                    if (ar > bestArea) {
-                        best = t;
-                        bestArea = ar;
-                    }
-                }
-                return best ? String(best.text || '').trim() : '';
-            } catch (e) {
-                return '';
-            }
+        var prog = Number(p);
+        if (!isFinite(prog))
+            prog = 0;
+        if (prog > EPS) {
+            setStatusMeta('prog-rule:betting', '');
+            return 'Bắt đầu đặt cược';
         }
-
-        p = +p || 0;
-        var tail = (p > EPS) ? TAIL_MSG : TAIL_WAIT;
-        var txt = pickTextByTailEnd(tail);
-
-        if (txt) {
-            setStatusMeta((p > EPS) ? 'cocos-text-message' : 'cocos-text-waiting', tail);
-            return txt;
-        }
-        clearStatusMeta();
-        return "";
+        setStatusMeta('prog-rule:waiting', '');
+        return 'Đợi kết quả';
     }
 
     function tick() {
         var nowTick = Date.now();
         var heavyVisualMode = !!(S.showMoney || S.showText || S.showBet || S.focus);
-        var minUiGapMs = heavyVisualMode ? 300 : (__cw_hasCocos() ? 520 : 900);
+        var minUiGapMs = heavyVisualMode ? 260 : (__cw_hasCocos() ? 220 : 320);
         if (S._lastUiTickAt && (nowTick - S._lastUiTickAt) < minUiGapMs)
             return;
         S._lastUiTickAt = nowTick;
@@ -13403,8 +13362,8 @@
                                 (afterRaw && beforeRaw !== afterRaw);
                             if (afterVer > beforeVer || afterLen > beforeLen || rawAdvanced) {
                                 try {
-                                    if (window.__cw_pushPanelSnapshot)
-                                        window.__cw_pushPanelSnapshot();
+                                    if (window.__cw_pushImportantPanelSnapshot)
+                                        window.__cw_pushImportantPanelSnapshot('seq-observer');
                                 } catch (_) {}
                                 cwDbg('SEQFLOW', 'observer-seq-advance', {
                                     beforeLen: beforeLen,
@@ -13697,26 +13656,9 @@
                 var cached = window.__cw_last_panel_snapshot;
                 if (!cached)
                     return 'no-panel-snapshot';
-                var snap = {
-                    abx: 'tick',
-                    prog: cached.prog,
-                    progValid: Number(cached.progValid || 0),
-                    progMode: String(cached.progMode || ''),
-                    progRaw: (cached.progRaw == null ? null : Number(cached.progRaw)),
-                    progSource: String(cached.progSource || ''),
-                    progTail: String(cached.progTail || ''),
-                    totals: cached.totals || null,
-                    seq: String(cached.seq || ''),
-                    rawSeq: String(cached.rawSeq || cached.seq || ''),
-                    seqVersion: Number(cached.seqVersion || 0),
-                    seqEvent: String(cached.seqEvent || ''),
-                    username: (cached && cached.totals && cached.totals.N != null) ? String(cached.totals.N || '') : '',
-                    status: String(cached.status || ''),
-                    statusSource: String(cached.statusSource || ''),
-                    statusTail: String(cached.statusTail || ''),
-                    ts: Date.now(),
-                    origin: 'canvas-panel'
-                };
+                var snap = buildTickSnapFromCached(cached);
+                if (!snap)
+                    return 'empty-snap';
                 var s = '';
                 try { s = JSON.stringify(snap); } catch (_) {}
                 if (!s)
@@ -13731,10 +13673,26 @@
             }
         };
 
+        window.__cw_pushImportantPanelSnapshot = function (reason) {
+            try {
+                var cached = window.__cw_last_panel_snapshot;
+                if (!cached)
+                    return 'no-panel-snapshot';
+                var snap = buildTickSnapFromCached(cached);
+                if (!snap)
+                    return 'empty-snap';
+                return pushImportantSnapshotNow(snap, reason || 'panel-important', 90);
+            } catch (_) {
+                return 'fail';
+            }
+        };
+
         var _pushTimer = null;
         var _lastJson = '';
         var _lastStableJson = '';
         var _forcePushOnce = false;
+        var _lastImportantPushKey = '';
+        var _lastImportantPushAt = 0;
         var _lastPullSeqVersion = 0;
         var _lastPushSeqVersion = 0;
         var _abxSnapCache = {
@@ -13902,6 +13860,92 @@
                 return true;
             }
             return false;
+        }
+
+        function buildTickSnapFromCached(cached) {
+            if (!cached)
+                return null;
+            return {
+                abx: 'tick',
+                prog: cached.prog,
+                progValid: Number(cached.progValid || 0),
+                progMode: String(cached.progMode || ''),
+                progRaw: (cached.progRaw == null ? null : Number(cached.progRaw)),
+                progSource: String(cached.progSource || ''),
+                progTail: String(cached.progTail || ''),
+                totals: cached.totals || null,
+                seq: String(cached.seq || ''),
+                rawSeq: String(cached.rawSeq || cached.seq || ''),
+                seqVersion: Number(cached.seqVersion || 0),
+                seqEvent: String(cached.seqEvent || ''),
+                username: (cached && cached.totals && cached.totals.N != null) ? String(cached.totals.N || '') : '',
+                status: String(cached.status || ''),
+                statusSource: String(cached.statusSource || ''),
+                statusTail: String(cached.statusTail || ''),
+                ts: Date.now(),
+                origin: 'canvas-panel'
+            };
+        }
+
+        function buildImportantPushKey(obj) {
+            try {
+                var totals = obj && obj.totals ? obj.totals : null;
+                var progRaw = (obj && obj.progRaw != null && isFinite(Number(obj.progRaw)))
+                    ? Math.round(Number(obj.progRaw))
+                    : null;
+                var progVal = (obj && obj.prog != null && isFinite(Number(obj.prog)))
+                    ? Math.round(Number(obj.prog))
+                    : null;
+                return JSON.stringify({
+                    progValid: Number(obj && obj.progValid || 0),
+                    progMode: String(obj && obj.progMode || ''),
+                    progRaw: progRaw,
+                    prog: progVal,
+                    status: String(obj && obj.status || ''),
+                    seq: String(obj && obj.seq || ''),
+                    rawSeq: String(obj && obj.rawSeq || ''),
+                    seqVersion: Number(obj && obj.seqVersion || 0),
+                    seqEvent: String(obj && obj.seqEvent || ''),
+                    A: totals && totals.A != null ? Number(totals.A) : null,
+                    N: totals && totals.N != null ? String(totals.N) : '',
+                    B: totals && totals.B != null ? Number(totals.B) : null,
+                    P: totals && totals.P != null ? Number(totals.P) : null,
+                    T: totals && totals.T != null ? Number(totals.T) : null
+                });
+            } catch (_) {
+                return '';
+            }
+        }
+
+        function pushImportantSnapshotNow(obj, reason, minGapMs) {
+            try {
+                if (!obj)
+                    return 'empty';
+                var key = buildImportantPushKey(obj);
+                if (!key)
+                    return 'empty-key';
+                var now = Date.now();
+                var gap = Number(minGapMs) || 120;
+                if (key === _lastImportantPushKey && (now - _lastImportantPushAt) < gap)
+                    return 'same';
+                _lastImportantPushKey = key;
+                _lastImportantPushAt = now;
+                safePost(obj);
+                try {
+                    cwDbg('PUSH', 'important-change-send', {
+                        reason: String(reason || ''),
+                        seqLen: obj && obj.seq ? String(obj.seq || '').length : 0,
+                        seqVersion: obj && obj.seqVersion != null ? obj.seqVersion : null,
+                        seqEvent: obj && obj.seqEvent ? obj.seqEvent : '',
+                        progMode: obj && obj.progMode ? obj.progMode : '',
+                        progRaw: obj && obj.progRaw != null ? obj.progRaw : null,
+                        status: obj && obj.status ? obj.status : ''
+                    }, 900, 'important-change-send|' + String(reason || '') + '|' + (obj && obj.seqVersion != null ? obj.seqVersion : '') + '|' + (obj && obj.seqEvent ? obj.seqEvent : ''));
+                } catch (_) {}
+                return 'sent';
+            } catch (_) {
+                return 'fail';
+            }
         }
 
         function readProgressVal() {
@@ -14902,6 +14946,8 @@
                     }
                     _lastJson = '';
                     _lastStableJson = '';
+                    _lastImportantPushKey = '';
+                    _lastImportantPushAt = 0;
                     cwDbg('PUSH', 'startPush skipped (non-game context)', {
                         href: (function () {
                             try {
@@ -14919,6 +14965,8 @@
                 }
                 _lastJson = '';
                 _lastStableJson = '';
+                _lastImportantPushKey = '';
+                _lastImportantPushAt = 0;
                 try { window.__cw_last_push_seq_version = Number(_lastPushSeqVersion || 0) || 0; } catch (_) {}
                 cwDbg('PUSH', 'startPush', { tickMs: tickMs }, 0, 'startPush|' + tickMs);
                 _pushTimer = setInterval(function () {

@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows.Data;
 
-namespace BaccaratZoWin
+namespace SicboX88Live
 {
     /// <summary>
     /// Converter tính chiều rộng tiến độ.
@@ -33,25 +33,9 @@ namespace BaccaratZoWin
         {
             // patterns thường gặp:
             // [0]=ActualWidth, [1]=Percent(0..1), [2]=MinWidth (optional)
-            // hoặc:
-            // [0]=ActualWidth, [1]=Value, [2]=Minimum, [3]=Maximum
             double actualWidth = ToDouble(values, 0, double.NaN);
-            double value = ToDouble(values, 1, 0);
-            double minWidth = 0;
-            double percent;
-
-            if (values != null && values.Length >= 4)
-            {
-                double minimum = ToDouble(values, 2, 0);
-                double maximum = ToDouble(values, 3, 1);
-                double range = maximum - minimum;
-                percent = range > 0 ? (value - minimum) / range : 0;
-            }
-            else
-            {
-                percent = value;
-                minWidth = ToDouble(values, 2, 0);
-            }
+            double percent = ToDouble(values, 1, 0);
+            double minWidth = ToDouble(values, 2, 0);
 
             percent = Clamp01(percent);
 
