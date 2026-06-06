@@ -208,6 +208,11 @@
             return sc >= 14;
         return sc >= 24;
     }
+    function __cw_isBootHostHint(ctx) {
+        var c = ctx || __cw_urlContext();
+        var hostL = __cw_safeLower(c.host);
+        return hostL.indexOf('sicbox88.swgames.club') !== -1;
+    }
     function __cw_probeGameScene(limitNodes) {
         var now0 = Date.now();
         var cacheKey = '';
@@ -431,6 +436,7 @@
                 var hasCc = !!(window.cc && cc.director && cc.director.getScene);
                 var match = __cw_matchpage();
                 var likelyGameUrl = __cw_isLikelyGameUrl(match.ctx, match.score);
+                var bootHostHint = __cw_isBootHostHint(match.ctx);
                 var probe = {
                     ok: false,
                     score: Number(match.score) || 0,
@@ -472,11 +478,23 @@
                     probe.ok = true;
                 if (!probe.ok && hasCc && (Number(probe.urlScore) || 0) >= 20)
                     probe.ok = true;
+                if (!probe.ok && hasCc && bootHostHint &&
+                    ((Number(probe.canvases) || 0) > 0 || (Number(probe.labels) || 0) > 0 || (Number(probe.score) || 0) >= 6)) {
+                    probe.ok = true;
+                }
                 if (hasCc && probe.ok && (match.ok || sceneStrong || likelyGameUrl) && __cw_claimBootOwner(probe)) {
                     clearInterval(timer);
                     window.__cw_waiting_v4 = 0;
                     window.__cw_scene_probe = probe;
                     __cw_emitProbe(sceneStrong && !match.ok ? 'ready_boot_scene' : (likelyGameUrl && !match.ok ? 'ready_boot_urlhint' : 'ready_boot'), probe);
+                    __cw_boot();
+                    return;
+                }
+                if (hasCc && probe.ok && bootHostHint && __cw_claimBootOwner(probe)) {
+                    clearInterval(timer);
+                    window.__cw_waiting_v4 = 0;
+                    window.__cw_scene_probe = probe;
+                    __cw_emitProbe('ready_boot_hosthint', probe);
                     __cw_boot();
                     return;
                 }
@@ -2288,17 +2306,24 @@
 
         /* ---------------- helpers for totals by (y, tail) ---------------- */
 
-        var TAIL_BET_CHAN = 'board_back/lbl_money_total_bet_chan';
+        var TAIL_BET_SHARED = 'BetArea/lbl_currentBet';
+        var BET_MAIN_ANCHORS = {
+            CHAN: { x: 801, y: 600, tolX: 80, tolY: 80 },
+            LE: { x: 426, y: 600, tolX: 80, tolY: 80 },
+            TAI: { x: 1048, y: 798, tolX: 90, tolY: 90 },
+            XIU: { x: 179, y: 798, tolX: 90, tolY: 90 }
+        };
+        var TAIL_BET_CHAN = TAIL_BET_SHARED;
 
-        var TAIL_BET_LE = 'board_back/lbl_money_total_bet_le';
+        var TAIL_BET_LE = TAIL_BET_SHARED;
 
-        var TAIL_BET_TAI = 'board_back/lbl_money_total_bet_tai';
+        var TAIL_BET_TAI = TAIL_BET_SHARED;
 
-        var TAIL_BET_XIU = 'board_back/lbl_money_total_bet_xiu';
+        var TAIL_BET_XIU = TAIL_BET_SHARED;
 
-        var TAIL_ACC = 'avatar_node/lbl_money';
+        var TAIL_ACC = 'userData/lbl_userMoney';
 
-        var TAIL_USER_NAME = 'avatar_node/lbl_username';
+        var TAIL_USER_NAME = 'userData/lbl_username';
 
 
         function tailEquals(t, exact) {
@@ -2586,6 +2611,40 @@
 
         }
 
+        function pickByTailAnchorXY(list, tailExact, xTarget, yTarget, tolX, tolY) {
+            tolX = (tolX == null ? 64 : tolX);
+            tolY = (tolY == null ? 64 : tolY);
+            var arr = [];
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                if (!tailEquals(tailOfMoney(it), tailExact))
+                    continue;
+                var dx = Math.abs(Math.round(xOf(it)) - Math.round(xTarget));
+                var dy = Math.abs(Math.round(yOf(it)) - Math.round(yTarget));
+                if (dx > tolX || dy > tolY)
+                    continue;
+                arr.push({
+                    it: it,
+                    dx: dx,
+                    dy: dy
+                });
+            }
+            if (!arr.length)
+                return null;
+            arr.sort(function (a, b) {
+                return (a.dy - b.dy) || (a.dx - b.dx) || (yOf(a.it) - yOf(b.it)) || (xOf(a.it) - xOf(b.it));
+            });
+            return arr[0].it;
+        }
+
+        function pickMainBetBySide(list, side) {
+            side = normalizeSide(side);
+            var a = BET_MAIN_ANCHORS[side];
+            if (!a)
+                return null;
+            return pickByTailAnchorXY(list, TAIL_BET_SHARED, a.x, a.y, a.tolX, a.tolY);
+        }
+
         /** pick by left/right (min/max x) under the given tail */
 
         function pickByXOrderTail(list, tailExact, which) {
@@ -2698,10 +2757,10 @@
                 lines.push('(empty)');
 
             } else {
-                var pickC = pickByTail(list, TAIL_BET_CHAN);
-                var pickL = pickByTail(list, TAIL_BET_LE);
-                var pickT = pickByTail(list, TAIL_BET_TAI);
-                var pickX = pickByTail(list, TAIL_BET_XIU);
+                var pickC = pickMainBetBySide(list, 'CHAN');
+                var pickL = pickMainBetBySide(list, 'LE');
+                var pickT = pickMainBetBySide(list, 'TAI');
+                var pickX = pickMainBetBySide(list, 'XIU');
                 lines.push('pick CHẴN: ' + (pickC ? ("'" + pickC.txt + "'") : '(none)'));
                 lines.push('pick LẺ  : ' + (pickL ? ("'" + pickL.txt + "'") : '(none)'));
                 lines.push('pick TÀI : ' + (pickT ? ("'" + pickT.txt + "'") : '(none)'));
@@ -2728,21 +2787,22 @@
         window.pickByYTail = pickByYTail;
 
         window.pickByTail = pickByTail;
+        window.pickByTailAnchorXY = pickByTailAnchorXY;
 
         window.cwPickChan = function () {
-            return pickByTail(buildMoneyFromTextRects(), TAIL_BET_CHAN);
+            return pickMainBetBySide(buildMoneyFromTextRects(), 'CHAN');
 
         };
 
         window.cwPickLe = function () {
-            return pickByTail(buildMoneyFromTextRects(), TAIL_BET_LE);
+            return pickMainBetBySide(buildMoneyFromTextRects(), 'LE');
 
         };
         window.cwPickTai = function () {
-            return pickByTail(buildMoneyFromTextRects(), TAIL_BET_TAI);
+            return pickMainBetBySide(buildMoneyFromTextRects(), 'TAI');
         };
         window.cwPickXiu = function () {
-            return pickByTail(buildMoneyFromTextRects(), TAIL_BET_XIU);
+            return pickMainBetBySide(buildMoneyFromTextRects(), 'XIU');
         };
 
 
@@ -2808,10 +2868,10 @@
         S._lastTextAll = listTextAll;
         S._lastTextAt = Date.now();
         var listTextMoney = buildMoneyFromTextRects(listTextAll);
-        var mC = pickByTail(listTextMoney, TAIL_BET_CHAN);
-        var mL = pickByTail(listTextMoney, TAIL_BET_LE);
-        var mT = pickByTail(listTextMoney, TAIL_BET_TAI);
-        var mX = pickByTail(listTextMoney, TAIL_BET_XIU);
+        var mC = pickMainBetBySide(listTextMoney, 'CHAN');
+        var mL = pickMainBetBySide(listTextMoney, 'LE');
+        var mT = pickMainBetBySide(listTextMoney, 'TAI');
+        var mX = pickMainBetBySide(listTextMoney, 'XIU');
         var mA = pickByTailMinY(listTextMoney, TAIL_ACC);
         var mN = pickByTailMinY(listTextAll, TAIL_USER_NAME);
 
@@ -6378,11 +6438,15 @@
     }
 
     var __cw_probe0 = __cw_probeGameScene(1200);
+    var __cw_ctx0 = __cw_urlContext();
+    var __cw_hostBootHint0 = __cw_isBootHostHint(__cw_ctx0);
+    var __cw_hostBootReady0 = __cw_hostBootHint0 &&
+        (((Number(__cw_probe0.canvases) || 0) > 0) || ((Number(__cw_probe0.labels) || 0) > 0) || ((Number(__cw_probe0.score) || 0) >= 6));
     if (window.cc && cc.director && cc.director.getScene &&
-        (__cw_probe0.ok || (Number(__cw_probe0.urlScore) || 0) >= 20) &&
+        (__cw_probe0.ok || (Number(__cw_probe0.urlScore) || 0) >= 20 || __cw_hostBootReady0) &&
         __cw_claimBootOwner(__cw_probe0)) {
         window.__cw_scene_probe = __cw_probe0;
-        __cw_emitProbe('direct_boot', __cw_probe0);
+        __cw_emitProbe(__cw_hostBootReady0 ? 'direct_boot_hosthint' : 'direct_boot', __cw_probe0);
         __cw_boot();
     } else {
         // Ưu tiên hiển thị Canvas Watch sớm khi scene đã có cc (dữ liệu chi tiết sẽ hoàn thiện sau).

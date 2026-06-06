@@ -337,8 +337,25 @@ namespace SicboX88Live
 
         // ====== CDP / Packet tap ======
         private bool _cdpNetworkOn = false;
+        private bool _cdpTapDecisionLogged = false;
         private readonly ConcurrentDictionary<string, string> _wsUrlByRequestId = new();
-        private readonly string[] _pktInterestingHints = new[] { "ws-taixiu", "taixiu", "xocdia", "xoc", "xdlive", "livearena", "hytsocesk" };
+        private readonly ConcurrentDictionary<string, byte> _interestingWsRequestIds = new();
+        private readonly ConcurrentDictionary<string, long> _wsPacketSigTicks = new();
+        private readonly ConcurrentDictionary<string, byte> _wsCreatedLogged = new();
+        private readonly ConcurrentDictionary<string, byte> _wsRecvSkipLogged = new();
+        private readonly string[] _pktInterestingHints = new[] { "ws-taixiu", "taixiu", "xocdia", "xoc", "xdlive", "livearena", "hytsocesk", "livecasino", "/websocket" };
+        private readonly object _serverCountdownLock = new();
+        private double? _serverCountdownBaseSec = null;
+        private DateTime _serverCountdownAtUtc = DateTime.MinValue;
+        private long? _serverCountdownEndUnixMs = null;
+        private int? _serverStopBetSecond = null;
+        private string _serverCountdownStatus = "";
+        private readonly object _serverBetTotalsLock = new();
+        private long? _serverBetChan = null;
+        private long? _serverBetLe = null;
+        private long? _serverBetTai = null;
+        private long? _serverBetXiu = null;
+        private DateTime _serverBetTotalsAtUtc = DateTime.MinValue;
 
         // ==== Auto-login watcher ====
         private CancellationTokenSource? _autoLoginWatchCts;
@@ -802,8 +819,8 @@ Ví dụ không hợp lệ:
         private const int PACKET_UI_SAMPLE_EVERY_N = 20; // nếu bật ở trên, mỗi N gói mới đẩy 1 dòng lên UI
         private static readonly bool SHOW_RAW_JS_MESSAGES =
             string.Equals(Environment.GetEnvironmentVariable("TXLS_JS_RAW"), "1", StringComparison.OrdinalIgnoreCase);
-        private static readonly bool ENABLE_CDP_NETWORK_TAP =
-            string.Equals(Environment.GetEnvironmentVariable("TXLS_CDP_TAP"), "1", StringComparison.OrdinalIgnoreCase);
+        // Debug force-on: environment variable did not reliably reach the app process.
+        private static readonly bool ENABLE_CDP_NETWORK_TAP = true;
         private static readonly bool LOG_FRAME_INJECT_VERBOSE =
             string.Equals(Environment.GetEnvironmentVariable("TXLS_FRAME_LOG"), "1", StringComparison.OrdinalIgnoreCase);
         private int _pktUiSample = 0;
@@ -2190,6 +2207,45 @@ Ví dụ không hợp lệ:
                                     var snap = System.Text.Json.JsonSerializer.Deserialize<CwSnapshot>(msg);
                                     if (snap != null)
                                     {
+                                        string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
+                                        bool progIsSec = false;
+                                        try
+                                        {
+                                            if (jrootTick.TryGetProperty("progIsSec", out var psEl) &&
+                                                (psEl.ValueKind == System.Text.Json.JsonValueKind.True ||
+                                                 psEl.ValueKind == System.Text.Json.JsonValueKind.False))
+                                            {
+                                                progIsSec = psEl.GetBoolean();
+                                            }
+                                            else
+                                            {
+                                                progIsSec = snap.progIsSec ?? false;
+                                            }
+                                        }
+                                        catch { progIsSec = snap.progIsSec ?? false; }
+
+                                        // Nếu đã bắt được countdown từ server thì ưu tiên dùng nó cho prog,
+                                        // còn seq/totals vẫn giữ nguyên từ JS tick.
+                                        if (TryGetServerCountdownSnapshot(out var serverSec, out var serverStatusUi))
+                                        {
+                                            snap.prog = serverSec;
+                                            snap.progIsSec = true;
+                                            progIsSec = true;
+                                            if (!string.IsNullOrWhiteSpace(serverStatusUi))
+                                            {
+                                                statusUi = serverStatusUi;
+                                                snap.status = serverStatusUi;
+                                            }
+                                        }
+                                        if (TryGetServerBetTotalsSnapshot(out var serverC, out var serverL, out var serverT, out var serverX))
+                                        {
+                                            snap.totals ??= new CwTotals();
+                                            snap.totals.C = serverC;
+                                            snap.totals.L = serverL;
+                                            snap.totals.T = serverT;
+                                            snap.totals.X = serverX;
+                                        }
+
                                         // Ghi nhận username từ tick game (dùng làm _homeUsername nếu Home chưa gửi)
                                         try
                                         {
@@ -2273,24 +2329,6 @@ Ví dụ không hợp lệ:
                                         // Ghi lại niSeq vào snapshot cho UI
                                         snap.niSeq = _niSeq.ToString();
                                         lock (_snapLock) _lastSnap = snap;
-
-                                        // --- NEW: lấy status từ JSON (JS đã bơm vào tick) ---
-                                        string statusUi = jrootTick.TryGetProperty("status", out var stEl) ? (stEl.GetString() ?? "") : "";
-                                        bool progIsSec = false;
-                                        try
-                                        {
-                                            if (jrootTick.TryGetProperty("progIsSec", out var psEl) &&
-                                                (psEl.ValueKind == System.Text.Json.JsonValueKind.True ||
-                                                 psEl.ValueKind == System.Text.Json.JsonValueKind.False))
-                                            {
-                                                progIsSec = psEl.GetBoolean();
-                                            }
-                                            else
-                                            {
-                                                progIsSec = snap.progIsSec ?? false;
-                                            }
-                                        }
-                                        catch { progIsSec = snap.progIsSec ?? false; }
 
                                         // --- Cập nhật UI ---
                                         _ = Dispatcher.BeginInvoke(new Action(() =>
@@ -2427,20 +2465,7 @@ Ví dụ không hợp lệ:
                                                 // Chuỗi kết quả
                                                 UpdateSeqUI(snap.seq ?? "");
 
-                                                // 🔸 Trạng thái: "Phiên mới" / "Ngừng đặt cược" / "Đang chờ kết quả"
-                                                if (LblStatusText != null)
-                                                {
-                                                    if (!string.IsNullOrWhiteSpace(statusUi))
-                                                    {
-                                                        LblStatusText.Text = statusUi;
-                                                        LblStatusText.Visibility = Visibility.Visible;
-                                                    }
-                                                    else
-                                                    {
-                                                        LblStatusText.Text = "";
-                                                        LblStatusText.Visibility = Visibility.Collapsed;
-                                                    }
-                                                }
+                                                SetStatusText(statusUi);
                                             }
                                             catch { }
                                         }));
@@ -2806,8 +2831,22 @@ Ví dụ không hợp lệ:
                 Web.NavigationCompleted += Web_NavigationCompleted;
 
                 // CDP tap chỉ bật khi debug để tránh tăng tải I/O log
+                if (!_cdpTapDecisionLogged)
+                {
+                    _cdpTapDecisionLogged = true;
+                    string envTap = Environment.GetEnvironmentVariable("TXLS_CDP_TAP") ?? "<null>";
+                    bool hasCore = Web?.CoreWebView2 != null;
+                    Log($"[CDP] Hook decision: ENABLE_CDP_NETWORK_TAP={ENABLE_CDP_NETWORK_TAP} env_TXLS_CDP_TAP='{envTap}' hasCore={hasCore}");
+                }
                 if (ENABLE_CDP_NETWORK_TAP)
+                {
+                    Log("[CDP] Hook decision => calling EnableCdpNetworkTapAsync()");
                     _ = EnableCdpNetworkTapAsync();
+                }
+                else
+                {
+                    Log("[CDP] Hook decision => tap disabled by flag");
+                }
 
                 // Cập nhật nền ngay theo trạng thái hiện tại (trắng khi chưa nhập URL, trong suốt khi đã điều hướng)
                 _ = ApplyBackgroundForStateAsync();
@@ -3732,9 +3771,16 @@ Ví dụ không hợp lệ:
         // ====== CDP tap ======
         private async Task EnableCdpNetworkTapAsync()
         {
-            if (_cdpNetworkOn || Web?.CoreWebView2 == null) return;
+            if (_cdpNetworkOn || Web?.CoreWebView2 == null)
+            {
+                string envTap = Environment.GetEnvironmentVariable("TXLS_CDP_TAP") ?? "<null>";
+                Log($"[CDP] Enable skipped: on={_cdpNetworkOn} hasCore={(Web?.CoreWebView2 != null)} env_TXLS_CDP_TAP='{envTap}'");
+                return;
+            }
             try
             {
+                string envTap = Environment.GetEnvironmentVariable("TXLS_CDP_TAP") ?? "<null>";
+                Log($"[CDP] Enable start: on={_cdpNetworkOn} hasCore={(Web?.CoreWebView2 != null)} env_TXLS_CDP_TAP='{envTap}'");
                 await Web.CoreWebView2.CallDevToolsProtocolMethodAsync("Network.enable", "{}");
                 _cdpNetworkOn = true;
 
@@ -3742,36 +3788,55 @@ Ví dụ không hợp lệ:
                    .GetDevToolsProtocolEventReceiver("Network.webSocketCreated")
                    .DevToolsProtocolEventReceived += (s, e) =>
                    {
-                       try
-                       {
-                           using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
-                           var root = doc.RootElement;
-                           var reqId = root.GetProperty("requestId").GetString() ?? "";
-                           var url = root.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
-                           if (!string.IsNullOrEmpty(reqId)) _wsUrlByRequestId[reqId] = url;
-                           if (IsInteresting(url)) LogPacket("WS.created", url, "", false);
-                       }
-                       catch (Exception ex) { Log("[CDP wsCreated] " + ex.Message); }
-                   };
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                            var root = doc.RootElement;
+                            var reqId = root.GetProperty("requestId").GetString() ?? "";
+                            var url = root.TryGetProperty("url", out var u) ? (u.GetString() ?? "") : "";
+                            if (!string.IsNullOrEmpty(reqId)) _wsUrlByRequestId[reqId] = url;
+                            if (!string.IsNullOrEmpty(reqId) && _wsCreatedLogged.TryAdd(reqId, 1))
+                            {
+                                LogPacket(IsInteresting(url) ? "WS.created.match" : "WS.created.all", url, $"reqId={reqId}", false);
+                            }
+                            if (IsInteresting(url))
+                            {
+                                if (!string.IsNullOrEmpty(reqId)) _interestingWsRequestIds[reqId] = 1;
+                            }
+                        }
+                        catch (Exception ex) { Log("[CDP wsCreated] " + ex.Message); }
+                    };
 
                 Web.CoreWebView2
                    .GetDevToolsProtocolEventReceiver("Network.webSocketFrameReceived")
                    .DevToolsProtocolEventReceived += (s, e) =>
                    {
                        try
-                       {
-                           using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
-                           var root = doc.RootElement;
-                           var reqId = root.GetProperty("requestId").GetString() ?? "";
-                           _wsUrlByRequestId.TryGetValue(reqId, out var url);
-                           var resp = root.GetProperty("response");
-                           var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
-                           var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
-                           var isBin = opcode != 1;
-                           //if (IsInteresting(url)) LogPacket("WS.recv", url, PreviewPayload(payload, isBin), isBin);
-                       }
-                       catch (Exception ex) { Log("[CDP wsRecv] " + ex.Message); }
-                   };
+                        {
+                            using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+                            var root = doc.RootElement;
+                            var reqId = root.GetProperty("requestId").GetString() ?? "";
+                            _wsUrlByRequestId.TryGetValue(reqId, out var url);
+                            var resp = root.GetProperty("response");
+                            var payload = resp.TryGetProperty("payloadData", out var pd) ? (pd.GetString() ?? "") : "";
+                            var opcode = resp.TryGetProperty("opcode", out var op) ? op.GetInt32() : 1;
+                            var isBin = opcode != 1;
+                            if (string.IsNullOrEmpty(reqId) || !_interestingWsRequestIds.ContainsKey(reqId))
+                            {
+                                if (!string.IsNullOrEmpty(reqId) && _wsRecvSkipLogged.TryAdd(reqId, 1))
+                                {
+                                    var why = string.IsNullOrWhiteSpace(url) ? "url-missing" : "not-interesting-url";
+                                    LogPacket("WS.recv.skip", url, $"reqId={reqId} opcode={opcode} reason={why}", isBin);
+                                }
+                                return;
+                            }
+                            TryUpdateServerCountdownFromPayload(url, payload, isBin);
+                            TryUpdateServerBetTotalsFromPayload(url, payload, isBin);
+                            if (TryBuildInterestingWsPreview(reqId, url, payload, isBin, out var hitKind, out var preview))
+                                LogPacket(hitKind, url, preview, isBin);
+                        }
+                        catch (Exception ex) { Log("[CDP wsRecv] " + ex.Message); }
+                    };
 
                 Web.CoreWebView2
                    .GetDevToolsProtocolEventReceiver("Network.webSocketFrameSent")
@@ -3807,6 +3872,11 @@ Ví dụ không hợp lệ:
             {
                 await Web.CoreWebView2.CallDevToolsProtocolMethodAsync("Network.disable", "{}");
                 _cdpNetworkOn = false;
+                _wsUrlByRequestId.Clear();
+                _interestingWsRequestIds.Clear();
+                _wsPacketSigTicks.Clear();
+                _wsCreatedLogged.Clear();
+                _wsRecvSkipLogged.Clear();
                 Log("[CDP] Network tap disabled");
             }
             catch (Exception ex) { Log("[CDP] Disable failed: " + ex.Message); }
@@ -3815,9 +3885,193 @@ Ví dụ không hợp lệ:
         private bool IsInteresting(string? url)
         {
             if (string.IsNullOrWhiteSpace(url)) return false;
+            if (url.IndexOf("livecasino.", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                url.IndexOf("/websocket", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
             foreach (var hint in _pktInterestingHints)
                 if (url.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return false;
+        }
+
+        private static int? TryExtractPacketInt(string payload, string key)
+        {
+            var m = Regex.Match(payload, $@"(?i)""{Regex.Escape(key)}""\s*:\s*(-?\d{{1,10}})");
+            if (!m.Success) return null;
+            return int.TryParse(m.Groups[1].Value, out var v) ? v : null;
+        }
+
+        private static long? TryExtractPacketLong(string payload, string key)
+        {
+            var m = Regex.Match(payload, $@"(?i)""{Regex.Escape(key)}""\s*:\s*(-?\d{{1,16}})");
+            if (!m.Success) return null;
+            return long.TryParse(m.Groups[1].Value, out var v) ? v : null;
+        }
+
+        private static string? TryExtractPacketString(string payload, string key)
+        {
+            var m = Regex.Match(payload, $@"(?i)""{Regex.Escape(key)}""\s*:\s*""([^""]{{0,64}})""");
+            return m.Success ? m.Groups[1].Value : null;
+        }
+
+        private void TryUpdateServerCountdownFromPayload(string? url, string payload, bool isBinary)
+        {
+            if (isBinary || string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(payload)) return;
+            if (!IsInteresting(url)) return;
+
+            var status = (TryExtractPacketString(payload, "status") ?? "").Trim();
+            var timeBetCountdown = TryExtractPacketInt(payload, "timeBetCountdown");
+            var timeBet = TryExtractPacketInt(payload, "timeBet");
+            var stopBetSecond = TryExtractPacketInt(payload, "stopBetSecond");
+            var endBettingTime = TryExtractPacketLong(payload, "endBettingTime");
+            var startBettingTime = TryExtractPacketLong(payload, "startBettingTime") ?? TryExtractPacketLong(payload, "startTime");
+
+            if (timeBetCountdown == null && timeBet == null && string.IsNullOrWhiteSpace(status)) return;
+
+            double? baseSec = null;
+            if (timeBetCountdown.HasValue)
+            {
+                baseSec = Math.Max(0, Math.Min(120, timeBetCountdown.Value));
+            }
+            else if (timeBet.HasValue && timeBet.Value >= 0)
+            {
+                baseSec = Math.Max(0, Math.Min(120, timeBet.Value));
+            }
+            else if (string.Equals(status, "ENDED", StringComparison.OrdinalIgnoreCase))
+            {
+                baseSec = 0d;
+            }
+
+            if (!baseSec.HasValue) return;
+
+            long? endMs = endBettingTime;
+            if (!endMs.HasValue && startBettingTime.HasValue && timeBet.HasValue && timeBet.Value >= 0)
+                endMs = startBettingTime.Value + (timeBet.Value * 1000L);
+            if (!endMs.HasValue)
+                endMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (long)Math.Round(baseSec.Value * 1000d);
+
+            lock (_serverCountdownLock)
+            {
+                _serverCountdownBaseSec = baseSec;
+                _serverCountdownAtUtc = DateTime.UtcNow;
+                _serverCountdownEndUnixMs = endMs;
+                _serverStopBetSecond = stopBetSecond;
+                _serverCountdownStatus = status;
+            }
+        }
+
+        private static long? TryExtractBetValueByEid(string payload, string eid)
+        {
+            var m = Regex.Match(
+                payload,
+                $@"(?is)""eid""\s*:\s*""{Regex.Escape(eid)}""[^}}]{{0,240}}?""v""\s*:\s*(-?\d{{1,16}})");
+            if (!m.Success) return null;
+            return long.TryParse(m.Groups[1].Value, out var v) ? v : null;
+        }
+
+        private void TryUpdateServerBetTotalsFromPayload(string? url, string payload, bool isBinary)
+        {
+            if (isBinary || string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(payload)) return;
+            if (!IsInteresting(url)) return;
+            if (payload.IndexOf(@"""bs""", StringComparison.OrdinalIgnoreCase) < 0) return;
+
+            var chan = TryExtractBetValueByEid(payload, "EVEN");
+            var le = TryExtractBetValueByEid(payload, "ODD");
+            var tai = TryExtractBetValueByEid(payload, "BIG");
+            var xiu = TryExtractBetValueByEid(payload, "SMALL");
+
+            if (!chan.HasValue && !le.HasValue && !tai.HasValue && !xiu.HasValue) return;
+
+            lock (_serverBetTotalsLock)
+            {
+                _serverBetChan = chan ?? _serverBetChan ?? 0;
+                _serverBetLe = le ?? _serverBetLe ?? 0;
+                _serverBetTai = tai ?? _serverBetTai ?? 0;
+                _serverBetXiu = xiu ?? _serverBetXiu ?? 0;
+                _serverBetTotalsAtUtc = DateTime.UtcNow;
+            }
+        }
+
+        private static string MapServerStatusToUi(string? status, double sec, int? stopBetSecond)
+        {
+            status = (status ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(status)) return "";
+            if (string.Equals(status, "BETTING", StringComparison.OrdinalIgnoreCase))
+            {
+                if (stopBetSecond.HasValue && sec <= Math.Max(0, stopBetSecond.Value))
+                    return "Ngừng đặt cược";
+                return "Phiên mới";
+            }
+            if (string.Equals(status, "ENDED", StringComparison.OrdinalIgnoreCase))
+                return "Đang đợi kết quả";
+            return status;
+        }
+
+        private bool TryGetServerCountdownSnapshot(out double sec, out string statusUi)
+        {
+            sec = 0;
+            statusUi = "";
+
+            double? baseSec;
+            DateTime atUtc;
+            long? endMs;
+            int? stopBetSecond;
+            string status;
+
+            lock (_serverCountdownLock)
+            {
+                baseSec = _serverCountdownBaseSec;
+                atUtc = _serverCountdownAtUtc;
+                endMs = _serverCountdownEndUnixMs;
+                stopBetSecond = _serverStopBetSecond;
+                status = _serverCountdownStatus;
+            }
+
+            if (!baseSec.HasValue) return false;
+            if (atUtc == DateTime.MinValue) return false;
+            if ((DateTime.UtcNow - atUtc) > TimeSpan.FromMinutes(2)) return false;
+
+            if (string.Equals(status, "BETTING", StringComparison.OrdinalIgnoreCase))
+            {
+                if (endMs.HasValue && endMs.Value > 0)
+                {
+                    var remain = (endMs.Value - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) / 1000d;
+                    sec = Math.Max(0, Math.Min(120, remain));
+                }
+                else
+                {
+                    sec = Math.Max(0, Math.Min(120, baseSec.Value - (DateTime.UtcNow - atUtc).TotalSeconds));
+                }
+            }
+            else if (string.Equals(status, "ENDED", StringComparison.OrdinalIgnoreCase))
+            {
+                sec = 0;
+            }
+            else
+            {
+                sec = Math.Max(0, Math.Min(120, baseSec.Value));
+            }
+
+            statusUi = MapServerStatusToUi(status, sec, stopBetSecond);
+            return true;
+        }
+
+        private bool TryGetServerBetTotalsSnapshot(out long? c, out long? l, out long? t, out long? x)
+        {
+            c = null;
+            l = null;
+            t = null;
+            x = null;
+
+            lock (_serverBetTotalsLock)
+            {
+                if (_serverBetTotalsAtUtc == DateTime.MinValue) return false;
+                if ((DateTime.UtcNow - _serverBetTotalsAtUtc) > TimeSpan.FromMinutes(2)) return false;
+                c = _serverBetChan;
+                l = _serverBetLe;
+                t = _serverBetTai;
+                x = _serverBetXiu;
+                return c.HasValue || l.HasValue || t.HasValue || x.HasValue;
+            }
         }
 
         private static string NormalizePacketUrl(string? url)
@@ -3870,6 +4124,76 @@ Ví dụ không hợp lệ:
                 if (s.Length > 2000) s = s.Substring(0, 2000) + "…";
                 return s;
             }
+        }
+
+        private bool TryBuildInterestingWsPreview(string? reqId, string? url, string payload, bool isBinary, out string hitKind, out string preview)
+        {
+            hitKind = "WS.recv";
+            preview = "";
+
+            if (string.IsNullOrWhiteSpace(url) || !IsInteresting(url)) return false;
+            if (isBinary) return false;
+            if (string.IsNullOrWhiteSpace(payload)) return false;
+
+            var s = payload.Trim();
+            if (s.Length < 8) return false;
+            if (s.Length > 24000) return false;
+
+            // Short-circuit rẻ: chỉ giữ frame có từ khoá game-state/countdown.
+            if (!Regex.IsMatch(s, @"(?i)(countdown|remain(?:ing)?|time(?:left)?|close[_-]?bet|stop[_-]?bet|phase|status|round|session|table|game)"))
+                return false;
+
+            string? countdownPreview = null;
+            var m1 = Regex.Match(s, @"(?i)(countdown|remain(?:ing)?|time(?:left)?|close[_-]?bet|stop[_-]?bet)[^0-9]{0,24}([0-9]{1,3})");
+            if (m1.Success)
+                countdownPreview = $"{m1.Groups[1].Value}={m1.Groups[2].Value}";
+
+            string? phasePreview = null;
+            var m2 = Regex.Match(s, @"(?i)""?(phase|status|round|session)""?\s*[:=]\s*""?([^"",}\]]{1,48})");
+            if (m2.Success)
+                phasePreview = $"{m2.Groups[1].Value}={m2.Groups[2].Value}";
+
+            if (countdownPreview == null && phasePreview == null)
+                return false;
+
+            hitKind = countdownPreview != null ? "WS.recv.countdown" : "WS.recv.state";
+            var pv = new StringBuilder();
+            if (countdownPreview != null) pv.Append(countdownPreview);
+            if (phasePreview != null)
+            {
+                if (pv.Length > 0) pv.Append(" | ");
+                pv.Append(phasePreview);
+            }
+
+            var shortPayload = PreviewPayload(s, false);
+            if (!string.IsNullOrWhiteSpace(shortPayload))
+            {
+                if (pv.Length > 0) pv.Append(" | ");
+                pv.Append(shortPayload);
+            }
+
+            preview = pv.ToString();
+            if (string.IsNullOrWhiteSpace(preview))
+                return false;
+
+            // Chống log lặp cùng một frame nghi vấn trong khoảng ngắn.
+            var sigSrc = $"{reqId}|{hitKind}|{preview}";
+            var sig = sigSrc.GetHashCode().ToString();
+            var now = DateTime.UtcNow.Ticks;
+            if (_wsPacketSigTicks.TryGetValue(sig, out var prevTicks))
+            {
+                if ((now - prevTicks) < TimeSpan.FromSeconds(2).Ticks)
+                    return false;
+            }
+            _wsPacketSigTicks[sig] = now;
+
+            if (_wsPacketSigTicks.Count > 512)
+            {
+                foreach (var key in _wsPacketSigTicks.Keys.Take(128))
+                    _wsPacketSigTicks.TryRemove(key, out _);
+            }
+
+            return true;
         }
 
         private void LogPacket(string kind, string? url, string preview, bool isBinary)
@@ -6870,6 +7194,19 @@ Ví dụ không hợp lệ:
 
 
 
+        private static Brush GetStatusBrush(string status)
+        {
+            status = (status ?? "").Trim();
+            if (status.IndexOf("Ngừng đặt cược", StringComparison.OrdinalIgnoreCase) >= 0)
+                return new SolidColorBrush(Color.FromRgb(220, 53, 69));
+            if (status.IndexOf("Phiên mới", StringComparison.OrdinalIgnoreCase) >= 0)
+                return new SolidColorBrush(Color.FromRgb(40, 167, 69));
+            if (status.IndexOf("Đang đợi kết quả", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                status.IndexOf("Đang chờ kết quả", StringComparison.OrdinalIgnoreCase) >= 0)
+                return new SolidColorBrush(Color.FromRgb(255, 193, 7));
+            return new SolidColorBrush(Colors.Black);
+        }
+
 
         private void SetStatusText(string? status)
         {
@@ -6885,6 +7222,7 @@ Ví dụ không hợp lệ:
                 else
                 {
                     LblStatusText.Text = status;
+                    LblStatusText.Foreground = GetStatusBrush(status);
                     LblStatusText.Visibility = Visibility.Visible;
                 }
             }
