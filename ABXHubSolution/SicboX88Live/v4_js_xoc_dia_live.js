@@ -2306,13 +2306,7 @@
 
         /* ---------------- helpers for totals by (y, tail) ---------------- */
 
-        var TAIL_BET_SHARED = 'BetArea/lbl_currentBet';
-        var BET_MAIN_ANCHORS = {
-            CHAN: { x: 801, y: 600, tolX: 80, tolY: 80 },
-            LE: { x: 426, y: 600, tolX: 80, tolY: 80 },
-            TAI: { x: 1048, y: 798, tolX: 90, tolY: 90 },
-            XIU: { x: 179, y: 798, tolX: 90, tolY: 90 }
-        };
+        var TAIL_BET_SHARED = 'BetArea/lbl_totalbet';
         var TAIL_BET_CHAN = TAIL_BET_SHARED;
 
         var TAIL_BET_LE = TAIL_BET_SHARED;
@@ -2611,6 +2605,121 @@
 
         }
 
+        function pickBetSharedCandidates(list) {
+            var cands = [];
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                if (!tailEquals(tailOfMoney(it), TAIL_BET_SHARED))
+                    continue;
+                if (!it || it.val == null)
+                    continue;
+                var xx = Math.round(xOf(it));
+                var yy = Math.round(yOf(it));
+                if (!isFinite(xx) || !isFinite(yy))
+                    continue;
+                cands.push(it);
+            }
+            if (!cands.length)
+                return [];
+
+            cands.sort(function (a, b) {
+                return yOf(b) - yOf(a) || xOf(a) - xOf(b);
+            });
+
+            var avgW = 0;
+            var avgH = 0;
+            for (var j = 0; j < cands.length; j++) {
+                avgW += Math.max(0, cands[j].sw || cands[j].w || 0);
+                avgH += Math.max(0, cands[j].sh || cands[j].h || 0);
+            }
+            avgW = avgW / cands.length;
+            avgH = avgH / cands.length;
+            var mergeDx = Math.max(18, Math.round(avgW * 0.55));
+            var mergeDy = Math.max(16, Math.round(avgH * 0.80));
+
+            var uniq = [];
+            for (var k = 0; k < cands.length; k++) {
+                var cur = cands[k];
+                var placed = false;
+                for (var u = 0; u < uniq.length; u++) {
+                    var prev = uniq[u];
+                    if (Math.abs(Math.round(xOf(prev)) - Math.round(xOf(cur))) > mergeDx)
+                        continue;
+                    if (Math.abs(Math.round(yOf(prev)) - Math.round(yOf(cur))) > mergeDy)
+                        continue;
+                    var prevScore = (prev.val || 0) + ((prev.txt && String(prev.txt).length) || 0) * 1000 + (prev.sw || prev.w || 0);
+                    var curScore = (cur.val || 0) + ((cur.txt && String(cur.txt).length) || 0) * 1000 + (cur.sw || cur.w || 0);
+                    if (curScore > prevScore)
+                        uniq[u] = cur;
+                    placed = true;
+                    break;
+                }
+                if (!placed)
+                    uniq.push(cur);
+            }
+
+            uniq.sort(function (a, b) {
+                return yOf(b) - yOf(a) || xOf(a) - xOf(b);
+            });
+            return uniq;
+        }
+
+        function splitBetSharedRows(cands) {
+            if (!cands || cands.length < 2)
+                return null;
+
+            var rows = [];
+            var avgH = 0;
+            for (var i = 0; i < cands.length; i++)
+                avgH += Math.max(0, cands[i].sh || cands[i].h || 0);
+            avgH = avgH / Math.max(1, cands.length);
+            var rowTol = Math.max(22, Math.round(avgH * 1.35));
+
+            for (var j = 0; j < cands.length; j++) {
+                var it = cands[j];
+                var yy = Math.round(yOf(it));
+                var row = null;
+                for (var r = 0; r < rows.length; r++) {
+                    if (Math.abs(rows[r].y - yy) <= rowTol) {
+                        row = rows[r];
+                        break;
+                    }
+                }
+                if (!row) {
+                    row = { y: yy, items: [] };
+                    rows.push(row);
+                }
+                row.items.push(it);
+                row.y = Math.round((row.y * (row.items.length - 1) + yy) / row.items.length);
+            }
+
+            rows = rows.filter(function (r) {
+                return r.items && r.items.length >= 2;
+            });
+            if (rows.length < 2)
+                return null;
+
+            rows.sort(function (a, b) {
+                if (b.items.length !== a.items.length)
+                    return b.items.length - a.items.length;
+                return b.y - a.y;
+            });
+            rows = rows.slice(0, 2);
+            rows.sort(function (a, b) {
+                return b.y - a.y;
+            });
+
+            for (var z = 0; z < rows.length; z++) {
+                rows[z].items.sort(function (a, b) {
+                    return xOf(a) - xOf(b);
+                });
+            }
+            return {
+                bottom: rows[0].items,
+                top: rows[1].items
+            };
+        }
+
         function pickByTailAnchorXY(list, tailExact, xTarget, yTarget, tolX, tolY) {
             tolX = (tolX == null ? 64 : tolX);
             tolY = (tolY == null ? 64 : tolY);
@@ -2639,10 +2748,23 @@
 
         function pickMainBetBySide(list, side) {
             side = normalizeSide(side);
-            var a = BET_MAIN_ANCHORS[side];
-            if (!a)
+            if (!side)
                 return null;
-            return pickByTailAnchorXY(list, TAIL_BET_SHARED, a.x, a.y, a.tolX, a.tolY);
+            var rows = splitBetSharedRows(pickBetSharedCandidates(list));
+            if (!rows)
+                return null;
+
+            var bottom = rows.bottom || [];
+            var top = rows.top || [];
+            if (side === 'XIU')
+                return bottom.length ? bottom[0] : null;
+            if (side === 'TAI')
+                return bottom.length ? bottom[bottom.length - 1] : null;
+            if (side === 'LE')
+                return top.length ? top[0] : null;
+            if (side === 'CHAN')
+                return top.length ? top[top.length - 1] : null;
+            return null;
         }
 
         /** pick by left/right (min/max x) under the given tail */

@@ -3,9 +3,9 @@
 ## Overview
 - `SicboX88Live` la app WPF `.NET 8` dieu khien auto bet cho game live qua `WebView2`.
 - Runtime chinh la cau noi `C# <-> JS`:
-- C# quan ly UI, config, task, pending history, license/trial.
+- C# quan ly UI, config, task, pending history, license/trial, CDP websocket tap.
 - JS trong page game scan `canvas/Cocos`, doc state, va click bet.
-- Vung thay doi nhieu nhat hien tai la `v4_js_xoc_dia_live.js` de theo kip DOM/scene moi cua `sicbox88.swgames.club`.
+- Vung thay doi nhieu nhat hien tai la `MainWindow.xaml.cs` va `v4_js_xoc_dia_live.js`.
 
 ## Tech Stack
 - `C#`, `WPF`, `net8.0-windows`
@@ -49,10 +49,28 @@
 - Khong pha flow plugin + standalone dung chung `RunStartupAsync()`.
 - Khong xoa fallback `PackRes`, `FallbackIcons`, `WebView2` runtime fallback neu chua co thay the chac chan.
 
+## Current Source Of Truth
+- `Prog` countdown that hien tai lay tu packet server qua CDP websocket, khong con phu thuoc `tail` countdown trong scene graph.
+- Trang thai UI hien tai map tu server status:
+- `Phiên mới` -> mau xanh
+- `Ngừng đặt cược` -> mau do
+- `Đang đợi kết quả` -> mau vang
+- `Tên nhân vật` va `Tài khoản` hien tai van lay tu `tail` JS/Cocos:
+- `tx_live_tamtam/Canvas/root/userData/lbl_username`
+- `tx_live_tamtam/Canvas/root/userData/lbl_userMoney`
+
 ## WebSocket Flow
-- App khong dua quyet dinh vao parse websocket business payload.
-- Data game chinh di qua JS scan scene graph/canvas roi post `tick`.
-- CDP websocket chi dung de debug packet khi bat env `TXLS_CDP_TAP=1`.
+- App da co parser CDP `Network.webSocket*` trong `MainWindow.xaml.cs`.
+- Socket dang dung duoc la:
+- `wss://livecasino.azhkthg1.net/websocket`
+- CDP hien tai da bat thuong truc, khong con phu thuoc env `TXLS_CDP_TAP`.
+- Packet da xac nhan co:
+- `status`
+- `timeBetCountdown`
+- `timeBet`
+- `stopBetSecond`
+- `sessionId`
+- `bs[]` (tong cuoc theo `eid`)
 
 ## Pending Flow
 - `TaskUtil.PlaceBet`:
@@ -73,15 +91,27 @@
 - `CancellationToken` la co che stop chuan.
 
 ## Canvas / UI Diagnostic Rules
-- `Canvas Watch` la cong cu debug song song voi bridge, khong duoc de dieu kien boot UI phu thuoc cứng vao `cc` hoac URL cu.
+- `Canvas Watch` la cong cu debug song song voi bridge, khong duoc de dieu kien boot UI phu thuoc cung vao `cc` hoac URL cu.
 - Visible state cua `Canvas Watch` phai dieu khien bang flag `true/false`, khong dung comment/uncomment dong lenh.
 - Khi sua cac nut debug nhu `TextMap`, `Scan1000Text`, `FindCdTail`, `FindCdDeep`, chi duoc sua phan scan/tail/path, khong duoc sua logic dat cuoc.
 - JS game hien da uu tien load `v4_js_xoc_dia_live.js` tu disk truoc embedded resource; thay doi file can reload page/app de inject lai.
 
 ## Websocket / Scene Update Specifics
-- `TextMap` da phai noi long match path va fallback quet toan scene vi structure moi khong con trung full path cu.
-- `Canvas Watch` boot tung bi chan boi URL gating va readiness gating; voi host moi can chap nhan `sicbox88.swgames.club` va mount panel truoc, data den sau.
-- `Scan500Text` da duoc nang thanh `Scan1000Text`.
+- Huong `tail` cho countdown giua ban da duoc ket luan la khong kha thi tren trang moi.
+- Nhieu probe DevTools da thu va deu bat nham:
+- `Right/last_result/*`
+- `popup/session_history_new/*`
+- `loading_view/*`
+- `screen_view/*`
+- `BetArea/*`
+- Huong dung hien tai:
+- countdown -> CDP websocket packet
+- tong cuoc `CHAN/LE/TAI/XIU` -> dang uu tien CDP websocket packet / probe websocket DevTools
+
+## DevTools Diagnostic Files
+- `devtools_countdown_*` phuc vu truy vet tail countdown cu, hien chu yeu co gia tri lich su debug.
+- `devtools_ws_bet_totals_probe.js` la probe hien tai de test 4 tong cuoc qua websocket ngay trong DevTools.
+- Probe nay phai chay theo kieu `Sources -> Snippets -> Run -> reload page`.
 
 ## Things Must Not Break
 - Contract message JS/C# va shape payload.
@@ -92,8 +122,9 @@
 - Plugin mode, standalone mode, lease/release lifecycle.
 
 ## Current Known Gaps
+- Tong cuoc `CHAN/LE/TAI/XIU` tren UI production chua dong bo on dinh.
+- Probe `tail/scene` cho 4 tong cuoc da duoc xac nhan la khong dang tin cay.
+- Probe `devtools_ws_bet_totals_probe.js` dang la huong test chinh truoc khi cap nhat production.
 - `AutoFillLoginAsync()` dang bi tat bang early return.
 - `js_home_v2.js` khong ton tai trong project.
-- Gia tri decision input dang luu nhung chua ap dung day du vao runtime.
-- Countdown `Prog` cua trang moi chua chot duoc exact `tail`; tail cu khong con dung, cac candidate dang nham vao `BetArea`, `last_result`, `popup`, va cum `loading_view/screen_view`.
 - `MainWindow.xaml.cs` va `v4_js_xoc_dia_live.js` van la 2 vung rui ro cao nhat khi sua.
