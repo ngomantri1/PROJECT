@@ -3528,14 +3528,28 @@
 
         var tk = readTKSeq();
         S.seq = tk.seq || '';
+        S.sumSeq = String(window.__cw_result_sum_seq || S.sumSeq || '');
         var seqHtml = 'Chuỗi kết quả : <i>--</i>';
-        if (S.seq && S.seq.length) {
-            var head = esc(S.seq.slice(0, -1));
-            var last = esc(S.seq.slice(-1));
-            seqHtml = 'Chuỗi kết quả : <span>' + head + '</span><span style="color:#f66">' + last + '</span>';
+        var seqView = String(S.sumSeq || '');
+        if (seqView && seqView.length) {
+            if (seqView.indexOf(',') >= 0) {
+                var parts = seqView.split(',').filter(function (x) {
+                    return String(x || '').trim().length > 0;
+                });
+                if (parts.length) {
+                    var headParts = parts.slice(0, -1);
+                    var lastPart = parts[parts.length - 1];
+                    seqHtml = 'Chuỗi kết quả : <span>' + esc(headParts.join(',')) + (headParts.length ? ',' : '') + '</span><span style="color:#f66">' + esc(lastPart) + '</span>';
+                }
+            } else {
+                var head = esc(seqView.slice(0, -1));
+                var last = esc(seqView.slice(-1));
+                seqHtml = 'Chuỗi kết quả : <span>' + head + '</span><span style="color:#f66">' + last + '</span>';
+            }
         }
         panel.querySelector('#cwInfo').innerHTML = esc(base) + '\n' + seqHtml;
     }
+    window.__cw_renderPanel = updatePanel;
 
     /* ---------------- scan tools ---------------- */
     function scan200Money() {
@@ -6328,6 +6342,7 @@
                             progIsSec: !!last.progIsSec,
                             totals: last.totals || null,
                             seq: String(last.seq || ''),
+                            sumSeq: String(last.sumSeq || window.__cw_result_sum_seq || ''),
                             status: String(last.status || ''),
                             ts: now
                         };
@@ -6342,6 +6357,7 @@
                             progIsSec: !!(S && S._progIsSec),
                             totals: totalsNow,
                             seq: readSeqSafe(false),
+                            sumSeq: String(window.__cw_result_sum_seq || ''),
                             status: String(st || ''),
                             ts: now
                         };

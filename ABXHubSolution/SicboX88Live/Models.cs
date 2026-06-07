@@ -21,6 +21,7 @@ namespace SicboX88Live
         public bool? progIsSec { get; set; }
         public CwTotals totals { get; set; }
         public string seq { get; set; }
+        public string sumSeq { get; set; }
         public string? niSeq { get; set; }
         public long ts { get; set; }
         public string side { get; set; }

@@ -317,6 +317,7 @@ namespace SicboX88Live
         private readonly string _appDataDir;
         private readonly string _cfgPath;
         private readonly string _statsPath;
+        private readonly string _resultSeqStatePath;
         private readonly string _logDir;
 
         // ====== State ======
@@ -356,6 +357,20 @@ namespace SicboX88Live
         private long? _serverBetTai = null;
         private long? _serverBetXiu = null;
         private DateTime _serverBetTotalsAtUtc = DateTime.MinValue;
+        private readonly object _serverResultSeqLock = new();
+        private readonly List<int> _serverResultSums = new();
+        private string _serverResultSumSeq = "";
+        private readonly StringBuilder _serverResultCodeSeq = new();
+        private DateTime _serverResultSeqAtUtc = DateTime.MinValue;
+        private int? _serverResultLastSessionId = null;
+
+        private sealed class ResultSeqState
+        {
+            public List<int>? sums { get; set; }
+            public string? codeSeq { get; set; }
+            public int? lastSessionId { get; set; }
+            public DateTime? updatedAtUtc { get; set; }
+        }
 
         // ==== Auto-login watcher ====
         private CancellationTokenSource? _autoLoginWatchCts;
@@ -995,6 +1010,7 @@ Ví dụ không hợp lệ:
 
             _cfgPath = Path.Combine(_appDataDir, "config.json");
             _statsPath = Path.Combine(_appDataDir, "stats.json");
+            _resultSeqStatePath = Path.Combine(_appDataDir, "result-seq.json");
 
 
 
@@ -1002,6 +1018,7 @@ Ví dụ không hợp lệ:
             _logDir = Path.Combine(_appDataDir, "logs");
             Directory.CreateDirectory(_logDir);
             CleanupOldLogs();
+            LoadResultSeqState();
 
             // 2) Sau đó mới dựng UI
             InitializeComponent();
@@ -1407,6 +1424,31 @@ Ví dụ không hợp lệ:
             {
                 Log("[LoadConfig] " + ex);
             }
+        }
+
+        private void LoadResultSeqState()
+        {
+            try
+            {
+                lock (_serverResultSeqLock)
+                {
+                    _serverResultSums.Clear();
+                    _serverResultSumSeq = "";
+                    _serverResultCodeSeq.Clear();
+                    _serverResultLastSessionId = null;
+                    _serverResultSeqAtUtc = DateTime.MinValue;
+                }
+                Log("[CDP] ResultSeq source=live-only");
+            }
+            catch (Exception ex)
+            {
+                Log("[LoadResultSeqState] " + ex.Message);
+            }
+        }
+
+        private void SaveResultSeqState()
+        {
+            // Sequence now comes only from live CDP packets.
         }
 
         private async Task SaveConfigAsync()
@@ -2245,6 +2287,12 @@ Ví dụ không hợp lệ:
                                             snap.totals.T = serverT;
                                             snap.totals.X = serverX;
                                         }
+                                        if (TryGetServerResultSequenceSnapshot(out var serverSumSeq, out var serverCodeSeq))
+                                        {
+                                            snap.sumSeq = serverSumSeq;
+                                            if (!string.IsNullOrWhiteSpace(serverCodeSeq))
+                                                snap.seq = serverCodeSeq;
+                                        }
 
                                         // Ghi nhận username từ tick game (dùng làm _homeUsername nếu Home chưa gửi)
                                         try
@@ -2464,6 +2512,8 @@ Ví dụ không hợp lệ:
 
                                                 // Chuỗi kết quả
                                                 UpdateSeqUI(snap.seq ?? "");
+                                                if (!string.IsNullOrWhiteSpace(snap.sumSeq) && SeqIcons != null)
+                                                    SeqIcons.ToolTip = snap.sumSeq;
 
                                                 SetStatusText(statusUi);
                                             }
@@ -3832,6 +3882,7 @@ Ví dụ không hợp lệ:
                             }
                             TryUpdateServerCountdownFromPayload(url, payload, isBin);
                             TryUpdateServerBetTotalsFromPayload(url, payload, isBin);
+                            TryUpdateServerResultSequenceFromPayload(url, payload, isBin);
                             if (TryBuildInterestingWsPreview(reqId, url, payload, isBin, out var hitKind, out var preview))
                                 LogPacket(hitKind, url, preview, isBin);
                         }
@@ -3900,6 +3951,14 @@ Ví dụ không hợp lệ:
             return int.TryParse(m.Groups[1].Value, out var v) ? v : null;
         }
 
+        private static int? TryExtractLastPacketInt(string payload, string key)
+        {
+            var matches = Regex.Matches(payload, $@"(?i)""{Regex.Escape(key)}""\s*:\s*(-?\d{{1,10}})");
+            if (matches.Count <= 0) return null;
+            var raw = matches[matches.Count - 1].Groups[1].Value;
+            return int.TryParse(raw, out var v) ? v : null;
+        }
+
         private static long? TryExtractPacketLong(string payload, string key)
         {
             var m = Regex.Match(payload, $@"(?i)""{Regex.Escape(key)}""\s*:\s*(-?\d{{1,16}})");
@@ -3911,6 +3970,53 @@ Ví dụ không hợp lệ:
         {
             var m = Regex.Match(payload, $@"(?i)""{Regex.Escape(key)}""\s*:\s*""([^""]{{0,64}})""");
             return m.Success ? m.Groups[1].Value : null;
+        }
+
+        private static int? TryParseResultRawSum(string? resultRaw)
+        {
+            if (string.IsNullOrWhiteSpace(resultRaw)) return null;
+            var s = resultRaw.Trim();
+            if (s.Length != 3) return null;
+            int sum = 0;
+            for (int i = 0; i < s.Length; i++)
+            {
+                var ch = s[i];
+                if (ch < '1' || ch > '6') return null;
+                sum += (ch - '0');
+            }
+            return (sum >= 3 && sum <= 18) ? sum : null;
+        }
+
+        private static char SumToResultCode(int sum)
+        {
+            if (sum < 3 || sum > 18) return '\0';
+            bool isXiu = sum <= 10;
+            bool isLe = (sum % 2) != 0;
+            if (isXiu) return isLe ? '1' : '0';  // XL / XC
+            return isLe ? '3' : '2';             // TL / TC
+        }
+
+        private async Task PushServerResultSumSeqToPageAsync(string sumSeq)
+        {
+            if (string.IsNullOrWhiteSpace(sumSeq)) return;
+            try
+            {
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    try
+                    {
+                        if (Web?.CoreWebView2 == null) return;
+                        var js = "try{" +
+                                 "window.__cw_result_sum_seq=" + System.Text.Json.JsonSerializer.Serialize(sumSeq) + ";" +
+                                 "window.__cw_result_sum_seq_at=Date.now();" +
+                                 "if(typeof window.__cw_renderPanel==='function'){window.__cw_renderPanel();}" +
+                                 "}catch(_){}";
+                        await Web.ExecuteScriptAsync(js);
+                    }
+                    catch { }
+                });
+            }
+            catch { }
         }
 
         private void TryUpdateServerCountdownFromPayload(string? url, string payload, bool isBinary)
@@ -3988,6 +4094,60 @@ Ví dụ không hợp lệ:
                 _serverBetTai = tai ?? _serverBetTai ?? 0;
                 _serverBetXiu = xiu ?? _serverBetXiu ?? 0;
                 _serverBetTotalsAtUtc = DateTime.UtcNow;
+            }
+        }
+
+        private void TryUpdateServerResultSequenceFromPayload(string? url, string payload, bool isBinary)
+        {
+            if (isBinary || string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(payload)) return;
+            if (!IsInteresting(url)) return;
+            var status = (TryExtractPacketString(payload, "status") ?? "").Trim();
+            if (!string.Equals(status, "ENDED", StringComparison.OrdinalIgnoreCase)) return;
+
+            var resultRaw = TryExtractPacketString(payload, "resultRaw");
+            var sum = TryParseResultRawSum(resultRaw);
+            if (!sum.HasValue) return;
+
+            var sessionId =
+                TryExtractLastPacketInt(payload, "sessionId") ??
+                TryExtractLastPacketInt(payload, "sid");
+            string? sumSeqToPush = null;
+            char code = SumToResultCode(sum.Value);
+            string? codeSeqToLog = null;
+            bool added = false;
+
+            lock (_serverResultSeqLock)
+            {
+                if (sessionId.HasValue && sessionId.Value > 0)
+                {
+                    if (_serverResultLastSessionId.HasValue && _serverResultLastSessionId.Value == sessionId.Value)
+                        return;
+                    _serverResultLastSessionId = sessionId.Value;
+                }
+
+                _serverResultSums.Add(sum.Value);
+                if (_serverResultSums.Count > 52)
+                    _serverResultSums.RemoveRange(0, _serverResultSums.Count - 52);
+
+                if (code != '\0')
+                {
+                    _serverResultCodeSeq.Append(code);
+                    if (_serverResultCodeSeq.Length > 52)
+                        _serverResultCodeSeq.Remove(0, _serverResultCodeSeq.Length - 52);
+                }
+
+                _serverResultSumSeq = string.Join(",", _serverResultSums);
+                _serverResultSeqAtUtc = DateTime.UtcNow;
+                sumSeqToPush = _serverResultSumSeq;
+                codeSeqToLog = _serverResultCodeSeq.ToString();
+                added = true;
+            }
+
+            if (added)
+            {
+                Log($"[CDP] ResultSeq add: raw={resultRaw} sum={sum.Value} code={code} session={sessionId?.ToString() ?? "-"} seq={sumSeqToPush} digitSeq={codeSeqToLog}");
+                SaveResultSeqState();
+                _ = PushServerResultSumSeqToPageAsync(sumSeqToPush ?? "");
             }
         }
 
@@ -4071,6 +4231,21 @@ Ví dụ không hợp lệ:
                 t = _serverBetTai;
                 x = _serverBetXiu;
                 return c.HasValue || l.HasValue || t.HasValue || x.HasValue;
+            }
+        }
+
+        private bool TryGetServerResultSequenceSnapshot(out string sumSeq, out string codeSeq)
+        {
+            sumSeq = "";
+            codeSeq = "";
+            lock (_serverResultSeqLock)
+            {
+                if (string.IsNullOrWhiteSpace(_serverResultSumSeq)) return false;
+                if (_serverResultSeqAtUtc == DateTime.MinValue) return false;
+                if ((DateTime.UtcNow - _serverResultSeqAtUtc) > TimeSpan.FromHours(12)) return false;
+                sumSeq = _serverResultSumSeq;
+                codeSeq = _serverResultCodeSeq.ToString();
+                return !string.IsNullOrWhiteSpace(sumSeq);
             }
         }
 
