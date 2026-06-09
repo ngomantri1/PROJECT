@@ -7009,14 +7009,18 @@ Ví dụ không hợp lệ:
                         "(function(){try{return !!(window.cc && cc.director && cc.director.getScene);}catch(e){return false;}})()");
                     bool hasCocos = bool.TryParse(cocosJson, out var b) && b;
 
-                    // 3) Đã có tick chưa (ít nhất 1 ký tự seq)
+                    // 3) Đã có snapshot/tick cơ bản chưa
                     bool hasTick = false;
                     lock (_snapLock)
                     {
-                        hasTick = _lastSnap?.seq != null && _lastSnap.seq.Length > 0;
+                        hasTick = _lastSnap != null;
                     }
 
-                    if (hasBet && hasCocos && hasTick)
+                    // 3.b) Hoặc ít nhất đã có countdown/tín hiệu server
+                    bool hasServerCountdown = TryGetServerCountdownSnapshot(out _, out _);
+                    bool hasServerSeq = TryGetServerResultSequenceSnapshot(out _, out _);
+
+                    if (hasBet && hasCocos && (hasTick || hasServerCountdown || hasServerSeq))
                         return true;
                 }
                 catch { /* tiếp tục đợi */ }

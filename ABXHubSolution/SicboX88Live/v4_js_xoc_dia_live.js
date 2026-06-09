@@ -4304,6 +4304,189 @@
         '1000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value0'
     };
     var CHIP_PANEL_TAIL = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel';
+    var FAST_PATH_BET_TOTAL = '/canvas/root/betarea/lbl_totalbet';
+    var FAST_BET_ZONE_PATHS = {
+        TAI: '/canvas/root/betarea/tai_bet',
+        XIU: '/canvas/root/betarea/xiu_bet',
+        CHAN: '/canvas/root/betarea/chan_bet',
+        LE: '/canvas/root/betarea/le_bet'
+    };
+    var FAST_PATH_CHIP_LABEL = '/canvas/root/right/chippanel/view/content/lbl_value';
+    var FAST_PATH_CHIP_PANEL = '/canvas/root/right/chippanel';
+    var FAST_RE_CHIP_NODE = /\/canvas\/root\/right\/chippanel\/view\/content\/chip_?\d+$/i;
+    function fastRectCenter(rect, node) {
+        if (betRectSane(rect))
+            return betRectCenter(rect);
+        var p = nodeWorldPos(node);
+        return {
+            x: p.x || 0,
+            y: p.y || 0
+        };
+    }
+    function collectFastBetLabelNodes() {
+        var rows = [];
+        walkNodes(function (n) {
+            if (!n || !active(n))
+                return;
+            var path = String(fullPath(n, 200) || '');
+            var pathL = path.toLowerCase();
+            if (pathL.indexOf(FAST_PATH_BET_TOTAL) === -1)
+                return;
+            var rect = rectFromNodeCompat(n);
+            var area = rect ? (rect.sw * rect.sh) : 0;
+            rows.push({
+                node: n,
+                path: path,
+                text: nodeText(n),
+                value: parseAmountLoose(nodeText(n)) || 0,
+                rect: rect,
+                center: fastRectCenter(rect, n),
+                area: area
+            });
+        });
+        if (rows.length > 4) {
+            rows.sort(function (a, b) {
+                return (b.area || 0) - (a.area || 0);
+            });
+            rows = rows.slice(0, 4);
+        }
+        rows.sort(function (a, b) {
+            return a.center.y - b.center.y || a.center.x - b.center.x;
+        });
+        return rows;
+    }
+    function findFastBetZoneNode(side) {
+        var want = normalizeSide(side);
+        var token = String(FAST_BET_ZONE_PATHS[want] || '').toLowerCase();
+        if (!token)
+            return null;
+        var best = null;
+        var bestArea = -1;
+        walkNodes(function (n) {
+            if (!n || !active(n))
+                return;
+            var path = String(fullPath(n, 200) || '').toLowerCase();
+            if (path.indexOf(token) === -1)
+                return;
+            var rect = rectFromNodeCompat(n);
+            var area = rect ? (rect.sw * rect.sh) : 0;
+            if (area > bestArea) {
+                best = n;
+                bestArea = area;
+            }
+        });
+        return best;
+    }
+    function buildFastBetMap() {
+        var labels = collectFastBetLabelNodes();
+        if (labels.length < 4)
+            return {};
+        var top = labels.slice(0, 2).sort(function (a, b) {
+            return a.center.x - b.center.x;
+        });
+        var bottom = labels.slice(2, 4).sort(function (a, b) {
+            return a.center.x - b.center.x;
+        });
+        function makeTarget(item, side) {
+            var zoneNode = findFastBetZoneNode(side);
+            return {
+                side: side,
+                node: item.node,
+                zoneNode: zoneNode,
+                touchNode: zoneNode || clickableOf(item.node, 8) || item.node,
+                clickable: clickableOf(item.node, 8),
+                rect: item.rect,
+                center: item.center,
+                path: item.path,
+                text: item.text,
+                value: item.value,
+                source: zoneNode ? 'fast_zone' : 'fast_label'
+            };
+        }
+        return {
+            LE: makeTarget(top[0], 'LE'),
+            CHAN: makeTarget(top[1], 'CHAN'),
+            XIU: makeTarget(bottom[0], 'XIU'),
+            TAI: makeTarget(bottom[1], 'TAI')
+        };
+    }
+    function findFastBetTarget(side) {
+        var want = normalizeSide(side);
+        var map = buildFastBetMap();
+        return map[want] || null;
+    }
+    function collectFastChipLabels() {
+        var rows = [];
+        walkNodes(function (n) {
+            if (!n || !active(n))
+                return;
+            var path = String(fullPath(n, 200) || '');
+            var pathL = path.toLowerCase();
+            if (pathL.indexOf(FAST_PATH_CHIP_LABEL) === -1)
+                return;
+            var text = nodeText(n);
+            var value = parseAmountLoose(text);
+            if (!value)
+                return;
+            var rect = rectFromNodeCompat(n);
+            rows.push({
+                node: n,
+                path: path,
+                text: text,
+                value: value,
+                rect: rect,
+                center: fastRectCenter(rect, n)
+            });
+        });
+        rows.sort(function (a, b) {
+            return a.center.x - b.center.x || a.center.y - b.center.y;
+        });
+        return rows;
+    }
+    function collectFastChipNodes() {
+        var rows = [];
+        walkNodes(function (n) {
+            if (!n || !active(n))
+                return;
+            var path = String(fullPath(n, 200) || '');
+            if (!FAST_RE_CHIP_NODE.test(path))
+                return;
+            var rect = rectFromNodeCompat(n);
+            rows.push({
+                node: n,
+                path: path,
+                rect: rect,
+                center: fastRectCenter(rect, n)
+            });
+        });
+        rows.sort(function (a, b) {
+            return a.center.x - b.center.x || a.center.y - b.center.y;
+        });
+        return rows;
+    }
+    function buildFastChipMap() {
+        var labels = collectFastChipLabels();
+        var chips = collectFastChipNodes();
+        var out = {};
+        for (var i = 0; i < labels.length; i++) {
+            var label = labels[i];
+            var chip = chips[Math.min(i, Math.max(0, chips.length - 1))] || null;
+            out[String(label.value)] = {
+                amount: label.value,
+                text: label.text,
+                labelNode: label.node,
+                labelPath: label.path,
+                labelRect: label.rect,
+                labelCenter: label.center,
+                chipNode: chip ? chip.node : null,
+                chipPath: chip ? chip.path : '',
+                chipRect: chip ? chip.rect : null,
+                chipCenter: chip ? chip.center : null,
+                panelPath: FAST_PATH_CHIP_PANEL
+            };
+        }
+        return out;
+    }
     function tailMatch(full, tail) {
         if (!full || !tail)
             return false;
@@ -4670,6 +4853,9 @@
         return list;
     }
     function findBetTarget(side) {
+        var fast = findFastBetTarget(side);
+        if (fast && fast.node)
+            return fast;
         var geo = buildBetGeometryTarget(side);
         if (geo && geo.node && betRectSane(geo.rect) && !isBetTotalLabelNode(geo.node, side))
             return geo;
@@ -4735,6 +4921,15 @@
                 return true;
             } catch (e2) {}
         }
+        return false;
+    }
+    function fireNodeNoCoords(node) {
+        if (!node)
+            return false;
+        if (emitTouchOnNode(node))
+            return true;
+        if (emitBtnToggle(node))
+            return true;
         return false;
     }
     var BET_CLICK_CFG = {
@@ -4994,13 +5189,6 @@
             });
             return false;
         }
-
-        var attempts = [
-            { mode: 'touch_rect_center' },
-            { mode: 'canvas_center', fx: 0.5, fy: 0.5 },
-            { mode: 'canvas_point', fx: 0.5, fy: 0.5 },
-            { mode: 'emit_click' }
-        ];
         var targetInfo = betTargetDebug(tgt);
         postBetTrace('bet_click_start', {
             side: normalizeSide(side),
@@ -5011,10 +5199,26 @@
             fast: true,
             target: targetInfo
         });
-
+        var attempts = [];
+        function pushAttempt(node, mode) {
+            if (!node)
+                return;
+            for (var i = 0; i < attempts.length; i++) {
+                if (attempts[i].node === node)
+                    return;
+            }
+            attempts.push({
+                node: node,
+                mode: mode
+            });
+        }
+        pushAttempt(tgt.zoneNode, 'zone_node');
+        pushAttempt(tgt.touchNode, 'touch_node');
+        pushAttempt(tgt.clickable, 'clickable');
+        pushAttempt(tgt.node, 'label_node');
         for (var i = 0; i < attempts.length; i++) {
             var attempt = attempts[i];
-            var sent = dispatchBetTargetAttempt(tgt, attempt);
+            var sent = fireNodeNoCoords(attempt.node);
             postBetTrace('bet_click_dispatch', {
                 side: normalizeSide(side),
                 amount: Number(meta.amount || 0),
@@ -5039,7 +5243,6 @@
                 });
                 return true;
             }
-            await sleep(BET_CLICK_CFG.retryPause || 35);
         }
 
         postBetTrace('bet_click_fail', {
@@ -5582,152 +5785,57 @@
         return ok;
     }
     function scanChipsByTail() {
+        var chips = buildFastChipMap();
         var out = {};
-        var keys = Object.keys(CHIP_TAILS || {});
+        var keys = Object.keys(chips || {});
         for (var i = 0; i < keys.length; i++) {
-            var val = keys[i];
-            var want = Math.max(0, Math.floor(+val || 0));
-            var info = explainChipAmount(want);
-            var target = pickChipFocusTarget(info);
-            if (!info.labelNode && !target)
+            var item = chips[keys[i]];
+            var node = item.chipNode || item.labelNode || null;
+            if (!node)
                 continue;
-            out[val] = {
-                entry: target,
-                node: target,
-                rect: rectFromNodeScreen(target || info.labelNode),
-                mode: target === info.nearestChip ? 'nearest' : (target === info.ordinalChip ? 'ordinal' : (target === info.strictChip ? 'strict' : 'fallback'))
+            out[keys[i]] = {
+                entry: node,
+                node: node,
+                rect: rectFromNodeScreen(node),
+                mode: 'fast'
             };
         }
         return out;
     }
 
-    var prevScan = window.cwScanChips;
     window.cwScanChips = function () {
-        var m = scanChipsByTail();
-        if (m && Object.keys(m).length)
-            return m;
-        m = prevScan ? (prevScan() || {}) : {};
-        if (m && Object.keys(m).length)
-            return m;
-        m = wideScan();
-        if (!Object.keys(m).length)
-            console.warn('[cwScanChips++] chưa thấy chip.');
-        else {
-            var keys = Object.keys(m).map(function (x) {
-                return +x;
-            }).sort(function (a, b) {
-                return a - b;
-            });
-            var rows = keys.map(function (v) {
-                return {
-                    amount: v,
-                    node: (m[v] && m[v].node ? m[v].node.name : '?')
-                };
-            });
-            try {
-                console.table(rows);
-            } catch (e) {
-                console.log(rows);
-            }
+        try {
+            var m = scanChipsByTail();
+            if (!m || !Object.keys(m).length)
+                console.warn('[cwScanChips++] chưa thấy chip.');
+            return m || {};
+        } catch (e) {
+            console.warn('[cwScanChips++] scan lỗi:', String(e && e.message || e));
+            return {};
         }
-        return m;
     };
 
-    var prevFocus = window.cwFocusChip;
     window.cwFocusChip = async function (amount) {
         var val = Math.max(0, Math.floor(+amount || 0));
         if (!ALLOWED_SET[String(val)])
             throw new Error('M?nh gi  kh?ng h?p l?: ' + amount);
-        var info = explainChipAmount(val);
-        var target = pickChipFocusTarget(info);
-        if (!target) {
-            await tryOpenChipPanel();
-            await sleep(100);
-            info = explainChipAmount(val);
-            target = pickChipFocusTarget(info);
-        }
-        if (!target) {
-            var hit = null;
-            (function walk(n) {
-                if (hit || !active(n))
-                    return;
-                if (nodeInGame(n)) {
-                    var texts = [];
-                    var lb = getComp(n, cc.Label);
-                    if (lb && typeof lb.string !== 'undefined')
-                        texts.push(lb.string);
-                    var rt = getComp(n, cc.RichText);
-                    if (rt && typeof rt.string !== 'undefined')
-                        texts.push(rt.string);
-                    var sp = getComp(n, cc.Sprite);
-                    var sfn = sp && sp.spriteFrame ? sp.spriteFrame.name : '';
-                    if (sfn)
-                        texts.push(sfn);
-                    texts.push(n.name || '');
-                    for (var i = 0; i < texts.length; i++) {
-                        if (parseAmountLoose(texts[i]) === val) {
-                            hit = clickableOf(n);
-                            return;
-                        }
-                    }
-                }
-                var kids = n.children || [];
-                for (var k = 0; k < kids.length; k++)
-                    walk(kids[k]);
-            })(cc.director.getScene());
-            if (hit) {
-                var target = resolveChipNode(hit) || hit;
-                var touched = emitTouchOnNode(target);
-                if (!touched) {
-                    if (clickable(target))
-                        emitClick(target);
-                    else
-                        clickRectCenter(rectFromNodeScreen(target));
-                }
-                await sleep(80);
-                var t = getComp(target, cc.Toggle);
-                if (t && !t.isChecked) {
-                    t.isChecked = true;
-                    if (t._emitToggleEvents)
-                        t._emitToggleEvents();
-                }
-                return true;
-            }
-            var map = window.cwScanChips() || {};
-            if (!map[String(val)] && prevFocus)
-                return prevFocus(amount);
-            if (map[String(val)]) {
-                info = explainChipAmount(val);
-                target = resolveChipNode(map[String(val)].node) || map[String(val)].node;
-            }
-        }
-        if (!target) {
+        var chips = buildFastChipMap();
+        var item = chips[String(val)];
+        if (!item)
             return false;
-        }
-        var target2 = resolveChipNode(target) || target;
-        var touched2 = emitTouchOnNode(target2);
-        if (!touched2) {
-            if (clickable(target2))
-                emitClick(target2);
-            else if (info && info.labelNode)
-                clickRectCenter(rectFromNodeScreen(target2 || info.labelNode));
-            else
-                clickRectCenter(rectFromNodeScreen(target2));
-        }
-        await sleep(80);
-        var tg = getComp(target2, cc.Toggle);
-        if (tg && !tg.isChecked) {
-            tg.isChecked = true;
-            if (tg._emitToggleEvents)
-                tg._emitToggleEvents();
-        }
+        var target = item.chipNode || item.labelNode || null;
+        var touched = fireNodeNoCoords(target);
+        if (!touched && item.labelNode && item.labelNode !== target)
+            touched = fireNodeNoCoords(item.labelNode);
+        if (!touched)
+            return false;
         console.log('[cwFocusChip++]', {
             amount: val,
-            mode: target === info.nearestChip ? 'nearest' : (target === info.ordinalChip ? 'ordinal' : (target === info.strictChip ? 'strict' : 'fallback')),
-            target: String((target2 && target2.name) || ''),
-            label: String((info && info.labelNode && info.labelNode.name) || ''),
-            panelLabels: info ? info.panelLabelCount : 0,
-            panelChips: info ? info.panelChipCount : 0
+            mode: 'fast',
+            target: String((target && target.name) || ''),
+            label: String((item.labelNode && item.labelNode.name) || ''),
+            panelLabels: Object.keys(chips || {}).length,
+            panelChips: Object.keys(chips || {}).length
         });
         return true;
     };
@@ -5753,7 +5861,6 @@
         return rows;
     };
 
-    var old_cwBet = (typeof window.cwBet === 'function') ? window.cwBet.bind(window) : null;
     var LOCK = (window.__cwBetLockFix = window.__cwBetLockFix || {
             busy: false
         });
@@ -5800,9 +5907,7 @@
     window.cwBet = async function (side, amount) {
         side = normalizeSide(side);
         if (amount == null || isNaN(amount)) {
-            if (old_cwBet)
-                return old_cwBet(side);
-            var tgt0 = findBetTarget(side);
+            var tgt0 = findFastBetTarget(side);
             if (!tgt0 || !tgt0.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
                 postBetTrace('bet_target_not_found', {
@@ -5812,7 +5917,7 @@
                 });
                 return false;
             }
-            return await clickBetTargetConfirmed(tgt0, side, {
+            return await clickBetTargetFast(tgt0, side, {
                 amount: 0,
                 phase: 'tap_only'
             });
@@ -5826,7 +5931,7 @@
         var X = raw - (raw % 1000);
 
         return withLock(async function () {
-            var tgt = findBetTarget(side);
+            var tgt = findFastBetTarget(side);
             if (!tgt || !tgt.node) {
                 console.warn('[cwBet++] không thấy nút cửa:', side);
                 postBetTrace('bet_target_not_found', {
@@ -5843,11 +5948,6 @@
             });
 
             var map = window.cwScanChips() || {};
-            if (!Object.keys(map).length) {
-                await tryOpenChipPanel();
-                await sleep(200);
-                map = wideScan();
-            }
             var availSet = {};
             var ks = Object.keys(map);
             for (var i = 0; i < ks.length; i++)
@@ -5858,8 +5958,15 @@
             }
 
             if (availSet[String(X)]) {
-                await window.cwFocusChip(X);
-                await sleep(BET_CLICK_CFG.postFocusDelay);
+                if (!await window.cwFocusChip(X)) {
+                    postBetTrace('bet_focus_fail', {
+                        side: side,
+                        amount: X,
+                        denom: X,
+                        phase: 'single_chip'
+                    });
+                    return false;
+                }
                 var fired = await clickBetTargetFast(tgt, side, {
                     amount: X,
                     denom: X,
@@ -5917,7 +6024,6 @@
                     });
                     return false;
                 }
-                await sleep(BET_CLICK_CFG.postFocusDelay);
                 for (var i2 = 0; i2 < step.count; i2++) {
                     if (!await clickBetTargetFast(tgt, side, {
                             amount: X,
@@ -5946,7 +6052,6 @@
                             turn: i2 + 1,
                             phase: 'plan_step'
                         });
-                    await sleep(BET_CLICK_CFG.betweenStepDelay);
                 }
             }
             console.log('[cwBet++] DONE ►', {
@@ -6554,6 +6659,32 @@
                 processing: _processingBetQueue,
                 roundId: getRoundIdSafe()
             };
+        };
+        window.__cw_bet_runtime_ready = function () {
+            try {
+                var betMap = buildFastBetMap();
+                var chipMap = buildFastChipMap();
+                var betKeys = Object.keys(betMap || {}).filter(function (k) {
+                    var it = betMap[k];
+                    return !!(it && (it.zoneNode || it.node));
+                });
+                var chipKeys = Object.keys(chipMap || {}).filter(function (k) {
+                    var it = chipMap[k];
+                    return !!(it && (it.chipNode || it.labelNode));
+                });
+                return {
+                    ok: betKeys.length >= 4 && chipKeys.length > 0,
+                    betCount: betKeys.length,
+                    chipCount: chipKeys.length
+                };
+            } catch (err) {
+                return {
+                    ok: false,
+                    error: String(err && err.message || err),
+                    betCount: 0,
+                    chipCount: 0
+                };
+            }
         };
 
         window.__cw_bet = async function (side, amount) {

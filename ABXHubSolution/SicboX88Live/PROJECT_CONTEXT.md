@@ -2,10 +2,12 @@
 
 ## Overview
 - `SicboX88Live` la app WPF `.NET 8` dieu khien auto bet cho game live qua `WebView2`.
-- Runtime chinh la cau noi `C# <-> JS`:
-- C# quan ly UI, config, task, pending history, license/trial, CDP websocket tap.
+- Runtime chinh la cau noi `C# <-> JS`.
+- C# quan ly UI, config, task, pending history, license/trial, va CDP websocket tap.
 - JS trong page game scan `canvas/Cocos`, doc state, va click bet.
-- Vung thay doi nhieu nhat hien tai la `MainWindow.xaml.cs` va `v4_js_xoc_dia_live.js`.
+- Hai file thay doi nhieu nhat hien tai la:
+- `MainWindow.xaml.cs`
+- `v4_js_xoc_dia_live.js`
 
 ## Tech Stack
 - `C#`, `WPF`, `net8.0-windows`
@@ -13,76 +15,88 @@
 - `System.Text.Json`
 - `ABX.Core`
 - JS bridge: `v4_js_xoc_dia_live.js`
-- Build/plugin support: `MainWindow.Startup.cs`, `MainWindow.EmbedMode.cs`, `SicboX88LivePlugin.cs`
 
 ## Main Flow
 1. `MainWindow` khoi tao config/log/stats va `WebView2`.
 2. C# inject JS bridge vao page game.
 3. JS scan `cc.director.getScene()` + DOM/canvas roi post `tick` ve C#.
-4. C# cap nhat `_lastSnap`, UI, history pending, state round.
-5. Strategy chay trong `Task.Run`, doc `GameContext`, goi `TaskUtil.PlaceBet`.
-6. C# ghi pending ngay luc enqueue, JS queue click thuc te tren canvas.
-7. Khi `seq` doi, C# finalize pending row va cap nhat CSV/UI/stats.
+4. C# cap nhat `_lastSnap`, UI, pending history, va state round.
+5. Strategy chay background, doc `GameContext`, goi `TaskUtil.PlaceBet`.
+6. Pending row duoc ghi ngay luc enqueue, khong cho JS ack.
+7. Khi ket qua doi, C# finalize pending row va cap nhat CSV/UI/stats.
+
+## Current Source Of Truth
+
+### Countdown / Status
+- Countdown production hien tai lay tu websocket CDP, khong con phu thuoc `tail` countdown trong scene.
+- Nguon du lieu:
+- `timeBetCountdown`
+- fallback `timeBet`
+- `stopBetSecond`
+- `status`
+- Trang thai UI map dung tu server:
+- `Phiên mới` -> mau xanh
+- `Ngừng đặt cược` -> mau do
+- `Đang đợi kết quả` -> mau vang
+
+### Tên nhân vật / Tài khoản
+- Van lay tu `tail` JS/Cocos:
+- `tx_live_tamtam/Canvas/root/userData/lbl_username`
+- `tx_live_tamtam/Canvas/root/userData/lbl_userMoney`
+- Khong fallback lai `avatar_node/*` cu.
+
+### 4 tong cuoc `CHAN/LE/TAI/XIU`
+- Hien tai JS production da dung `1 tail chung`:
+- `tx_live_tamtam/Canvas/root/BetArea/lbl_totalbet`
+- Phan biet 4 cua bang bo cuc hinh hoc 2x2 cua cac instance cung tail, khong dung pixel anchor cung, khong dung tail cu.
+- Thu tu map:
+- hang duoi: trai `XIU`, phai `TAI`
+- hang tren: trai `LE`, phai `CHAN`
+
+### Chuỗi kết quả
+- Khong con lay tu popup hay scene `tail`.
+- Chuỗi ket qua hien tai chi den tu CDP websocket packet `ENDED` co `resultRaw`.
+- `resultRaw` la 3 mat xuc xac, vi du:
+- `345` -> `3+4+5=12`
+- `113` -> `1+1+3=5`
+- `144` -> `1+4+4=9`
+- Chuỗi hien thi tren UI la `sumSeq` dang `3..18`, vi du `15,14,11,10,9,7`.
+- Khong bootstrap tu log cu, khong load `result-seq.json`, khong fallback sang scene graph.
+- Khi mo app moi, `sumSeq` bat dau rong va chi append khi co packet `ENDED + resultRaw` moi tu CDP.
+
+## Internal Result Code Rules
+- `3,5,7,9` => `XL` => ma `1`
+- `4,6,8,10` => `XC` => ma `0`
+- `11,13,15,17` => `TL` => ma `3`
+- `12,14,16,18` => `TC` => ma `2`
+- `sumSeq` la chuoi hien thi cho user.
+- `seq` ma `0/1/2/3` van duoc giu cho mot so logic noi bo va icon ket qua.
+
+## CDP WebSocket Rules
+- CDP network tap dang bat thuong truc, khong con phu thuoc env `TXLS_CDP_TAP`.
+- Socket dang dung:
+- `wss://livecasino.azhkthg1.net/websocket`
+- CDP chi nghe traffic san co, khong tao them request len server.
+- `ResultSeq` parser phai:
+- chi xu ly packet `status=ENDED`
+- chi append khi co `resultRaw`
+- dedupe theo `sessionId/sid` top-level cuoi cung cua packet
+- khong duoc lay `resultRaw` cu con treo trong packet `BETTING`
 
 ## Coding Rules
 - Khong rewrite flow bet-history: nguon su that la C# enqueue, khong phai JS ack.
 - Moi update WPF phai qua `Dispatcher`/`UiDispatcher`.
 - Moi doc/ghi snapshot song song phai qua `_snapLock`.
-- Moi ghi `config.json`/`stats.json` phai qua gate ghi file hien co.
 - Moi thay doi bridge phai giu nguyen contract `abx`.
 - Khong block UI thread bang loop/poll/file IO/network IO.
-- Khong sua logic task neu issue chi nam o `tail`, DOM, scene path, URL gating.
-
-## Naming Rules
-- Side parity: `CHAN`, `LE`
-- Side tai xiu: `TAI`, `XIU`
-- `seq`: chuoi ket qua goc
-- `niSeq`: chuoi `N/I` suy ra tu tong tien
-- `BetStrategyIndex`: map bang `switch`, khong tin vao so trong `DisplayName`
-- JS/C# contract key: `tick`, `bet`, `bet_error`, `bet_trace`, `cw_page_probe`, `cw_ui_state`, `cw_js_error`, `game_hint`
+- Khong sua logic task neu issue chi nam o `tail`, scene path, hay CDP parse.
 
 ## Important Rules
 - Khong doi semantics finalize: chi finalize khi round/`seq` da doi.
 - Khong duplicate row tu JS ack.
 - Khong pha thu tu JS bet queue.
 - Khong bo qua `WaitForBridgeAndGameDataAsync()` truoc khi start strategy.
-- Khong pha flow plugin + standalone dung chung `RunStartupAsync()`.
-- Khong xoa fallback `PackRes`, `FallbackIcons`, `WebView2` runtime fallback neu chua co thay the chac chan.
-
-## Current Source Of Truth
-- `Prog` countdown that hien tai lay tu packet server qua CDP websocket, khong con phu thuoc `tail` countdown trong scene graph.
-- Trang thai UI hien tai map tu server status:
-- `Phiên mới` -> mau xanh
-- `Ngừng đặt cược` -> mau do
-- `Đang đợi kết quả` -> mau vang
-- `Tên nhân vật` va `Tài khoản` hien tai van lay tu `tail` JS/Cocos:
-- `tx_live_tamtam/Canvas/root/userData/lbl_username`
-- `tx_live_tamtam/Canvas/root/userData/lbl_userMoney`
-
-## WebSocket Flow
-- App da co parser CDP `Network.webSocket*` trong `MainWindow.xaml.cs`.
-- Socket dang dung duoc la:
-- `wss://livecasino.azhkthg1.net/websocket`
-- CDP hien tai da bat thuong truc, khong con phu thuoc env `TXLS_CDP_TAP`.
-- Packet da xac nhan co:
-- `status`
-- `timeBetCountdown`
-- `timeBet`
-- `stopBetSecond`
-- `sessionId`
-- `bs[]` (tong cuoc theo `eid`)
-
-## Pending Flow
-- `TaskUtil.PlaceBet`:
-- ghi row vao `_betAll`
-- them vao `_pendingRows`
-- cap nhat mini panel ngay luc enqueue
-- Khi `seq` doi:
-- suy ra winner
-- finalize row pending
-- ghi CSV
-- clear `_pendingRows`
-- Khong finalize theo JS click ack.
+- Khong de debug panel/canvas hook lam anh huong flow dat cuoc.
 
 ## Threading And UI Rules
 - Strategy chay background, UI phai marshal ve `Dispatcher`.
@@ -90,41 +104,9 @@
 - Log/file write di qua queue, khong ghi truc tiep trong loop nong.
 - `CancellationToken` la co che stop chuan.
 
-## Canvas / UI Diagnostic Rules
-- `Canvas Watch` la cong cu debug song song voi bridge, khong duoc de dieu kien boot UI phu thuoc cung vao `cc` hoac URL cu.
-- Visible state cua `Canvas Watch` phai dieu khien bang flag `true/false`, khong dung comment/uncomment dong lenh.
-- Khi sua cac nut debug nhu `TextMap`, `Scan1000Text`, `FindCdTail`, `FindCdDeep`, chi duoc sua phan scan/tail/path, khong duoc sua logic dat cuoc.
-- JS game hien da uu tien load `v4_js_xoc_dia_live.js` tu disk truoc embedded resource; thay doi file can reload page/app de inject lai.
-
-## Websocket / Scene Update Specifics
-- Huong `tail` cho countdown giua ban da duoc ket luan la khong kha thi tren trang moi.
-- Nhieu probe DevTools da thu va deu bat nham:
-- `Right/last_result/*`
-- `popup/session_history_new/*`
-- `loading_view/*`
-- `screen_view/*`
-- `BetArea/*`
-- Huong dung hien tai:
-- countdown -> CDP websocket packet
-- tong cuoc `CHAN/LE/TAI/XIU` -> dang uu tien CDP websocket packet / probe websocket DevTools
-
-## DevTools Diagnostic Files
-- `devtools_countdown_*` phuc vu truy vet tail countdown cu, hien chu yeu co gia tri lich su debug.
-- `devtools_ws_bet_totals_probe.js` la probe hien tai de test 4 tong cuoc qua websocket ngay trong DevTools.
-- Probe nay phai chay theo kieu `Sources -> Snippets -> Run -> reload page`.
-
-## Things Must Not Break
-- Contract message JS/C# va shape payload.
-- Pending bet history + finalize theo round-close.
-- Mapping `BetStrategyIndex -> IBetTask`.
-- JS queue click bet.
-- Atomic save config/stats.
-- Plugin mode, standalone mode, lease/release lifecycle.
-
 ## Current Known Gaps
-- Tong cuoc `CHAN/LE/TAI/XIU` tren UI production chua dong bo on dinh.
-- Probe `tail/scene` cho 4 tong cuoc da duoc xac nhan la khong dang tin cay.
-- Probe `devtools_ws_bet_totals_probe.js` dang la huong test chinh truoc khi cap nhat production.
+- Chuỗi kết quả hien tai chi tich luy tu luc app chay; khong phuc hoi lich su cu, do da bo fallback theo yeu cau.
+- 4 tong cuoc da map production bang scene tail chung + geometry, can tiep tuc theo doi tren nhieu layout neu game doi bo cuc.
 - `AutoFillLoginAsync()` dang bi tat bang early return.
 - `js_home_v2.js` khong ton tai trong project.
 - `MainWindow.xaml.cs` va `v4_js_xoc_dia_live.js` van la 2 vung rui ro cao nhat khi sua.

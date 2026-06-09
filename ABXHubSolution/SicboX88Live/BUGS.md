@@ -2,58 +2,56 @@
 
 ## Hien Tai
 
-### 1. 4 tong cuoc `CHAN/LE/TAI/XIU` chua dong bo production
-- File lien quan:
+### 1. `Chuỗi kết quả` de sai neu parser doc nham packet `BETTING`
+- File:
 - `MainWindow.xaml.cs`
-- `v4_js_xoc_dia_live.js`
-- `devtools_ws_bet_totals_probe.js`
-- Trieu chung:
-- UI production van co the hien `0`
-- probe scene/tail co luc bat nham `lbl_currentBet`, `ChipPanel/lbl_value`, `last_result`, `popup`, hoac ra `null`
-- Nguyen nhan:
-- 4 gia tri tong cuoc khong co tail scene on dinh de dung production
-- huong scene graph da duoc xac nhan la khong dang tin cay tren trang moi
+- Trieu chung da gap:
+- packet `BETTING` van co the mang `resultRaw` cua van truoc
+- neu append som, session se bi danh dau da xu ly
+- packet `ENDED` moi cua cung session se bi bo qua
+- Vi du da xay ra:
+- `session=722509`
+- packet som bi add nham `raw=156 sum=12`
+- packet `ENDED` that su sau do la `raw=144 sum=9`
+- Nguyen nhan goc:
+- parser `ResultSeq` truoc day khong khoa theo `status=ENDED`
 - Trang thai hien tai:
-- dang debug theo huong websocket packet `bs[]`
-- chua chot production mapping cuoi cung
+- da fix trong source
+- can tiep tuc test log de dam bao khong tai phat
 
-### 2. Probe WebSocket DevTools cho 4 tong cuoc chua bat duoc socket o moi case
+### 2. `sessionId` trong packet co the xuat hien nhieu lan
 - File:
-- `devtools_ws_bet_totals_probe.js`
-- Trieu chung:
-- co truong hop chi thay log `install`
-- `__wsBetTotalsProbe.last()` = `null`
-- khong co `ws.attach`
-- Nguyen nhan kha nang cao:
-- websocket game tao trong frame khac
-- hook duoc chay sau khi socket da duoc tao
-- user paste truc tiep vao Console thay vi `Snippet + reload`
+- `MainWindow.xaml.cs`
+- Trieu chung da gap:
+- packet co `lastBonusInfo.sessionId` truoc
+- `sessionId` top-level cua van moi xuat hien sau
+- regex lay session dau tien se dedupe nham
+- Vi du da gap:
+- `resultRaw:\"113\"` tong `5`
+- packet chua `lastBonusInfo.sessionId=722437`
+- nhung `sessionId` that su la `722438`
+- Nguyen nhan goc:
+- parser doc `sessionId` dau tien trong chuoi
 - Trang thai hien tai:
-- da them hook cho same-origin frames
-- van can user test lai
+- da fix bang helper lay `sessionId/sid` lan xuat hien cuoi
 
-### 3. Countdown giua ban khong co tail production-ready
+### 3. 4 tong cuoc `CHAN/LE/TAI/XIU` phu thuoc scene geometry
 - File:
 - `v4_js_xoc_dia_live.js`
-- Nhiều probe scene graph da thu va deu bat nham:
-- `BetArea/lbl_currentBet`
-- `Right/last_result/lbl_count_*`
-- `popup/session_history_new/*`
-- `loading_view/*`
-- `screen_view/*`
-- Tac dong:
-- huong tail cho countdown da duoc bo
-- khong nen tiep tuc patch production theo tail countdown
+- Trieu chung:
+- production hien tai dung `1 tail chung = BetArea/lbl_totalbet`
+- phan biet 4 cua bang bo cuc 2x2
+- Neu game doi layout, doi bo cuc, hoac them node trung gian, map co the sai
 - Trang thai hien tai:
-- da workaround bang CDP websocket packet va dang on dinh
+- dang on tren layout da test
+- van can theo doi tren cac do phan giai/trang thai game khac
 
 ### 4. JS file tren disk va JS da inject co the lech nhau
 - File lien quan:
 - `MainWindow.xaml.cs`
 - `v4_js_xoc_dia_live.js`
-- Sau khi sua file JS, session dang mo van co the dang chay ban da inject truoc do.
-- Tac dong:
-- user doi tail/probe/flag nhung tren app dang mo khong thay hieu luc ngay
+- Trieu chung:
+- sau khi sua file JS, app/page dang mo co the van chay ban cu
 - Workaround:
 - reload page game hoac mo lai app
 
@@ -74,58 +72,53 @@
 
 ## Da Fix Hoac Da Giam Tac Dong
 - CDP network tap da bat on dinh, khong con phu thuoc env `TXLS_CDP_TAP`.
-- Da co log `[CDP]` va `[PKT]` de xac nhan socket `wss://livecasino.azhkthg1.net/websocket`.
+- Socket production da xac nhan:
+- `wss://livecasino.azhkthg1.net/websocket`
 - Countdown production da lay duoc tu packet server:
 - `timeBetCountdown`
 - fallback `timeBet`
 - `stopBetSecond`
 - `status`
-- Trang thai UI da map dung:
+- Trang thai UI da map dung va da co mau:
 - `Phiên mới`
 - `Ngừng đặt cược`
 - `Đang đợi kết quả`
-- va da co mau chu:
-- xanh / do / vang
 - `Tên nhân vật` da chuyen sang:
 - `tx_live_tamtam/Canvas/root/userData/lbl_username`
 - `Tài khoản` da chuyen sang:
 - `tx_live_tamtam/Canvas/root/userData/lbl_userMoney`
-- `Canvas Watch` da co co che visible bang flag `true/false`.
-- JS loader da uu tien doc `v4_js_xoc_dia_live.js` tu disk truoc embedded resource.
-
-## Chua Fix Het
-- 4 tong cuoc `CHAN/LE/TAI/XIU` chua co source production da xac nhan.
-- `devtools_ws_bet_totals_probe.js` van dang can test lai de chot socket/frame hook.
-- `home_tick` flow khong dang tin cay khi thieu home JS.
+- 4 tong cuoc production da chuyen sang:
+- `tx_live_tamtam/Canvas/root/BetArea/lbl_totalbet`
+- phan loai geometry 2x2
+- Chuỗi kết quả production da chuyen sang:
+- `CDP resultRaw`
+- chi append o `status=ENDED`
+- khong load state/log cu
+- khong fallback scene tail
 
 ## Nguyen Nhan Goc
-- `v4_js_xoc_dia_live.js` coupling rat chat voi scene graph game.
-- Trang game moi doi tail/path/layout, trong khi nhieu label tong cuoc/countdown khong con lo ra theo `Label.string` don gian.
-- Mot so du lieu tren man hinh hien hop ly hon khi lay tu websocket packet thay vi scene graph.
-- Bridge JS vua scan, vua click, vua mount debug UI nen de sua 1 cho anh huong cho khac.
+- `v4_js_xoc_dia_live.js` coupling chat voi scene graph game.
+- Trang game moi doi tail/path/layout, nhieu label khong con lo ra theo `Label.string` don gian.
+- Packet websocket cung co data cu treo lai trong `BETTING`, nen parser phai rat chat.
+- `MainWindow.xaml.cs` qua lon nen de phat sinh side-effect neu sua parser ma khong doi chieu log.
 
 ## Workaround Tam Thoi
-- Countdown/status: da dung websocket packet, khong quay lai tail.
-- 4 tong cuoc:
-- test bang `devtools_ws_bet_totals_probe.js`
-- chay theo `Snippet + reload`
-- kiem tra `__wsBetTotalsProbe.logs()` va `__wsBetTotalsProbe.last()`
+- Neu thay sai chuoi ket qua:
+- doi chieu ngay log `[PKT] ... status=ENDED ... resultRaw`
+- so voi `[CDP] ResultSeq add: ...`
+- neu khong co dong `ResultSeq add` tuong ung, uu tien nghi parser, khong nghi scene tail
 - Sau moi sua JS, reload page hoac mo lai app.
 
 ## Vung Code De Loi
+- `MainWindow.xaml.cs`
+- CDP tap / websocket parse
+- dedupe theo `sessionId`
+- inject/push `sumSeq` sang page
 - `v4_js_xoc_dia_live.js`
 - boot UI/mount panel
-- URL gating / ready gating
-- scene traversal / path match
-- `TextMap` / `Scan1000Text`
-- `MainWindow.xaml.cs`
-- JS loader/inject timing
-- CDP tap / websocket parse
-- pending finalize/history
-- `devtools_ws_bet_totals_probe.js`
-- websocket hook timing
-- frame coverage
+- render `Chuỗi kết quả`
+- geometry map cho 4 tong cuoc
 
 ## Build / Quality Snapshot
 - Build Debug van co the fail neu `SicboX88Live.exe` dang lock file output.
-- Nullability/dead code/warning van con nhieu o `MainWindow`, `Models`, `Tasks/*`.
+- Warning nullability/dead code van con nhieu o `MainWindow`, `Models`, `Tasks/*`.

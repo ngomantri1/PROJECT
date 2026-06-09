@@ -7,19 +7,6 @@
 - Strategy engine: `Tasks/*.cs`
 - Shared models/utilities: `Models.cs`, `Tasks/GameContext.cs`, `Tasks/TaskUtil.cs`, `Tasks/MoneyManager.cs`
 
-## Project Structure
-- `App.xaml*`: entry WPF
-- `MainWindow.xaml`: layout chinh
-- `MainWindow.xaml.cs`: runtime core, bridge dispatch, task orchestration, history, license, CDP websocket tap
-- `MainWindow.Startup.cs`: startup dung chung host/standalone
-- `MainWindow.EmbedMode.cs`: embedded mode cho Hub
-- `SicboX88LivePlugin.cs`: adapter `IGamePlugin`
-- `Models.cs`: snapshot/totals/state
-- `Tasks/*`: strategy + helper
-- `Compat/PackRes.cs`: resource fallback
-- `v4_js_xoc_dia_live.js`: scan scene, queue bet, debug panel `Canvas Watch`
-- `devtools_ws_bet_totals_probe.js`: probe websocket trong DevTools de test 4 tong cuoc ma khong can build app
-
 ## Main Modules
 
 ### MainWindow Runtime
@@ -31,55 +18,22 @@
 ### JS Bridge
 - Detect page/frame game.
 - Scan `canvas` + `cc.director.getScene()`.
-- Lay `prog`, `status`, `seq`, totals, account text, last result.
-- Queue click bet.
-- Day cac tool debug: `Canvas Watch`, `TextMap`, `MoneyMap`, `BetMap`, `Scan1000Text`, `FindCdTail`, `FindCdDeep`.
+- Lay text, totals, username, balance, va queue click bet.
+- Mount debug panel `Canvas Watch`.
+- Day payload `tick` ve C#.
 
 ### CDP Packet Tap
-- Bật trong `MainWindow.xaml.cs`.
+- Nam trong `MainWindow.xaml.cs`.
+- Su dung:
 - `Network.enable`
 - `Network.webSocketCreated`
 - `Network.webSocketFrameReceived`
-- Dang whitelist socket:
+- Socket production:
 - `wss://livecasino.azhkthg1.net/websocket`
 - Packet parser hien tai da lay duoc:
-- countdown (`timeBetCountdown`, `timeBet`, `stopBetSecond`, `status`)
-- packet state co `bs[]`
-
-### Strategy Engine
-- Moi task implement `IBetTask`.
-- Doc `GameContext`.
-- Quyet dinh side/stake.
-- Goi `TaskUtil.PlaceBet`.
-- Wait round finish, judge, apply money rule.
-
-## Module Dependencies
-- `MainWindow` -> `Models`, `Tasks`, `PackRes`, `ABX.Core`, `WebView2`
-- `Tasks/*` -> `GameContext`, `TaskUtil`, `MoneyManager`, `Models`
-- `TaskUtil` -> JS bridge API `__cw_bet_enqueue`
-- `v4_js_xoc_dia_live.js` -> DOM game, Cocos runtime, `chrome.webview.postMessage`
-- Plugin shell -> `MainWindow`, `PackRes`, `ABX.Core`
-
-## File Responsibilities
-- `MainWindow.xaml.cs`
-- webview lifecycle
-- JS loader/inject
-- bridge dispatch
-- pending/finalize/history
-- CDP websocket tap + packet parse
-- server-state override cho countdown/status
-- `v4_js_xoc_dia_live.js`
-- scene traversal
-- path/tail matching
-- text extraction
-- bet zone lookup
-- debug panel mount/visibility
-- username/account tail mapping
-- `Tasks/TaskUtil.cs`
-- place bet
-- wait/cooldown
-- judge result
-- money apply
+- countdown/status
+- totals `bs[]`
+- `resultRaw`
 
 ## Data Flow
 1. JS scan game -> tao snapshot `tick`.
@@ -92,68 +46,79 @@
 8. JS click queue vao canvas.
 9. Round doi -> C# finalize pending.
 
-## WebMessage Flow
-- JS -> C#
-- `tick`
-- `home_tick`
-- `bet`
-- `bet_error`
-- `bet_trace`
-- `cw_page_probe`
-- `cw_ui_state`
-- `cw_js_error`
-- `game_hint`
-- C# -> JS
-- `ExecuteScriptAsync(...)`
-- `PostWebMessageAsJson(...)`
+## Current Production Mapping
 
-## Websocket Packet Flow
-- Khong can gui them request len server; CDP chi nghe traffic da ton tai.
-- `MainWindow.xaml.cs` theo doi `webSocketCreated` va `webSocketFrameReceived`.
-- Countdown production da lay tu packet websocket thay vi scene tail.
-- Tong cuoc `CHAN/LE/TAI/XIU` dang huong toi packet `bs[]`, nhung chua chot production UI.
+### Countdown / Status
+- Source of truth: CDP packet.
+- Flow:
+- `TryUpdateServerCountdownFromPayload(...)`
+- `TryGetServerCountdownSnapshot(...)`
+- `MapServerStatusToUi(...)`
+- UI status color:
+- xanh = `Phiên mới`
+- do = `Ngừng đặt cược`
+- vang = `Đang đợi kết quả`
 
-## UI Update Flow
-- `tick` vao se update:
-- progress/prog
-- status
-- last result
-- seq
-- username/balance
-- mini pending panel
-- history/stats
-- Countdown/status hien tai co the bi override boi server packet:
-- `Prog` lay tu `timeBetCountdown` / fallback `timeBet`
-- `Status` map sang `Phiên mới`, `Ngừng đặt cược`, `Đang đợi kết quả`
-- `SetStatusText(...)` dong thoi dat mau chu theo trang thai.
+### Username / Balance
+- Source of truth: JS tail.
+- File: [D:\PROJECT\ABXHubSolution\SicboX88Live\v4_js_xoc_dia_live.js](/D:/PROJECT/ABXHubSolution/SicboX88Live/v4_js_xoc_dia_live.js)
+- Tail:
+- `userData/lbl_username`
+- `userData/lbl_userMoney`
 
-## Canvas / Scene Flow
-- He thong goc uu tien scene graph Cocos.
-- Tren trang moi:
-- `Tên nhân vật` da chot tail: `userData/lbl_username`
-- `Tài khoản` da chot tail: `userData/lbl_userMoney`
-- Countdown giua ban khong co node/tail production-ready.
-- Tong cuoc 4 cua hien tai cung chua co tail dang tin cay.
+### 4 Bet Totals
+- Source of truth: JS scene tail, khong fallback lai tail cu.
+- Tail chung:
+- `BetArea/lbl_totalbet`
+- Kien truc phan biet:
+- scan tat ca instance cung tail
+- chia 2 hang theo Y
+- sort trai/phai theo X trong moi hang
+- map:
+- hang duoi: `XIU`, `TAI`
+- hang tren: `LE`, `CHAN`
+- Muc tieu: tranh phu thuoc pixel tuyet doi khi doi do phan giai.
 
-## Countdown Diagnostic Flow
-- Nhieu probe DevTools da duoc tao:
-- `__cdTailFinder`
-- `__cd2`
-- `__cd3`
-- `devtools_countdown_*`
-- Ket luan kien truc:
-- countdown giua ban khong nen tiep tuc truy bang tail
-- countdown production da chuyen sang CDP websocket
+### Result Sequence
+- Source of truth: CDP `resultRaw` chi khi `status=ENDED`.
+- Khong lay tu popup history.
+- Khong lay tu bead scene graph.
+- Khong load lai tu state/log cu.
+- `resultRaw` parser:
+- `TryParseResultRawSum(...)` -> tong `3..18`
+- `SumToResultCode(...)` -> ma `0/1/2/3`
+- `TryUpdateServerResultSequenceFromPayload(...)`
+- `PushServerResultSumSeqToPageAsync(...)`
+- `tick` snapshot:
+- `snap.sumSeq` = chuoi tong `3..18`
+- `snap.seq` = chuoi ma noi bo `0/1/2/3`
 
-## Bet Totals Diagnostic Flow
-- Da thu 2 huong:
-- scan tail/scene -> nham `lbl_currentBet`, `ChipPanel/lbl_value`, `last_result`, `popup`, hoac ra `null`
-- websocket DevTools probe -> `devtools_ws_bet_totals_probe.js`
-- Probe websocket phai hook socket truoc khi game tao websocket, nen can `Snippet + reload`.
+## Result Code Semantics
+- `0 = XC`
+- `1 = XL`
+- `2 = TC`
+- `3 = TL`
+
+Rule chi tiet:
+- `3,5,7,9 => XL`
+- `4,6,8,10 => XC`
+- `11,13,15,17 => TL`
+- `12,14,16,18 => TC`
+
+## Important Runtime Detail
+- Packet `BETTING` co the van mang `resultRaw` cua van truoc.
+- Vi vay parser `ResultSeq` phai bo qua moi packet khong phai `ENDED`.
+- Neu append o `BETTING`, session se bi danh dau da xu ly som va ket qua moi that su cua `ENDED` se bi mat.
+
+## JS Rendering Detail
+- `v4_js_xoc_dia_live.js` uu tien:
+- `window.__cw_result_sum_seq`
+- khong fallback lai `seq` icon khi hien text `Chuỗi kết quả`
+- `__cw_renderPanel()` co the duoc goi tu C# sau moi lan CDP append chuoi moi.
 
 ## Current Architecture Risks
-- `MainWindow.xaml.cs` rat lon, coupling cao.
-- `v4_js_xoc_dia_live.js` vua scan scene, vua click, vua log, vua mount debug UI.
-- Bridge dang rat nhay cam voi thay doi tail/path/layout trang game.
-- Loader JS uu tien file disk truoc embedded; tot cho debug nhanh, nhung tang rui ro lech version neu session cu chua reload.
-- 4 tong cuoc `CHAN/LE/TAI/XIU` dang o giai doan hybrid: scene tail da fail, websocket packet dang debug de chuyen sang production.
+- `MainWindow.xaml.cs` van rat lon, coupling cao.
+- `v4_js_xoc_dia_live.js` vua scan scene, vua click, vua mount debug UI.
+- Bridge dang nhay cam voi thay doi scene graph game.
+- 4 tong cuoc dang dung scene geometry; neu game doi bo cuc 2x2, map nay se can sua lai.
+- Loader JS uu tien file disk truoc embedded; neu session cu chua reload, app co the dang chay JS cu.
