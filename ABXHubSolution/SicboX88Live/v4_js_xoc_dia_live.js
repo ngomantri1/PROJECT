@@ -13,7 +13,7 @@
     // - true: hien panel/layer debug
     // Co the doi gia tri tai day, hoac goi:
     // `window.__cw_setCanvasWatchVisible(true|false)` khi runtime.
-    var CW_CANVAS_WATCH_VISIBLE_DEFAULT = true;
+    var CW_CANVAS_WATCH_VISIBLE_DEFAULT = false;
     window.__cw_canvas_watch_visible = !!CW_CANVAS_WATCH_VISIBLE_DEFAULT;
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
@@ -4377,26 +4377,176 @@
         });
         return best;
     }
+    function fastSplitTwoRows(items) {
+        var arr = (items || []).slice().sort(function (a, b) {
+            return a.center.y - b.center.y || a.center.x - b.center.x;
+        });
+        if (arr.length !== 4)
+            return null;
+        return {
+            top: arr.slice(0, 2).sort(function (a, b) {
+                return a.center.x - b.center.x;
+            }),
+            bottom: arr.slice(2, 4).sort(function (a, b) {
+                return a.center.x - b.center.x;
+            })
+        };
+    }
+    function fastAncestorChain(node) {
+        var arr = [];
+        var cur = node || null;
+        var i = 0;
+        while (cur && i++ < 80) {
+            arr.push(cur);
+            cur = cur.parent || cur._parent || null;
+        }
+        return arr;
+    }
+    function fastDeepestCommonAncestor(nodes) {
+        var list = (nodes || []).filter(Boolean);
+        if (!list.length)
+            return null;
+        var chains = list.map(fastAncestorChain);
+        var base = chains[0];
+        for (var i = 0; i < base.length; i++) {
+            var cand = base[i];
+            var ok = true;
+            for (var j = 1; j < chains.length; j++) {
+                if (chains[j].indexOf(cand) === -1) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok)
+                return cand;
+        }
+        return null;
+    }
+    function findFastBoardBackFromLabel(labelNode) {
+        var cur = labelNode || null;
+        var best = null;
+        var bestArea = -1;
+        var depth = 0;
+        while (cur && depth <= 10) {
+            var nameL = String(cur.name || '').toLowerCase();
+            var pathL = String(fullPath(cur, 160) || '').toLowerCase();
+            var rect = rectFromNodeCompat(cur);
+            var area = betRectSane(rect) ? (rect.sw * rect.sh) : 0;
+            if ((nameL === 'board_back' || /\/board_back(?:\/|$)/.test(pathL)) && area > bestArea) {
+                best = cur;
+                bestArea = area;
+            }
+            cur = cur.parent || cur._parent || null;
+            depth++;
+        }
+        return best;
+    }
+    function findFastBoardRectFromLabels(labels) {
+        var boardNode = null;
+        var boardRect = null;
+        var union = null;
+        for (var i = 0; i < labels.length; i++) {
+            var it = labels[i];
+            if (!it || !it.node)
+                continue;
+            var bn = findFastBoardBackFromLabel(it.node);
+            var br = bn ? rectFromNodeCompat(bn) : null;
+            if (betRectSane(br) && (!boardRect || (br.sw * br.sh) > (boardRect.sw * boardRect.sh))) {
+                boardNode = bn;
+                boardRect = br;
+            }
+            if (betRectSane(it.rect))
+                union = betRectUnion(union, it.rect);
+        }
+        if (!betRectSane(boardRect) && betRectSane(union)) {
+            boardRect = {
+                sx: union.sx - union.sw * 0.75,
+                sy: union.sy - union.sh * 1.25,
+                sw: union.sw * 2.50,
+                sh: union.sh * 2.70
+            };
+        }
+        if (betRectSane(boardRect) && betRectSane(union)) {
+            var c1 = betRectCenter(union);
+            if (!betRectContainsPoint(boardRect, c1.x, c1.y)) {
+                boardRect = {
+                    sx: Math.min(boardRect.sx, union.sx - union.sw * 0.35),
+                    sy: Math.min(boardRect.sy, union.sy - union.sh * 0.55),
+                    sw: Math.max(boardRect.sx + boardRect.sw, union.sx + union.sw * 1.35) - Math.min(boardRect.sx, union.sx - union.sw * 0.35),
+                    sh: Math.max(boardRect.sy + boardRect.sh, union.sy + union.sh * 1.55) - Math.min(boardRect.sy, union.sy - union.sh * 0.55)
+                };
+            }
+        }
+        return {
+            node: boardNode,
+            rect: boardRect,
+            union: union
+        };
+    }
     function buildFastBetMap() {
         var labels = collectFastBetLabelNodes();
-        if (labels.length < 4)
+        var rows = fastSplitTwoRows(labels);
+        if (!rows)
             return {};
-        var top = labels.slice(0, 2).sort(function (a, b) {
-            return a.center.x - b.center.x;
-        });
-        var bottom = labels.slice(2, 4).sort(function (a, b) {
-            return a.center.x - b.center.x;
-        });
+        var top = rows.top;
+        var bottom = rows.bottom;
+        var boardInfo = findFastBoardRectFromLabels(labels);
+        var union = boardInfo.union || null;
+        var boardNode = boardInfo.node || fastDeepestCommonAncestor(labels.map(function (x) {
+            return x.node;
+        }));
+        var board = boardInfo.rect || (boardNode ? rectFromNodeCompat(boardNode) : null);
+        var midX = (top[0].center.x + top[1].center.x + bottom[0].center.x + bottom[1].center.x) / 4;
+        var midY = (top[0].center.y + top[1].center.y + bottom[0].center.y + bottom[1].center.y) / 4;
         function makeTarget(item, side) {
             var zoneNode = findFastBetZoneNode(side);
+            var zoneRect = zoneNode ? rectFromNodeCompat(zoneNode) : null;
+            var point = {
+                x: item.center.x,
+                y: item.center.y
+            };
+            var rawRect = null;
+            var touchRect = item.rect;
+            if (betRectSane(board)) {
+                var isLeft = item.center.x < midX;
+                var isTop = item.center.y < midY;
+                var x1 = isLeft ? board.sx : midX;
+                var x2 = isLeft ? midX : (board.sx + board.sw);
+                var y1 = isTop ? board.sy : midY;
+                var y2 = isTop ? midY : (board.sy + board.sh);
+                rawRect = {
+                    sx: Math.min(x1, x2),
+                    sy: Math.min(y1, y2),
+                    sw: Math.abs(x2 - x1),
+                    sh: Math.abs(y2 - y1)
+                };
+                if (betRectSane(rawRect)) {
+                    var insetX = Math.max(10, Math.min(rawRect.sw * 0.18, 42));
+                    var insetY = Math.max(10, Math.min(rawRect.sh * 0.22, 42));
+                    touchRect = betRectInset(rawRect, insetX, insetY) || rawRect;
+                    point = betRectCenter(touchRect);
+                }
+            }
+            if (betRectSane(zoneRect)) {
+                touchRect = zoneRect;
+                point = betRectCenter(zoneRect);
+            }
             return {
                 side: side,
                 node: item.node,
                 zoneNode: zoneNode,
-                touchNode: zoneNode || clickableOf(item.node, 8) || item.node,
+                touchNode: zoneNode || boardNode || item.node,
+                zoneRect: zoneRect,
                 clickable: clickableOf(item.node, 8),
                 rect: item.rect,
                 center: item.center,
+                point: point,
+                rawRect: rawRect,
+                touchRect: touchRect,
+                board: board,
+                boardUnion: union,
+                midX: midX,
+                midY: midY,
                 path: item.path,
                 text: item.text,
                 value: item.value,
@@ -4933,13 +5083,6 @@
         return false;
     }
     var BET_CLICK_CFG = {
-        postFocusDelay: 100,
-        confirmTimeout: 280,
-        confirmPoll: 45,
-        retryPause: 35,
-        betweenStepDelay: 45,
-        maxAttempts: 3,
-        queueAckWait: 60,
         queueSpacingMs: 100
     };
     function postBetTrace(stage, data) {
@@ -4959,6 +5102,781 @@
         try {
             console.log('[cwBetTrace]', obj);
         } catch (_) {}
+    }
+    var CW_BET_JS_VERSION = 'devtools-sync-diag-v2';
+    function shortPath(path, limitSeg) {
+        var parts = String(path || '').split('/').filter(Boolean);
+        var n = Math.max(1, Math.floor(limitSeg || 6));
+        return parts.slice(Math.max(0, parts.length - n)).join('/');
+    }
+    function listMapKeysSorted(map) {
+        return Object.keys(map || {}).sort(function (a, b) {
+            var na = +a;
+            var nb = +b;
+            if (isFinite(na) && isFinite(nb))
+                return na - nb;
+            return String(a).localeCompare(String(b));
+        });
+    }
+    function targetProbeData(item) {
+        if (!item)
+            return null;
+        return {
+            side: String(item.side || ''),
+            source: String(item.source || ''),
+            node: String((item.node && item.node.name) || ''),
+            zone: String((item.zoneNode && item.zoneNode.name) || ''),
+            touch: String((item.touchNode && item.touchNode.name) || ''),
+            clickable: String((item.clickable && item.clickable.name) || ''),
+            path: shortPath(item.path || (item.node && fullPath(item.node, 200)) || '', 8),
+            zonePath: shortPath((item.zoneNode && fullPath(item.zoneNode, 200)) || '', 8)
+        };
+    }
+    function chipProbeData(item) {
+        if (!item)
+            return null;
+        return {
+            amount: Number(item.amount || 0),
+            chip: String((item.chipNode && item.chipNode.name) || ''),
+            label: String((item.labelNode && item.labelNode.name) || ''),
+            chipPath: shortPath(item.chipPath || '', 8),
+            labelPath: shortPath(item.labelPath || '', 8)
+        };
+    }
+    function buildBetProbe(side) {
+        var sideKey = side ? normalizeSide(side) : '';
+        var fastMap = {};
+        var fastTarget = null;
+        var broadTarget = null;
+        var chipMap = {};
+        try {
+            fastMap = buildFastBetMap() || {};
+            fastTarget = sideKey ? (fastMap[sideKey] || null) : null;
+        } catch (_) {}
+        try {
+            broadTarget = sideKey ? (findBetTarget(sideKey) || null) : null;
+        } catch (_) {}
+        try {
+            chipMap = buildFastChipMap() || {};
+        } catch (_) {}
+        return {
+            version: CW_BET_JS_VERSION,
+            side: sideKey,
+            fastBetCount: Object.keys(fastMap || {}).length,
+            fastBetKeys: Object.keys(fastMap || {}).join(','),
+            chipCount: Object.keys(chipMap || {}).length,
+            chipKeys: listMapKeysSorted(chipMap).slice(0, 12).join(','),
+            fastTarget: targetProbeData(fastTarget),
+            broadTarget: targetProbeData(broadTarget)
+        };
+    }
+    function postBetProbe(stage, side, amount, extra) {
+        var data = buildBetProbe(side);
+        data.amount = Number(amount || 0);
+        extra = extra || {};
+        for (var k in extra) {
+            if (Object.prototype.hasOwnProperty.call(extra, k))
+                data[k] = extra[k];
+        }
+        postBetTrace(stage, data);
+    }
+    function ensureAbxStandaloneBetTestApi() {
+        if (window.abxStandaloneBetTest && window.abxStandaloneBetTest.__cwVersion === CW_BET_JS_VERSION)
+            return window.abxStandaloneBetTest;
+        var cc0 = window.cc || cc;
+        if (!cc0 || !cc0.director || !cc0.director.getScene)
+            throw new Error('cc.director.getScene() not available');
+        var V2_ = (cc0.v2 || cc0.Vec2 || function (x, y) {
+            return { x: x, y: y };
+        });
+        var PATH_BET_TOTAL = '/canvas/root/betarea/lbl_totalbet';
+        var BET_ZONE_PATHS = {
+            TAI: '/canvas/root/betarea/tai_bet',
+            XIU: '/canvas/root/betarea/xiu_bet',
+            CHAN: '/canvas/root/betarea/chan_bet',
+            LE: '/canvas/root/betarea/le_bet'
+        };
+        var PATH_CHIP_LABEL = '/canvas/root/right/chippanel/view/content/lbl_value';
+        var PATH_CHIP_PANEL = '/canvas/root/right/chippanel';
+        var RE_CHIP_NODE = /\/canvas\/root\/right\/chippanel\/view\/content\/chip_?\d+$/i;
+        var CLICK_DELAY_MS = 120;
+
+        function sleep_(ms) {
+            return new Promise(function (resolve) {
+                setTimeout(resolve, ms);
+            });
+        }
+        function getComp_(node, T) {
+            try {
+                return node && node.getComponent ? node.getComponent(T) : null;
+            } catch (_) {
+                return null;
+            }
+        }
+        function active_(node) {
+            return !node || node.activeInHierarchy !== false;
+        }
+        function normText_(s) {
+            return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+        }
+        function normalizeSide_(raw) {
+            var s = normText_(raw).replace(/[^A-Z0-9]+/g, '_');
+            if (s === 'TAI' || s === 'BIG')
+                return 'TAI';
+            if (s === 'XIU' || s === 'SMALL')
+                return 'XIU';
+            if (s === 'CHAN' || s === 'EVEN')
+                return 'CHAN';
+            if (s === 'LE' || s === 'ODD')
+                return 'LE';
+            throw new Error('Unsupported side: ' + raw);
+        }
+        function fullPath_(node, limit) {
+            var arr = [];
+            var cur = node;
+            var cap = limit || 160;
+            var i = 0;
+            while (cur && i++ < cap) {
+                arr.push(cur.name || '(noname)');
+                cur = cur.parent || cur._parent || null;
+            }
+            return arr.reverse().join('/');
+        }
+        function readCompText_(c) {
+            if (!c)
+                return '';
+            var keys = ['string', '_string', '_N$string', 'text', '_text'];
+            for (var i = 0; i < keys.length; i++) {
+                try {
+                    var v = c[keys[i]];
+                    if (v != null) {
+                        var s = String(v).trim();
+                        if (s)
+                            return s;
+                    }
+                } catch (_) {}
+            }
+            return '';
+        }
+        function nodeText_(node) {
+            if (!node)
+                return '';
+            return readCompText_(getComp_(node, cc0.Label)) || readCompText_(getComp_(node, cc0.RichText)) || '';
+        }
+        function parseAmount_(text) {
+            if (text == null)
+                return null;
+            var raw = String(text).trim().replace(/\s+/g, '').replace(/,/g, '');
+            if (!raw)
+                return null;
+            var m = raw.match(/^([0-9]+(?:\.[0-9]+)?)([KMB])?$/i);
+            if (m) {
+                var base = parseFloat(m[1]);
+                var unit = (m[2] || '').toUpperCase();
+                var mul = 1;
+                if (unit === 'K')
+                    mul = 1e3;
+                else if (unit === 'M')
+                    mul = 1e6;
+                else if (unit === 'B')
+                    mul = 1e9;
+                return Math.round(base * mul);
+            }
+            var digits = raw.replace(/[^0-9]/g, '');
+            return digits ? parseInt(digits, 10) : null;
+        }
+        function formatAmount_(v) {
+            return Math.round(+v || 0).toLocaleString('en-US');
+        }
+        function nodeWorldPos_(node) {
+            try {
+                if (node && node.getWorldPosition)
+                    return node.getWorldPosition();
+            } catch (_) {}
+            try {
+                if (node && node.convertToWorldSpaceAR)
+                    return node.convertToWorldSpaceAR(new V2_(0, 0));
+            } catch (_) {}
+            return { x: 0, y: 0 };
+        }
+        function toScreenPt_(node, p) {
+            try {
+                var cam = null;
+                if (cc0.Camera && cc0.Camera.findCamera)
+                    cam = cc0.Camera.findCamera(node);
+                else if (cc0.Camera && cc0.Camera.main)
+                    cam = cc0.Camera.main;
+                if (cam && cam.worldToScreen) {
+                    var sp = cam.worldToScreen(p);
+                    var fs = cc0.view && cc0.view.getFrameSize ? cc0.view.getFrameSize() : null;
+                    var vs = cc0.view && cc0.view.getVisibleSize ? cc0.view.getVisibleSize() : null;
+                    if (fs && vs && vs.width && vs.height) {
+                        return {
+                            x: sp.x * (fs.width / vs.width),
+                            y: sp.y * (fs.height / vs.height)
+                        };
+                    }
+                    return { x: sp.x, y: sp.y };
+                }
+            } catch (_) {}
+            return { x: p.x || 0, y: p.y || 0 };
+        }
+        function rectFromNode_(node) {
+            if (!node)
+                return null;
+            try {
+                var p = node.convertToWorldSpaceAR(new V2_(0, 0));
+                var cs = node.getContentSize ? node.getContentSize() : (node._contentSize || { width: 0, height: 0 });
+                var w = cs.width || 0;
+                var h = cs.height || 0;
+                var ax = node.anchorX != null ? node.anchorX : 0.5;
+                var ay = node.anchorY != null ? node.anchorY : 0.5;
+                var bl = { x: (p.x || 0) - w * ax, y: (p.y || 0) - h * ay };
+                var tr = { x: bl.x + w, y: bl.y + h };
+                var s1 = toScreenPt_(node, bl);
+                var s2 = toScreenPt_(node, tr);
+                return {
+                    sx: Math.min(s1.x, s2.x),
+                    sy: Math.min(s1.y, s2.y),
+                    sw: Math.abs(s2.x - s1.x) || 1,
+                    sh: Math.abs(s2.y - s1.y) || 1
+                };
+            } catch (_) {
+                return null;
+            }
+        }
+        function centerOfRect_(r) {
+            return { x: r.sx + r.sw / 2, y: r.sy + r.sh / 2 };
+        }
+        function clamp_(v, a, b) {
+            return Math.max(a, Math.min(b, v));
+        }
+        function clickable_(node) {
+            return !!(getComp_(node, cc0.Button) || getComp_(node, cc0.Toggle) || node._touchListener);
+        }
+        function clickableAncestor_(node, depth) {
+            var cur = node;
+            var maxDepth = depth == null ? 6 : depth;
+            var i = 0;
+            while (cur && i++ <= maxDepth) {
+                if (clickable_(cur))
+                    return cur;
+                cur = cur.parent || cur._parent || null;
+            }
+            return null;
+        }
+        function clickCanvasXY_(x, y, tryFlipY) {
+            return clickCanvasXY(x, y, tryFlipY);
+        }
+        function emitTouchAtRect_(node, rect) {
+            return emitTouchAtRect(node, rect);
+        }
+        function emitTouchOnNode_(node) {
+            return emitTouchOnNode(node);
+        }
+        function emitBtnToggle_(node) {
+            return emitBtnToggle(node);
+        }
+        function fireNodeNoCoords_(node) {
+            if (!node)
+                return false;
+            if (emitTouchOnNode_(node))
+                return true;
+            if (emitBtnToggle_(node))
+                return true;
+            return false;
+        }
+        function walkScene_(visitor) {
+            var scene = cc0.director.getScene();
+            (function walk(node) {
+                if (!node || !active_(node))
+                    return;
+                visitor(node);
+                var kids = node.children || [];
+                for (var i = 0; i < kids.length; i++)
+                    walk(kids[i]);
+            })(scene);
+        }
+        function collectBetLabelNodes_() {
+            var rows = [];
+            walkScene_(function (node) {
+                var path = fullPath_(node, 200);
+                if (String(path || '').toLowerCase().indexOf(PATH_BET_TOTAL) === -1)
+                    return;
+                var text = nodeText_(node);
+                var rect = rectFromNode_(node);
+                var center = rect ? centerOfRect_(rect) : toScreenPt_(node, nodeWorldPos_(node));
+                rows.push({
+                    node: node,
+                    path: path,
+                    text: text,
+                    value: parseAmount_(text),
+                    rect: rect,
+                    center: center
+                });
+            });
+            rows.sort(function (a, b) {
+                return a.center.y - b.center.y || a.center.x - b.center.x;
+            });
+            return rows;
+        }
+        function collectChipLabels_() {
+            var rows = [];
+            walkScene_(function (node) {
+                var path = fullPath_(node, 200);
+                if (String(path || '').toLowerCase().indexOf(PATH_CHIP_LABEL) === -1)
+                    return;
+                var text = nodeText_(node);
+                var value = parseAmount_(text);
+                if (!value)
+                    return;
+                var rect = rectFromNode_(node);
+                var center = rect ? centerOfRect_(rect) : toScreenPt_(node, nodeWorldPos_(node));
+                rows.push({
+                    node: node,
+                    path: path,
+                    text: text,
+                    value: value,
+                    rect: rect,
+                    center: center,
+                    clickable: clickableAncestor_(node, 8)
+                });
+            });
+            rows.sort(function (a, b) {
+                return a.center.x - b.center.x || a.center.y - b.center.y;
+            });
+            return rows;
+        }
+        function collectChipNodes_() {
+            var rows = [];
+            walkScene_(function (node) {
+                var path = fullPath_(node, 200);
+                if (!RE_CHIP_NODE.test(path))
+                    return;
+                var rect = rectFromNode_(node);
+                var center = rect ? centerOfRect_(rect) : toScreenPt_(node, nodeWorldPos_(node));
+                rows.push({
+                    node: node,
+                    path: path,
+                    rect: rect,
+                    center: center
+                });
+            });
+            rows.sort(function (a, b) {
+                return a.center.x - b.center.x || a.center.y - b.center.y;
+            });
+            return rows;
+        }
+        function splitTwoRows_(items) {
+            var arr = (items || []).slice().sort(function (a, b) {
+                return a.center.y - b.center.y || a.center.x - b.center.x;
+            });
+            if (arr.length !== 4)
+                throw new Error('Expected 4 bet labels, got ' + arr.length);
+            return {
+                top: arr.slice(0, 2).sort(function (a, b) { return a.center.x - b.center.x; }),
+                bottom: arr.slice(2, 4).sort(function (a, b) { return a.center.x - b.center.x; })
+            };
+        }
+        function rectSane_(r) {
+            return !!(r && isFinite(r.sx) && isFinite(r.sy) && isFinite(r.sw) && isFinite(r.sh) && r.sw > 1 && r.sh > 1);
+        }
+        function rectContainsPoint_(r, x, y) {
+            return !!(rectSane_(r) && x >= r.sx && x <= (r.sx + r.sw) && y >= r.sy && y <= (r.sy + r.sh));
+        }
+        function insetRect_(rect, dx, dy) {
+            if (!rectSane_(rect))
+                return null;
+            return {
+                sx: rect.sx + dx,
+                sy: rect.sy + dy,
+                sw: Math.max(1, rect.sw - dx * 2),
+                sh: Math.max(1, rect.sh - dy * 2)
+            };
+        }
+        function unionRect_(items) {
+            var left = null, top = null, right = null, bottom = null;
+            for (var i = 0; i < items.length; i++) {
+                var r = items[i] && items[i].rect;
+                if (!r)
+                    continue;
+                if (left == null || r.sx < left)
+                    left = r.sx;
+                if (top == null || r.sy < top)
+                    top = r.sy;
+                if (right == null || (r.sx + r.sw) > right)
+                    right = r.sx + r.sw;
+                if (bottom == null || (r.sy + r.sh) > bottom)
+                    bottom = r.sy + r.sh;
+            }
+            if (left == null)
+                return null;
+            return { sx: left, sy: top, sw: Math.max(1, right - left), sh: Math.max(1, bottom - top) };
+        }
+        function ancestorChain_(node) {
+            var arr = [];
+            var cur = node;
+            var i = 0;
+            while (cur && i++ < 80) {
+                arr.push(cur);
+                cur = cur.parent || cur._parent || null;
+            }
+            return arr;
+        }
+        function deepestCommonAncestor_(nodes) {
+            var list = (nodes || []).filter(Boolean);
+            if (!list.length)
+                return null;
+            var chains = list.map(ancestorChain_);
+            var base = chains[0];
+            for (var i = 0; i < base.length; i++) {
+                var cand = base[i];
+                var ok = true;
+                for (var j = 1; j < chains.length; j++) {
+                    if (chains[j].indexOf(cand) === -1) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok)
+                    return cand;
+            }
+            return null;
+        }
+        function findBetZoneNodeBySide_(side) {
+            var sideKey = normalizeSide_(side);
+            var token = String(BET_ZONE_PATHS[sideKey] || '').toLowerCase();
+            if (!token)
+                return null;
+            var best = null;
+            var bestArea = -1;
+            walkScene_(function (node) {
+                if (!node || !active_(node))
+                    return;
+                var pathL = String(fullPath_(node, 200) || '').toLowerCase();
+                if (pathL.indexOf(token) === -1)
+                    return;
+                var rect = rectFromNode_(node);
+                var area = rectSane_(rect) ? (rect.sw * rect.sh) : 0;
+                if (area > bestArea) {
+                    best = node;
+                    bestArea = area;
+                }
+            });
+            return best;
+        }
+        function findBoardBackFromLabel_(labelNode) {
+            var cur = labelNode || null;
+            var best = null;
+            var bestArea = -1;
+            var depth = 0;
+            while (cur && depth <= 10) {
+                var nameL = String(cur.name || '').toLowerCase();
+                var pathL = String(fullPath_(cur, 160) || '').toLowerCase();
+                var rect = rectFromNode_(cur);
+                var area = rectSane_(rect) ? (rect.sw * rect.sh) : 0;
+                if ((nameL === 'board_back' || /\/board_back(?:\/|$)/.test(pathL)) && area > bestArea) {
+                    best = cur;
+                    bestArea = area;
+                }
+                cur = cur.parent || cur._parent || null;
+                depth++;
+            }
+            return best;
+        }
+        function findBoardRectFromLabels_(labels) {
+            var boardNode = null;
+            var boardRect = null;
+            var union = null;
+            for (var i = 0; i < labels.length; i++) {
+                var it = labels[i];
+                if (!it || !it.node)
+                    continue;
+                var bn = findBoardBackFromLabel_(it.node);
+                var br = bn ? rectFromNode_(bn) : null;
+                if (rectSane_(br) && (!boardRect || (br.sw * br.sh) > (boardRect.sw * boardRect.sh))) {
+                    boardNode = bn;
+                    boardRect = br;
+                }
+                if (rectSane_(it.rect))
+                    union = unionRect_([{ rect: union }, { rect: it.rect }]);
+            }
+            if (!rectSane_(boardRect) && rectSane_(union)) {
+                boardRect = {
+                    sx: union.sx - union.sw * 0.75,
+                    sy: union.sy - union.sh * 1.25,
+                    sw: union.sw * 2.50,
+                    sh: union.sh * 2.70
+                };
+            }
+            if (rectSane_(boardRect) && rectSane_(union)) {
+                var c1 = centerOfRect_(union);
+                if (!rectContainsPoint_(boardRect, c1.x, c1.y)) {
+                    boardRect = {
+                        sx: Math.min(boardRect.sx, union.sx - union.sw * 0.35),
+                        sy: Math.min(boardRect.sy, union.sy - union.sh * 0.55),
+                        sw: Math.max(boardRect.sx + boardRect.sw, union.sx + union.sw * 1.35) - Math.min(boardRect.sx, union.sx - union.sw * 0.35),
+                        sh: Math.max(boardRect.sy + boardRect.sh, union.sy + union.sh * 1.55) - Math.min(boardRect.sy, union.sy - union.sh * 0.55)
+                    };
+                }
+            }
+            return {
+                node: boardNode,
+                rect: boardRect,
+                union: union
+            };
+        }
+        function buildBetMap_() {
+            var labels = collectBetLabelNodes_();
+            var rows = splitTwoRows_(labels);
+            var top = rows.top;
+            var bottom = rows.bottom;
+            var boardInfo = findBoardRectFromLabels_(labels);
+            var union = boardInfo.union || unionRect_(labels);
+            var boardNode = boardInfo.node || deepestCommonAncestor_(labels.map(function (x) { return x.node; }));
+            var board = boardInfo.rect || rectFromNode_(boardNode);
+            var midX = (top[0].center.x + top[1].center.x + bottom[0].center.x + bottom[1].center.x) / 4;
+            var midY = (top[0].center.y + top[1].center.y + bottom[0].center.y + bottom[1].center.y) / 4;
+            function makeTarget(item, side) {
+                var point = { x: item.center.x, y: item.center.y };
+                var rawRect = null;
+                var touchRect = item.rect;
+                var zoneNode = findBetZoneNodeBySide_(side);
+                var zoneRect = zoneNode ? rectFromNode_(zoneNode) : null;
+                if (board) {
+                    var isLeft = item.center.x < midX;
+                    var isTop = item.center.y < midY;
+                    var x1 = isLeft ? board.sx : midX;
+                    var x2 = isLeft ? midX : (board.sx + board.sw);
+                    var y1 = isTop ? board.sy : midY;
+                    var y2 = isTop ? midY : (board.sy + board.sh);
+                    rawRect = {
+                        sx: Math.min(x1, x2),
+                        sy: Math.min(y1, y2),
+                        sw: Math.abs(x2 - x1),
+                        sh: Math.abs(y2 - y1)
+                    };
+                    var insetX = Math.max(10, Math.min(rawRect.sw * 0.18, 42));
+                    var insetY = Math.max(10, Math.min(rawRect.sh * 0.22, 42));
+                    touchRect = insetRect_(rawRect, insetX, insetY) || rawRect;
+                    point = centerOfRect_(touchRect);
+                }
+                if (rectSane_(zoneRect)) {
+                    touchRect = zoneRect;
+                    point = centerOfRect_(zoneRect);
+                }
+                return {
+                    side: side,
+                    node: item.node,
+                    touchNode: zoneNode || boardNode || item.node,
+                    zoneNode: zoneNode,
+                    zoneRect: zoneRect,
+                    path: item.path,
+                    text: item.text,
+                    value: item.value,
+                    rect: item.rect,
+                    center: item.center,
+                    point: point,
+                    rawRect: rawRect,
+                    touchRect: touchRect,
+                    clickable: clickableAncestor_(item.node, 8),
+                    board: board,
+                    boardUnion: union,
+                    midX: midX,
+                    midY: midY
+                };
+            }
+            return {
+                LE: makeTarget(top[0], 'LE'),
+                CHAN: makeTarget(top[1], 'CHAN'),
+                XIU: makeTarget(bottom[0], 'XIU'),
+                TAI: makeTarget(bottom[1], 'TAI')
+            };
+        }
+        function buildChipMap_() {
+            var labels = collectChipLabels_();
+            var chips = collectChipNodes_();
+            if (!labels.length)
+                throw new Error('No chip labels found');
+            if (!chips.length)
+                throw new Error('No chip nodes found');
+            var out = {};
+            for (var i = 0; i < labels.length; i++) {
+                var label = labels[i];
+                var chip = chips[Math.min(i, chips.length - 1)];
+                out[String(label.value)] = {
+                    amount: label.value,
+                    text: label.text,
+                    labelNode: label.node,
+                    labelPath: label.path,
+                    labelRect: label.rect,
+                    labelCenter: label.center,
+                    chipNode: chip ? chip.node : null,
+                    chipPath: chip ? chip.path : '',
+                    chipRect: chip ? chip.rect : null,
+                    chipCenter: chip ? chip.center : null,
+                    panelPath: PATH_CHIP_PANEL
+                };
+            }
+            return out;
+        }
+        function readTotals_() {
+            var map = buildBetMap_();
+            return {
+                LE: map.LE.value || 0,
+                CHAN: map.CHAN.value || 0,
+                XIU: map.XIU.value || 0,
+                TAI: map.TAI.value || 0
+            };
+        }
+        function snapshot_() {
+            var bets = buildBetMap_();
+            var chips = buildChipMap_();
+            var chipList = Object.keys(chips).map(function (k) {
+                return chips[k];
+            }).sort(function (a, b) {
+                return a.amount - b.amount;
+            });
+            return {
+                bets: bets,
+                totals: readTotals_(),
+                chips: chips,
+                chipList: chipList
+            };
+        }
+        function buildPlan_(amount, chipsMap) {
+            var want = Math.max(0, Math.floor(+amount || 0));
+            if (!want)
+                throw new Error('Amount must be > 0');
+            var denoms = Object.keys(chipsMap).map(function (k) {
+                return parseInt(k, 10);
+            }).filter(function (v) {
+                return v > 0;
+            }).sort(function (a, b) {
+                return b - a;
+            });
+            var rest = want;
+            var steps = [];
+            for (var i = 0; i < denoms.length; i++) {
+                var d = denoms[i];
+                var cnt = Math.floor(rest / d);
+                for (var j = 0; j < cnt; j++)
+                    steps.push(d);
+                rest -= cnt * d;
+            }
+            if (rest !== 0)
+                throw new Error('Cannot build exact plan for ' + want + ', remain ' + rest);
+            return steps;
+        }
+        async function focusChipFast_(amount, opts) {
+            opts = opts || {};
+            var afterChipMs = Math.max(0, Math.floor(+opts.afterChipMs || 0));
+            var chips = buildChipMap_();
+            var item = chips[String(Math.max(0, Math.floor(+amount || 0)))];
+            if (!item)
+                throw new Error('Chip not found for amount ' + amount);
+            var fired = false;
+            if (item.chipNode)
+                fired = fireNodeNoCoords_(item.chipNode);
+            if (!fired && item.labelNode)
+                fired = fireNodeNoCoords_(item.labelNode);
+            if (afterChipMs > 0)
+                await sleep_(afterChipMs);
+            return { ok: !!fired, chip: item };
+        }
+        async function tapSideFast_(side, opts) {
+            opts = opts || {};
+            var afterTapMs = Math.max(0, Math.floor(+opts.afterTapMs || 0));
+            var sideKey = normalizeSide_(side);
+            var bets = buildBetMap_();
+            var item = bets[sideKey];
+            if (!item)
+                throw new Error('Bet side not found: ' + sideKey);
+            var fired = false;
+            if (item.zoneNode)
+                fired = fireNodeNoCoords_(item.zoneNode);
+            if (!fired && item.touchNode)
+                fired = fireNodeNoCoords_(item.touchNode);
+            if (!fired && item.clickable)
+                fired = fireNodeNoCoords_(item.clickable);
+            if (!fired && item.node)
+                fired = fireNodeNoCoords_(item.node);
+            if (afterTapMs > 0)
+                await sleep_(afterTapMs);
+            return { ok: !!fired, target: item };
+        }
+        async function betFast_(side, amount, opts) {
+            opts = opts || {};
+            var sideKey = normalizeSide_(side);
+            var snap = snapshot_();
+            var plan = buildPlan_(amount, snap.chips);
+            var afterChipMs = Math.max(0, Math.floor(+opts.afterChipMs || 0));
+            var afterTapMs = Math.max(0, Math.floor(+opts.afterTapMs || 0));
+            var stepPauseMs = Math.max(0, Math.floor(+opts.stepPauseMs || 0));
+            postBetTrace('abx_fast_start', {
+                version: CW_BET_JS_VERSION,
+                side: sideKey,
+                amount: amount,
+                plan: plan.map(formatAmount_).join(',')
+            });
+            var steps = [];
+            for (var i = 0; i < plan.length; i++) {
+                var denom = plan[i];
+                var chipRes = await focusChipFast_(denom, { afterChipMs: afterChipMs });
+                postBetTrace(chipRes.ok ? 'abx_fast_focus_ok' : 'abx_fast_focus_fail', {
+                    version: CW_BET_JS_VERSION,
+                    side: sideKey,
+                    amount: amount,
+                    denom: denom,
+                    step: i + 1
+                });
+                if (!chipRes.ok)
+                    throw new Error('Cannot click chip ' + denom);
+                if (stepPauseMs > 0)
+                    await sleep_(stepPauseMs);
+                var tapRes = await tapSideFast_(sideKey, { afterTapMs: afterTapMs });
+                postBetTrace(tapRes.ok ? 'abx_fast_tap_ok' : 'abx_fast_tap_fail', {
+                    version: CW_BET_JS_VERSION,
+                    side: sideKey,
+                    amount: amount,
+                    denom: denom,
+                    step: i + 1,
+                    target: targetProbeData(tapRes.target)
+                });
+                if (!tapRes.ok)
+                    throw new Error('Cannot click side ' + sideKey);
+                if (stepPauseMs > 0)
+                    await sleep_(stepPauseMs);
+                steps.push({ step: i + 1, chip: denom });
+            }
+            var result = {
+                ok: true,
+                side: sideKey,
+                amount: amount,
+                plan: plan,
+                steps: steps
+            };
+            postBetTrace('abx_fast_done', {
+                version: CW_BET_JS_VERSION,
+                side: sideKey,
+                amount: amount,
+                plan: plan.map(formatAmount_).join(',')
+            });
+            return result;
+        }
+        var api = {
+            scan: snapshot_,
+            focusChipFast: focusChipFast_,
+            tapSideFast: tapSideFast_,
+            betFast: betFast_
+        };
+        api.__cwVersion = CW_BET_JS_VERSION;
+        window.abxStandaloneBetTest = api;
+        window.abxStandaloneBetTestVersion = CW_BET_JS_VERSION;
+        postBetTrace('abx_api_ready', {
+            version: CW_BET_JS_VERSION
+        });
+        return api;
     }
     function totalsSnapshotMini(t) {
         t = t || {};
@@ -4990,307 +5908,6 @@
             } : null
         };
     }
-    function betRectPoint(rect, fx, fy) {
-        if (!betRectSane(rect))
-            return null;
-        var px = rect.sx + rect.sw * fx;
-        var py = rect.sy + rect.sh * fy;
-        return {
-            x: px,
-            y: py
-        };
-    }
-    function dispatchBetTargetAttempt(tgt, attempt) {
-        if (!tgt || !tgt.node)
-            return false;
-        var node = tgt.node;
-        var rect = tgt.rect || rectFromNodeCompat(node);
-        var mode = String((attempt && attempt.mode) || '');
-        if (mode === 'toggle')
-            return emitBtnToggle(node);
-        if (mode === 'touch_rect_center')
-            return !!(rect && emitTouchAtRect(node, rect));
-        if (mode === 'canvas_point') {
-            var pt = betRectPoint(rect, attempt.fx, attempt.fy);
-            return !!(pt && clickCanvasXY(pt.x, pt.y, true));
-        }
-        if (mode === 'emit_click')
-            return !!(clickable(node) && emitClick(node));
-        if (mode === 'canvas_center') {
-            var rc = betRectCenter(rect);
-            return !!(rect && clickCanvasXY(rc.x, rc.y, true));
-        }
-        return false;
-    }
-    function isSingleThousandBet(meta) {
-        meta = meta || {};
-        var amount = Number(meta.amount || 0);
-        var denom = Number(meta.denom || 0);
-        var turn = Number(meta.turn || 0);
-        return amount === 1000 && denom === 1000 && turn === 1;
-    }
-    function shouldAcceptBetChange(reason, meta) {
-        if (!reason || !reason.changed)
-            return false;
-        // C# coi enqueue là thành công; mọi biến động liên quan chỉ dùng để nhả queue sớm.
-        return true;
-    }
-    async function clickBetTargetConfirmed(tgt, side, meta) {
-        meta = meta || {};
-        if (!tgt || !tgt.node) {
-            postBetTrace('bet_target_missing', {
-                side: normalizeSide(side),
-                amount: Number(meta.amount || 0),
-                phase: String(meta.phase || '')
-            });
-            return false;
-        }
-        var attempts = [
-            {
-                mode: 'toggle'
-            },
-            {
-                mode: 'touch_rect_center'
-            },
-            {
-                mode: 'canvas_center',
-                fx: 0.5,
-                fy: 0.5
-            },
-            {
-                mode: 'canvas_point',
-                fx: 0.35,
-                fy: 0.50
-            },
-            {
-                mode: 'canvas_point',
-                fx: 0.65,
-                fy: 0.50
-            },
-            {
-                mode: 'canvas_point',
-                fx: 0.50,
-                fy: 0.35
-            },
-            {
-                mode: 'canvas_point',
-                fx: 0.50,
-                fy: 0.65
-            },
-            {
-                mode: 'emit_click'
-            }
-        ];
-        var targetInfo = betTargetDebug(tgt);
-        var before = sampleTotalsNow(true) || {};
-        postBetTrace('bet_click_start', {
-            side: normalizeSide(side),
-            amount: Number(meta.amount || 0),
-            denom: Number(meta.denom || 0),
-            turn: Number(meta.turn || 0),
-            phase: String(meta.phase || ''),
-            target: targetInfo,
-            before: totalsSnapshotMini(before)
-        });
-        var maxAttempts = Math.max(1, Math.min(attempts.length, Number(BET_CLICK_CFG.maxAttempts) || attempts.length));
-        for (var i = 0; i < maxAttempts; i++) {
-            var attempt = attempts[i];
-            var sent = dispatchBetTargetAttempt(tgt, attempt);
-            postBetTrace('bet_click_dispatch', {
-                side: normalizeSide(side),
-                amount: Number(meta.amount || 0),
-                denom: Number(meta.denom || 0),
-                turn: Number(meta.turn || 0),
-                phase: String(meta.phase || ''),
-                target: targetInfo,
-                attempt: i + 1,
-                mode: attempt.mode,
-                sent: !!sent
-            });
-            if (!sent) {
-                await sleep(BET_CLICK_CFG.retryPause);
-                continue;
-            }
-            var applied = false;
-            var reason = {
-                changed: false,
-                reason: '',
-                key: '',
-                before: null,
-                after: null
-            };
-            var t0 = (performance && performance.now ? performance.now() : Date.now());
-            var last = before;
-            while (((performance && performance.now ? performance.now() : Date.now()) - t0) < BET_CLICK_CFG.confirmTimeout) {
-                await sleep(BET_CLICK_CFG.confirmPoll || 45);
-                var cur = sampleTotalsNow(true) || {};
-                reason = totalsChangedForSide(last, cur, side);
-                if (reason.changed) {
-                    if (shouldAcceptBetChange(reason, meta)) {
-                        applied = true;
-                        before = cur;
-                        break;
-                    }
-                    postBetTrace('bet_click_ignore_change', {
-                        side: normalizeSide(side),
-                        amount: Number(meta.amount || 0),
-                        denom: Number(meta.denom || 0),
-                        turn: Number(meta.turn || 0),
-                        phase: String(meta.phase || ''),
-                        target: targetInfo,
-                        attempt: i + 1,
-                        mode: attempt.mode,
-                        ignoreReason: String(reason.reason || ''),
-                        ignoreKey: String(reason.key || ''),
-                        ignoreBefore: reason.before == null ? null : reason.before,
-                        ignoreAfter: reason.after == null ? null : reason.after
-                    });
-                }
-                last = cur;
-            }
-            postBetTrace('bet_click_result', {
-                side: normalizeSide(side),
-                amount: Number(meta.amount || 0),
-                denom: Number(meta.denom || 0),
-                turn: Number(meta.turn || 0),
-                phase: String(meta.phase || ''),
-                target: targetInfo,
-                attempt: i + 1,
-                mode: attempt.mode,
-                applied: !!applied,
-                changeReason: String(reason.reason || ''),
-                changeKey: String(reason.key || ''),
-                changeBefore: reason.before == null ? null : reason.before,
-                changeAfter: reason.after == null ? null : reason.after,
-                after: totalsSnapshotMini(before)
-            });
-            if (applied)
-                return true;
-            await sleep(BET_CLICK_CFG.retryPause);
-        }
-        postBetTrace('bet_click_fail', {
-            side: normalizeSide(side),
-            amount: Number(meta.amount || 0),
-            denom: Number(meta.denom || 0),
-            turn: Number(meta.turn || 0),
-            phase: String(meta.phase || ''),
-            target: targetInfo,
-            after: totalsSnapshotMini(before)
-        });
-        return false;
-    }
-    async function clickBetTargetFast(tgt, side, meta) {
-        meta = meta || {};
-        if (!tgt || !tgt.node) {
-            postBetTrace('bet_target_missing', {
-                side: normalizeSide(side),
-                amount: Number(meta.amount || 0),
-                phase: String(meta.phase || '')
-            });
-            return false;
-        }
-        var targetInfo = betTargetDebug(tgt);
-        postBetTrace('bet_click_start', {
-            side: normalizeSide(side),
-            amount: Number(meta.amount || 0),
-            denom: Number(meta.denom || 0),
-            turn: Number(meta.turn || 0),
-            phase: String(meta.phase || ''),
-            fast: true,
-            target: targetInfo
-        });
-        var attempts = [];
-        function pushAttempt(node, mode) {
-            if (!node)
-                return;
-            for (var i = 0; i < attempts.length; i++) {
-                if (attempts[i].node === node)
-                    return;
-            }
-            attempts.push({
-                node: node,
-                mode: mode
-            });
-        }
-        pushAttempt(tgt.zoneNode, 'zone_node');
-        pushAttempt(tgt.touchNode, 'touch_node');
-        pushAttempt(tgt.clickable, 'clickable');
-        pushAttempt(tgt.node, 'label_node');
-        for (var i = 0; i < attempts.length; i++) {
-            var attempt = attempts[i];
-            var sent = fireNodeNoCoords(attempt.node);
-            postBetTrace('bet_click_dispatch', {
-                side: normalizeSide(side),
-                amount: Number(meta.amount || 0),
-                denom: Number(meta.denom || 0),
-                turn: Number(meta.turn || 0),
-                phase: String(meta.phase || ''),
-                fast: true,
-                target: targetInfo,
-                attempt: i + 1,
-                mode: attempt.mode,
-                sent: !!sent
-            });
-            if (sent) {
-                postBetTrace('bet_click_fire', {
-                    side: normalizeSide(side),
-                    amount: Number(meta.amount || 0),
-                    denom: Number(meta.denom || 0),
-                    turn: Number(meta.turn || 0),
-                    phase: String(meta.phase || ''),
-                    mode: attempt.mode,
-                    fast: true
-                });
-                return true;
-            }
-        }
-
-        postBetTrace('bet_click_fail', {
-            side: normalizeSide(side),
-            amount: Number(meta.amount || 0),
-            denom: Number(meta.denom || 0),
-            turn: Number(meta.turn || 0),
-            phase: String(meta.phase || ''),
-            fast: true,
-            target: targetInfo
-        });
-        return false;
-    }
-    function clickBetTarget(tgt) {
-        if (!tgt || !tgt.node)
-            return false;
-        var node = tgt.node;
-        var rect = tgt.rect || rectFromNodeCompat(node);
-        var ok = false;
-        if (emitBtnToggle(node))
-            ok = true;
-        if (rect) {
-            if (emitTouchAtRect(node, rect))
-                ok = true;
-            var rc = betRectCenter(rect);
-            if (clickCanvasXY(rc.x, rc.y, true))
-                ok = true;
-        }
-        if (!ok && clickable(node))
-            ok = emitClick(node) || ok;
-        return ok;
-    }
-    window.__cw_getBetTargetDebug = function (side) {
-        var tgt = findBetTarget(side);
-        if (!tgt)
-            return null;
-        return {
-            side: normalizeSide(side),
-            source: String(tgt.source || ''),
-            nodeName: String((tgt.node && tgt.node.name) || ''),
-            nodePath: String((tgt.node && fullPath(tgt.node, 200)) || ''),
-            rect: tgt.rect || null,
-            rawRect: tgt.rawRect || null,
-            boardRect: tgt.boardRect || null,
-            labelRect: tgt.labelRect || null
-        };
-    };
-
     function parseAmountLoose(txt) {
         if (!txt)
             return null;
@@ -5819,25 +6436,9 @@
         var val = Math.max(0, Math.floor(+amount || 0));
         if (!ALLOWED_SET[String(val)])
             throw new Error('M?nh gi  kh?ng h?p l?: ' + amount);
-        var chips = buildFastChipMap();
-        var item = chips[String(val)];
-        if (!item)
-            return false;
-        var target = item.chipNode || item.labelNode || null;
-        var touched = fireNodeNoCoords(target);
-        if (!touched && item.labelNode && item.labelNode !== target)
-            touched = fireNodeNoCoords(item.labelNode);
-        if (!touched)
-            return false;
-        console.log('[cwFocusChip++]', {
-            amount: val,
-            mode: 'fast',
-            target: String((target && target.name) || ''),
-            label: String((item.labelNode && item.labelNode.name) || ''),
-            panelLabels: Object.keys(chips || {}).length,
-            panelChips: Object.keys(chips || {}).length
-        });
-        return true;
+        var api0 = ensureAbxStandaloneBetTestApi();
+        var res0 = await api0.focusChipFast(val, { afterChipMs: 0 });
+        return !!(res0 && res0.ok);
     };
 
     window.cwDumpChips = function () {
@@ -5906,21 +6507,16 @@
 
     window.cwBet = async function (side, amount) {
         side = normalizeSide(side);
+        var api = ensureAbxStandaloneBetTestApi();
         if (amount == null || isNaN(amount)) {
-            var tgt0 = findFastBetTarget(side);
-            if (!tgt0 || !tgt0.node) {
-                console.warn('[cwBet++] không thấy nút cửa:', side);
-                postBetTrace('bet_target_not_found', {
-                    side: side,
-                    amount: 0,
-                    phase: 'tap_only'
-                });
-                return false;
-            }
-            return await clickBetTargetFast(tgt0, side, {
+            postBetTrace('abx_tap_only_start', {
+                version: CW_BET_JS_VERSION,
+                side: side,
                 amount: 0,
                 phase: 'tap_only'
             });
+            var tapOnly = await api.tapSideFast(side, { afterTapMs: 0 });
+            return !!(tapOnly && tapOnly.ok);
         }
 
         var raw = Math.max(0, Math.floor(+amount || 0));
@@ -5931,138 +6527,35 @@
         var X = raw - (raw % 1000);
 
         return withLock(async function () {
-            var tgt = findFastBetTarget(side);
-            if (!tgt || !tgt.node) {
-                console.warn('[cwBet++] không thấy nút cửa:', side);
-                postBetTrace('bet_target_not_found', {
+            postBetTrace('abx_cwbet_start', {
+                version: CW_BET_JS_VERSION,
+                side: side,
+                amount: X,
+                direct: true
+            });
+            try {
+                var out = await api.betFast(side, X, {
+                    afterChipMs: 0,
+                    afterTapMs: 0,
+                    stepPauseMs: 0
+                });
+                postBetTrace('abx_cwbet_done', {
+                    version: CW_BET_JS_VERSION,
                     side: side,
                     amount: X,
-                    phase: 'plan_start'
+                    ok: !!(out && out.ok),
+                    plan: out && out.plan ? out.plan.join(',') : ''
                 });
-                return false;
-            }
-            postBetTrace('bet_plan_start', {
-                side: side,
-                amount: X,
-                target: betTargetDebug(tgt)
-            });
-
-            var map = window.cwScanChips() || {};
-            var availSet = {};
-            var ks = Object.keys(map);
-            for (var i = 0; i < ks.length; i++)
-                availSet[ks[i]] = 1;
-            if (!Object.keys(availSet).length) {
-                console.warn('[cwBet++] không thấy chip nào');
-                return false;
-            }
-
-            if (availSet[String(X)]) {
-                if (!await window.cwFocusChip(X)) {
-                    postBetTrace('bet_focus_fail', {
-                        side: side,
-                        amount: X,
-                        denom: X,
-                        phase: 'single_chip'
-                    });
-                    return false;
-                }
-                var fired = await clickBetTargetFast(tgt, side, {
+                return !!(out && out.ok);
+            } catch (err) {
+                postBetTrace('abx_cwbet_error', {
+                    version: CW_BET_JS_VERSION,
+                    side: side,
                     amount: X,
-                    denom: X,
-                    turn: 1,
-                    phase: 'single_chip'
-                });
-                if (fired)
-                    postBetTrace('bet_done', {
-                        side: side,
-                        amount: X,
-                        fast: true
-                    });
-                return fired;
-            }
-
-            var res = makePlan(X, availSet);
-            var plan = res.plan,
-            rest = res.rest;
-            if (!plan.length || rest > 0) {
-                var haveKeys = Object.keys(availSet).map(function (x) {
-                    return +x;
-                }).sort(function (a, b) {
-                    return b - a;
-                });
-                console.warn('[cwBet++] không thể tách đủ số tiền', {
-                    X: X,
-                    have: haveKeys
+                    error: String(err && err.message || err)
                 });
                 return false;
             }
-            var planStr = [];
-            for (var p = 0; p < plan.length; p++) {
-                planStr.push(plan[p].count + '×' + plan[p].val.toLocaleString());
-            }
-            console.log('[cwBet++] plan:', planStr.join(' + '));
-            postBetTrace('bet_plan_resolved', {
-                side: side,
-                amount: X,
-                plan: planStr.join(' + '),
-                target: betTargetDebug(tgt)
-            });
-
-            for (var s = 0; s < plan.length; s++) {
-                var step = plan[s];
-                var ok = await window.cwFocusChip(step.val).catch(function () {
-                    return false;
-                });
-                if (!ok) {
-                    console.warn('[cwBet++] không focus được chip', step.val);
-                    postBetTrace('bet_focus_fail', {
-                        side: side,
-                        amount: X,
-                        denom: step.val,
-                        phase: 'plan_step'
-                    });
-                    return false;
-                }
-                for (var i2 = 0; i2 < step.count; i2++) {
-                    if (!await clickBetTargetFast(tgt, side, {
-                            amount: X,
-                            denom: step.val,
-                            turn: i2 + 1,
-                            phase: 'plan_step'
-                        })) {
-                        console.warn('[cwBet++] click cửa thất bại', {
-                            side: side,
-                            denom: step.val,
-                            turn: i2 + 1
-                        });
-                        postBetTrace('bet_click_abort', {
-                            side: side,
-                            amount: X,
-                            denom: step.val,
-                            turn: i2 + 1,
-                            phase: 'plan_step'
-                        });
-                        return false;
-                    } else
-                        postBetTrace('bet_click_applied', {
-                            side: side,
-                            amount: X,
-                            denom: step.val,
-                            turn: i2 + 1,
-                            phase: 'plan_step'
-                        });
-                }
-            }
-            console.log('[cwBet++] DONE ►', {
-                side: side,
-                amount: X
-            });
-            postBetTrace('bet_done', {
-                side: side,
-                amount: X
-            });
-            return true;
         });
     };
 
@@ -6662,8 +7155,10 @@
         };
         window.__cw_bet_runtime_ready = function () {
             try {
-                var betMap = buildFastBetMap();
-                var chipMap = buildFastChipMap();
+                var api1 = ensureAbxStandaloneBetTestApi();
+                var snap1 = api1.scan();
+                var betMap = snap1 && snap1.bets ? snap1.bets : {};
+                var chipMap = snap1 && snap1.chips ? snap1.chips : {};
                 var betKeys = Object.keys(betMap || {}).filter(function (k) {
                     var it = betMap[k];
                     return !!(it && (it.zoneNode || it.node));
@@ -6675,17 +7170,23 @@
                 return {
                     ok: betKeys.length >= 4 && chipKeys.length > 0,
                     betCount: betKeys.length,
-                    chipCount: chipKeys.length
+                    chipCount: chipKeys.length,
+                    version: CW_BET_JS_VERSION
                 };
             } catch (err) {
                 return {
                     ok: false,
                     error: String(err && err.message || err),
                     betCount: 0,
-                    chipCount: 0
+                    chipCount: 0,
+                    version: CW_BET_JS_VERSION
                 };
             }
         };
+        try {
+            ensureAbxStandaloneBetTestApi();
+            postBetProbe('bet_runtime_loaded', '', 0, window.__cw_bet_runtime_ready());
+        } catch (_) {}
 
         window.__cw_bet = async function (side, amount) {
             try {
