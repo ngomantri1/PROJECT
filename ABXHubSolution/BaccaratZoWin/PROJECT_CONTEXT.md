@@ -31,6 +31,24 @@
 7. Pending row được giữ tới khi settle đủ context/seq gating.
 8. UI/history/stats/money cập nhật trên `Dispatcher`.
 
+## Bối cảnh chat mới nhất
+
+- Đã chuyển hướng đọc chuỗi Baccarat road từ nhánh profile cũ sang nhánh `auto-road` trong `readDomBeadSeq()`.
+- Rule mới của road:
+  - chỉ lấy các chấm tròn trong bảng kết quả
+  - bỏ phần tổng `PLAYER/BANKER/TIE`
+  - bỏ phần item bên dưới bảng road không liên quan
+  - map màu: xanh=`P`, đỏ=`B`, tím=`T`
+  - nối chuỗi theo hàng `6 -> 5 -> 4 -> 3 -> 2 -> 1`
+  - hướng từng hàng xen kẽ trái/phải theo đúng layout người dùng đã xác nhận
+- Không được fallback lại `brFindBoardWithProfiles` cho Baccarat road authority.
+- Một điểm rất quan trọng: app đang nạp `v4_js_xoc_dia_live.js` từ `EmbeddedResource`, nên sửa file JS xong phải rebuild và chạy đúng binary mới thì runtime mới nhận.
+- Trạng thái hiện tại của bug đang mở:
+  - DevTools probe đã lấy được `seq` đúng
+  - nhưng `Canvas Watch` trong app thật vẫn có lúc hiển thị `SEQ META len=0`
+  - cần bám tiếp luồng `readTKSeq -> readSeqStateSafe -> buildSnapshotNow -> panel render/push`
+  - cần tận dụng `cwDbg`, `brSeqFuncLog`, `seq_diag`, `cwLogBatch`, `js_console` để soi đúng điểm mất `seq`
+
 ## Flow vào game hiện tại
 
 - Ưu tiên `same-page flow` cho host hiện đại:
@@ -105,6 +123,10 @@
 - Overlay debug hiện mặc định nhưng đã chỉnh `pointer-events` để không chặn click web.
 - `TextMap/MoneyMap/BetMap` phụ thuộc đúng game frame/context; nếu panel hiện mà map rỗng thì thường là bám sai frame, không phải lỗi render đơn thuần.
 - `F12` và `Ctrl+Shift+I` mở DevTools cho WebView đang active.
+- Log JS đã có sẵn 3 đường:
+  - `cwDbg` / `cwLogBatch` ghi file JS debug
+  - `seq_diag` cho chẩn đoán sequence
+  - `js_console` để mirror `console.*` từ JS lên host log
 
 ## Những điều tuyệt đối không được phá
 

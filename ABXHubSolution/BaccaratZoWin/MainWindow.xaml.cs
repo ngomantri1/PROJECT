@@ -605,6 +605,7 @@ namespace BaccaratZoWin
         private int _lastTickUiProgRounded = int.MinValue;
         private string _lastTickUiStatus = "";
         private string _lastTickUiSeqSig = "";
+        private string _lastHudUserNameUi = "";
         private string _lastSeqUiQueueLogKey = "";
         private string _lastSeqUiApplyLogKey = "";
         private string _lastSeqUiRenderLogKey = "";
@@ -2811,7 +2812,12 @@ try{
                         if (LblUserName != null)
                         {
                             if (!string.IsNullOrWhiteSpace(payload.UserName))
+                            {
+                                _lastHudUserNameUi = payload.UserName;
                                 LblUserName.Text = payload.UserName;
+                            }
+                            else if (!string.IsNullOrWhiteSpace(_lastHudUserNameUi))
+                                LblUserName.Text = _lastHudUserNameUi;
                             else
                                 LblUserName.Text = "-";
                         }
@@ -5027,7 +5033,9 @@ try{
                         if (shouldPushUi)
                         {
                             var amountUi = snap?.totals?.A;
-                            var userNameUi = (snap?.totals?.N ?? "").Trim();
+                            var userNameUi = !string.IsNullOrWhiteSpace(snap?.username)
+                                ? (snap?.username ?? "").Trim()
+                                : (snap?.totals?.N ?? "").Trim();
                             QueueTickUiUpdate(
                                 progUi,
                                 progModeUi,
@@ -10341,6 +10349,12 @@ try{
                    js.IndexOf("__cw_", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool ShouldPreferFrameBridgeResult(string js)
+        {
+            return !string.IsNullOrWhiteSpace(js) &&
+                   js.IndexOf("__cw_readSnapshot", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static string NormalizeJsEvalResult(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
@@ -10474,6 +10488,9 @@ try{
                     topRaw = await target.ExecuteScriptAsync(js);
                 }
                 catch { }
+
+                if (ShouldPreferFrameBridgeResult(js) && !string.IsNullOrWhiteSpace(firstFrameOk))
+                    return firstFrameOk;
 
                 var topNorm = NormalizeJsEvalResult(topRaw);
                 if (!IsBridgeFailureResult(topNorm))
@@ -12080,6 +12097,24 @@ try{
         }
 
         // Giữ nguyên tên để không phải sửa các callsite
+        private static string ExtractSeqScriptRev(string? jsText)
+        {
+            try
+            {
+                var s = jsText ?? "";
+                if (s.Length == 0)
+                    return "";
+                var m = Regex.Match(
+                    s,
+                    @"_cwSeqScriptRev\s*=\s*['""](?<rev>[^'""]+)['""]",
+                    RegexOptions.CultureInvariant);
+                if (m.Success)
+                    return m.Groups["rev"].Value?.Trim() ?? "";
+            }
+            catch { }
+            return "";
+        }
+
         private async Task<string> LoadAppJsAsyncFallback()
         {
             try
@@ -12092,7 +12127,8 @@ try{
 
                 if (!string.IsNullOrWhiteSpace(text))
                 {
-                    Log($"[Bridge] Loaded JS from embedded: {resName} (len={text.Length})");
+                    var seqScriptRev = ExtractSeqScriptRev(text);
+                    Log($"[Bridge] Loaded JS from embedded: {resName} | len={text.Length} | seqScriptRev={(string.IsNullOrWhiteSpace(seqScriptRev) ? "-" : seqScriptRev)}");
                     return text;
                 }
 
@@ -12758,7 +12794,7 @@ try{
             try
             {
                 _lastPopupTickPullUtc = now;
-                var raw = await _popupWeb.CoreWebView2.ExecuteScriptAsync(PULL_POPUP_TICK_NOW);
+                var raw = await ExecuteOnBetWebAsync(PULL_POPUP_TICK_NOW);
                 var msg = JsonSerializer.Deserialize<string>(raw) ?? "";
                 if (string.IsNullOrWhiteSpace(msg))
                     return;
@@ -12785,7 +12821,7 @@ try{
             try
             {
                 _lastMainTickPullUtc = now;
-                var raw = await Web.CoreWebView2.ExecuteScriptAsync(PULL_POPUP_TICK_NOW);
+                var raw = await ExecuteOnBetWebAsync(PULL_POPUP_TICK_NOW);
                 var msg = JsonSerializer.Deserialize<string>(raw) ?? "";
                 if (string.IsNullOrWhiteSpace(msg))
                     return;

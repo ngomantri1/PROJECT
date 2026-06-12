@@ -4311,7 +4311,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260422-r42-inline-bpt';
+    var _cwSeqScriptRev = 'SEQFIX-20260612-r43-canvas-roi';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -4322,6 +4322,9 @@
     var _domNoBoardLastAt = 0;
     var _domNoBoardLastReason = '';
     var _domNoBoardBurstId = 0;
+    var _domSeqCanvasRoi = null;
+    var _domSeqCanvasRoiKey = '';
+    var _domSeqCanvasRoiAt = 0;
     var _domRawEqPrevStreak = 0;
     var _domRawEqPrevFirstAt = 0;
     var _domRawEqPrevLastAt = 0;
@@ -6541,6 +6544,841 @@
             return null;
         }
     }
+    function brFindVisibleCanvasForSeq() {
+        try {
+            var rootWin = domGetSameOriginRoot(window);
+            var rootDoc = rootWin && rootWin.document ? rootWin.document : document;
+            var all = rootDoc.querySelectorAll('canvas');
+            var best = null;
+            var bestArea = 0;
+            for (var i = 0; i < all.length; i++) {
+                var el = all[i];
+                if (!el)
+                    continue;
+                var r = el.getBoundingClientRect();
+                if (!r || r.width < 80 || r.height < 80)
+                    continue;
+                var area = Number(r.width || 0) * Number(r.height || 0);
+                if (area > bestArea) {
+                    bestArea = area;
+                    best = el;
+                }
+            }
+            return best;
+        } catch (_) {
+            return null;
+        }
+    }
+    function brTryGetCanvasWebGlContextForSeq(canvas) {
+        var rootWin = domGetSameOriginRoot(window);
+        var tried = [];
+        function one(label, getter) {
+            try {
+                var gl = getter();
+                if (gl && typeof gl.readPixels === 'function') {
+                    return {
+                        gl: gl,
+                        source: label
+                    };
+                }
+            } catch (_) {}
+            tried.push(label);
+            return null;
+        }
+        var fromCocos = one('cc.game._renderContext', function () {
+            return rootWin && rootWin.cc && rootWin.cc.game && rootWin.cc.game._renderContext;
+        });
+        if (fromCocos)
+            return fromCocos;
+        var fromWebgl2 = one('canvas.getContext(webgl2)', function () {
+            return canvas && canvas.getContext && canvas.getContext('webgl2', {
+                preserveDrawingBuffer: true
+            });
+        });
+        if (fromWebgl2)
+            return fromWebgl2;
+        var fromWebgl = one('canvas.getContext(webgl)', function () {
+            return canvas && canvas.getContext && (
+                canvas.getContext('webgl', { preserveDrawingBuffer: true }) ||
+                canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true })
+            );
+        });
+        if (fromWebgl)
+            return fromWebgl;
+        return {
+            gl: null,
+            source: tried.join(', ')
+        };
+    }
+    function brReadCanvasRoiPixels2dForSeq(canvas, roi) {
+        try {
+            var rect = canvas.getBoundingClientRect();
+            if (!rect || rect.width < 2 || rect.height < 2)
+                return null;
+            var ctx = canvas.getContext && canvas.getContext('2d');
+            if (!ctx || !ctx.getImageData)
+                return null;
+            var scaleX = canvas.width / rect.width;
+            var scaleY = canvas.height / rect.height;
+            var x1 = Math.max(0, Math.floor((roi.x - rect.left) * scaleX));
+            var y1 = Math.max(0, Math.floor((roi.y - rect.top) * scaleY));
+            var x2 = Math.min(canvas.width, Math.ceil((roi.x + roi.w - rect.left) * scaleX));
+            var y2 = Math.min(canvas.height, Math.ceil((roi.y + roi.h - rect.top) * scaleY));
+            if (x2 - x1 < 12 || y2 - y1 < 12)
+                return null;
+            var sw = x2 - x1;
+            var sh = y2 - y1;
+            var img = ctx.getImageData(x1, y1, sw, sh);
+            if (!img || !img.data || !img.data.length)
+                return null;
+            return {
+                pixels: img.data,
+                width: sw,
+                height: sh,
+                rect: rect,
+                mode: '2d',
+                source: 'canvas.getContext(2d)',
+                x1: x1,
+                y1: y1,
+                x2: x2,
+                y2: y2
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+    function brReadCanvasRoiPixelsWebGlForSeq(canvas, roi) {
+        try {
+            var rect = canvas.getBoundingClientRect();
+            if (!rect || rect.width < 2 || rect.height < 2)
+                return null;
+            var got = brTryGetCanvasWebGlContextForSeq(canvas);
+            var gl = got && got.gl;
+            if (!gl)
+                return null;
+            var scaleX = canvas.width / rect.width;
+            var scaleY = canvas.height / rect.height;
+            var x1 = Math.max(0, Math.floor((roi.x - rect.left) * scaleX));
+            var yTop = Math.max(0, Math.floor((roi.y - rect.top) * scaleY));
+            var x2 = Math.min(canvas.width, Math.ceil((roi.x + roi.w - rect.left) * scaleX));
+            var yBottomTop = Math.min(canvas.height, Math.ceil((roi.y + roi.h - rect.top) * scaleY));
+            if (x2 - x1 < 12 || yBottomTop - yTop < 12)
+                return null;
+            var sw = x2 - x1;
+            var sh = yBottomTop - yTop;
+            var yGl = Math.max(0, canvas.height - yBottomTop);
+            var pixels = new Uint8Array(sw * sh * 4);
+            try {
+                if (gl.finish)
+                    gl.finish();
+            } catch (_) {}
+            try {
+                gl.readPixels(x1, yGl, sw, sh, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            } catch (_) {
+                return null;
+            }
+            if (!pixels.length)
+                return null;
+            return {
+                pixels: pixels,
+                width: sw,
+                height: sh,
+                rect: rect,
+                mode: 'webgl',
+                source: String(got && got.source || 'webgl'),
+                x1: x1,
+                y1: yTop,
+                x2: x2,
+                y2: yBottomTop
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+    function brCanvasSeqPxAt(scan, px, py) {
+        if (!scan || !scan.pixels)
+            return null;
+        if (px < 0 || py < 0 || px >= scan.width || py >= scan.height)
+            return null;
+        var row = scan.mode === 'webgl' ? (scan.height - 1 - py) : py;
+        var di = (row * scan.width + px) * 4;
+        return [
+            scan.pixels[di],
+            scan.pixels[di + 1],
+            scan.pixels[di + 2],
+            scan.pixels[di + 3]
+        ];
+    }
+    function brClassifyCanvasSeqPixel(r, g, b, a) {
+        r = Number(r || 0);
+        g = Number(g || 0);
+        b = Number(b || 0);
+        a = Number(a || 0);
+        if (a < 25)
+            return '';
+        var max = Math.max(r, g, b);
+        var min = Math.min(r, g, b);
+        var spread = max - min;
+        if (max < 55 || spread < 24)
+            return '';
+        var rbDiff = Math.abs(r - b);
+        if (
+            r >= 70 &&
+            b >= 90 &&
+            g <= Math.max(r, b) * 0.82 &&
+            r > g * 1.10 &&
+            b > g * 1.10 &&
+            rbDiff <= 95
+        )
+            return 'T';
+        if (r >= 128 && r > b * 1.08 && r > g * 1.04)
+            return 'B';
+        if (b >= 118 && b > r * 1.07 && b >= g * 0.92)
+            return 'P';
+        return '';
+    }
+    function brBuildCanvasSeqColumns(items) {
+        var arr = (items || []).slice().sort(function (a, b) {
+            return Number(a.x || 0) - Number(b.x || 0) || Number(a.y || 0) - Number(b.y || 0);
+        });
+        var sizeMed = median(arr.map(function (x) {
+            return Math.max(Number(x.w || 0), Number(x.h || 0));
+        })) || 14;
+        var thr = Math.max(6, Math.round(sizeMed * 0.8));
+        var cols = [];
+        for (var i = 0; i < arr.length; i++) {
+            var it = arr[i];
+            var col = null;
+            for (var j = 0; j < cols.length; j++) {
+                if (Math.abs(cols[j].cx - Number(it.x || 0)) <= thr) {
+                    col = cols[j];
+                    break;
+                }
+            }
+            if (!col) {
+                col = { cx: Number(it.x || 0), items: [] };
+                cols.push(col);
+            }
+            col.items.push(it);
+            col.cx = (col.cx * (col.items.length - 1) + Number(it.x || 0)) / col.items.length;
+        }
+        cols.sort(function (a, b) {
+            return a.cx - b.cx;
+        });
+        for (var c = 0; c < cols.length; c++) {
+            cols[c].items.sort(function (a, b) {
+                return Number(a.y || 0) - Number(b.y || 0);
+            });
+        }
+        return cols;
+    }
+    function brClusterCanvasSeqRows(items) {
+        var arr = (items || []).slice().sort(function (a, b) {
+            return Number(a.y || 0) - Number(b.y || 0) || Number(a.x || 0) - Number(b.x || 0);
+        });
+        var sizeMed = median(arr.map(function (x) {
+            return Math.max(Number(x.w || 0), Number(x.h || 0));
+        })) || 18;
+        var thr = Math.max(6, Math.round(sizeMed * 0.8));
+        var rows = [];
+        for (var i = 0; i < arr.length; i++) {
+            var it = arr[i];
+            var row = null;
+            for (var j = 0; j < rows.length; j++) {
+                if (Math.abs(Number(rows[j].cy || 0) - Number(it.y || 0)) <= thr) {
+                    row = rows[j];
+                    break;
+                }
+            }
+            if (!row) {
+                row = { cy: Number(it.y || 0), items: [] };
+                rows.push(row);
+            }
+            row.items.push(it);
+            row.cy = (row.cy * (row.items.length - 1) + Number(it.y || 0)) / row.items.length;
+        }
+        rows.sort(function (a, b) {
+            return Number(a.cy || 0) - Number(b.cy || 0);
+        });
+        return rows;
+    }
+    function brClampCanvasSeqRoi(roi, rect) {
+        if (!roi || !rect)
+            return roi;
+        var x1 = Math.max(rect.left, Number(roi.x || 0));
+        var y1 = Math.max(rect.top, Number(roi.y || 0));
+        var x2 = Math.min(rect.left + rect.width, Number(roi.x || 0) + Number(roi.w || 0));
+        var y2 = Math.min(rect.top + rect.height, Number(roi.y || 0) + Number(roi.h || 0));
+        return {
+            x: Math.round(x1),
+            y: Math.round(y1),
+            w: Math.max(1, Math.round(x2 - x1)),
+            h: Math.max(1, Math.round(y2 - y1))
+        };
+    }
+    function brCanvasSeqBbox(items) {
+        items = items || [];
+        if (!items.length)
+            return null;
+        var minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            var x1 = Number(it.x || 0);
+            var y1 = Number(it.y || 0);
+            var x2 = x1 + Number(it.w || 0);
+            var y2 = y1 + Number(it.h || 0);
+            if (x1 < minX) minX = x1;
+            if (y1 < minY) minY = y1;
+            if (x2 > maxX) maxX = x2;
+            if (y2 > maxY) maxY = y2;
+        }
+        return {
+            x: Math.round(minX),
+            y: Math.round(minY),
+            w: Math.max(1, Math.round(maxX - minX)),
+            h: Math.max(1, Math.round(maxY - minY))
+        };
+    }
+    function brScanCanvasSeqColorItems(canvas, roi) {
+        if (!canvas || !roi)
+            return { items: [], meta: { mode: 'none', reason: 'no-canvas-or-roi' } };
+        var scan = brReadCanvasRoiPixels2dForSeq(canvas, roi) || brReadCanvasRoiPixelsWebGlForSeq(canvas, roi);
+        if (!scan) {
+            return {
+                items: [],
+                meta: {
+                    mode: 'none',
+                    reason: 'no-readable-2d-or-webgl-context'
+                }
+            };
+        }
+        var rect = scan.rect;
+        var sw = scan.width;
+        var sh = scan.height;
+        var step = Math.max(2, Math.round(Math.max(sw, sh) / 500));
+        var gw = Math.floor(sw / step);
+        var gh = Math.floor(sh / step);
+        if (gw < 10 || gh < 10) {
+            return {
+                items: [],
+                meta: {
+                    mode: scan.mode,
+                    source: scan.source,
+                    reason: 'grid-too-small'
+                }
+            };
+        }
+        var mask = new Uint8Array(gw * gh);
+        var diag = {
+            totalSamples: 0,
+            alphaSamples: 0,
+            brightSamples: 0,
+            classifiedSamples: 0,
+            classB: 0,
+            classP: 0,
+            classT: 0
+        };
+        function mi(x, y) {
+            return y * gw + x;
+        }
+        function kindToSymbol(kind) {
+            return kind === 1 ? 'B' : (kind === 2 ? 'P' : (kind === 3 ? 'T' : ''));
+        }
+        for (var gy = 0; gy < gh; gy++) {
+            for (var gx = 0; gx < gw; gx++) {
+                var px = Math.min(sw - 1, gx * step + Math.floor(step / 2));
+                var py = Math.min(sh - 1, gy * step + Math.floor(step / 2));
+                var rgba = brCanvasSeqPxAt(scan, px, py);
+                if (!rgba)
+                    continue;
+                diag.totalSamples++;
+                if (rgba[3] >= 25)
+                    diag.alphaSamples++;
+                var rgbMax = Math.max(rgba[0], rgba[1], rgba[2]);
+                var rgbMin = Math.min(rgba[0], rgba[1], rgba[2]);
+                if (rgbMax >= 55 && (rgbMax - rgbMin) >= 24)
+                    diag.brightSamples++;
+                var v = brClassifyCanvasSeqPixel(rgba[0], rgba[1], rgba[2], rgba[3]);
+                if (v === 'B') mask[mi(gx, gy)] = 1;
+                else if (v === 'P') mask[mi(gx, gy)] = 2;
+                else if (v === 'T') mask[mi(gx, gy)] = 3;
+                if (v) {
+                    diag.classifiedSamples++;
+                    if (v === 'B') diag.classB++;
+                    else if (v === 'P') diag.classP++;
+                    else if (v === 'T') diag.classT++;
+                }
+            }
+        }
+        var seen = new Uint8Array(gw * gh);
+        var items = [];
+        var cssScaleX = rect.width / canvas.width;
+        var cssScaleY = rect.height / canvas.height;
+        for (var y = 0; y < gh; y++) {
+            for (var x = 0; x < gw; x++) {
+                var idx = mi(x, y);
+                var kind = mask[idx];
+                if (!kind || seen[idx])
+                    continue;
+                var q = [[x, y]];
+                seen[idx] = 1;
+                var head = 0;
+                var minGX = x, maxGX = x, minGY = y, maxGY = y, count = 0;
+                while (head < q.length) {
+                    var cur = q[head++];
+                    var cx = cur[0];
+                    var cy = cur[1];
+                    count++;
+                    if (cx < minGX) minGX = cx;
+                    if (cx > maxGX) maxGX = cx;
+                    if (cy < minGY) minGY = cy;
+                    if (cy > maxGY) maxGY = cy;
+                    var ns = [[cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1]];
+                    for (var ni = 0; ni < ns.length; ni++) {
+                        var nx = ns[ni][0];
+                        var ny = ns[ni][1];
+                        if (nx < 0 || ny < 0 || nx >= gw || ny >= gh)
+                            continue;
+                        var nidx = mi(nx, ny);
+                        if (seen[nidx] || mask[nidx] !== kind)
+                            continue;
+                        seen[nidx] = 1;
+                        q.push([nx, ny]);
+                    }
+                }
+                var compW = maxGX - minGX + 1;
+                var compH = maxGY - minGY + 1;
+                if (count < 3 || compW < 2 || compH < 2 || count > 600)
+                    continue;
+                var sx1 = minGX * step;
+                var sy1 = minGY * step;
+                var sx2 = Math.min(sw, (maxGX + 1) * step);
+                var sy2 = Math.min(sh, (maxGY + 1) * step);
+                items.push({
+                    v: kindToSymbol(kind),
+                    x: Math.round(rect.left + (scan.x1 + sx1) * cssScaleX),
+                    y: Math.round(rect.top + (scan.y1 + sy1) * cssScaleY),
+                    w: Math.max(4, Math.round((sx2 - sx1) * cssScaleX)),
+                    h: Math.max(4, Math.round((sy2 - sy1) * cssScaleY)),
+                    pixels: count
+                });
+            }
+        }
+        return {
+            items: items,
+            meta: {
+                mode: scan.mode,
+                source: scan.source,
+                diag: diag
+            }
+        };
+    }
+    function brFilterCanvasRoadBodyItems(items, roi) {
+        var rows = brClusterCanvasSeqRows(items);
+        if (rows.length <= 1) {
+            return {
+                items: items.slice(),
+                rows: rows,
+                keepFrom: 0,
+                keepTo: rows.length ? rows.length - 1 : -1
+            };
+        }
+        var denseMin = 4;
+        var denseRows = [];
+        for (var i = 0; i < rows.length; i++) {
+            if (Number(rows[i].items.length || 0) >= denseMin) {
+                denseRows.push({
+                    idx: i,
+                    cy: Number(rows[i].cy || 0),
+                    count: Number(rows[i].items.length || 0)
+                });
+            }
+        }
+        if (!denseRows.length) {
+            return {
+                items: items.slice(),
+                rows: rows,
+                keepFrom: 0,
+                keepTo: rows.length - 1
+            };
+        }
+        var gaps = [];
+        for (var g = 1; g < denseRows.length; g++)
+            gaps.push(Number(denseRows[g].cy || 0) - Number(denseRows[g - 1].cy || 0));
+        var gapMed = median(gaps) || 28;
+        var blockGap = Math.max(22, Math.round(gapMed * 1.9));
+        var blocks = [];
+        var block = null;
+        for (var d = 0; d < denseRows.length; d++) {
+            var cur = denseRows[d];
+            if (!block) {
+                block = { from: cur.idx, to: cur.idx, count: cur.count, rows: [cur] };
+                continue;
+            }
+            var prev = denseRows[d - 1];
+            var gap = Number(cur.cy || 0) - Number(prev.cy || 0);
+            if (gap <= blockGap) {
+                block.to = cur.idx;
+                block.count += cur.count;
+                block.rows.push(cur);
+            } else {
+                blocks.push(block);
+                block = { from: cur.idx, to: cur.idx, count: cur.count, rows: [cur] };
+            }
+        }
+        if (block)
+            blocks.push(block);
+        blocks.sort(function (a, b) {
+            return Number(b.count || 0) - Number(a.count || 0) ||
+                Number((a.rows && a.rows[0] && a.rows[0].cy) || 0) - Number((b.rows && b.rows[0] && b.rows[0].cy) || 0);
+        });
+        var best = blocks[0];
+        var firstDense = Number(best && best.from != null ? best.from : denseRows[0].idx);
+        var lastDense = Number(best && best.to != null ? best.to : denseRows[denseRows.length - 1].idx);
+        var kept = [];
+        for (var r = firstDense; r <= lastDense; r++) {
+            var rowItems = rows[r].items || [];
+            for (var k = 0; k < rowItems.length; k++)
+                kept.push(rowItems[k]);
+        }
+        var rowPad = Math.max(2, Math.round(gapMed * 0.18));
+        var topSoftCut = Number(rows[firstDense].cy || 0) - rowPad;
+        kept = kept.filter(function (x) {
+            return Number(x.y || 0) >= topSoftCut;
+        });
+        return {
+            items: kept,
+            rows: rows,
+            keepFrom: firstDense,
+            keepTo: lastDense
+        };
+    }
+    function brBuildCanvasRoadSeq(items) {
+        var cols = brBuildCanvasSeqColumns(items);
+        var rows = brClusterCanvasSeqRows(items);
+        var colCenters = cols.map(function (c) { return Number(c.cx || 0); });
+        var rowCenters = rows.map(function (r) { return Number(r.cy || 0); });
+        function nearestIndex(value, centers) {
+            var best = -1;
+            var bestDist = 1e18;
+            for (var i = 0; i < centers.length; i++) {
+                var d = Math.abs(Number(value || 0) - Number(centers[i] || 0));
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = i;
+                }
+            }
+            return best;
+        }
+        var grid = [];
+        for (var r = 0; r < rowCenters.length; r++) {
+            var row = [];
+            for (var c = 0; c < colCenters.length; c++)
+                row.push(null);
+            grid.push(row);
+        }
+        for (var k = 0; k < items.length; k++) {
+            var it = items[k];
+            var rowIdx = nearestIndex(Number(it.y || 0), rowCenters);
+            var colIdx = nearestIndex(Number(it.x || 0), colCenters);
+            if (rowIdx < 0 || colIdx < 0)
+                continue;
+            var cur = grid[rowIdx][colIdx];
+            if (!cur) {
+                grid[rowIdx][colIdx] = it;
+            } else {
+                var curScore = Math.abs(Number(cur.y || 0) - rowCenters[rowIdx]) + Math.abs(Number(cur.x || 0) - colCenters[colIdx]);
+                var newScore = Math.abs(Number(it.y || 0) - rowCenters[rowIdx]) + Math.abs(Number(it.x || 0) - colCenters[colIdx]);
+                if (newScore < curScore)
+                    grid[rowIdx][colIdx] = it;
+            }
+        }
+        var rowParts = [];
+        for (var rowTopIdx = rows.length - 1; rowTopIdx >= 0; rowTopIdx--) {
+            var visualRowTopIndex = rowTopIdx + 1;
+            var dir = (visualRowTopIndex % 2 === 1) ? 'ltr' : 'rtl';
+            var order = [];
+            for (var ci = 0; ci < colCenters.length; ci++)
+                order.push(ci);
+            if (dir === 'rtl')
+                order.reverse();
+            var s = '';
+            for (var oi = 0; oi < order.length; oi++) {
+                var cell = grid[rowTopIdx][order[oi]];
+                if (cell)
+                    s += String(cell.v || '');
+            }
+            rowParts.push(s);
+        }
+        return {
+            seq: normalizeSeqNoLimit(rowParts.join('')),
+            cols: cols,
+            rows: rows
+        };
+    }
+    function brScanCanvasRoadRoi(canvas, roi) {
+        if (!canvas || !roi)
+            return { items: [], seq: '', cols: [], rows: [], meta: { reason: 'no-canvas-or-roi' } };
+        var raw = brScanCanvasSeqColorItems(canvas, roi);
+        var items = (raw && raw.items ? raw.items : []).slice();
+        var meta = raw && raw.meta ? raw.meta : {};
+        if (!items.length) {
+            return {
+                items: [],
+                seq: '',
+                cols: [],
+                rows: [],
+                meta: meta
+            };
+        }
+        var filtered = brFilterCanvasRoadBodyItems(items, roi);
+        items = filtered.items || items;
+        var seqPack = brBuildCanvasRoadSeq(items);
+        return {
+            items: items,
+            seq: String(seqPack.seq || ''),
+            cols: seqPack.cols || [],
+            rows: seqPack.rows || [],
+            meta: Object.assign({}, meta, {
+                rowFilter: {
+                    rowCount: filtered.rows ? filtered.rows.length : 0,
+                    keepFrom: filtered.keepFrom,
+                    keepTo: filtered.keepTo
+                }
+            })
+        };
+    }
+    function brAutoDetectCanvasRoadRois(canvas) {
+        var out = [];
+        try {
+            if (!canvas)
+                return out;
+            var rect = canvas.getBoundingClientRect();
+            if (!rect || rect.width < 80 || rect.height < 80)
+                return out;
+            var searches = [
+                { name: 'auto-left-main', x: rect.left + rect.width * 0.00, y: rect.top + rect.height * 0.12, w: rect.width * 0.28, h: rect.height * 0.68 },
+                { name: 'auto-left-wide', x: rect.left + rect.width * 0.00, y: rect.top + rect.height * 0.08, w: rect.width * 0.32, h: rect.height * 0.76 },
+                { name: 'auto-left-mid', x: rect.left + rect.width * 0.02, y: rect.top + rect.height * 0.18, w: rect.width * 0.26, h: rect.height * 0.58 }
+            ];
+            var candidates = [];
+            for (var si = 0; si < searches.length; si++) {
+                var search = brClampCanvasSeqRoi(searches[si], rect);
+                var raw = brScanCanvasSeqColorItems(canvas, search);
+                var allItems = raw.items || [];
+                if (allItems.length < 8)
+                    continue;
+                var filtered = brFilterCanvasRoadBodyItems(allItems, search);
+                var items = filtered.items || [];
+                if (items.length < 8)
+                    continue;
+                var rows = brClusterCanvasSeqRows(items);
+                var cols = brBuildCanvasSeqColumns(items);
+                if (!rows.length || !cols.length)
+                    continue;
+                var box = brCanvasSeqBbox(items);
+                if (!box || box.w < 40 || box.h < 24)
+                    continue;
+                var boxLeftRel = (box.x - rect.left) / Math.max(1, rect.width);
+                var boxRightRel = (box.x + box.w - rect.left) / Math.max(1, rect.width);
+                var boxTopRel = (box.y - rect.top) / Math.max(1, rect.height);
+                var boxBottomRel = (box.y + box.h - rect.top) / Math.max(1, rect.height);
+                var rowCount = Number(rows.length || 0);
+                var colCount = Number(cols.length || 0);
+                if (rowCount < 2 || rowCount > 6 || colCount < 3 || colCount > 10)
+                    continue;
+                if (boxLeftRel > 0.12 || boxRightRel > 0.30)
+                    continue;
+                if (boxTopRel < 0.20 || boxTopRel > 0.55)
+                    continue;
+                if (boxBottomRel < 0.30 || boxBottomRel > 0.82)
+                    continue;
+                var sizeMed = median(items.map(function (x) {
+                    return Math.max(Number(x.w || 0), Number(x.h || 0));
+                })) || 14;
+                var padX = Math.max(6, Math.round(sizeMed * 1.1));
+                var padY = Math.max(6, Math.round(sizeMed * 0.9));
+                var roi = brClampCanvasSeqRoi({
+                    x: box.x - padX,
+                    y: box.y - padY,
+                    w: box.w + padX * 2,
+                    h: box.h + padY * 2
+                }, rect);
+                var score =
+                    Number(items.length || 0) * 8 +
+                    Math.min(10, colCount) * 18 +
+                    Math.min(6, rowCount) * 22 -
+                    Math.abs(colCount - 10) * 14 -
+                    Math.abs(rowCount - 4) * 10 -
+                    Math.abs((box.w / Math.max(1, box.h)) - 1.05) * 20 -
+                    boxLeftRel * 120 -
+                    Math.max(0, boxRightRel - 0.24) * 180;
+                candidates.push({
+                    name: search.name,
+                    score: score,
+                    roi: roi,
+                    items: items
+                });
+            }
+            candidates.sort(function (a, b) {
+                return Number(b.score || 0) - Number(a.score || 0);
+            });
+            var seen = Object.create(null);
+            for (var ci = 0; ci < candidates.length; ci++) {
+                var base = candidates[ci];
+                if (!base || !base.roi)
+                    continue;
+                var sizeMed = median((base.items || []).map(function (x) {
+                    return Math.max(Number(x.w || 0), Number(x.h || 0));
+                })) || 14;
+                var variants = [
+                    { name: 'auto-road-a', x: base.roi.x, y: base.roi.y, w: base.roi.w, h: base.roi.h },
+                    { name: 'auto-road-b', x: base.roi.x - sizeMed, y: base.roi.y - sizeMed, w: base.roi.w + sizeMed * 2, h: base.roi.h + sizeMed * 2 },
+                    { name: 'auto-road-c', x: base.roi.x - Math.round(sizeMed * 0.5), y: base.roi.y - sizeMed, w: base.roi.w + sizeMed, h: base.roi.h + Math.round(sizeMed * 2.2) },
+                    { name: 'auto-road-d', x: base.roi.x - sizeMed, y: base.roi.y - Math.round(sizeMed * 0.4), w: base.roi.w + Math.round(sizeMed * 2.4), h: base.roi.h + sizeMed }
+                ];
+                for (var vi = 0; vi < variants.length; vi++) {
+                    var vr = brClampCanvasSeqRoi(variants[vi], rect);
+                    var key = [Math.round(vr.x / 4), Math.round(vr.y / 4), Math.round(vr.w / 4), Math.round(vr.h / 4)].join('|');
+                    if (seen[key])
+                        continue;
+                    seen[key] = 1;
+                    out.push({
+                        name: variants[vi].name,
+                        x: vr.x,
+                        y: vr.y,
+                        w: vr.w,
+                        h: vr.h
+                    });
+                }
+                if (out.length >= 4)
+                    break;
+            }
+        } catch (_) {}
+        return out;
+    }
+    function brGuessCanvasRoadRois(canvas) {
+        var out = [];
+        try {
+            if (!canvas)
+                return out;
+            var rect = canvas.getBoundingClientRect();
+            var auto = brAutoDetectCanvasRoadRois(canvas);
+            for (var ai = 0; ai < auto.length; ai++)
+                out.push(auto[ai]);
+            var presets = [
+                { name: 'left-road-a', x: 0.055, y: 0.285, w: 0.195, h: 0.245 },
+                { name: 'left-road-b', x: 0.05, y: 0.255, w: 0.22, h: 0.285 },
+                { name: 'left-road-c', x: 0.07, y: 0.305, w: 0.18, h: 0.215 },
+                { name: 'left-road-d', x: 0.045, y: 0.235, w: 0.235, h: 0.33 }
+            ];
+            for (var i = 0; i < presets.length; i++) {
+                var p = presets[i];
+                out.push({
+                    name: p.name,
+                    x: Math.round(rect.left + rect.width * p.x),
+                    y: Math.round(rect.top + rect.height * p.y),
+                    w: Math.round(rect.width * p.w),
+                    h: Math.round(rect.height * p.h)
+                });
+            }
+        } catch (_) {}
+        return out;
+    }
+    function brReadCanvasRoadSeq() {
+        var canvas = brFindVisibleCanvasForSeq();
+        if (!canvas) {
+            return {
+                ok: false,
+                reason: 'no-canvas',
+                rawSeq: '',
+                seq: '',
+                cols: [],
+                cells: [],
+                meta: {}
+            };
+        }
+        var rect = null;
+        try {
+            rect = canvas.getBoundingClientRect();
+        } catch (_) {}
+        var canvasKey = rect
+            ? [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height), Number(canvas.width || 0), Number(canvas.height || 0)].join('|')
+            : 'canvas';
+        var rois = [];
+        if (_domSeqCanvasRoi && _domSeqCanvasRoiKey === canvasKey)
+            rois.push(Object.assign({ name: 'cached-roi' }, _domSeqCanvasRoi));
+        var guessed = brGuessCanvasRoadRois(canvas);
+        for (var gi = 0; gi < guessed.length; gi++)
+            rois.push(guessed[gi]);
+        var seen = Object.create(null);
+        var uniq = [];
+        for (var ri = 0; ri < rois.length; ri++) {
+            var roi = rois[ri];
+            if (!roi || roi.w < 8 || roi.h < 8)
+                continue;
+            var key = [Math.round(roi.x / 4), Math.round(roi.y / 4), Math.round(roi.w / 4), Math.round(roi.h / 4)].join('|');
+            if (seen[key])
+                continue;
+            seen[key] = 1;
+            uniq.push(roi);
+        }
+        var best = null;
+        for (var ui = 0; ui < uniq.length; ui++) {
+            var picked = uniq[ui];
+            var scan = brScanCanvasRoadRoi(canvas, picked);
+            var seq = String(scan && scan.seq || '');
+            var items = scan && scan.items ? scan.items : [];
+            var diag = scan && scan.meta && scan.meta.diag ? scan.meta.diag : {};
+            var score = seq.length * 40 + Number(items.length || 0) * 6 + Number(diag.classifiedSamples || 0);
+            var pack = {
+                ok: seq.length > 0,
+                reason: seq.length > 0 ? '' : String(scan && scan.meta && scan.meta.reason || 'empty-seq'),
+                rawSeq: seq,
+                seq: seq,
+                cols: scan && scan.cols ? scan.cols : [],
+                cells: items,
+                rows: scan && scan.rows ? scan.rows : [],
+                roi: {
+                    x: picked.x,
+                    y: picked.y,
+                    w: picked.w,
+                    h: picked.h,
+                    name: String(picked.name || '')
+                },
+                meta: scan && scan.meta ? scan.meta : {},
+                score: score,
+                canvasRect: rect ? {
+                    x: Math.round(rect.left),
+                    y: Math.round(rect.top),
+                    w: Math.round(rect.width),
+                    h: Math.round(rect.height)
+                } : null
+            };
+            if (!best || pack.score > best.score)
+                best = pack;
+        }
+        if (best && best.ok && best.roi) {
+            _domSeqCanvasRoi = {
+                x: best.roi.x,
+                y: best.roi.y,
+                w: best.roi.w,
+                h: best.roi.h
+            };
+            _domSeqCanvasRoiKey = canvasKey;
+            _domSeqCanvasRoiAt = Date.now();
+            return best;
+        }
+        return best || {
+            ok: false,
+            reason: 'no-roi',
+            rawSeq: '',
+            seq: '',
+            cols: [],
+            cells: [],
+            meta: {}
+        };
+    }
     function readDomBeadSeq() {
         brSeqFuncLog('enter', 'readDomBeadSeq', {
             managedTitle: String(_domManagedTableTitle || ''),
@@ -6551,60 +7389,34 @@
             seqEvent: String(_domSeqEvent || '')
         });
         try {
-            var allContexts = [];
-            domWalkContexts(window, 'top', 0, 0, allContexts, []);
-            for (var i = 0; i < allContexts.length; i++) {
-                allContexts[i].score = domScoreRows(allContexts[i].rows || []);
-            }
-            var contexts = domChooseLikelyGameContexts(allContexts);
-            var screenW = window.innerWidth || 1600;
-            var screenH = window.innerHeight || 900;
-            var findDiag = {
-                at: Date.now(),
-                screen: { w: Number(screenW || 0), h: Number(screenH || 0) },
-                contexts: brContextSummary(contexts, 10),
-                allContexts: brContextSummary(allContexts, 6),
-                profiles: []
-            };
-            var picked = brFindBoardWithProfiles(contexts, screenW, screenH, findDiag);
-            var board = picked.board;
-            if (!board) {
-                var psum = brProfileSummary(findDiag.profiles || []);
-                var hasMarkers = false;
-                for (var ps = 0; ps < psum.length; ps++) {
-                    if (Number(psum[ps].markerCount || 0) > 0) {
-                        hasMarkers = true;
-                        break;
-                    }
-                }
-                var failReason = '';
-                if (!contexts.length)
-                    failReason = 'no-context';
-                else if (!hasMarkers)
-                    failReason = 'no-marker-in-target-zone';
-                else
-                    failReason = 'marker-found-but-board-cluster-fail';
-                findDiag.failReason = failReason;
-                findDiag.managedSeq = String(_domBeadSeqManaged || '');
-                findDiag.managedLen = String(_domBeadSeqManaged || '').length;
-                _cwSeqDiagState.lastNoBoard = findDiag;
+            var picked = brReadCanvasRoadSeq();
+            var rawSeq = String(picked && picked.rawSeq || '');
+            if (!rawSeq) {
+                var failReason = String(picked && picked.reason || 'no-canvas-road-seq');
+                var failDiag = {
+                    at: Date.now(),
+                    failReason: failReason,
+                    managedSeq: String(_domBeadSeqManaged || ''),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    roi: picked && picked.roi ? picked.roi : null,
+                    canvasRect: picked && picked.canvasRect ? picked.canvasRect : null,
+                    meta: picked && picked.meta ? picked.meta : {}
+                };
+                _cwSeqDiagState.lastNoBoard = failDiag;
                 cwDbg('SEQ', 'no-board-detected', {
                     reason: failReason,
                     managedSeq: _domBeadSeqManaged,
                     managedLen: (_domBeadSeqManaged || '').length,
-                    scoreContexts: contexts.length,
-                    contextTop: findDiag.contexts,
-                    profiles: psum
-                }, 1200, 'no-board');
+                    roi: failDiag.roi,
+                    canvasRect: failDiag.canvasRect
+                }, 1200, 'no-board|' + failReason);
                 brArmShoeResetByNoBoard(failReason);
                 try {
-                    // no-board phải xóa raw board cũ để snapshot không mang seq giả.
                     window.__cw_bead_raw_seq = '';
                     window.__cw_bead_managed_seq = String(_domBeadSeqManaged || '');
                 } catch (_) {}
-                if (window.__cw_debug_seq_detail === 1 || window.__cw_debug_seq_detail === true) {
-                    cwDbg('SEQ', 'no-board-detail', findDiag, 1500, 'no-board-detail|' + failReason + '|' + String(_domBeadSeqManaged || '').length);
-                }
+                if (window.__cw_debug_seq_detail === 1 || window.__cw_debug_seq_detail === true)
+                    cwDbg('SEQ', 'no-board-detail', failDiag, 1500, 'no-board-detail|' + failReason + '|' + String(_domBeadSeqManaged || '').length);
                 brClearSeqSnapshotCache('no-board');
                 brSeqFuncLog('return', 'readDomBeadSeq', {
                     branch: 'no-board',
@@ -6618,7 +7430,7 @@
                 return {
                     seq: _domBeadSeqManaged || '',
                     rawSeq: '',
-                    which: 'dom-bead',
+                    which: 'dom-bead-canvas',
                     seqVersion: _domSeqVersion,
                     seqEvent: _domSeqEvent,
                     cols: [],
@@ -6629,145 +7441,38 @@
             _domNoBoardFirstAt = 0;
             _domNoBoardLastAt = 0;
             _domNoBoardLastReason = '';
-            var pickedProfileName = String(picked && picked.profileName || '');
-            // Mặc định KHÔNG trim-left để giữ được cột mới (đuôi kết quả) khi bàn cập nhật realtime.
-            // Có thể bật lại thủ công để debug bằng window.__cw_seq_trim_left = 1.
-            var trimLeftForProfile = false;
-            try {
-                trimLeftForProfile = Number(window.__cw_seq_trim_left || 0) === 1;
-            } catch (_) {
-                trimLeftForProfile = false;
-            }
-            board = brTrimBoardToTopSixRows(board);
-            if (trimLeftForProfile)
-                board = brTrimBoardToLeftTopSegment(board);
-            board = brNormalizeBoardToSixRows(board);
-            var beforeRefineItems = (board.items || []).slice();
-            var beforeRefineMeta = {
-                items: Number(beforeRefineItems.length || 0),
-                rowCount: Number(board.rowCount || 0),
-                colCount: Number(board.colCount || 0),
-                minX: Number(board.minX || 0),
-                minY: Number(board.minY || 0),
-                width: Number(board.width || 0),
-                height: Number(board.height || 0)
-            };
-            var refinedItems = brRefineBoardMarkers(contexts, board);
-            board.items = refinedItems;
-            board = brTrimBoardToTopSixRows(board);
-            if (trimLeftForProfile)
-                board = brTrimBoardToLeftTopSegment(board);
-            board = brNormalizeBoardToSixRows(board);
-            var gridPack = brBuildGrid6xN(board.items);
-            var rawSeq = brSequenceFromGrid(gridPack);
+            var pickedProfileName = String(picked && picked.roi && picked.roi.name || 'canvas-roi');
             var rawStat = brSeqStats(rawSeq);
-            var boardItems = Number(board.items && board.items.length || 0);
-            var boardRows = Number(board.rowCount || 0);
-            var boardCols = Number(board.colCount || 0);
+            var boardItems = Number(picked && picked.cells && picked.cells.length || 0);
+            var boardRows = Number(picked && picked.rows && picked.rows.length || 0);
+            var boardCols = Number(picked && picked.cols && picked.cols.length || 0);
             var sparseShortRaw = (boardItems < 4 || boardRows < 2 || boardCols < 2) && rawStat.len < 4;
-            var diagSeqEvt = String(_domSeqEvent || '');
-            if (board && board.allowTiny) {
-                brSeqDiagPost('dom-bead-tiny-board-allow', {
-                    rawSeq: rawSeq,
-                    rawLen: Number(rawStat.len || 0),
-                    rawBP: Number(rawStat.bp || 0),
-                    rawT: Number(rawStat.t || 0),
-                    managedSeq: String(_domBeadSeqManaged || ''),
-                    managedLen: String(_domBeadSeqManaged || '').length,
-                    prevRaw: String(_domBeadSeqPrevRaw || ''),
-                    prevRawLen: String(_domBeadSeqPrevRaw || '').length,
-                    waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
-                    resetPending: _domShoeResetPending ? 1 : 0,
-                    seqVersion: Number(_domSeqVersion || 0),
-                    seqEvent: diagSeqEvt,
-                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
+            cwDbg('SEQPROV', 'dom-bead-candidate', {
+                rawSeq: rawSeq,
+                rawLen: Number(rawStat.len || 0),
+                rawBP: Number(rawStat.bp || 0),
+                rawT: Number(rawStat.t || 0),
+                sparseShortRaw: sparseShortRaw ? 1 : 0,
+                boardMeta: {
                     profileName: pickedProfileName,
-                    beforeRefine: beforeRefineMeta,
-                    afterRefine: {
-                        items: boardItems,
-                        rowCount: boardRows,
-                        colCount: boardCols,
-                        minX: Number(board.minX || 0),
-                        minY: Number(board.minY || 0),
-                        width: Number(board.width || 0),
-                        height: Number(board.height || 0),
-                        rowStep: Number(board.rowStep || 0)
-                    },
-                    tinyPick: {
-                        score: Number(board.score || 0),
-                        avgW: Math.round(Number(board.avgW || 0)),
-                        avgH: Math.round(Number(board.avgH || 0)),
-                        maxSide: Number(board.maxSide || 0)
-                    },
-                    grid: {
-                        rowStep: Number(gridPack && gridPack.rowStep || 0),
-                        colStep: Number(gridPack && gridPack.colStep || 0),
-                        minX: Number(gridPack && gridPack.minX || 0),
-                        minY: Number(gridPack && gridPack.minY || 0),
-                        cols: brGridSummary(gridPack, 12)
-                    },
-                    cells: brSeqItemSummary(board.items || [], 12),
-                    contextSummary: brContextSummary(contexts, 6)
-                }, 500, 'dom-bead-tiny-board-allow|' + rawSeq + '|' + pickedProfileName + '|' + Number(_domSeqVersion || 0));
-            }
-            var rawLooksSuspicious =
-                rawStat.len > 0 &&
-                rawStat.len <= 12 &&
-                (
-                    _domTableSwitchWaitBeadPending ||
-                    _domShoeResetPending ||
-                    rawStat.t > 0 ||
-                    rawStat.bp <= 2 ||
-                    /table-switch|shoe-reset|reset-seed|append-reset-seed|board-empty|no-board/i.test(diagSeqEvt)
-                );
-            if (rawLooksSuspicious) {
-                brSeqDiagPost('dom-bead-raw-candidate', {
-                    rawSeq: rawSeq,
-                    rawLen: Number(rawStat.len || 0),
-                    rawBP: Number(rawStat.bp || 0),
-                    rawT: Number(rawStat.t || 0),
-                    managedSeq: String(_domBeadSeqManaged || ''),
-                    managedLen: String(_domBeadSeqManaged || '').length,
-                    prevRaw: String(_domBeadSeqPrevRaw || ''),
-                    prevRawLen: String(_domBeadSeqPrevRaw || '').length,
-                    waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
-                    resetPending: _domShoeResetPending ? 1 : 0,
-                    seqVersion: Number(_domSeqVersion || 0),
-                    seqEvent: diagSeqEvt,
-                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
-                    profileName: pickedProfileName,
-                    beforeRefine: beforeRefineMeta,
-                    afterRefine: {
-                        items: boardItems,
-                        rowCount: boardRows,
-                        colCount: boardCols,
-                        minX: Number(board.minX || 0),
-                        minY: Number(board.minY || 0),
-                        width: Number(board.width || 0),
-                        height: Number(board.height || 0),
-                        rowStep: Number(board.rowStep || 0)
-                    },
-                    grid: {
-                        rowStep: Number(gridPack && gridPack.rowStep || 0),
-                        colStep: Number(gridPack && gridPack.colStep || 0),
-                        minX: Number(gridPack && gridPack.minX || 0),
-                        minY: Number(gridPack && gridPack.minY || 0),
-                        cols: brGridSummary(gridPack, 12)
-                    },
-                    beforeCells: brSeqItemSummary(beforeRefineItems, 18),
-                    cells: brSeqItemSummary(board.items || [], 24),
-                    contextSummary: brContextSummary(contexts, 6)
-                }, 700, 'dom-bead-raw-candidate|' + rawSeq + '|' + pickedProfileName + '|' + diagSeqEvt + '|' + Number(_domSeqVersion || 0));
-            }
-            var suspiciousLowerReason = brSuspiciousLowerLayoutReason(rawSeq, pickedProfileName, board, gridPack, rawStat, diagSeqEvt, screenH);
-            if (suspiciousLowerReason) {
-                _domLastRejectedLowerRaw = String(rawSeq || '');
-                _domLastRejectedLowerAt = Date.now();
-                var clearedPolluted = brClearManagedIfPollutedByRejectedRaw(rawSeq, suspiciousLowerReason);
+                    items: boardItems,
+                    rowCount: boardRows,
+                    colCount: boardCols,
+                    roi: picked && picked.roi ? picked.roi : null,
+                    canvasRect: picked && picked.canvasRect ? picked.canvasRect : null
+                },
+                managedTitle: String(_domManagedTableTitle || ''),
+                managedLen: String(_domBeadSeqManaged || '').length,
+                waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
+                resetPending: _domShoeResetPending ? 1 : 0,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || '')
+            }, 250, 'dom-bead-candidate|' + rawSeq + '|canvas|' + Number(_domSeqVersion || 0));
+            if (!brIsReliableRoadSeq(rawSeq)) {
+                var rejectReason = 'bead-raw-unreliable';
                 _cwSeqDiagState.lastNoBoard = {
                     at: Date.now(),
-                    failReason: suspiciousLowerReason,
-                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
+                    failReason: rejectReason,
                     profileName: pickedProfileName,
                     rawSeq: String(rawSeq || ''),
                     rawLen: Number(rawStat.len || 0),
@@ -6776,145 +7481,22 @@
                     boardItems: boardItems,
                     boardRows: boardRows,
                     boardCols: boardCols,
-                    clearedPolluted: clearedPolluted ? 1 : 0
-                };
-                cwDbg('SEQ', 'dom-bead-reject-suspicious-lower', {
-                    reason: suspiciousLowerReason,
-                    rawSeq: rawSeq,
-                    rawLen: Number(rawStat.len || 0),
-                    rawBP: Number(rawStat.bp || 0),
-                    rawT: Number(rawStat.t || 0),
-                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
-                    profileName: pickedProfileName,
-                    layout: brGridLayoutStats(gridPack),
-                    grid: brGridSummary(gridPack, 12),
-                    boardMeta: {
-                        items: boardItems,
-                        rowCount: boardRows,
-                        colCount: boardCols,
-                        minX: Number(board.minX || 0),
-                        minY: Number(board.minY || 0),
-                        width: Number(board.width || 0),
-                        height: Number(board.height || 0)
-                    },
-                    managedSeq: String(_domBeadSeqManaged || ''),
-                    managedLen: String(_domBeadSeqManaged || '').length,
-                    clearedPolluted: clearedPolluted ? 1 : 0,
-                    seqVersion: Number(_domSeqVersion || 0),
-                    seqEvent: String(_domSeqEvent || '')
-                }, 0, 'dom-bead-reject-suspicious-lower|' + rawSeq + '|' + Number(_domSeqVersion || 0));
-                brSeqDiagPost('dom-bead-reject-suspicious-lower', {
-                    reason: suspiciousLowerReason,
-                    rawSeq: rawSeq,
-                    rawLen: Number(rawStat.len || 0),
-                    rawBP: Number(rawStat.bp || 0),
-                    rawT: Number(rawStat.t || 0),
-                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
-                    profileName: pickedProfileName,
-                    layout: brGridLayoutStats(gridPack),
-                    beforeRefine: beforeRefineMeta,
-                    afterRefine: {
-                        items: boardItems,
-                        rowCount: boardRows,
-                        colCount: boardCols,
-                        minX: Number(board.minX || 0),
-                        minY: Number(board.minY || 0),
-                        width: Number(board.width || 0),
-                        height: Number(board.height || 0),
-                        rowStep: Number(board.rowStep || 0)
-                    },
-                    grid: {
-                        rowStep: Number(gridPack && gridPack.rowStep || 0),
-                        colStep: Number(gridPack && gridPack.colStep || 0),
-                        minX: Number(gridPack && gridPack.minX || 0),
-                        minY: Number(gridPack && gridPack.minY || 0),
-                        cols: brGridSummary(gridPack, 12)
-                    },
-                    managedSeq: String(_domBeadSeqManaged || ''),
-                    managedLen: String(_domBeadSeqManaged || '').length,
-                    clearedPolluted: clearedPolluted ? 1 : 0,
-                    seqVersion: Number(_domSeqVersion || 0),
-                    seqEvent: String(_domSeqEvent || '')
-                }, 0, 'dom-bead-reject-suspicious-lower|' + rawSeq + '|' + Number(_domSeqVersion || 0));
-                brArmShoeResetByNoBoard(suspiciousLowerReason);
-                try {
-                    window.__cw_bead_raw_seq = '';
-                    window.__cw_bead_managed_seq = String(_domBeadSeqManaged || '');
-                } catch (_) {}
-                brClearSeqSnapshotCache(suspiciousLowerReason);
-                brSeqFuncLog('return', 'readDomBeadSeq', {
-                    branch: 'reject-suspicious-lower',
-                    reason: suspiciousLowerReason,
-                    seq: String(_domBeadSeqManaged || ''),
-                    rawSeq: '',
-                    seqLen: String(_domBeadSeqManaged || '').length,
-                    rawLen: 0,
-                    seqVersion: Number(_domSeqVersion || 0),
-                    seqEvent: String(_domSeqEvent || '')
-                });
-                return {
-                    seq: _domBeadSeqManaged || '',
-                    rawSeq: '',
-                    which: 'dom-bead',
-                    seqVersion: _domSeqVersion,
-                    seqEvent: _domSeqEvent,
-                    cols: [],
-                    cells: []
-                };
-            }
-            cwDbg('SEQPROV', 'dom-bead-candidate', {
-                rawSeq: rawSeq,
-                rawLen: Number(rawStat.len || 0),
-                rawBP: Number(rawStat.bp || 0),
-                rawT: Number(rawStat.t || 0),
-                sparseShortRaw: sparseShortRaw ? 1 : 0,
-                boardMeta: {
-                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
-                    profileName: pickedProfileName,
-                    items: boardItems,
-                    rowCount: boardRows,
-                    colCount: boardCols,
-                    minX: Number(board.minX || 0),
-                    minY: Number(board.minY || 0),
-                    width: Number(board.width || 0),
-                    height: Number(board.height || 0)
-                },
-                managedTitle: String(_domManagedTableTitle || ''),
-                managedLen: String(_domBeadSeqManaged || '').length,
-                waitBead: _domTableSwitchWaitBeadPending ? 1 : 0,
-                resetPending: _domShoeResetPending ? 1 : 0,
-                seqVersion: Number(_domSeqVersion || 0),
-                seqEvent: String(_domSeqEvent || '')
-            }, 250, 'dom-bead-candidate|' + rawSeq + '|' + Number(picked && picked.profile != null ? picked.profile : -1) + '|' + Number(_domSeqVersion || 0));
-            if (!brIsReliableRoadSeq(rawSeq)) {
-                var rejectReason = 'bead-raw-unreliable';
-                _cwSeqDiagState.lastNoBoard = {
-                    at: Date.now(),
-                    failReason: rejectReason,
-                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
-                    profileName: pickedProfileName,
-                    rawSeq: String(rawSeq || ''),
-                    rawLen: Number(rawStat.len || 0),
-                    rawBP: Number(rawStat.bp || 0),
-                    boardItems: boardItems,
-                    boardRows: boardRows,
-                    boardCols: boardCols
+                    roi: picked && picked.roi ? picked.roi : null,
+                    canvasRect: picked && picked.canvasRect ? picked.canvasRect : null
                 };
                 cwDbg('SEQ', 'dom-bead-reject', {
                     reason: rejectReason,
                     rawSeq: rawSeq,
                     rawLen: Number(rawStat.len || 0),
                     rawBP: Number(rawStat.bp || 0),
+                    rawT: Number(rawStat.t || 0),
                     boardMeta: {
-                        profile: Number(picked && picked.profile != null ? picked.profile : -1),
                         profileName: pickedProfileName,
                         items: boardItems,
                         rowCount: boardRows,
                         colCount: boardCols,
-                        minX: Number(board.minX || 0),
-                        minY: Number(board.minY || 0),
-                        width: Number(board.width || 0),
-                        height: Number(board.height || 0)
+                        roi: picked && picked.roi ? picked.roi : null,
+                        canvasRect: picked && picked.canvasRect ? picked.canvasRect : null
                     },
                     managedLen: String(_domBeadSeqManaged || '').length,
                     seqVersion: Number(_domSeqVersion || 0),
@@ -6939,7 +7521,7 @@
                 return {
                     seq: _domBeadSeqManaged || '',
                     rawSeq: '',
-                    which: 'dom-bead',
+                    which: 'dom-bead-canvas',
                     seqVersion: _domSeqVersion,
                     seqEvent: _domSeqEvent,
                     cols: [],
@@ -6951,12 +7533,13 @@
                     rawSeq: rawSeq,
                     rawLen: Number(rawStat.len || 0),
                     rawBP: Number(rawStat.bp || 0),
+                    rawT: Number(rawStat.t || 0),
                     boardMeta: {
-                        profile: Number(picked && picked.profile != null ? picked.profile : -1),
                         profileName: pickedProfileName,
                         items: boardItems,
                         rowCount: boardRows,
-                        colCount: boardCols
+                        colCount: boardCols,
+                        roi: picked && picked.roi ? picked.roi : null
                     },
                     managedLen: String(_domBeadSeqManaged || '').length,
                     seqVersion: Number(_domSeqVersion || 0),
@@ -6972,7 +7555,7 @@
                     Number(rawStat.len || 0) !== Number(managedStat.len || 0) ||
                     Number(rawStat.bp || 0) !== Number(managedStat.bp || 0) ||
                     Number(rawStat.t || 0) !== Number(managedStat.t || 0);
-                if (rawLooksSuspicious || rawManagedMismatch) {
+                if (rawManagedMismatch) {
                     brSeqDiagPost('dom-bead-merge-result', {
                         rawSeq: rawSeq,
                         managedSeq: String(managed || ''),
@@ -6986,9 +7569,9 @@
                         seqVersion: Number(_domSeqVersion || 0),
                         seqEvent: String(_domSeqEvent || ''),
                         seqAppend: String(_domSeqAppend || ''),
-                        profile: Number(picked && picked.profile != null ? picked.profile : -1),
                         profileName: pickedProfileName,
-                        grid: brGridSummary(gridPack, 12)
+                        roi: picked && picked.roi ? picked.roi : null,
+                        canvasRect: picked && picked.canvasRect ? picked.canvasRect : null
                     }, 700, 'dom-bead-merge-result|' + rawSeq + '|' + String(managed || '') + '|' + Number(_domSeqVersion || 0) + '|' + String(_domSeqEvent || ''));
                 }
             } catch (_) {}
@@ -6999,15 +7582,12 @@
                 rawLen: rawSeq.length,
                 managedLen: (managed || '').length,
                 boardMeta: {
-                    profile: Number(picked && picked.profile != null ? picked.profile : -1),
                     profileName: pickedProfileName,
                     items: boardItems,
                     rowCount: boardRows,
                     colCount: boardCols,
-                    minX: Number(board.minX || 0),
-                    minY: Number(board.minY || 0),
-                    width: Number(board.width || 0),
-                    height: Number(board.height || 0)
+                    roi: picked && picked.roi ? picked.roi : null,
+                    canvasRect: picked && picked.canvasRect ? picked.canvasRect : null
                 },
                 seqVersion: _domSeqVersion,
                 seqEvent: _domSeqEvent
@@ -7029,11 +7609,11 @@
             return {
                 seq: managed,
                 rawSeq: rawSeq,
-                which: 'dom-bead',
+                which: 'dom-bead-canvas',
                 seqVersion: _domSeqVersion,
                 seqEvent: _domSeqEvent,
-                cols: gridPack.cols || [],
-                cells: board.items || []
+                cols: picked.cols || [],
+                cells: picked.cells || []
             };
         } catch (err) {
             var errInfo = {
