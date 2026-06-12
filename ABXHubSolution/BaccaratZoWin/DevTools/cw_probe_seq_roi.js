@@ -226,6 +226,8 @@
     try {
       if (!canvas) return out;
       var r = canvas.getBoundingClientRect();
+      var auto = autoDetectRoadRois(canvas);
+      for (var ai = 0; ai < auto.length; ai++) out.push(auto[ai]);
       var presets = [
         { name: 'left-road-a', x: 0.055, y: 0.285, w: 0.195, h: 0.245 },
         { name: 'left-road-b', x: 0.05, y: 0.255, w: 0.22, h: 0.285 },
@@ -494,6 +496,362 @@
     };
   }
 
+  function clampRectToCanvas(roi, rect) {
+    if (!roi || !rect) return roi;
+    var x1 = Math.max(rect.left, Number(roi.x || 0));
+    var y1 = Math.max(rect.top, Number(roi.y || 0));
+    var x2 = Math.min(rect.left + rect.width, Number(roi.x || 0) + Number(roi.w || 0));
+    var y2 = Math.min(rect.top + rect.height, Number(roi.y || 0) + Number(roi.h || 0));
+    return {
+      x: Math.round(x1),
+      y: Math.round(y1),
+      w: Math.max(1, Math.round(x2 - x1)),
+      h: Math.max(1, Math.round(y2 - y1))
+    };
+  }
+
+  function bboxOfItems(items) {
+    items = items || [];
+    if (!items.length) return null;
+    var minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var x1 = Number(it.x || 0);
+      var y1 = Number(it.y || 0);
+      var x2 = x1 + Number(it.w || 0);
+      var y2 = y1 + Number(it.h || 0);
+      if (x1 < minX) minX = x1;
+      if (y1 < minY) minY = y1;
+      if (x2 > maxX) maxX = x2;
+      if (y2 > maxY) maxY = y2;
+    }
+    return {
+      x: Math.round(minX),
+      y: Math.round(minY),
+      w: Math.max(1, Math.round(maxX - minX)),
+      h: Math.max(1, Math.round(maxY - minY))
+    };
+  }
+
+  function scanColorItems(canvas, roi) {
+    if (!canvas || !roi) return { items: [], meta: { mode: 'none', reason: 'no-canvas-or-roi' } };
+    var scan = readRoiPixels2d(canvas, roi) || readRoiPixelsWebGl(canvas, roi);
+    if (!scan) {
+      return {
+        items: [],
+        meta: {
+          mode: 'none',
+          reason: 'no-readable-2d-or-webgl-context'
+        }
+      };
+    }
+
+    var rect = scan.rect;
+    var sw = scan.width;
+    var sh = scan.height;
+    var step = Math.max(2, Math.round(Math.max(sw, sh) / 500));
+    var gw = Math.floor(sw / step);
+    var gh = Math.floor(sh / step);
+    if (gw < 10 || gh < 10) {
+      return {
+        items: [],
+        meta: {
+          mode: scan.mode,
+          source: scan.source,
+          reason: 'grid-too-small',
+          canvasRect: {
+            x: rect.left,
+            y: rect.top,
+            w: rect.width,
+            h: rect.height
+          },
+          sample: {
+            x1: scan.x1,
+            y1: scan.y1,
+            x2: scan.x2,
+            y2: scan.y2,
+            sw: sw,
+            sh: sh,
+            step: step,
+            gw: gw,
+            gh: gh
+          }
+        }
+      };
+    }
+
+    var mask = new Uint8Array(gw * gh);
+    var diag = {
+      totalSamples: 0,
+      alphaSamples: 0,
+      brightSamples: 0,
+      classifiedSamples: 0,
+      classB: 0,
+      classP: 0,
+      classT: 0,
+      topColors: []
+    };
+    var colorBins = Object.create(null);
+    function mi(x, y) { return y * gw + x; }
+    function kindToSymbol(kind) {
+      return kind === 1 ? 'B' : (kind === 2 ? 'P' : (kind === 3 ? 'T' : ''));
+    }
+
+    for (var gy = 0; gy < gh; gy++) {
+      for (var gx = 0; gx < gw; gx++) {
+        var px = Math.min(sw - 1, gx * step + Math.floor(step / 2));
+        var py = Math.min(sh - 1, gy * step + Math.floor(step / 2));
+        var rgba = pxAt(scan, px, py);
+        if (!rgba) continue;
+        diag.totalSamples++;
+        if (rgba[3] >= 25) diag.alphaSamples++;
+        var rgbMax = Math.max(rgba[0], rgba[1], rgba[2]);
+        var rgbMin = Math.min(rgba[0], rgba[1], rgba[2]);
+        if (rgbMax >= 55 && (rgbMax - rgbMin) >= 24) diag.brightSamples++;
+        var binKey = [
+          Math.round(rgba[0] / 16) * 16,
+          Math.round(rgba[1] / 16) * 16,
+          Math.round(rgba[2] / 16) * 16
+        ].join(',');
+        colorBins[binKey] = Number(colorBins[binKey] || 0) + 1;
+        var v = classifyCanvasPixel(rgba[0], rgba[1], rgba[2], rgba[3]);
+        if (v === 'B') mask[mi(gx, gy)] = 1;
+        else if (v === 'P') mask[mi(gx, gy)] = 2;
+        else if (v === 'T') mask[mi(gx, gy)] = 3;
+        if (v) {
+          diag.classifiedSamples++;
+          if (v === 'B') diag.classB++;
+          else if (v === 'P') diag.classP++;
+          else if (v === 'T') diag.classT++;
+        }
+      }
+    }
+
+    diag.topColors = Object.keys(colorBins).map(function (k) {
+      return { rgb: k, count: colorBins[k] };
+    }).sort(function (a, b) {
+      return Number(b.count || 0) - Number(a.count || 0);
+    }).slice(0, 12);
+
+    var seen = new Uint8Array(gw * gh);
+    var neighbors = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+    var items = [];
+    var cssScaleX = rect.width / canvas.width;
+    var cssScaleY = rect.height / canvas.height;
+
+    for (var sy = 0; sy < gh; sy++) {
+      for (var sx = 0; sx < gw; sx++) {
+        var start = mi(sx, sy);
+        var kind = mask[start];
+        if (!kind || seen[start]) continue;
+        var q = [[sx, sy]];
+        seen[start] = 1;
+        var count = 0;
+        var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+        while (q.length) {
+          var cur = q.pop();
+          var x = cur[0], y = cur[1];
+          count++;
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+          for (var ni = 0; ni < neighbors.length; ni++) {
+            var nx = x + neighbors[ni][0];
+            var ny = y + neighbors[ni][1];
+            if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+            var ii = mi(nx, ny);
+            if (seen[ii] || mask[ii] !== kind) continue;
+            seen[ii] = 1;
+            q.push([nx, ny]);
+          }
+        }
+
+        var compWpx = (maxX - minX + 1) * step;
+        var compHpx = (maxY - minY + 1) * step;
+        if (count < 4 || count > 220) continue;
+        if (compWpx < 6 || compHpx < 6 || compWpx > 48 || compHpx > 48) continue;
+        if (items.length >= MAX_COMPONENTS) continue;
+
+        var leftCss = roi.x + minX * step * cssScaleX;
+        var topCss = roi.y + minY * step * cssScaleY;
+        items.push({
+          id: 'roi|' + items.length,
+          v: kindToSymbol(kind),
+          x: Math.round(leftCss),
+          y: Math.round(topCss),
+          w: Math.round(compWpx * cssScaleX),
+          h: Math.round(compHpx * cssScaleY)
+        });
+      }
+    }
+
+    items = dedupeBy(items, function (x) {
+      return [x.v, x.x, x.y, x.w, x.h].join('|');
+    });
+
+    return {
+      items: items,
+      meta: {
+        mode: scan.mode,
+        source: scan.source,
+        canvasRect: {
+          x: rect.left,
+          y: rect.top,
+          w: rect.width,
+          h: rect.height
+        },
+        sample: {
+          x1: scan.x1,
+          y1: scan.y1,
+          x2: scan.x2,
+          y2: scan.y2,
+          sw: sw,
+          sh: sh,
+          step: step,
+          gw: gw,
+          gh: gh
+        },
+        diag: diag,
+        gl: scan.mode === 'webgl' ? {
+          yGl: scan.yGl,
+          canvasWidth: scan.glCanvasWidth,
+          canvasHeight: scan.glCanvasHeight
+        } : null
+      }
+    };
+  }
+
+  function autoDetectRoadRois(canvas) {
+    var out = [];
+    try {
+      if (!canvas) return out;
+      var rect = canvas.getBoundingClientRect();
+      if (!rect || rect.width < 80 || rect.height < 80) return out;
+
+      var searches = [
+        {
+          name: 'auto-left-main',
+          x: rect.left + rect.width * 0.00,
+          y: rect.top + rect.height * 0.12,
+          w: rect.width * 0.28,
+          h: rect.height * 0.68
+        },
+        {
+          name: 'auto-left-wide',
+          x: rect.left + rect.width * 0.00,
+          y: rect.top + rect.height * 0.08,
+          w: rect.width * 0.32,
+          h: rect.height * 0.76
+        },
+        {
+          name: 'auto-left-mid',
+          x: rect.left + rect.width * 0.02,
+          y: rect.top + rect.height * 0.18,
+          w: rect.width * 0.26,
+          h: rect.height * 0.58
+        }
+      ];
+
+      var candidates = [];
+      for (var si = 0; si < searches.length; si++) {
+        var search = clampRectToCanvas(searches[si], rect);
+        var raw = scanColorItems(canvas, search);
+        var allItems = raw.items || [];
+        if (allItems.length < 8) continue;
+
+        var filtered = filterRoadBodyItems(allItems, search);
+        var items = filtered.items || [];
+        if (items.length < 8) continue;
+
+        var rows = clusterRows(items);
+        var cols = buildColumns(items);
+        if (!rows.length || !cols.length) continue;
+
+        var box = bboxOfItems(items);
+        if (!box || box.w < 40 || box.h < 24) continue;
+        var boxLeftRel = (box.x - rect.left) / Math.max(1, rect.width);
+        var boxRightRel = (box.x + box.w - rect.left) / Math.max(1, rect.width);
+        var boxTopRel = (box.y - rect.top) / Math.max(1, rect.height);
+        var boxBottomRel = (box.y + box.h - rect.top) / Math.max(1, rect.height);
+        var rowCount = Number(rows.length || 0);
+        var colCount = Number(cols.length || 0);
+
+        if (rowCount < 2 || rowCount > 6) continue;
+        if (colCount < 3 || colCount > 10) continue;
+        if (boxLeftRel > 0.12) continue;
+        if (boxRightRel > 0.30) continue;
+        if (boxTopRel < 0.20 || boxTopRel > 0.55) continue;
+        if (boxBottomRel < 0.30 || boxBottomRel > 0.82) continue;
+
+        var sizeMed = median(items.map(function (x) {
+          return Math.max(Number(x.w || 0), Number(x.h || 0));
+        })) || 14;
+        var padX = Math.max(6, Math.round(sizeMed * 1.1));
+        var padY = Math.max(6, Math.round(sizeMed * 0.9));
+        var roi = clampRectToCanvas({
+          x: box.x - padX,
+          y: box.y - padY,
+          w: box.w + padX * 2,
+          h: box.h + padY * 2
+        }, rect);
+
+        var score =
+          Number(items.length || 0) * 8 +
+          Math.min(10, colCount) * 18 +
+          Math.min(6, rowCount) * 22 -
+          Math.abs(colCount - 10) * 14 -
+          Math.abs(rowCount - 4) * 10 -
+          Math.abs((box.w / Math.max(1, box.h)) - 1.05) * 20 -
+          boxLeftRel * 120 -
+          Math.max(0, boxRightRel - 0.24) * 180;
+
+        candidates.push({
+          name: search.name,
+          score: score,
+          roi: roi,
+          items: items,
+          rows: rows,
+          cols: cols
+        });
+      }
+
+      candidates.sort(function (a, b) {
+        return Number(b.score || 0) - Number(a.score || 0);
+      });
+
+      var seen = Object.create(null);
+      for (var ci = 0; ci < candidates.length; ci++) {
+        var base = candidates[ci];
+        if (!base || !base.roi) continue;
+        var sizeMed = median((base.items || []).map(function (x) {
+          return Math.max(Number(x.w || 0), Number(x.h || 0));
+        })) || 14;
+        var variants = [
+          { name: 'auto-road-a', x: base.roi.x, y: base.roi.y, w: base.roi.w, h: base.roi.h },
+          { name: 'auto-road-b', x: base.roi.x - sizeMed, y: base.roi.y - sizeMed, w: base.roi.w + sizeMed * 2, h: base.roi.h + sizeMed * 2 },
+          { name: 'auto-road-c', x: base.roi.x - Math.round(sizeMed * 0.5), y: base.roi.y - sizeMed, w: base.roi.w + sizeMed, h: base.roi.h + Math.round(sizeMed * 2.2) },
+          { name: 'auto-road-d', x: base.roi.x - sizeMed, y: base.roi.y - Math.round(sizeMed * 0.4), w: base.roi.w + Math.round(sizeMed * 2.4), h: base.roi.h + sizeMed }
+        ];
+        for (var vi = 0; vi < variants.length; vi++) {
+          var vr = clampRectToCanvas(variants[vi], rect);
+          var key = [Math.round(vr.x / 4), Math.round(vr.y / 4), Math.round(vr.w / 4), Math.round(vr.h / 4)].join('|');
+          if (seen[key]) continue;
+          seen[key] = 1;
+          out.push({
+            name: variants[vi].name,
+            x: vr.x,
+            y: vr.y,
+            w: vr.w,
+            h: vr.h
+          });
+        }
+        if (out.length >= 4) break;
+      }
+    } catch (_) {}
+    return out;
+  }
+
   function createRoot() {
     var root = rootDoc.createElement('div');
     root.id = ROOT_ID;
@@ -592,158 +950,19 @@
   }
 
   function scanRoi(canvas, roi) {
-    if (!canvas || !roi) return { items: [], seq: '', cols: [], meta: {} };
-    var scan = readRoiPixels2d(canvas, roi) || readRoiPixelsWebGl(canvas, roi);
-    if (!scan) {
+    if (!canvas || !roi) return { items: [], seq: '', cols: [], rows: [], meta: {} };
+    var raw = scanColorItems(canvas, roi);
+    var items = (raw && raw.items ? raw.items : []).slice();
+    var meta = raw && raw.meta ? raw.meta : {};
+    if (!items.length && meta && meta.reason) {
       return {
         items: [],
         seq: '',
         cols: [],
-        meta: {
-          mode: 'none',
-          reason: 'no-readable-2d-or-webgl-context'
-        }
+        rows: [],
+        meta: meta
       };
     }
-
-    var rect = scan.rect;
-    var sw = scan.width;
-    var sh = scan.height;
-    var step = Math.max(2, Math.round(Math.max(sw, sh) / 500));
-    var gw = Math.floor(sw / step);
-    var gh = Math.floor(sh / step);
-    if (gw < 10 || gh < 10) {
-      return {
-        items: [],
-        seq: '',
-        cols: [],
-        meta: {
-          mode: scan.mode,
-          source: scan.source,
-          reason: 'grid-too-small',
-          sample: {
-            x1: scan.x1,
-            y1: scan.y1,
-            x2: scan.x2,
-            y2: scan.y2,
-            sw: sw,
-            sh: sh,
-            step: step,
-            gw: gw,
-            gh: gh
-          }
-        }
-      };
-    }
-
-    var mask = new Uint8Array(gw * gh);
-    var diag = {
-      totalSamples: 0,
-      alphaSamples: 0,
-      brightSamples: 0,
-      classifiedSamples: 0,
-      classB: 0,
-      classP: 0,
-      classT: 0,
-      topColors: []
-    };
-    var colorBins = Object.create(null);
-    function mi(x, y) { return y * gw + x; }
-    function kindToSymbol(kind) {
-      return kind === 1 ? 'B' : (kind === 2 ? 'P' : (kind === 3 ? 'T' : ''));
-    }
-    for (var gy = 0; gy < gh; gy++) {
-      for (var gx = 0; gx < gw; gx++) {
-        var px = Math.min(sw - 1, gx * step + Math.floor(step / 2));
-        var py = Math.min(sh - 1, gy * step + Math.floor(step / 2));
-        var rgba = pxAt(scan, px, py);
-        if (!rgba) continue;
-        diag.totalSamples++;
-        if (rgba[3] >= 25) diag.alphaSamples++;
-        var rgbMax = Math.max(rgba[0], rgba[1], rgba[2]);
-        var rgbMin = Math.min(rgba[0], rgba[1], rgba[2]);
-        if (rgbMax >= 55 && (rgbMax - rgbMin) >= 24) diag.brightSamples++;
-        var binKey = [
-          Math.round(rgba[0] / 16) * 16,
-          Math.round(rgba[1] / 16) * 16,
-          Math.round(rgba[2] / 16) * 16
-        ].join(',');
-        colorBins[binKey] = Number(colorBins[binKey] || 0) + 1;
-        var v = classifyCanvasPixel(rgba[0], rgba[1], rgba[2], rgba[3]);
-        if (v === 'B') mask[mi(gx, gy)] = 1;
-        else if (v === 'P') mask[mi(gx, gy)] = 2;
-        else if (v === 'T') mask[mi(gx, gy)] = 3;
-        if (v) {
-          diag.classifiedSamples++;
-          if (v === 'B') diag.classB++;
-          else if (v === 'P') diag.classP++;
-          else if (v === 'T') diag.classT++;
-        }
-      }
-    }
-
-    diag.topColors = Object.keys(colorBins).map(function (k) {
-      return { rgb: k, count: colorBins[k] };
-    }).sort(function (a, b) {
-      return Number(b.count || 0) - Number(a.count || 0);
-    }).slice(0, 12);
-
-    var seen = new Uint8Array(gw * gh);
-    var neighbors = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
-    var items = [];
-    var cssScaleX = rect.width / canvas.width;
-    var cssScaleY = rect.height / canvas.height;
-
-    for (var sy = 0; sy < gh; sy++) {
-      for (var sx = 0; sx < gw; sx++) {
-        var start = mi(sx, sy);
-        var kind = mask[start];
-        if (!kind || seen[start]) continue;
-        var q = [[sx, sy]];
-        seen[start] = 1;
-        var count = 0;
-        var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
-        while (q.length) {
-          var cur = q.pop();
-          var x = cur[0], y = cur[1];
-          count++;
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
-          for (var ni = 0; ni < neighbors.length; ni++) {
-            var nx = x + neighbors[ni][0];
-            var ny = y + neighbors[ni][1];
-            if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
-            var ii = mi(nx, ny);
-            if (seen[ii] || mask[ii] !== kind) continue;
-            seen[ii] = 1;
-            q.push([nx, ny]);
-          }
-        }
-
-        var compWpx = (maxX - minX + 1) * step;
-        var compHpx = (maxY - minY + 1) * step;
-        if (count < 4 || count > 220) continue;
-        if (compWpx < 6 || compHpx < 6 || compWpx > 48 || compHpx > 48) continue;
-        if (items.length >= MAX_COMPONENTS) continue;
-
-        var leftCss = roi.x + minX * step * cssScaleX;
-        var topCss = roi.y + minY * step * cssScaleY;
-        items.push({
-          id: 'roi|' + items.length,
-          v: kindToSymbol(kind),
-          x: Math.round(leftCss),
-          y: Math.round(topCss),
-          w: Math.round(compWpx * cssScaleX),
-          h: Math.round(compHpx * cssScaleY)
-        });
-      }
-    }
-
-    items = dedupeBy(items, function (x) {
-      return [x.v, x.x, x.y, x.w, x.h].join('|');
-    });
 
     var filtered = filterRoadBodyItems(items, roi);
     items = filtered.items || items;
@@ -754,26 +973,7 @@
       seq: seqPack.seq,
       cols: seqPack.cols,
       rows: seqPack.rows || [],
-      meta: {
-        mode: scan.mode,
-        source: scan.source,
-        canvasRect: {
-          x: rect.left,
-          y: rect.top,
-          w: rect.width,
-          h: rect.height
-        },
-        sample: {
-          x1: scan.x1,
-          y1: scan.y1,
-          x2: scan.x2,
-          y2: scan.y2,
-          sw: sw,
-          sh: sh,
-          step: step,
-          gw: gw,
-          gh: gh
-        },
+      meta: Object.assign({}, meta, {
         rowFilter: {
           rowCount: filtered.rows ? filtered.rows.length : 0,
           keepFrom: filtered.keepFrom,
@@ -784,14 +984,8 @@
               count: Number(r.items && r.items.length || 0)
             };
           })
-        },
-        diag: diag,
-        gl: scan.mode === 'webgl' ? {
-          yGl: scan.yGl,
-          canvasWidth: scan.glCanvasWidth,
-          canvasHeight: scan.glCanvasHeight
-        } : null
-      }
+        }
+      })
     };
   }
 
@@ -845,6 +1039,7 @@
     panel: null,
     select: null,
     roi: null,
+    roiMode: 'guess',
     guessIndex: 0,
     guessedRois: [],
     last: null,
@@ -875,6 +1070,7 @@
         var x2 = Math.max(start.x, ev.clientX);
         var y2 = Math.max(start.y, ev.clientY);
         refs.roi = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+        refs.roiMode = 'manual';
         refs.run();
       };
 
@@ -909,9 +1105,10 @@
         }
         refs.guessedRois = guessRoadRois(canvas);
         result.presetCount = refs.guessedRois.length;
-        if ((!refs.roi || refs.roi.w < 8 || refs.roi.h < 8) && refs.guessedRois.length) {
+        if ((refs.roiMode !== 'manual' || !refs.roi || refs.roi.w < 8 || refs.roi.h < 8) && refs.guessedRois.length) {
           refs.guessIndex = Math.max(0, Math.min(refs.guessIndex, refs.guessedRois.length - 1));
           refs.roi = refs.guessedRois[refs.guessIndex];
+          refs.roiMode = 'guess';
         }
         if (refs.guessedRois.length && refs.guessIndex >= 0 && refs.guessIndex < refs.guessedRois.length) {
           result.presetName = refs.guessedRois[refs.guessIndex].name || '';
@@ -973,6 +1170,7 @@
         w: Number(w || 0),
         h: Number(h || 0)
       };
+      refs.roiMode = 'manual';
       return refs.run();
     },
     prevGuess: function () {
@@ -980,6 +1178,7 @@
       if (!refs.guessedRois.length) return refs.last;
       refs.guessIndex = (refs.guessIndex - 1 + refs.guessedRois.length) % refs.guessedRois.length;
       refs.roi = refs.guessedRois[refs.guessIndex];
+      refs.roiMode = 'guess';
       return refs.run();
     },
     nextGuess: function () {
@@ -987,6 +1186,7 @@
       if (!refs.guessedRois.length) return refs.last;
       refs.guessIndex = (refs.guessIndex + 1) % refs.guessedRois.length;
       refs.roi = refs.guessedRois[refs.guessIndex];
+      refs.roiMode = 'guess';
       return refs.run();
     },
     close: function () {
