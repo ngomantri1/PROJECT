@@ -897,7 +897,6 @@
         items: [],
         seq: '',
         cols: [],
-        rows: [],
         meta: {}
       };
       if (canvas) {
@@ -923,7 +922,6 @@
         result.items = scan.items || [];
         result.seq = scan.seq || '';
         result.cols = scan.cols || [];
-        result.rows = scan.rows || [];
         result.meta = scan.meta || {};
       }
       refs.last = result;

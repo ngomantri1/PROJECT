@@ -15,8 +15,8 @@ namespace BaccaratZoWin
         private MainWindow? _window;
         private IGameHostContext? _host;   // giữ lại để báo ngược về Hub
 
-        public string Name => "Baccarat Sexy Casino Live";
-        public string Slug => "baccarat-sexy-casino";
+        public string Name => "Baccarat ZoWin Live";
+        public string Slug => "baccarat-zowin-casino";
 
         public UserControl CreateView(IGameHostContext host)
         {
