@@ -227,24 +227,102 @@
     function __cw_readHostUsername() {
         try {
             var cands = [];
-            function pushOne(v) {
+            var trace = [];
+            function pushOne(label, v) {
                 try {
                     if (v == null)
                         return;
+                    var raw = String(v || '');
                     var n = __cw_normUserCandidate(v);
+                    trace.push({
+                        src: String(label || ''),
+                        raw: raw,
+                        norm: n || ''
+                    });
                     if (n)
                         cands.push(n);
                 } catch (_) {}
             }
-            pushOne(window.__abx_login_username);
-            pushOne(window.__abx_username);
-            pushOne(window.__abx_user);
-            try { if (window.parent && window.parent !== window) { pushOne(window.parent.__abx_login_username); pushOne(window.parent.__abx_username); pushOne(window.parent.__abx_user); } } catch (_) {}
-            try { if (window.top && window.top !== window) { pushOne(window.top.__abx_login_username); pushOne(window.top.__abx_username); pushOne(window.top.__abx_user); } } catch (_) {}
-            if (cands.length)
-                return cands[0];
+            pushOne('win.__abx_login_username', window.__abx_login_username);
+            pushOne('win.__abx_username', window.__abx_username);
+            pushOne('win.__abx_user', window.__abx_user);
+            try { if (window.parent && window.parent !== window) { pushOne('parent.__abx_login_username', window.parent.__abx_login_username); pushOne('parent.__abx_username', window.parent.__abx_username); pushOne('parent.__abx_user', window.parent.__abx_user); } } catch (_) {}
+            try { if (window.top && window.top !== window) { pushOne('top.__abx_login_username', window.top.__abx_login_username); pushOne('top.__abx_username', window.top.__abx_username); pushOne('top.__abx_user', window.top.__abx_user); } } catch (_) {}
+            var picked = cands.length ? cands[0] : '';
+            try {
+                var probeKey = JSON.stringify(trace) + '|' + picked;
+                var now = Date.now();
+                if (window.__cw_user_host_probe_key !== probeKey || !window.__cw_user_host_probe_at || (now - window.__cw_user_host_probe_at) >= 5000) {
+                    window.__cw_user_host_probe_key = probeKey;
+                    window.__cw_user_host_probe_at = now;
+                    console.log('[CWUSER][HOST_READ] ' + JSON.stringify({
+                        picked: picked || '',
+                        trace: trace
+                    }));
+                }
+            } catch (_) {}
+            if (picked)
+                return picked;
         } catch (_) {}
         return '';
+    }
+
+    function __cw_logUserSource(tag, payload, throttleMs, key) {
+        try {
+            var wait = Number(throttleMs || 0);
+            var now = Date.now();
+            var k = String(key || tag || 'user');
+            if (!window.__cw_user_log_last)
+                window.__cw_user_log_last = {};
+            var last = Number(window.__cw_user_log_last[k] || 0);
+            if (wait > 0 && (now - last) < wait)
+                return;
+            window.__cw_user_log_last[k] = now;
+            console.log('[CWUSER][' + String(tag || 'TRACE') + '] ' + JSON.stringify(payload || {}));
+        } catch (_) {}
+    }
+
+    function __cw_collectUserCandidates(listTextAll) {
+        try {
+            var src = Array.isArray(listTextAll) ? listTextAll : [];
+            var rows = [];
+            for (var i = 0; i < src.length; i++) {
+                var r = src[i];
+                if (!r)
+                    continue;
+                var txt = String(r.text != null ? r.text : (r.txt != null ? r.txt : '')).trim();
+                if (!txt || txt.length < 3 || txt.length > 32)
+                    continue;
+                if (!/[a-zA-Z0-9]/.test(txt))
+                    continue;
+                if (/^(banker|player|tie|hoa|con|cai|dealer|max|tip|chat|nhap|noi dung)$/i.test(txt))
+                    continue;
+                if (/^[0-9.,:]+$/.test(txt))
+                    continue;
+                var x = Number(r.x != null ? r.x : ((r.rect && r.rect.x != null) ? r.rect.x : 0));
+                var y = Number(r.y != null ? r.y : ((r.rect && r.rect.y != null) ? r.rect.y : 0));
+                var w = Number(r.w != null ? r.w : ((r.rect && r.rect.w != null) ? r.rect.w : 0));
+                var h = Number(r.h != null ? r.h : ((r.rect && r.rect.h != null) ? r.rect.h : 0));
+                if (x < 0 || y < 0 || x > 520 || y > 220)
+                    continue;
+                rows.push({
+                    text: txt,
+                    tail: String(r.tail != null ? r.tail : (r.tailFull != null ? r.tailFull : '')),
+                    x: Math.round(x),
+                    y: Math.round(y),
+                    w: Math.round(w),
+                    h: Math.round(h)
+                });
+            }
+            rows.sort(function (A, B) {
+                return A.y - B.y || A.x - B.x || A.text.localeCompare(B.text);
+            });
+            if (rows.length > 12)
+                rows = rows.slice(0, 12);
+            return rows;
+        } catch (_) {
+            return [];
+        }
     }
 
     function __cw_boot() {
@@ -9098,9 +9176,13 @@
             var cards = domScanBaccaratCards(!!forceFast);
             var active = domPickActiveCard(cards);
             var hud = domFindHudSnapshot();
-            if (!hud.account)
-                hud.account = __cw_readHostUsername() || null;
             var stake = domScanBetStakeTotals(!!forceFast);
+            __cw_logUserSource('TOTALS_NONCOCOS', {
+                hudAccount: hud && hud.account != null ? String(hud.account || '') : '',
+                hudSource: hud && hud.source != null ? String(hud.source || '') : '',
+                chosenN: hud && hud.account != null ? String(hud.account || '') : '',
+                hasActiveCard: active ? 1 : 0
+            }, 2000, 'totals-noncocos|' + String(hud && hud.account != null ? hud.account : '') + '|' + String(hud && hud.source != null ? hud.source : '') + '|' + (active ? '1' : '0'));
             if (!active) {
                 return {
                     B: stake ? stake.B : null,
@@ -9169,13 +9251,26 @@
         var mN = pickByTailMinY(listTextAll, TAIL_USER_NAME);
         if (!mA && mN)
             mA = pickBalanceNearAccount(listTextMoney, mN);
-        var hostUser = __cw_readHostUsername();
+        var userCandidates = null;
+        if (!mN)
+            userCandidates = __cw_collectUserCandidates(listTextAll);
+        __cw_logUserSource('TOTALS_COCOS', {
+            tailUserName: TAIL_USER_NAME,
+            mNText: mN ? String(mN.text != null ? mN.text : '') : '',
+            mNTail: mN ? String(mN.tail != null ? mN.tail : '') : '',
+            chosenN: mN ? String(mN.text != null ? mN.text : '') : ''
+        }, 2000, 'totals-cocos|' + (mN ? String(mN.text != null ? mN.text : '') : '') + '|' + (mN ? String(mN.tail != null ? mN.tail : '') : ''));
+        if (!mN)
+            __cw_logUserSource('USER_CANDIDATES', {
+                tailUserName: TAIL_USER_NAME,
+                candidates: userCandidates || []
+            }, 4000, 'user-candidates|' + JSON.stringify(userCandidates || []));
 
         return {
             C: mC ? mC.val : null,
             L: mL ? mL.val : null,
             A: mA ? mA.val : null,
-            N: mN ? String(mN.text != null ? mN.text : '') : (hostUser || null),
+            N: mN ? String(mN.text != null ? mN.text : '') : null,
             SD: mSD ? mSD.val : null,
             TT: mTT ? mTT.val : null,
             T3T: m3T ? m3T.val : null,
@@ -9184,7 +9279,7 @@
             rawC: mC ? mC.txt : null,
             rawL: mL ? mL.txt : null,
             rawA: mA ? mA.txt : null,
-            rawN: mN ? String(mN.text != null ? mN.text : '') : (hostUser || null),
+            rawN: mN ? String(mN.text != null ? mN.text : '') : null,
             rawSD: mSD ? mSD.txt : null,
             rawTT: mTT ? mTT.txt : null,
             rawT3T: m3T ? m3T.txt : null,
@@ -9237,8 +9332,6 @@
                 _domHudCache.at = now;
                 _domHudCache.data = hud;
             }
-            if (hud && !hud.account)
-                hud.account = __cw_readHostUsername() || null;
             var prev = null;
             try {
                 if (S && S._lastTotals)
@@ -9862,11 +9955,14 @@
         var tableName = (t.TB != null && String(t.TB).trim()) ? String(t.TB).trim() : '--';
         var tableAmount = (t.TA != null ? fmt(t.TA) : '--');
         var accountName = (t.N != null && String(t.N).trim()) ? String(t.N).trim() : '--';
-        if (accountName === '--') {
-            var hostAccount = __cw_readHostUsername();
-            if (hostAccount)
-                accountName = hostAccount;
-        }
+        var accountNameSource = (t.N != null && String(t.N).trim()) ? 't.N' : 'none';
+        __cw_logUserSource('ACCOUNT_RENDER', {
+            tN: (t && t.N != null) ? String(t.N || '') : '',
+            tRawN: (t && t.rawN != null) ? String(t.rawN || '') : '',
+            tRawHS: (t && t.rawHS != null) ? String(t.rawHS || '') : '',
+            chosen: accountName,
+            chosenSource: accountNameSource
+        }, 2000, 'account-render|' + String((t && t.N != null) ? t.N : '') + '|' + String((t && t.rawHS != null) ? t.rawHS : '') + '|' + String(accountNameSource));
         var domCtx = null;
         if (!__cw_hasCocos()) {
             try {
@@ -9892,7 +9988,7 @@
             '• STATUS META : src=' + (S.statusSource || '--') + ' | tail=' + (S.statusTail || '--') + '\n' +
             '• CTX : ' + ctxText + '\n' +
             '• HUD : ' + hudSource + '\n' +
-            '• TÀI KHOẢN : ' + accountName + ' | SỐ DƯ : ' + fmt(t.A) + '\n' +
+            '• TÊN NHÂN VẬT : ' + accountName + ' | SỐ DƯ : ' + fmt(t.A) + '\n' +
             '• BÀN : ' + tableName + ' | TIỀN BÀN : ' + tableAmount + ' | BANKER: ' + fmt(bankerVal) + ' | PLAYER: ' + fmt(playerVal) + ' | TIE: ' + fmt(t.T) + '\n' +
             (!__cw_hasCocos() ? ('• BET POOL DOM : B=' + fmt(t.B) + ' | P=' + fmt(t.P) + ' | T=' + fmt(t.T) + ' | SRC=' + (t.BS || '--') + '\n') : '') +
             '• MAP COUNT : money=' + moneyCount + ' | bet=' + betCount + ' | text=' + textCount + '\n' +
@@ -9942,9 +10038,6 @@
             ' | evt=' + (S.seqEvent || '--');
         try {
             var snapUser = (t.N != null ? String(t.N) : '');
-            if (!snapUser) {
-                try { snapUser = __cw_readHostUsername() || ''; } catch (_) { snapUser = ''; }
-            }
             window.__cw_last_panel_snapshot = {
                 prog: S.prog,
                 progValid: S.progValid ? 1 : 0,
@@ -11735,7 +11828,7 @@
             if (rect.top < (view.innerHeight || 900) * 0.46)
                 continue;
             var combo = NORM(domCombinedTextOf(host));
-            if (/(BALANCE|SO DU|TAI KHOAN|ACCOUNT|PLAYER|BANKER|TIE|HOA|HISTORY|ROAD|COUNTDOWN)/.test(combo) && !/(CHIP|COIN|PHINH|MENH|CUOC|BET|TOKEN)/.test(combo))
+            if (/(BALANCE|SO DU|TAI KHOAN|TEN NHAN VAT|ACCOUNT|PLAYER|BANKER|TIE|HOA|HISTORY|ROAD|COUNTDOWN)/.test(combo) && !/(CHIP|COIN|PHINH|MENH|CUOC|BET|TOKEN)/.test(combo))
                 continue;
             var score = domChipVisualScore(host, rect, view);
             if (score < 110)
@@ -14445,6 +14538,14 @@
         function buildTickSnapFromCached(cached) {
             if (!cached)
                 return null;
+            var cachedUser = '';
+            try {
+                cachedUser = (cached && cached.username != null) ? String(cached.username || '') : '';
+                if (!cachedUser && cached && cached.totals && cached.totals.N != null)
+                    cachedUser = String(cached.totals.N || '');
+            } catch (_) {
+                cachedUser = '';
+            }
             return {
                 abx: 'tick',
                 prog: cached.prog,
@@ -14458,7 +14559,7 @@
                 rawSeq: String(cached.rawSeq || cached.seq || ''),
                 seqVersion: Number(cached.seqVersion || 0),
                 seqEvent: String(cached.seqEvent || ''),
-                username: (cached && cached.totals && cached.totals.N != null) ? String(cached.totals.N || '') : '',
+                username: cachedUser,
                 status: String(cached.status || ''),
                 statusSource: String(cached.statusSource || ''),
                 statusTail: String(cached.statusTail || ''),
@@ -15433,6 +15534,8 @@
             try {
                 if (t && t.N != null)
                     uname = String(t.N || '');
+                if (!uname && cached && cached.username != null)
+                    uname = String(cached.username || '');
             } catch (_) {}
 
             brSeqFuncLog('return', 'buildSnapshotNow', {

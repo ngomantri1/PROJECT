@@ -1,0 +1,60 @@
+@page
+@model AdamVoiceWeb.Pages.PackagesModel
+@{ ViewData["Title"]="Mua gói"; }
+<div class="page pricing-page">
+  <h1>Mua gói</h1>
+  <div class="breadcrumbs">Chọn gói phù hợp với nhu cầu của bạn → chuyển khoản → admin duyệt và cộng credits.</div>
+  @if(!string.IsNullOrWhiteSpace(Model.Message)){<div class="alert ok">@Model.Message</div>}
+
+  <div class="pricing-toggle">
+    <a class="@(Model.Period=="Monthly"?"active":"")" href="/Packages?period=monthly">Tháng</a>
+    <a class="@(Model.Period=="Yearly"?"active":"")" href="/Packages?period=yearly">Năm <span>-@Model.YearDiscount%</span></a>
+  </div>
+
+  <div class="pricing-grid">
+    @foreach(var p in Model.Packages)
+    {
+      <form method="post" asp-page-handler="CreateOrder" class="pricing-card @(p.IsPopular?"popular":"")">
+        <input type="hidden" name="packageId" value="@p.Id"/>
+        @if(p.IsPopular){<div class="popular-ribbon">Phổ biến nhất</div>}
+        <h3>@p.Name</h3>
+        <div class="pricing-price">
+          @if(p.BillingPeriod=="Yearly")
+          {
+            <b>@p.PriceVnd.ToString("N0")đ</b><span>/năm</span>
+            <small>Tương đương @p.MonthlyEquivalentVnd.ToString("N0")đ/tháng</small>
+          }
+          else
+          {
+            <b>@p.PriceVnd.ToString("N0")đ</b><span>/tháng</span>
+          }
+        </div>
+        <div class="credits-pill">⚡ @Model.FormatCredits(p.Points) credits</div>
+        <ul class="feature-list">
+          @foreach(var f in p.Features)
+          {
+            <li>✓ @f</li>
+          }
+        </ul>
+        <p class="muted plan-desc">@p.Description</p>
+        <button class="@(p.IsPopular?"primary":"secondary plan-buy")" type="submit">Mua ngay</button>
+      </form>
+    }
+  </div>
+
+  <div class="credits-info">
+    <div class="info-icon">?</div>
+    <div>
+      <h3>Credits hoạt động như thế nào?</h3>
+      <p>• <b>1 credit = 1 ký tự</b> cần tạo audio với giọng thường.</p>
+      <p>• Giọng có hệ số cao hơn sẽ trừ theo công thức: <b>số ký tự × hệ số giọng</b>.</p>
+      <p>• Hệ thống chỉ trừ credits khi tạo file mới. Nghe lại hoặc tải lại file đã tạo <b>hoàn toàn miễn phí</b>.</p>
+      <p>• Nếu tạo giọng lỗi, hệ thống sẽ <b>tự động hoàn credits</b>.</p>
+    </div>
+  </div>
+
+  <div class="grid payment-grid">
+    <div class="card"><div class="section-title">Thông tin chuyển khoản</div><div class="bank-box"><p><span>Ngân hàng</span><b>@Model.BankName</b></p><p><span>Chủ tài khoản</span><b>@Model.AccountName</b></p><p><span>Số tài khoản</span><b id="bankAccount">@Model.AccountNumber</b> <button class="copy-btn" onclick="copyText('@Model.AccountNumber')" type="button">Sao chép</button></p></div><p class="muted">Sau khi tạo đơn, hãy chuyển đúng số tiền và đúng nội dung chuyển khoản để admin kiểm tra nhanh.</p><p class="muted">Cần hỗ trợ: <b>@Model.SupportPhone</b></p></div>
+    <div class="card"><div class="section-title">Đơn mua credits của tôi</div>@if(!Model.MyOrders.Any()){<p class="muted">Chưa có đơn mua credits.</p>}else{<table class="table"><thead><tr><th>Mã đơn</th><th>Gói</th><th>Số tiền</th><th>Credits</th><th>Nội dung CK</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>@foreach(var o in Model.MyOrders){<tr><td><b>@o.OrderCode</b></td><td>@o.PackageName</td><td>@o.PriceVnd.ToString("N0")đ</td><td>@o.Points.ToString("N0")</td><td><b id="content-@o.Id">@o.TransferContent</b> <button class="copy-btn" type="button" onclick="copyText('@o.TransferContent')">Copy</button></td><td><span class="status @o.Status.ToLower()">@o.Status</span></td><td>@if(o.Status=="Pending"){<form method="post" asp-page-handler="ConfirmPaid" class="inline-form"><input type="hidden" name="orderId" value="@o.Id"/><input class="input small-input" name="userNote" placeholder="Ghi chú CK nếu có"/><button class="mini-btn fill">Tôi đã CK</button></form><form method="post" asp-page-handler="Cancel" class="inline-form"><input type="hidden" name="orderId" value="@o.Id"/><button class="mini-btn">Hủy</button></form>}else{<span class="muted">@o.ApprovedAt?.ToString("dd/MM HH:mm")</span>}</td></tr>}</tbody></table>}</div>
+  </div>
+</div>

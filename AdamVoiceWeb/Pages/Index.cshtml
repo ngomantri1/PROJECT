@@ -1,0 +1,107 @@
+@page
+@model AdamVoiceWeb.Pages.IndexModel
+@{
+    ViewData["Title"] = "Tạo giọng nói";
+}
+<div class="page has-sticky-submit">
+  <h1>Tạo giọng nói</h1>
+  <div class="breadcrumbs">Trang chủ / Tạo giọng nói</div>
+  <div id="indexMessageStack">
+    @if(!string.IsNullOrWhiteSpace(Model.Success)){<div class="alert ok">@Model.Success</div>}
+    @if(!string.IsNullOrWhiteSpace(Model.Error)){<div class="alert err">@Model.Error</div>}
+    @if(Model.CurrentBalance <= Model.LowPointWarning){<div class="alert warn">Điểm của anh sắp hết: <b>@Model.CurrentBalance.ToString("N0") điểm</b>. Nên mua thêm điểm để không bị gián đoạn.</div>}
+  </div>
+  <div class="grid">
+    <form method="post" class="card" id="voiceForm" onsubmit="return confirmCreateVoice()" data-async-generate="true">
+      <div class="section-head">
+        <div class="section-title">1. Nhập nội dung cần tạo giọng</div>
+        <button type="button" class="text-reset-btn" onclick="clearText()" aria-label="Xóa toàn bộ nội dung">
+          <span class="text-reset-icon" aria-hidden="true">×</span>
+          <span>Xóa hết</span>
+        </button>
+      </div>
+      <textarea id="Text" class="textarea" asp-for="Text" maxlength="5000" placeholder="Nhập nội dung cần tạo giọng..."></textarea>
+      <div class="draft-note">Nội dung đang được tự lưu trên thiết bị này.</div>
+      <label class="check-row"><input asp-for="AutoNormalize" type="checkbox" checked /> Tự tối ưu văn bản tiếng Việt trước khi tạo giọng</label>
+      <details class="normalize-box"><summary>Xem ví dụ tối ưu văn bản</summary><p>Ví dụ: <b>40.000đ/kg</b> → <b>40 nghìn đồng một ki lô gam</b>, <b>ship</b> → <b>giao hàng</b>, <b>22h</b> → <b>22 giờ</b>.</p></details>
+      <div class="meta">Số ký tự: <b id="charCount">0</b> / 5.000 ký tự</div>
+
+      <div class="section-title">2. Chọn giọng nói <a href="/MyVoices" style="float:right;color:#6d35e8;font-size:14px">+ Giọng của bạn</a></div>
+      <div class="voice-grid">
+        @foreach(var v in Model.Voices)
+        {
+          <label class="voice-card">
+            <input type="radio" name="VoiceId" value="@v.Id" data-rate="@v.PointRate" @(v.Id==Model.VoiceId ? "checked" : "") />
+            <div class="voice-avatar">@v.AvatarEmoji</div>
+            <b>@v.Name</b><span>@v.Description</span>@if(v.OwnerUserId.HasValue && v.OwnerUserId>0){<small class="voice-tag">Giọng riêng</small>}
+          </label>
+        }
+      </div>
+
+      <div class="section-title">3. Tùy chỉnh giọng nói</div>
+      <div class="settings">
+        <div class="setting"><label>Tốc độ đọc <b id="SpeedValue">@Model.Speed</b></label><input id="Speed" asp-for="Speed" type="range" min="0.7" max="1.2" step="0.01" oninput="SpeedValue.textContent=this.value" /></div>
+        <div class="setting"><label>Độ ổn định <b id="StabilityValue">@Model.Stability</b></label><input id="Stability" asp-for="Stability" type="range" min="0" max="1" step="0.01" oninput="StabilityValue.textContent=this.value" /></div>
+        <div class="setting"><label>Độ giống giọng <b id="SimilarityValue">@Model.Similarity</b></label><input id="Similarity" asp-for="Similarity" type="range" min="0" max="1" step="0.01" oninput="SimilarityValue.textContent=this.value" /></div>
+        <div class="setting"><label>Phong cách <b id="StyleValue">@Model.Style</b></label><input id="Style" asp-for="Style" type="range" min="0" max="1" step="0.01" oninput="StyleValue.textContent=this.value" /></div>
+      </div>
+      <div class="presets">
+        <button type="button" class="preset active" data-preset="normal" onclick="setPreset('normal')">Bình thường</button>
+        <button type="button" class="preset" data-preset="funny" onclick="setPreset('funny')">Hài hước</button>
+        <button type="button" class="preset" data-preset="ad" onclick="setPreset('ad')">Quảng cáo</button>
+        <button type="button" class="preset" data-preset="story" onclick="setPreset('story')">Truyền cảm</button>
+        <button type="button" class="preset" data-preset="news" onclick="setPreset('news')">Tin tức</button>
+        <button type="button" class="preset" data-preset="trend" onclick="setPreset('trend')">TikTok Trend</button>
+      </div>
+      <div class="cost-box">
+        <div>Điểm sẽ trừ<br><b id="pointCost">0 điểm</b> <span class="muted">= ký tự × hệ số giọng</span></div>
+        <div class="cost-ok">✅ Nghe lại và tải lại không bị trừ điểm</div>
+      </div>
+      <div class="actions compact-actions">
+        <button type="button" class="secondary" onclick="alert('Nghe thử 5 giây là chức năng demo giao diện. Khi tạo xong, anh nghe file thật ở lịch sử.')">▷ Nghe thử 5s</button>
+        <button id="mainCreateButton" class="primary" type="submit">🎙️ Tạo giọng nói</button>
+      </div>
+      <div class="mobile-sticky-submit">
+        <div class="sticky-cost">Điểm sẽ trừ <b id="stickyPointCost">0 điểm</b></div>
+        <button type="button" data-create-mobile onclick="if(confirmCreateVoice()) document.getElementById('voiceForm').requestSubmit();">Tạo giọng</button>
+      </div>
+      <div class="note">Lưu ý: hệ thống chỉ trừ điểm khi tạo file mới. Nghe lại file trong lịch sử không trừ điểm.</div>
+    </form>
+
+    <aside class="right-panel">
+      <div class="card">
+        <div class="section-title">🎁 Mua gói credits <a href="/Packages" style="float:right;color:#6d35e8;font-size:14px">Xem tất cả</a></div>
+        @foreach(var p in Model.Packages)
+        {
+          <div class="package-card @(p.IsPopular?"popular":"")">
+            <div><b>@p.Name</b> @if(p.IsPopular){<span class="badge">Phổ biến</span>}</div>
+            <div class="package-row"><div class="package-price">@p.PriceVnd.ToString("N0")đ</div><div>@p.Points.ToString("N0") credits</div><a class="mini-btn @(p.IsPopular?"fill":"")" href="/Packages">Mua ngay</a></div>
+          </div>
+        }
+      </div>
+      <div class="card" style="margin-top:18px">
+        <div class="section-title">🕘 Lịch sử gần đây <a href="/History" style="float:right;color:#6d35e8;font-size:14px">Xem tất cả</a></div>
+        <div id="recentHistoryList">
+          @foreach(var j in Model.RecentJobs)
+          {
+            <div class="history-item" data-audio-item>
+              <button type="button" class="play history-play" data-audio-url="@j.AudioUrl" data-state="idle" onclick="toggleHistoryAudio(this)" aria-label="Phát audio">
+                <span class="play-icon">▶</span>
+              </button>
+              <div class="history-main">
+                <b>@(j.Text.Length>30?j.Text[..30]+"...":j.Text)</b><br><span class="muted">@j.VoiceName • @j.CharacterCount ký tự</span>
+              </div>
+              <div class="muted history-time">@j.CreatedAt.ToString("dd/MM HH:mm")</div>
+              <div class="history-audio-bar" hidden>
+                <span class="history-audio-current">0:00</span>
+                <input type="range" class="history-progress" min="0" max="100" step="0.1" value="0" oninput="seekHistoryAudio(this)" aria-label="Tua audio" />
+                <span class="history-audio-duration">0:00</span>
+              </div>
+            </div>
+          }
+          @if(!Model.RecentJobs.Any()){<p class="muted history-empty">Chưa có file nào.</p>}
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>

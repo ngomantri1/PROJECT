@@ -1,0 +1,2 @@
+using AdamVoiceWeb.Models; using AdamVoiceWeb.Services; using Microsoft.AspNetCore.Mvc.RazorPages;
+namespace AdamVoiceWeb.Pages; public class VoicesModel:PageModel{private readonly DataStore _store; public VoicesModel(DataStore store)=>_store=store; public List<VoiceOption> Voices{get;set;}=new(); public void OnGet(){Voices=_store.Read().Voices.Where(x=>x.IsActive && x.IsSystemVoice && x.Status=="Approved").ToList();}}

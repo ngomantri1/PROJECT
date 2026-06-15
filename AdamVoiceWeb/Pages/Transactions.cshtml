@@ -1,0 +1,4 @@
+@page
+@model AdamVoiceWeb.Pages.TransactionsModel
+@{ViewData["Title"]="Giao dịch điểm";}
+<div class="page"><h1>Giao dịch điểm</h1><div class="breadcrumbs">Minh bạch cộng/trừ điểm. Nghe lại file cũ không trừ điểm.</div><div class="card">@if(!Model.Transactions.Any()){<p class="muted">Chưa có giao dịch điểm.</p>}else{<table class="table"><thead><tr><th>Ngày</th><th>Loại</th><th>Số điểm</th><th>Số dư trước</th><th>Số dư sau</th><th>Mã đơn</th><th>Ghi chú</th></tr></thead><tbody>@foreach(var t in Model.Transactions){<tr><td>@t.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td><td>@Model.TypeName(t.Type)</td><td class="@(t.PointAmount>=0?"plus":"minus")">@(t.PointAmount>=0?"+":"")@t.PointAmount.ToString("N0")</td><td>@t.BalanceBefore.ToString("N0")</td><td>@t.BalanceAfter.ToString("N0")</td><td>@t.OrderCode</td><td>@t.Note</td></tr>}</tbody></table>}</div></div>

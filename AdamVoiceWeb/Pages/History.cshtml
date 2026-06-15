@@ -1,0 +1,63 @@
+@page
+@model AdamVoiceWeb.Pages.HistoryModel
+@{
+    ViewData["Title"] = "Lịch sử";
+}
+<div class="page history-page">
+  <h1>Lịch sử tạo giọng</h1>
+  <div class="breadcrumbs">Nghe lại và tải lại không trừ điểm. Chỉ tạo file mới mới bị trừ điểm.</div>
+  <div class="card">
+    @if(!Model.Jobs.Any())
+    {
+      <p class="muted">Chưa có file nào.</p>
+    }
+    else
+    {
+      <div class="history-page-list">
+        @foreach(var j in Model.Jobs)
+        {
+          <article class="history-item history-record" data-audio-item>
+            <div class="history-control">
+              @if(j.Status=="Completed")
+              {
+                <button type="button" class="play history-play" data-audio-url="@j.AudioUrl" data-state="idle" onclick="toggleHistoryAudio(this)" aria-label="Phát audio">
+                  <span class="play-icon">▶</span>
+                </button>
+              }
+              else
+              {
+                <span class="history-status-icon status @j.Status.ToLower()">@j.Status</span>
+              }
+            </div>
+            <div class="history-main">
+              <b>@(j.Text.Length>100?j.Text[..100]+"...":j.Text)</b>
+              <div class="history-meta-row">
+                <span class="muted">@j.VoiceName • @j.CharacterCount.ToString("N0") ký tự • @j.PointCost.ToString("N0") điểm</span>
+                <span class="muted history-time">@j.CreatedAt.ToString("dd/MM/yyyy HH:mm")</span>
+              </div>
+              <div class="history-stats">
+                <span class="status @j.Status.ToLower()">@j.Status</span>
+                @if(j.Status=="Completed")
+                {
+                  <a class="mini-btn" href="@j.AudioUrl" download>Tải MP3</a>
+                }
+                else
+                {
+                  <span class="muted">@j.ErrorMessage</span>
+                }
+              </div>
+            </div>
+            @if(j.Status=="Completed")
+            {
+              <div class="history-audio-bar" hidden>
+                <span class="history-audio-current">0:00</span>
+                <input type="range" class="history-progress" min="0" max="100" step="0.1" value="0" oninput="seekHistoryAudio(this)" aria-label="Tua audio" />
+                <span class="history-audio-duration">0:00</span>
+              </div>
+            }
+          </article>
+        }
+      </div>
+    }
+  </div>
+</div>

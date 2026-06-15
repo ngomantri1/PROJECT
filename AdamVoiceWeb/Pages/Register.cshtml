@@ -1,0 +1,31 @@
+@page
+@model AdamVoiceWeb.Pages.RegisterModel
+@{
+    Layout="_Layout";
+    ViewData["Title"]="Đăng ký";
+}
+<div class="login-page">
+    <div class="login-card">
+        <div class="brand brand-image auth-brand">
+            <img class="brand-logo-full auth-logo" src="~/images/logo-full-420.png" alt="Adam Voice" />
+        </div>
+        @if(!string.IsNullOrEmpty(Model.Error)){
+            <div class="alert err">@Model.Error</div>
+        }
+        <form method="post">
+            <label>Tài khoản</label>
+            <input class="input" asp-for="Username" placeholder="Ví dụ: nguyenvana"/>
+            <label>Họ tên</label>
+            <input class="input" asp-for="FullName"/>
+            <label>Số điện thoại/Zalo</label>
+            <input class="input" asp-for="Phone" placeholder="Số điện thoại để admin hỗ trợ"/>
+            <label>Telegram hoặc ghi chú liên hệ</label>
+            <input class="input" asp-for="ZaloOrTelegram" placeholder="Không bắt buộc"/>
+            <label>Mật khẩu</label>
+            <input class="input" asp-for="Password" type="password"/>
+            <button class="primary" style="width:100%">Đăng ký</button>
+        </form>
+        <p>Đã có tài khoản? <a href="/Login" style="color:#6d35e8">Đăng nhập</a></p>
+        <p class="muted">Tài khoản mới được tặng 5.000 điểm để test.</p>
+    </div>
+</div>

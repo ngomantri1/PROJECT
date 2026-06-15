@@ -1,0 +1,300 @@
+@page
+@model AdamVoiceWeb.Pages.AdminModel
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy="AdminOnly")]
+@{
+    ViewData["Title"] = "Admin";
+}
+
+<div class="page">
+    <h1>Admin</h1>
+    <div class="breadcrumbs">Quản lý user, đơn mua điểm, giao dịch, gói điểm và giọng nói.</div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.Message))
+    {
+        <div class="alert ok">@Model.Message</div>
+    }
+
+    <div class="stats-grid">
+        <div class="stat-card"><span>User</span><b>@Model.TotalUsers</b></div>
+        <div class="stat-card"><span>Đơn chờ duyệt</span><b>@Model.PendingCount</b></div>
+        <div class="stat-card"><span>Doanh thu hôm nay</span><b>@Model.TodayRevenue.ToString("N0")đ</b></div>
+        <div class="stat-card"><span>Doanh thu tháng</span><b>@Model.MonthRevenue.ToString("N0")đ</b></div>
+        <div class="stat-card"><span>Job hôm nay</span><b>@Model.TodayJobs</b></div>
+        <div class="stat-card"><span>Ký tự tháng</span><b>@Model.MonthCharacters.ToString("N0")</b></div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+        <h3>Đơn mua gói chờ duyệt</h3>
+        @if (!Model.PendingOrders.Any())
+        {
+            <p class="muted">Không có đơn chờ duyệt.</p>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Mã đơn</th>
+                        <th>User</th>
+                        <th>Gói</th>
+                        <th>Số tiền</th>
+                        <th>Điểm</th>
+                        <th>Nội dung CK</th>
+                        <th>Khách báo</th>
+                        <th>Duyệt</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var o in Model.PendingOrders)
+                {
+                    <tr>
+                        <td><b>@o.OrderCode</b></td>
+                        <td>@Model.UserName(o.UserId)</td>
+                        <td>@o.PackageName</td>
+                        <td>@o.PriceVnd.ToString("N0")đ</td>
+                        <td>@o.Points.ToString("N0")</td>
+                        <td><b>@o.TransferContent</b></td>
+                        <td>
+                            @(o.ConfirmedAt?.ToString("dd/MM HH:mm") ?? "Chưa bấm")<br />
+                            <span class="muted">@o.UserNote</span>
+                        </td>
+                        <td>
+                            <form method="post" asp-page-handler="ApproveOrder" class="inline-form">
+                                <input type="hidden" name="orderId" value="@o.Id" />
+                                <input class="input small-input" name="adminNote" placeholder="Ghi chú" />
+                                <button class="mini-btn fill" type="submit">Duyệt</button>
+                            </form>
+                            <form method="post" asp-page-handler="RejectOrder" class="inline-form">
+                                <input type="hidden" name="orderId" value="@o.Id" />
+                                <button class="mini-btn" type="submit">Hủy</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <div class="card" style="margin-top:20px">
+        <h3>Yêu cầu tạo giọng riêng chờ duyệt</h3>
+        @if (!Model.PendingCustomVoices.Any())
+        {
+            <p class="muted">Không có yêu cầu tạo giọng riêng.</p>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Tên giọng</th>
+                        <th>Yêu cầu của khách</th>
+                        <th>Duyệt / Từ chối</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var v in Model.PendingCustomVoices)
+                {
+                    <tr>
+                        <td>@Model.UserName(v.OwnerUserId ?? 0)</td>
+                        <td>
+                            @v.AvatarEmoji <b>@v.Name</b><br />
+                            <span class="muted">@v.CreatedAt.ToString("dd/MM HH:mm")</span>
+                        </td>
+                        <td>@v.UserNote</td>
+                        <td>
+                            <form method="post" asp-page-handler="ApproveCustomVoice" class="admin-approve-form">
+                                <input type="hidden" name="voiceId" value="@v.Id" />
+                                <input class="input" name="apiVoiceId" placeholder="Voice ID ElevenLabs" />
+                                <input class="input small-input" name="rate" type="number" step="0.1" value="2" />
+                                <input class="input" name="adminNote" placeholder="Ghi chú" />
+                                <button class="mini-btn fill" type="submit">Duyệt</button>
+                            </form>
+                            <form method="post" asp-page-handler="RejectCustomVoice" class="inline-form">
+                                <input type="hidden" name="voiceId" value="@v.Id" />
+                                <input type="hidden" name="adminNote" value="Admin từ chối yêu cầu" />
+                                <button class="mini-btn" type="submit">Từ chối</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <div class="grid" style="margin-top:20px">
+        <div class="card">
+            <h3>Cộng/trừ điểm thủ công</h3>
+            <form method="post" asp-page-handler="AddPoint">
+                <label>User</label>
+                <select class="input" name="userId">
+                    @foreach (var u in Model.Users)
+                    {
+                        <option value="@u.Id">@u.Username - @u.PointBalance.ToString("N0") điểm</option>
+                    }
+                </select>
+                <label>Số điểm cộng/trừ</label>
+                <input class="input" name="points" type="number" value="10000" />
+                <label>Ghi chú</label>
+                <input class="input" name="note" value="Admin điều chỉnh điểm" />
+                <button class="primary" type="submit">Cập nhật điểm</button>
+            </form>
+            <p class="muted">Có thể nhập số âm để trừ điểm. Mọi thao tác đều ghi vào lịch sử giao dịch.</p>
+        </div>
+
+        <div class="card">
+            <h3>Người dùng</h3>
+            <table class="table">
+                <thead>
+                    <tr><th>User</th><th>Liên hệ</th><th>Role</th><th>Điểm</th><th>Trạng thái</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var u in Model.Users)
+                {
+                    <tr>
+                        <td><b>@u.Username</b><br /><span class="muted">@u.FullName</span></td>
+                        <td>@u.Phone<br /><span class="muted">@u.ZaloOrTelegram</span></td>
+                        <td>@u.Role</td>
+                        <td>@u.PointBalance.ToString("N0")</td>
+                        <td>@(u.IsLocked ? "Đã khóa" : "Hoạt động")</td>
+                        <td>
+                            @if (u.Role != "Admin")
+                            {
+                                <form method="post" asp-page-handler="ToggleLock">
+                                    <input type="hidden" name="userId" value="@u.Id" />
+                                    <button class="mini-btn" type="submit">@(u.IsLocked ? "Mở khóa" : "Khóa")</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+        <h3>Cấu hình giọng nói</h3>
+        <div class="admin-edit-list">
+            @foreach (var v in Model.Voices)
+            {
+                <form method="post" asp-page-handler="UpdateVoice" class="admin-edit-item">
+                    <input type="hidden" name="voiceId" value="@v.Id" />
+                    <div>
+                        <label>Tên</label>
+                        <input class="input" name="name" value="@v.Name" />
+                    </div>
+                    <div>
+                        <label>Loại / Owner</label>
+                        <div>@(v.IsSystemVoice ? "Giọng chung" : "Giọng riêng")</div>
+                        <span class="muted">@(v.OwnerUserId.HasValue ? Model.UserName(v.OwnerUserId.Value) : "Tất cả")</span>
+                    </div>
+                    <div>
+                        <label>Mô tả</label>
+                        <input class="input" name="description" value="@v.Description" />
+                    </div>
+                    <div>
+                        <label>Emoji</label>
+                        <input class="input" name="avatarEmoji" value="@v.AvatarEmoji" />
+                    </div>
+                    <div>
+                        <label>Voice ID</label>
+                        <input class="input" name="apiVoiceId" value="@v.ApiVoiceId" />
+                    </div>
+                    <div>
+                        <label>Rate</label>
+                        <input class="input" name="rate" type="number" step="0.1" value="@v.PointRate" />
+                    </div>
+                    <div>
+                        <label>Trạng thái</label>
+                        <span class="status @v.Status.ToLower()">@v.Status</span><br />
+                        <label class="checkline"><input type="checkbox" name="isActive" value="true" @(v.IsActive ? "checked" : "") /> Bật</label>
+                    </div>
+                    <div>
+                        <button class="mini-btn fill" type="submit">Lưu</button>
+                    </div>
+                </form>
+            }
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+        <h3>Cấu hình gói credits</h3>
+        <p class="muted">Có thể sửa giá, credits, loại tháng/năm, gói phổ biến và trạng thái bật/tắt.</p>
+        <div class="admin-edit-list">
+            @foreach (var p in Model.Packages)
+            {
+                <form method="post" asp-page-handler="UpdatePackage" class="admin-edit-item package-edit-item">
+                    <input type="hidden" name="packageId" value="@p.Id" />
+                    <div>
+                        <label>Tên</label>
+                        <input class="input" name="name" value="@p.Name" />
+                    </div>
+                    <div>
+                        <label>Plan</label>
+                        <input class="input" name="planCode" value="@p.PlanCode" />
+                    </div>
+                    <div>
+                        <label>Kỳ</label>
+                        <input class="input" name="billingPeriod" value="@p.BillingPeriod" />
+                    </div>
+                    <div>
+                        <label>Giá</label>
+                        <input class="input" name="priceVnd" type="number" value="@p.PriceVnd" />
+                    </div>
+                    <div>
+                        <label>Credits</label>
+                        <input class="input" name="points" type="number" value="@p.Points" />
+                    </div>
+                    <div>
+                        <label>Quy đổi/tháng</label>
+                        <input class="input" name="monthlyEquivalentVnd" type="number" value="@p.MonthlyEquivalentVnd" />
+                    </div>
+                    <div>
+                        <label>Ưu đãi</label>
+                        <input class="input" name="annualDiscountPercent" type="number" value="@p.AnnualDiscountPercent" />
+                    </div>
+                    <div>
+                        <label>Thứ tự</label>
+                        <input class="input" name="sortOrder" type="number" value="@p.SortOrder" />
+                    </div>
+                    <div>
+                        <label>Mô tả</label>
+                        <input class="input" name="description" value="@p.Description" />
+                    </div>
+                    <div>
+                        <label class="checkline"><input type="checkbox" name="isActive" value="true" @(p.IsActive ? "checked" : "") /> Bật</label>
+                        <label class="checkline"><input type="checkbox" name="isPopular" value="true" @(p.IsPopular ? "checked" : "") /> Phổ biến</label>
+                    </div>
+                    <div>
+                        <button class="mini-btn fill" type="submit">Lưu</button>
+                    </div>
+                </form>
+            }
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+        <h3>Đơn mua gần đây</h3>
+        <table class="table">
+            <thead>
+                <tr><th>Mã đơn</th><th>User</th><th>Gói</th><th>Tiền</th><th>Trạng thái</th><th>Ngày tạo</th></tr>
+            </thead>
+            <tbody>
+            @foreach (var o in Model.RecentOrders)
+            {
+                <tr>
+                    <td>@o.OrderCode</td>
+                    <td>@Model.UserName(o.UserId)</td>
+                    <td>@o.PackageName</td>
+                    <td>@o.PriceVnd.ToString("N0")đ</td>
+                    <td><span class="status @o.Status.ToLower()">@o.Status</span></td>
+                    <td>@o.CreatedAt.ToString("dd/MM HH:mm")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -1379,7 +1379,7 @@ try{
                 if (!isFinite(prog)) prog = null;
               }
 
-              var mHud = text.match(/TAI KHOAN\s*:\s*([^\|\n]+)\|\s*SO DU\s*:\s*([^\n]+)/i);
+              var mHud = text.match(/(?:TAI KHOAN|TEN NHAN VAT)\s*:\s*([^\|\n]+)\|\s*SO DU\s*:\s*([^\n]+)/i);
               if (!mHud)
                 mHud = text.match(/T[^\n:]*:\s*([^\|\n]+)\|\s*S[^\n:]*:\s*([^\n]+)/i);
               if (mHud){
@@ -1449,7 +1449,15 @@ try{
             }
           }catch(_){}
           try{
-            if (!snap || (!snap.seq && !(snap.totals && snap.totals.A != null) && !(Number(snap.progValid || 0) === 1) && !snap.status)){
+            var snapUserNow = '';
+            try{
+              if (snap && snap.username != null) snapUserNow = String(snap.username || '');
+              if (!snapUserNow && snap && snap.totals && snap.totals.N != null) snapUserNow = String(snap.totals.N || '');
+            }catch(_){}
+            if (!snap || ((!snap.seq || !String(snap.seq || '').trim()) &&
+                          !(snap.totals && snap.totals.A != null) &&
+                          !snapUserNow &&
+                          !(Number(snap.progValid || 0) === 1))){
               var panelSnap = parsePanelFallback();
               if (panelSnap) snap = panelSnap;
             }
@@ -1491,7 +1499,10 @@ try{
           var statusTail = snap ? String(snap.statusTail || win.__cw_status_tail || '') : String(win.__cw_status_tail || '');
           var uname = '';
           try{
-            if (t && t.N != null) uname = String(t.N || '');
+            if (snap && snap.username != null) uname = String(snap.username || '');
+          }catch(_){}
+          try{
+            if (!uname && t && t.N != null) uname = String(t.N || '');
           }catch(_){}
           var hasProg = (progValid === 1 && p != null && isFinite(Number(p)));
           var hasSeq = !!(seq && String(seq).trim());
@@ -2807,7 +2818,7 @@ try{
                             if (payload.Amount.HasValue)
                                 LblAmount.Text = payload.Amount.Value.ToString("#,0.##", CultureInfo.InvariantCulture);
                             else
-                                LblAmount.Text = "0";
+                                LblAmount.Text = "-";
                         }
                         if (LblUserName != null)
                         {
@@ -4754,7 +4765,9 @@ try{
 
                         try
                         {
-                            var userVal = (snap?.totals?.N ?? "").Trim();
+                            var userVal = !string.IsNullOrWhiteSpace(snap?.username)
+                                ? (snap?.username ?? "").Trim()
+                                : (snap?.totals?.N ?? "").Trim();
                             if (!string.IsNullOrWhiteSpace(userVal))
                             {
                                 var normalized = userVal.ToLowerInvariant();
@@ -5066,7 +5079,10 @@ try{
                         var statusTailDiag = string.IsNullOrWhiteSpace(snap?.statusTail) ? "-" : Shrink(snap?.statusTail, 96);
                         var hudBalDiag = snap?.totals?.A?.ToString("0.##", CultureInfo.InvariantCulture) ?? "-";
                         var hudBalSourceDiag = string.IsNullOrWhiteSpace(snap?.totals?.AS) ? "-" : Shrink(snap?.totals?.AS, 24);
-                        var hudUserDiag = string.IsNullOrWhiteSpace(snap?.totals?.N) ? "-" : Shrink(snap?.totals?.N, 48);
+                        var hudUserDiagRaw = !string.IsNullOrWhiteSpace(snap?.username)
+                            ? (snap?.username ?? "").Trim()
+                            : (snap?.totals?.N ?? "").Trim();
+                        var hudUserDiag = string.IsNullOrWhiteSpace(hudUserDiagRaw) ? "-" : Shrink(hudUserDiagRaw, 48);
                         Log($"[TickDiag] src={source} | prog={progDiag} | progValid={progValidDiag} | progMode={progModeDiag} | progRaw={progRawDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
                         Log($"[HUDBAL] src={source} | A={hudBalDiag} | balSrc={hudBalSourceDiag} | user={hudUserDiag}");
                     }
@@ -10352,6 +10368,7 @@ try{
         private static bool ShouldPreferFrameBridgeResult(string js)
         {
             return !string.IsNullOrWhiteSpace(js) &&
+                   js.IndexOf("walkFrames(window, 0, candidates)", StringComparison.OrdinalIgnoreCase) < 0 &&
                    js.IndexOf("__cw_readSnapshot", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
@@ -10797,11 +10814,18 @@ try{
                 RecordValidBet(betTab, amount);
             }
 
-            var issuedName = (issuedSnap?.totals?.N ?? "").Trim();
+            var issuedName = !string.IsNullOrWhiteSpace(issuedSnap?.username)
+                ? (issuedSnap?.username ?? "").Trim()
+                : (issuedSnap?.totals?.N ?? "").Trim();
             if (LblUserName != null)
             {
                 if (!string.IsNullOrWhiteSpace(issuedName))
+                {
+                    _lastHudUserNameUi = issuedName;
                     LblUserName.Text = issuedName;
+                }
+                else if (!string.IsNullOrWhiteSpace(_lastHudUserNameUi))
+                    LblUserName.Text = _lastHudUserNameUi;
                 else
                     LblUserName.Text = "-";
             }

@@ -1,0 +1,11 @@
+@page
+@model AdamVoiceWeb.Pages.VoicesModel
+@{ ViewData["Title"]="Giọng nói"; }
+<div class="page">
+  <div class="page-head-row">
+    <div><h1>Danh sách giọng nói</h1><div class="breadcrumbs">Các giọng chung đang bật cho toàn bộ khách hàng.</div></div>
+    <a class="primary" href="/MyVoices">+ Giọng của bạn</a>
+  </div>
+  <div class="card"><table class="table"><thead><tr><th>Giọng</th><th>Mô tả</th><th>Voice ID API</th><th>Hệ số điểm</th></tr></thead><tbody>@foreach(var v in Model.Voices){<tr><td>@v.AvatarEmoji <b>@v.Name</b></td><td>@v.Description</td><td><code>@v.ApiVoiceId</code></td><td>x@v.PointRate</td></tr>}</tbody></table></div>
+  <div class="card" style="margin-top:18px"><h3>Giọng nói của bạn</h3><p class="muted">Muốn thêm giọng clone/giọng riêng cho tài khoản, vào mục <a href="/MyVoices">Giọng nói của bạn</a>. Giọng riêng chỉ hiện với tài khoản của anh.</p></div>
+</div>

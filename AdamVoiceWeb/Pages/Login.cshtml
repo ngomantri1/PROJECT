@@ -1,0 +1,22 @@
+@page
+@model AdamVoiceWeb.Pages.LoginModel
+@{
+    Layout = "_Layout";
+    ViewData["Title"] = "Đăng nhập";
+}
+<div class="login-page">
+  <form method="post" class="login-card">
+    <div class="brand brand-image auth-brand" style="margin-bottom:20px">
+        <img class="brand-logo-full auth-logo" src="~/images/logo-full-420.png" alt="Adam Voice" />
+    </div>
+    <h2>Đăng nhập</h2>
+    <p class="muted">Tài khoản demo: <b>demo</b> / <b>123456</b><br/>Admin: <b>admin</b> / <b>admin123</b></p>
+    @if (!string.IsNullOrWhiteSpace(Model.Error)) { <div class="alert err">@Model.Error</div> }
+    <label>Tên đăng nhập</label>
+    <input class="input" asp-for="Username" autocomplete="username" />
+    <label>Mật khẩu</label>
+    <input class="input" asp-for="Password" type="password" autocomplete="current-password" />
+    <button class="primary" style="width:100%;margin-top:8px">Đăng nhập</button>
+    <p class="muted" style="text-align:center">Chưa có tài khoản? <a style="color:#6d35e8" href="/Register">Đăng ký dùng thử</a></p>
+  </form>
+</div>

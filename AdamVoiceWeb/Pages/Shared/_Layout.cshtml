@@ -1,0 +1,80 @@
+@using System.Security.Claims
+@inject AdamVoiceWeb.Services.DataStore Store
+@{
+    var isAuth = User.Identity?.IsAuthenticated == true;
+    var username = User.Identity?.Name ?? "";
+    var db = Store.Read();
+    var currentUser = db.Users.FirstOrDefault(x => x.Username == username);
+    var points = currentUser?.PointBalance ?? 0;
+    var role = currentUser?.Role ?? "";
+    var page = ViewContext.RouteData.Values["page"]?.ToString() ?? "";
+    string Active(string p) => page == p ? "active" : "";
+}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>@ViewData["Title"] - ADAM VOICE</title>
+    <link rel="icon" type="image/x-icon" href="~/images/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="~/images/logo-icon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="~/images/logo-icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="~/images/logo-icon-180.png" />
+    <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
+</head>
+<body>
+@if (isAuth)
+{
+    <div class="mobile-overlay" id="mobileOverlay" onclick="toggleSidebar(false)"></div>
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="brand brand-image">
+                <img class="brand-logo-full" src="~/images/logo-full-420.png" alt="Adam Voice" />
+            </div>
+            <nav>
+                <a class="@Active("/Index")" href="/">🎙️ Tạo giọng nói</a>
+                <a class="@Active("/History")" href="/History">🕘 Lịch sử</a>
+                <a class="@Active("/Voices")" href="/Voices">🎧 Giọng nói</a>
+                <a class="@Active("/MyVoices")" href="/MyVoices">🎤 Giọng của bạn</a>
+                <a class="@Active("/Packages")" href="/Packages">🛍️ Mua gói</a>
+                <a class="@Active("/Transactions")" href="/Transactions">💳 Giao dịch</a>
+                @if (role == "Admin") { <a class="@Active("/Admin")" href="/Admin">⚙️ Admin</a> }
+                <a class="@Active("/Account")" href="/Account">👤 Tài khoản</a>
+                <a class="@Active("/Help")" href="/Help">❓ Hướng dẫn</a>
+                <a href="/Logout">🚪 Đăng xuất</a>
+            </nav>
+            <div class="ref-box"><b>Giới thiệu bạn bè</b><p>Nhận thêm điểm miễn phí khi bạn bè đăng ký.</p><button>Mời ngay</button></div>
+        </aside>
+        <main class="main">
+            <header class="topbar">
+                <div>
+                    <button class="mobile-menu-btn" type="button" onclick="toggleSidebar(true)">☰</button>
+                    <div class="mobile-brand">
+                        <img class="brand-logo-icon" src="~/images/logo-icon-64.png" alt="Adam Voice" />
+                        <span>ADAM VOICE</span>
+                    </div>
+                </div>
+                <div class="top-actions">
+                    <div class="point-card" data-point-balance-card title="@points.ToString("N0") điểm"><span>🪙</span><div>Số điểm của bạn<br><b data-point-balance>@points.ToString("N0") điểm</b></div></div>
+                    <a class="buy-btn" href="/Packages">🛒 Mua thêm điểm</a>
+                    <div class="userbox"><div class="avatar">👤</div><div><b>@username</b><br><span>@role</span></div><a href="/Logout">Đăng xuất</a></div>
+                </div>
+            </header>
+            @RenderBody()
+        </main>
+    </div>
+    <nav class="mobile-bottom-nav">
+        <a class="@Active("/Index")" href="/"><b>🎙️</b><span>Tạo giọng</span></a>
+        <a class="@Active("/History")" href="/History"><b>🕘</b><span>Lịch sử</span></a>
+        <a class="@Active("/Packages")" href="/Packages"><b>🛍️</b><span>Mua gói</span></a>
+        <a class="@Active("/Account")" href="/Account"><b>👤</b><span>Tài khoản</span></a>
+    </nav>
+}
+else
+{
+    @RenderBody()
+}
+<script src="~/js/app.js" asp-append-version="true"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

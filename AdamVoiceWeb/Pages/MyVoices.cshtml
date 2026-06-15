@@ -1,0 +1,95 @@
+@page
+@model AdamVoiceWeb.Pages.MyVoicesModel
+@{
+    ViewData["Title"] = "Giọng nói của bạn";
+}
+<div class="page">
+  <div class="page-head-row">
+    <div>
+      <h1>Giọng nói của bạn</h1>
+      <div class="breadcrumbs">Quản lý giọng riêng, giọng clone hoặc Voice ID riêng của anh.</div>
+    </div>
+    <button class="primary" type="button" onclick="document.getElementById('createVoiceBox').scrollIntoView({behavior:'smooth'});">+ Tạo giọng mới</button>
+  </div>
+
+  @if(!string.IsNullOrWhiteSpace(Model.Message)){<div class="alert ok">@Model.Message</div>}
+  @if(!string.IsNullOrWhiteSpace(Model.Error)){<div class="alert err">@Model.Error</div>}
+
+  <div class="card info-card">
+    <h3>Mục này dùng để làm gì?</h3>
+    <p><b>Giọng nói của bạn</b> là nơi khách có thể lưu giọng riêng để dùng trong web, ví dụ giọng thương hiệu, giọng đã clone trên ElevenLabs, hoặc giọng cá nhân do admin tạo hộ.</p>
+    <ul>
+      <li><b>Cách nhanh:</b> khách có sẵn Voice ID ElevenLabs thì nhập vào, hệ thống tạo giọng riêng và dùng được ngay.</li>
+      <li><b>Cách dịch vụ:</b> khách gửi yêu cầu tạo giọng, admin tạo/clone giọng bên ElevenLabs rồi duyệt và điền Voice ID.</li>
+      <li>Giọng riêng chỉ hiện với đúng tài khoản của khách đó, khách khác không nhìn thấy.</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h3>Danh sách giọng riêng</h3>
+    @if(!Model.MyVoices.Any())
+    {
+      <div class="empty-state">
+        <div class="empty-icon">🎙️</div>
+        <h3>Bạn chưa có giọng nói nào</h3>
+        <p>Tạo giọng đầu tiên để bắt đầu sử dụng AI Voice theo giọng riêng.</p>
+      </div>
+    }
+    else
+    {
+      <div class="responsive-table"><table class="table">
+        <thead><tr><th>Giọng</th><th>Voice ID</th><th>Rate</th><th>Trạng thái</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
+        <tbody>
+        @foreach(var v in Model.MyVoices)
+        {
+          <tr>
+            <td>@v.AvatarEmoji <b>@v.Name</b><br><span class="muted">@v.Description</span></td>
+            <td><code>@(string.IsNullOrWhiteSpace(v.ApiVoiceId) ? "Chờ admin điền" : v.ApiVoiceId)</code></td>
+            <td>x@v.PointRate</td>
+            <td><span class="status @v.Status.ToLower()">@Model.StatusText(v.Status)</span></td>
+            <td><span class="muted">@v.AdminNote</span></td>
+            <td>
+              <form method="post" asp-page-handler="Delete" onsubmit="return confirm('Ẩn giọng này khỏi tài khoản?')">
+                <input type="hidden" name="voiceId" value="@v.Id" />
+                <button class="mini-btn" type="submit">Ẩn</button>
+              </form>
+            </td>
+          </tr>
+        }
+        </tbody>
+      </table></div>
+    }
+  </div>
+
+  <div id="createVoiceBox" class="grid" style="margin-top:18px">
+    <div class="card">
+      <h3>Thêm nhanh bằng Voice ID</h3>
+      <p class="muted">Dùng khi anh/khách đã có sẵn Voice ID trên ElevenLabs. Giọng sẽ dùng được ngay trong trang tạo giọng.</p>
+      <form method="post" asp-page-handler="AddByVoiceId">
+        <label>Tên giọng</label>
+        <input class="input" name="name" placeholder="Ví dụ: Giọng shop Yến" required />
+        <label>Mô tả</label>
+        <input class="input" name="description" placeholder="Ví dụ: Nữ - bán hàng vui vẻ" />
+        <label>Voice ID ElevenLabs</label>
+        <input class="input" name="apiVoiceId" placeholder="Dán Voice ID vào đây" required />
+        <button class="primary" type="submit">Lưu giọng riêng</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Gửi yêu cầu tạo/clone giọng</h3>
+      <p class="muted">Dùng khi khách muốn anh tạo giọng riêng hộ. Admin sẽ xử lý, điền Voice ID và duyệt trong trang Admin.</p>
+      <form method="post" asp-page-handler="CreateRequest">
+        <label>Tên giọng muốn tạo</label>
+        <input class="input" name="name" placeholder="Ví dụ: Giọng nam quảng cáo Adam style" required />
+        <label>Mô tả yêu cầu</label>
+        <textarea class="input" name="userNote" rows="5" placeholder="Nhập yêu cầu: nam/nữ, vui vẻ, trầm ấm, bán hàng, link mẫu giọng, ghi chú..." required></textarea>
+        <button class="primary" type="submit">Gửi yêu cầu cho admin</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card warn-soft" style="margin-top:18px">
+    <b>Lưu ý pháp lý:</b> Chỉ tạo hoặc sử dụng giọng riêng khi có quyền hợp lệ với giọng đó. Không nên clone giọng người thật, người nổi tiếng hoặc người khác khi chưa được phép.
+  </div>
+</div>
