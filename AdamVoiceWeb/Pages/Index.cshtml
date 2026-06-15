@@ -3,59 +3,53 @@
 @{
     ViewData["Title"] = "Tạo giọng nói";
 }
-<div class="page has-sticky-submit">
+<div class="page has-sticky-submit voice-page">
   <div id="indexMessageStack">
     @if(!string.IsNullOrWhiteSpace(Model.Success)){<div class="alert ok">@Model.Success</div>}
     @if(!string.IsNullOrWhiteSpace(Model.Error)){<div class="alert err">@Model.Error</div>}
     @if(Model.CurrentBalance <= Model.LowPointWarning){<div class="alert warn">Điểm của anh sắp hết: <b>@Model.CurrentBalance.ToString("N0") điểm</b>. Nên mua thêm điểm để không bị gián đoạn.</div>}
   </div>
-  <div class="grid">
-    <form method="post" class="card" id="voiceForm" onsubmit="return confirmCreateVoice()" data-async-generate="true">
+
+  <form method="post" class="composer-grid" id="voiceForm" onsubmit="return confirmCreateVoice()" data-async-generate="true">
+    <div class="voice-inputs-hidden" aria-hidden="true">
+      @foreach (var v in Model.Voices)
+      {
+        <input
+          type="radio"
+          class="voice-hidden-radio"
+          name="VoiceId"
+          value="@v.Id"
+          data-rate="@v.PointRate"
+          data-name="@v.Name"
+          data-description="@v.Description"
+          data-avatar="@v.AvatarEmoji"
+          data-is-custom="@(v.OwnerUserId.HasValue && v.OwnerUserId>0 ? "true" : "false")"
+          @(v.Id==Model.VoiceId ? "checked" : "") />
+      }
+    </div>
+
+    <section class="card composer-main">
+      <div class="composer-mobile-toolbar" aria-label="Thao tác nhanh trên điện thoại">
+        <button type="button" class="mobile-quick-btn mobile-quick-menu" onclick="toggleSidebar(true)" aria-label="Mở menu">☰</button>
+        <button type="button" class="mobile-quick-btn" data-mobile-panel-button="voice" onclick="toggleMobileComposerPanel('voice')">Giọng nói</button>
+        <button type="button" class="mobile-quick-btn" data-mobile-panel-button="history" onclick="toggleMobileComposerPanel('history')" title="Lịch sử gần đây">Lịch sử</button>
+        <button type="button" class="mobile-quick-btn fill" onclick="if(confirmCreateVoice()) document.getElementById('voiceForm').requestSubmit();">Tạo giọng</button>
+      </div>
       <div class="section-head">
-        <div class="section-title">1. Nhập nội dung cần tạo giọng</div>
+        <div class="section-title">Nhập nội dung cần tạo giọng</div>
         <button type="button" class="text-reset-btn" onclick="clearText()" aria-label="Xóa toàn bộ nội dung">
           <span class="text-reset-icon" aria-hidden="true">×</span>
           <span>Xóa hết</span>
         </button>
       </div>
-      <textarea id="Text" class="textarea" asp-for="Text" maxlength="8000" placeholder="Nhập nội dung cần tạo giọng..."></textarea>
-      <div class="draft-note">Nội dung đang được tự lưu trên thiết bị này.</div>
-      <label class="check-row"><input asp-for="AutoNormalize" type="checkbox" checked /> Tự tối ưu văn bản tiếng Việt trước khi tạo giọng</label>
+      <textarea id="Text" class="textarea composer-textarea" asp-for="Text" maxlength="8000" placeholder="Nhập nội dung cần tạo giọng..."></textarea>
+      <div class="composer-meta-row">
+        <label class="check-row"><input asp-for="AutoNormalize" type="checkbox" checked /> Tự tối ưu văn bản tiếng Việt trước khi tạo giọng</label>
+        <div class="meta">Số ký tự: <b id="charCount">0</b> / 8.000 ký tự</div>
+      </div>
       <details class="normalize-box"><summary>Xem ví dụ tối ưu văn bản</summary><p>Ví dụ: <b>40.000đ/kg</b> → <b>40 nghìn đồng một ki lô gam</b>, <b>ship</b> → <b>giao hàng</b>, <b>22h</b> → <b>22 giờ</b>.</p></details>
-      <div class="meta">Số ký tự: <b id="charCount">0</b> / 8.000 ký tự</div>
 
-      <div class="section-title">2. Chọn giọng nói <a href="/MyVoices" style="float:right;color:#6d35e8;font-size:14px">+ Giọng của bạn</a></div>
-      <div class="voice-grid">
-        @foreach(var v in Model.Voices)
-        {
-          <label class="voice-card">
-            <input type="radio" name="VoiceId" value="@v.Id" data-rate="@v.PointRate" @(v.Id==Model.VoiceId ? "checked" : "") />
-            <div class="voice-avatar">@v.AvatarEmoji</div>
-            <b>@v.Name</b><span>@v.Description</span>@if(v.OwnerUserId.HasValue && v.OwnerUserId>0){<small class="voice-tag">Giọng riêng</small>}
-          </label>
-        }
-      </div>
-
-      <div class="section-title">3. Tùy chỉnh giọng nói</div>
-      <div class="settings">
-        <div class="setting"><label>Tốc độ đọc <b id="SpeedValue">@Model.Speed</b></label><input id="Speed" asp-for="Speed" type="range" min="0.7" max="1.2" step="0.01" oninput="SpeedValue.textContent=this.value" /></div>
-        <div class="setting"><label>Độ ổn định <b id="StabilityValue">@Model.Stability</b></label><input id="Stability" asp-for="Stability" type="range" min="0" max="1" step="0.01" oninput="StabilityValue.textContent=this.value" /></div>
-        <div class="setting"><label>Độ giống giọng <b id="SimilarityValue">@Model.Similarity</b></label><input id="Similarity" asp-for="Similarity" type="range" min="0" max="1" step="0.01" oninput="SimilarityValue.textContent=this.value" /></div>
-        <div class="setting"><label>Phong cách <b id="StyleValue">@Model.Style</b></label><input id="Style" asp-for="Style" type="range" min="0" max="1" step="0.01" oninput="StyleValue.textContent=this.value" /></div>
-      </div>
-      <div class="presets">
-        <button type="button" class="preset active" data-preset="normal" onclick="setPreset('normal')">Bình thường</button>
-        <button type="button" class="preset" data-preset="funny" onclick="setPreset('funny')">Hài hước</button>
-        <button type="button" class="preset" data-preset="ad" onclick="setPreset('ad')">Quảng cáo</button>
-        <button type="button" class="preset" data-preset="story" onclick="setPreset('story')">Truyền cảm</button>
-        <button type="button" class="preset" data-preset="news" onclick="setPreset('news')">Tin tức</button>
-        <button type="button" class="preset" data-preset="trend" onclick="setPreset('trend')">TikTok Trend</button>
-      </div>
-      <div class="cost-box">
-        <div>Điểm sẽ trừ<br><b id="pointCost">0 điểm</b> <span class="muted">= ký tự × hệ số giọng</span></div>
-        <div class="cost-ok">✅ Nghe lại và tải lại không bị trừ điểm</div>
-      </div>
-      <div class="actions compact-actions">
+      <div class="actions compact-actions composer-actions">
         <button type="button" class="secondary" onclick="alert('Nghe thử 5 giây là chức năng demo giao diện. Khi tạo xong, anh nghe file thật ở lịch sử.')">▷ Nghe thử 5s</button>
         <button id="mainCreateButton" class="primary" type="submit">🎙️ Tạo giọng nói</button>
       </div>
@@ -64,21 +58,60 @@
         <button type="button" data-create-mobile onclick="if(confirmCreateVoice()) document.getElementById('voiceForm').requestSubmit();">Tạo giọng</button>
       </div>
       <div class="note">Lưu ý: hệ thống chỉ trừ điểm khi tạo file mới. Nghe lại file trong lịch sử không trừ điểm.</div>
-    </form>
+    </section>
 
-    <aside class="right-panel">
-      <div class="card">
-        <div class="section-title">🎁 Mua gói credits <a href="/Packages" style="float:right;color:#6d35e8;font-size:14px">Xem tất cả</a></div>
-        @foreach(var p in Model.Packages)
-        {
-          <div class="package-card @(p.IsPopular?"popular":"")">
-            <div><b>@p.Name</b> @if(p.IsPopular){<span class="badge">Phổ biến</span>}</div>
-            <div class="package-row"><div class="package-price">@p.PriceVnd.ToString("N0")đ</div><div>@p.Points.ToString("N0") credits</div><a class="mini-btn @(p.IsPopular?"fill":"")" href="/Packages">Mua ngay</a></div>
-          </div>
-        }
+    <aside class="card composer-side" id="composerSidePanel">
+      <div class="composer-side-mobile-head">
+        <b id="composerSideMobileTitle">Giọng nói</b>
+        <button type="button" class="mini-btn" onclick="closeMobileComposerPanel()">Đóng</button>
       </div>
-      <div class="card" style="margin-top:18px">
-        <div class="section-title">🕘 Lịch sử gần đây <a href="/History" style="float:right;color:#6d35e8;font-size:14px">Xem tất cả</a></div>
+      <div class="composer-tabs" role="tablist" aria-label="Bảng điều khiển">
+        <button type="button" class="composer-tab active" data-panel-tab="voice" onclick="switchComposerPanel('voice')">Giọng nói</button>
+        <button type="button" class="composer-tab" data-panel-tab="history" onclick="switchComposerPanel('history')">Lịch sử gần đây</button>
+      </div>
+
+      <div class="composer-panel active" data-panel="voice">
+        <div class="voice-panel-head">
+          <div>
+            <div class="section-title">Giọng đang chọn</div>
+            <div class="muted">Chọn nhanh trong popup và dùng lại ngay.</div>
+          </div>
+          <button type="button" class="mini-btn fill" onclick="openVoicePicker()">Chọn giọng nói</button>
+        </div>
+
+        <div class="selected-voice-card" id="selectedVoiceCard">
+          <div class="selected-voice-avatar" id="selectedVoiceAvatar">🎙️</div>
+          <div class="selected-voice-info">
+            <b id="selectedVoiceName">Chưa chọn giọng</b>
+            <span id="selectedVoiceDescription" class="muted">Hãy mở popup để chọn giọng phù hợp.</span>
+            <div class="selected-voice-meta">
+              <span class="voice-chip" id="selectedVoiceRate">x1 điểm</span>
+              <span class="voice-chip" id="selectedVoiceType">Giọng hệ thống</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="voice-panel-row">
+          <div class="section-title">Tùy chỉnh giọng nói</div>
+        </div>
+        <div class="settings side-settings">
+          <div class="setting"><label>Tốc độ đọc <b id="SpeedValue">@Model.Speed</b></label><input id="Speed" asp-for="Speed" type="range" min="0.7" max="1.2" step="0.01" oninput="SpeedValue.textContent=this.value" /></div>
+          <div class="setting"><label>Độ ổn định <b id="StabilityValue">@Model.Stability</b></label><input id="Stability" asp-for="Stability" type="range" min="0" max="1" step="0.01" oninput="StabilityValue.textContent=this.value" /></div>
+          <div class="setting"><label>Độ giống giọng <b id="SimilarityValue">@Model.Similarity</b></label><input id="Similarity" asp-for="Similarity" type="range" min="0" max="1" step="0.01" oninput="SimilarityValue.textContent=this.value" /></div>
+          <div class="setting"><label>Phong cách <b id="StyleValue">@Model.Style</b></label><input id="Style" asp-for="Style" type="range" min="0" max="1" step="0.01" oninput="StyleValue.textContent=this.value" /></div>
+        </div>
+        <div class="presets side-presets">
+          <button type="button" class="preset active" data-preset="normal" onclick="setPreset('normal')">Bình thường</button>
+          <button type="button" class="preset" data-preset="funny" onclick="setPreset('funny')">Hài hước</button>
+          <button type="button" class="preset" data-preset="ad" onclick="setPreset('ad')">Quảng cáo</button>
+          <button type="button" class="preset" data-preset="story" onclick="setPreset('story')">Truyền cảm</button>
+          <button type="button" class="preset" data-preset="news" onclick="setPreset('news')">Tin tức</button>
+          <button type="button" class="preset" data-preset="trend" onclick="setPreset('trend')">TikTok Trend</button>
+        </div>
+      </div>
+
+      <div class="composer-panel" data-panel="history">
+        <div class="section-title">Lịch sử gần đây <a href="/History" style="float:right;color:#6d35e8;font-size:14px">Xem tất cả</a></div>
         <div id="recentHistoryList">
           @foreach(var j in Model.RecentJobs)
           {
@@ -104,5 +137,69 @@
         </div>
       </div>
     </aside>
+  </form>
+  <div class="composer-mobile-sheet-backdrop" id="composerMobileSheetBackdrop" onclick="closeMobileComposerPanel()"></div>
+
+  <div class="voice-modal-backdrop" id="voicePickerModal" hidden>
+    <div class="voice-modal" role="dialog" aria-modal="true" aria-labelledby="voicePickerTitle">
+      <div class="voice-modal-head">
+        <div>
+          <h2 id="voicePickerTitle">Chọn giọng nói</h2>
+          <p class="muted">Tìm kiếm, nghe thử và chọn giọng phù hợp cho nội dung của anh.</p>
+        </div>
+        <button type="button" class="voice-modal-close" onclick="closeVoicePicker()" aria-label="Đóng popup">×</button>
+      </div>
+
+      <div class="voice-modal-toolbar">
+        <div class="voice-picker-tabs" role="tablist" aria-label="Bộ lọc giọng">
+          <button type="button" class="voice-picker-tab active" data-voice-filter="all" onclick="setVoicePickerFilter('all')">Tất cả</button>
+          <button type="button" class="voice-picker-tab" data-voice-filter="mine" onclick="setVoicePickerFilter('mine')">Giọng của bạn</button>
+          <button type="button" class="voice-picker-tab" data-voice-filter="recent" onclick="setVoicePickerFilter('recent')">Gần đây</button>
+        </div>
+        <input type="search" class="input voice-search-input" id="voiceSearchInput" placeholder="Tìm theo tên hoặc mô tả giọng..." oninput="filterVoicePickerList()" />
+      </div>
+
+      <div class="voice-picker-list" id="voicePickerList">
+        @foreach (var v in Model.Voices)
+        {
+          <div
+            class="voice-picker-item"
+            data-voice-id="@v.Id"
+            data-voice-name="@v.Name"
+            data-voice-description="@v.Description"
+            data-voice-avatar="@v.AvatarEmoji"
+            data-voice-rate="@v.PointRate"
+            data-voice-custom="@(v.OwnerUserId.HasValue && v.OwnerUserId > 0 ? "true" : "false")"
+            role="button"
+            tabindex="0"
+            onclick="selectVoiceFromPicker(@v.Id)"
+            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectVoiceFromPicker(@v.Id);}">
+            <div class="voice-picker-preview">
+              <button type="button" class="voice-preview-btn" onclick="event.stopPropagation(); previewVoice(@v.Id, this)" aria-label="Nghe thử giọng @v.Name">▶</button>
+            </div>
+            <div class="voice-picker-content">
+              <div class="voice-picker-title-row">
+                <b>@v.Name</b>
+                <span class="voice-picker-check" data-voice-check="@v.Id">✓</span>
+              </div>
+              <p>@v.Description</p>
+              <div class="voice-picker-tags">
+                <span class="voice-pill">x@v.PointRate điểm</span>
+                @if (v.OwnerUserId.HasValue && v.OwnerUserId > 0)
+                {
+                  <span class="voice-pill custom">Giọng của bạn</span>
+                }
+                else
+                {
+                  <span class="voice-pill">Giọng hệ thống</span>
+                }
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="voice-picker-empty" id="voicePickerEmpty" hidden>Không tìm thấy giọng phù hợp với bộ lọc hiện tại.</div>
+    </div>
   </div>
 </div>

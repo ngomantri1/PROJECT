@@ -4,22 +4,30 @@ function updateCharacterCount() {
   const cost = document.getElementById("pointCost");
   const sticky = document.getElementById("stickyPointCost");
   const rateEl = document.querySelector('input[name="VoiceId"]:checked');
-  if (!t || !c || !cost) return;
+  if (!t || !c) return;
   const len = t.value.trim().length;
   const rate = rateEl ? parseFloat(rateEl.dataset.rate) : 1;
   const point = Math.ceil(len * rate);
   c.textContent = len.toLocaleString("vi-VN");
   const label = `${point.toLocaleString("vi-VN")} điểm`;
-  cost.textContent = label;
+  if (cost) cost.textContent = label;
   if (sticky) sticky.textContent = label;
 }
 
 const voiceStorageKey = "adamvoice.selectedVoiceId";
 const presetStorageKey = "adamvoice.selectedPreset";
 const draftTextStorageKey = "adamvoice.draftText";
+const recentVoiceStorageKey = "adamvoice.recentVoiceIds";
 let sharedHistoryAudio;
 let activeHistoryButton = null;
+let previewAudio;
+let activePreviewButton = null;
+let currentVoicePickerFilter = "all";
 let isGeneratingVoice = false;
+
+function isMobileComposerViewport() {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
 
 document.addEventListener("input", (e) => {
   if (e.target.id === "Text") {
@@ -32,15 +40,26 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   if (e.target.name === "VoiceId") {
     localStorage.setItem(voiceStorageKey, e.target.value);
+    rememberRecentVoice(e.target.value);
+    updateSelectedVoiceCard();
+    refreshVoicePickerSelection();
     updateCharacterCount();
   }
 });
 
 window.addEventListener("load", () => {
+  closeVoicePicker();
   restoreDraftText();
   restoreVoiceSelection();
   restorePresetSelection();
+  const selectedVoice = getSelectedVoiceRadio();
+  if (selectedVoice) rememberRecentVoice(selectedVoice.value);
   bindVoiceFormAsync();
+  updateSelectedVoiceCard();
+  refreshVoicePickerSelection();
+  filterVoicePickerList();
+  switchComposerPanel("voice");
+  closeMobileComposerPanel();
   updateCharacterCount();
 });
 
@@ -106,6 +125,249 @@ function clearText() {
   t.focus();
 }
 
+function getSelectedVoiceRadio() {
+  return document.querySelector('input[name="VoiceId"]:checked');
+}
+
+function getSelectedVoiceData() {
+  const radio = getSelectedVoiceRadio();
+  if (!radio) return null;
+  return {
+    id: radio.value,
+    name: radio.dataset.name || "Chưa chọn giọng",
+    description: radio.dataset.description || "",
+    avatar: radio.dataset.avatar || "🎙️",
+    rate: radio.dataset.rate || "1",
+    isCustom: radio.dataset.isCustom === "true"
+  };
+}
+
+function updateSelectedVoiceCard() {
+  const voice = getSelectedVoiceData();
+  const avatar = document.getElementById("selectedVoiceAvatar");
+  const name = document.getElementById("selectedVoiceName");
+  const desc = document.getElementById("selectedVoiceDescription");
+  const rate = document.getElementById("selectedVoiceRate");
+  const type = document.getElementById("selectedVoiceType");
+  if (!avatar || !name || !desc || !rate || !type) return;
+  if (!voice) {
+    avatar.textContent = "🎙️";
+    name.textContent = "Chưa chọn giọng";
+    desc.textContent = "Hãy mở popup để chọn giọng phù hợp.";
+    rate.textContent = "x1 điểm";
+    type.textContent = "Giọng hệ thống";
+    return;
+  }
+  avatar.textContent = voice.avatar;
+  name.textContent = voice.name;
+  desc.textContent = voice.description || "Giọng đã sẵn sàng để tạo audio.";
+  rate.textContent = `x${voice.rate} điểm`;
+  type.textContent = voice.isCustom ? "Giọng của bạn" : "Giọng hệ thống";
+}
+
+function rememberRecentVoice(voiceId) {
+  if (!voiceId) return;
+  const recent = getRecentVoiceIds().filter((x) => x !== String(voiceId));
+  recent.unshift(String(voiceId));
+  localStorage.setItem(recentVoiceStorageKey, JSON.stringify(recent.slice(0, 8)));
+}
+
+function getRecentVoiceIds() {
+  try {
+    const raw = localStorage.getItem(recentVoiceStorageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function openVoicePicker() {
+  const modal = document.getElementById("voicePickerModal");
+  if (!modal) return;
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  filterVoicePickerList();
+  const search = document.getElementById("voiceSearchInput");
+  if (search) search.focus();
+}
+
+function closeVoicePicker() {
+  const modal = document.getElementById("voicePickerModal");
+  if (!modal) return;
+  modal.hidden = true;
+  document.body.classList.remove("modal-open");
+  stopPreviewAudio();
+}
+
+function setVoicePickerFilter(filter) {
+  currentVoicePickerFilter = filter;
+  document.querySelectorAll(".voice-picker-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.voiceFilter === filter);
+  });
+  filterVoicePickerList();
+}
+
+function filterVoicePickerList() {
+  const search = document.getElementById("voiceSearchInput");
+  const keyword = (search?.value || "").trim().toLowerCase();
+  const recentIds = getRecentVoiceIds();
+  let visibleCount = 0;
+  document.querySelectorAll(".voice-picker-item").forEach((item) => {
+    const id = item.dataset.voiceId || "";
+    const name = (item.dataset.voiceName || "").toLowerCase();
+    const desc = (item.dataset.voiceDescription || "").toLowerCase();
+    const isCustom = item.dataset.voiceCustom === "true";
+    const matchKeyword = !keyword || name.includes(keyword) || desc.includes(keyword);
+    let matchFilter = true;
+    if (currentVoicePickerFilter === "mine") matchFilter = isCustom;
+    if (currentVoicePickerFilter === "recent") matchFilter = recentIds.includes(id);
+    item.hidden = !(matchKeyword && matchFilter);
+    item.style.order = currentVoicePickerFilter === "recent" ? String(Math.max(0, recentIds.indexOf(id))) : "0";
+    if (!item.hidden) visibleCount++;
+  });
+  const empty = document.getElementById("voicePickerEmpty");
+  if (empty) empty.hidden = visibleCount > 0;
+}
+
+function refreshVoicePickerSelection() {
+  const selectedId = getSelectedVoiceRadio()?.value;
+  document.querySelectorAll(".voice-picker-item").forEach((item) => {
+    const selected = item.dataset.voiceId === selectedId;
+    item.classList.toggle("selected", selected);
+  });
+  document.querySelectorAll("[data-voice-check]").forEach((el) => {
+    el.classList.toggle("active", el.dataset.voiceCheck === selectedId);
+  });
+}
+
+function selectVoiceFromPicker(voiceId) {
+  const radio = document.querySelector(`input[name="VoiceId"][value="${voiceId}"]`);
+  if (!radio) return;
+  radio.checked = true;
+  localStorage.setItem(voiceStorageKey, radio.value);
+  rememberRecentVoice(radio.value);
+  updateSelectedVoiceCard();
+  refreshVoicePickerSelection();
+  filterVoicePickerList();
+  updateCharacterCount();
+  closeVoicePicker();
+}
+
+function getPreviewAudio() {
+  if (previewAudio) return previewAudio;
+  previewAudio = new Audio();
+  previewAudio.addEventListener("ended", () => setPreviewButtonState(activePreviewButton, false));
+  previewAudio.addEventListener("pause", () => {
+    if (!previewAudio.ended) setPreviewButtonState(activePreviewButton, false);
+  });
+  return previewAudio;
+}
+
+async function previewVoice(voiceId, button) {
+  if (!button) return;
+  const audio = getPreviewAudio();
+  const sameVoice = button.dataset.previewVoiceId === String(voiceId);
+  if (activePreviewButton === button && !audio.paused && sameVoice) {
+    stopPreviewAudio();
+    return;
+  }
+  try {
+    setPreviewButtonLoading(button, true);
+    stopSharedHistoryAudio();
+    if (activePreviewButton && activePreviewButton !== button) setPreviewButtonState(activePreviewButton, false);
+    const res = await fetch(`${window.location.pathname}?handler=PreviewVoice&voiceId=${voiceId}`);
+    const data = await res.json();
+    if (!data.ok || !data.audioUrl) {
+      alert(data.message || "Không thể nghe thử giọng.");
+      return;
+    }
+    activePreviewButton = button;
+    button.dataset.previewVoiceId = String(voiceId);
+    audio.src = data.audioUrl;
+    await audio.play();
+    setPreviewButtonState(button, true);
+  } catch {
+    alert("Không thể nghe thử giọng lúc này.");
+  } finally {
+    setPreviewButtonLoading(button, false);
+  }
+}
+
+function stopPreviewAudio() {
+  if (previewAudio) {
+    previewAudio.pause();
+    previewAudio.currentTime = 0;
+  }
+  setPreviewButtonState(activePreviewButton, false);
+  activePreviewButton = null;
+}
+
+function setPreviewButtonLoading(button, isLoading) {
+  if (!button) return;
+  button.disabled = isLoading;
+  button.classList.toggle("is-loading", isLoading);
+  if (isLoading) button.innerHTML = '<span class="btn-spinner preview-spinner" aria-hidden="true"></span>';
+  else if (!button.classList.contains("is-playing")) button.textContent = "▶";
+}
+
+function setPreviewButtonState(button, isPlaying) {
+  if (!button) return;
+  button.classList.toggle("is-playing", isPlaying);
+  if (button.classList.contains("is-loading")) return;
+  button.textContent = isPlaying ? "❚❚" : "▶";
+}
+
+function switchComposerPanel(panel) {
+  document.querySelectorAll(".composer-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.panelTab === panel);
+  });
+  document.querySelectorAll(".composer-panel").forEach((content) => {
+    content.classList.toggle("active", content.dataset.panel === panel);
+  });
+  syncMobileComposerPanel(panel);
+}
+
+function syncMobileComposerPanel(panel) {
+  document.querySelectorAll("[data-mobile-panel-button]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.mobilePanelButton === panel);
+  });
+  const title = document.getElementById("composerSideMobileTitle");
+  if (title) title.textContent = panel === "history" ? "Lịch sử gần đây" : "Giọng nói";
+  const side = document.getElementById("composerSidePanel");
+  if (side) side.dataset.activePanel = panel;
+}
+
+function openMobileComposerPanel(panel) {
+  switchComposerPanel(panel);
+  const side = document.getElementById("composerSidePanel");
+  if (!side || !isMobileComposerViewport()) return;
+  document.body.classList.add("composer-sheet-open");
+  document.getElementById("composerMobileSheetBackdrop")?.classList.add("is-visible");
+  side.classList.add("is-mobile-visible");
+}
+
+function closeMobileComposerPanel() {
+  const side = document.getElementById("composerSidePanel");
+  if (!side) return;
+  document.body.classList.remove("composer-sheet-open");
+  document.getElementById("composerMobileSheetBackdrop")?.classList.remove("is-visible");
+  side.classList.remove("is-mobile-visible");
+  document.querySelectorAll("[data-mobile-panel-button]").forEach((button) => {
+    button.classList.remove("active");
+  });
+}
+
+function toggleMobileComposerPanel(panel) {
+  const side = document.getElementById("composerSidePanel");
+  const isSamePanel = side?.dataset.activePanel === panel && side.classList.contains("is-mobile-visible");
+  if (isSamePanel) {
+    closeMobileComposerPanel();
+    return;
+  }
+  openMobileComposerPanel(panel);
+}
+
 function bindVoiceFormAsync() {
   const form = document.getElementById("voiceForm");
   if (!form || form.dataset.asyncBound === "true") return;
@@ -138,11 +400,13 @@ async function submitVoiceFormAsync(form) {
     updatePointBalance(data.currentBalance);
     if (data.ok) {
       renderRecentHistoryList(data.recentJobs || []);
+      if (isMobileComposerViewport()) openMobileComposerPanel("history");
+      else switchComposerPanel("history");
       return;
     }
     if (pendingItem) pendingItem.remove();
     ensureRecentHistoryEmptyState();
-  } catch (err) {
+  } catch {
     if (pendingItem) pendingItem.remove();
     ensureRecentHistoryEmptyState();
     renderIndexMessages({
@@ -177,8 +441,7 @@ function insertPendingHistoryItem() {
   if (!container) return null;
   const empty = container.querySelector(".history-empty");
   if (empty) empty.remove();
-  const rateEl = document.querySelector('input[name="VoiceId"]:checked');
-  const voiceName = rateEl ? rateEl.closest(".voice-card")?.querySelector("b")?.innerText : "Giọng đã chọn";
+  const voice = getSelectedVoiceData();
   const text = document.getElementById("Text")?.value?.trim() || "Đang chuẩn bị nội dung...";
   const preview = text.length > 30 ? `${text.slice(0, 30)}...` : text;
   const count = text.length.toLocaleString("vi-VN");
@@ -190,10 +453,11 @@ function insertPendingHistoryItem() {
       <span class="history-eq"><span></span><span></span><span></span></span>
     </div>
     <div class="history-main">
-      <b>${escapeHtml(preview || "Đang tạo giọng mới...")}</b><br>
-      <span class="muted">${escapeHtml(voiceName || "Giọng đã chọn")} • ${count} ký tự</span>
+      <b>${escapeHtml(preview || "Đang tạo giọng mới...")}</b><span class="muted history-subline">${escapeHtml(voice?.name || "Giọng đã chọn")} • ${count} ký tự</span>
     </div>
-    <div class="muted history-time">Đang tạo...</div>
+    <div class="history-side">
+      <div class="muted history-time">Đang tạo...</div>
+    </div>
     <div class="history-audio-bar history-audio-bar-pending">
       <span class="history-pending-status">Đang tạo giọng...</span>
     </div>
@@ -300,6 +564,7 @@ function toggleHistoryAudio(button) {
   if (!button) return;
   const url = button.dataset.audioUrl;
   if (!url) return;
+  stopPreviewAudio();
   const audio = getSharedHistoryAudio();
   if (activeHistoryButton && activeHistoryButton !== button) resetHistoryItem(activeHistoryButton, true);
   openHistoryItem(button);
@@ -428,7 +693,28 @@ function toggleSidebar(show) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") toggleSidebar(false);
+  if (e.key === "Escape") {
+    const modal = document.getElementById("voicePickerModal");
+    if (modal && !modal.hidden) {
+      closeVoicePicker();
+      return;
+    }
+    const side = document.getElementById("composerSidePanel");
+    if (side && side.classList.contains("is-mobile-visible")) {
+      closeMobileComposerPanel();
+      return;
+    }
+    toggleSidebar(false);
+  }
+});
+
+document.addEventListener("click", (e) => {
+  const modal = document.getElementById("voicePickerModal");
+  if (modal && !modal.hidden && e.target === modal) closeVoicePicker();
+});
+
+window.addEventListener("resize", () => {
+  if (!isMobileComposerViewport()) closeMobileComposerPanel();
 });
 
 function copyText(text) {
@@ -445,15 +731,14 @@ function copyText(text) {
 
 function confirmCreateVoice() {
   const text = document.getElementById("Text");
-  const rateEl = document.querySelector('input[name="VoiceId"]:checked');
-  const voiceName = rateEl ? rateEl.closest(".voice-card")?.querySelector("b")?.innerText : "giọng đã chọn";
+  const voice = getSelectedVoiceData();
   if (!text) return true;
   const len = text.value.trim().length;
   if (len <= 0) {
     alert("Anh chưa nhập nội dung.");
     return false;
   }
-  const rate = rateEl ? parseFloat(rateEl.dataset.rate) : 1;
+  const rate = voice ? parseFloat(voice.rate) : 1;
   const point = Math.ceil(len * rate);
-  return confirm(`Bài này có ${len.toLocaleString("vi-VN")} ký tự.\nGiọng: ${voiceName}.\nHệ thống sẽ trừ ${point.toLocaleString("vi-VN")} điểm.\n\nNghe lại/tải lại file đã tạo sẽ không trừ điểm.\nAnh đồng ý tạo giọng không?`);
+  return confirm(`Bài này có ${len.toLocaleString("vi-VN")} ký tự.\nGiọng: ${voice?.name || "giọng đã chọn"}.\nHệ thống sẽ trừ ${point.toLocaleString("vi-VN")} điểm.\n\nNghe lại/tải lại file đã tạo sẽ không trừ điểm.\nAnh đồng ý tạo giọng không?`);
 }

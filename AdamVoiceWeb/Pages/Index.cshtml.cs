@@ -73,6 +73,26 @@ public class IndexModel : PageModel
         });
     }
 
+    public async Task<IActionResult> OnGetPreviewVoiceAsync(int voiceId)
+    {
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var db = _store.Read();
+        var voice = db.Voices.FirstOrDefault(x => x.Id == voiceId && x.IsActive && x.Status == "Approved" && (!x.OwnerUserId.HasValue || x.OwnerUserId == 0 || x.OwnerUserId == userId));
+        if (voice == null)
+            return new JsonResult(new { ok = false, message = "Giọng nói không hợp lệ." });
+
+        try
+        {
+            const string previewText = "Xin chào, đây là giọng đọc thử để anh kiểm tra độ phù hợp trước khi tạo audio.";
+            var audioUrl = await _tts.GenerateSpeechAsync(previewText, voice, 0.5m, 0.8m, 0.35m, 1.0m);
+            return new JsonResult(new { ok = true, audioUrl });
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { ok = false, message = "Nghe thử giọng lỗi: " + ex.Message });
+        }
+    }
+
     private async Task<GenerateVoiceOutcome> GenerateVoiceCoreAsync()
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
