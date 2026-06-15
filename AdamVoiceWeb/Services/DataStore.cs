@@ -94,7 +94,7 @@ public class DataStore
             PasswordHash = HashPassword("123456")
         });
 
-        db.Voices.Add(new VoiceOption { Id = db.NextVoiceId++, Name = "Adam", Description = "Nam - Trầm ấm", ApiVoiceId = "8VXsCLxU7Pn55ADXQc6sAb", PointRate = 1m, AvatarEmoji = "👨🏻" });
+        db.Voices.Add(new VoiceOption { Id = db.NextVoiceId++, Name = "Adam", Description = "Nam - Trầm ấm", ApiVoiceId = "pNInz6obpgDQGcFmaJgB", PointRate = 1m, AvatarEmoji = "👨🏻" });
         db.Voices.Add(new VoiceOption { Id = db.NextVoiceId++, Name = "Antoni", Description = "Nam - Truyền cảm", ApiVoiceId = "ErXwobaYiN019PkySvjV", PointRate = 1m, AvatarEmoji = "👨" });
         db.Voices.Add(new VoiceOption { Id = db.NextVoiceId++, Name = "Josh", Description = "Nam - Ấm áp", ApiVoiceId = "TxGEqnHWrfWFTfGW9XjX", PointRate = 1m, AvatarEmoji = "🧔🏻" });
         db.Voices.Add(new VoiceOption { Id = db.NextVoiceId++, Name = "Rachel", Description = "Nữ - Ngọt ngào", ApiVoiceId = "21m00Tcm4TlvDq8ikWAM", PointRate = 1m, AvatarEmoji = "👩🏻" });

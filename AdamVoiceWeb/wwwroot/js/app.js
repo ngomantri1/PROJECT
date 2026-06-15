@@ -332,8 +332,6 @@ function syncMobileComposerPanel(panel) {
   document.querySelectorAll("[data-mobile-panel-button]").forEach((button) => {
     button.classList.toggle("active", button.dataset.mobilePanelButton === panel);
   });
-  const title = document.getElementById("composerSideMobileTitle");
-  if (title) title.textContent = panel === "history" ? "Lịch sử gần đây" : "Giọng nói";
   const side = document.getElementById("composerSidePanel");
   if (side) side.dataset.activePanel = panel;
 }

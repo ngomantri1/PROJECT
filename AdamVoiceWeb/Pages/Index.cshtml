@@ -61,25 +61,13 @@
     </section>
 
     <aside class="card composer-side" id="composerSidePanel">
-      <div class="composer-side-mobile-head">
-        <b id="composerSideMobileTitle">Giọng nói</b>
-        <button type="button" class="mini-btn" onclick="closeMobileComposerPanel()">Đóng</button>
-      </div>
       <div class="composer-tabs" role="tablist" aria-label="Bảng điều khiển">
         <button type="button" class="composer-tab active" data-panel-tab="voice" onclick="switchComposerPanel('voice')">Giọng nói</button>
         <button type="button" class="composer-tab" data-panel-tab="history" onclick="switchComposerPanel('history')">Lịch sử gần đây</button>
       </div>
 
       <div class="composer-panel active" data-panel="voice">
-        <div class="voice-panel-head">
-          <div>
-            <div class="section-title">Giọng đang chọn</div>
-            <div class="muted">Chọn nhanh trong popup và dùng lại ngay.</div>
-          </div>
-          <button type="button" class="mini-btn fill" onclick="openVoicePicker()">Chọn giọng nói</button>
-        </div>
-
-        <div class="selected-voice-card" id="selectedVoiceCard">
+        <div class="selected-voice-card selected-voice-picker-card" id="selectedVoiceCard" role="button" tabindex="0" onclick="openVoicePicker()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openVoicePicker();}">
           <div class="selected-voice-avatar" id="selectedVoiceAvatar">🎙️</div>
           <div class="selected-voice-info">
             <b id="selectedVoiceName">Chưa chọn giọng</b>
@@ -110,8 +98,8 @@
         </div>
       </div>
 
-      <div class="composer-panel" data-panel="history">
-        <div class="section-title">Lịch sử gần đây <a href="/History" style="float:right;color:#6d35e8;font-size:14px">Xem tất cả</a></div>
+      <div class="composer-panel composer-history-panel" data-panel="history">
+        <div class="section-title composer-history-title">Lịch sử gần đây <a href="/History" style="float:right;color:#6d35e8;font-size:14px">Xem tất cả</a></div>
         <div id="recentHistoryList">
           @foreach(var j in Model.RecentJobs)
           {
