@@ -26,11 +26,14 @@
 @if (isAuth)
 {
     <div class="mobile-overlay" id="mobileOverlay" onclick="toggleSidebar(false)"></div>
-    <div class="app-shell">
+    <div class="app-shell @(page == "/Index" ? "app-shell-voice-layout" : "")">
         <aside class="sidebar" id="sidebar">
             <a class="brand brand-image home-brand-link" href="/" aria-label="Về trang chủ">
                 <img class="brand-logo-full" src="~/images/logo-full-420.png" alt="Adam Voice" />
             </a>
+            <div class="sidebar-point-card" data-point-balance-card title="@points.ToString("N0") điểm">
+                <b data-point-balance>@points.ToString("N0") điểm</b>
+            </div>
             <nav>
                 <a class="@Active("/Index")" href="/">🎙️ Tạo giọng nói</a>
                 <a class="@Active("/History")" href="/History">🕘 Lịch sử</a>
@@ -45,7 +48,7 @@
             </nav>
             <div class="ref-box"><b>Giới thiệu bạn bè</b><p>Nhận thêm điểm miễn phí khi bạn bè đăng ký.</p><button>Mời ngay</button></div>
         </aside>
-        <main class="main">
+        <main class="main @(page == "/Index" ? "main-voice-layout" : "")">
             <header class="topbar">
                 <div>
                     <button class="mobile-menu-btn" type="button" onclick="toggleSidebar(true)">☰</button>
@@ -55,7 +58,6 @@
                     </a>
                 </div>
                 <div class="top-actions">
-                    <div class="point-card" data-point-balance-card title="@points.ToString("N0") điểm"><span>🪙</span><div>Số điểm của bạn<br><b data-point-balance>@points.ToString("N0") điểm</b></div></div>
                     <a class="buy-btn" href="/Packages">🛒 Mua thêm điểm</a>
                     <div class="userbox"><div class="avatar">👤</div><div><b>@username</b><br><span>@role</span></div><a href="/Logout">Đăng xuất</a></div>
                 </div>

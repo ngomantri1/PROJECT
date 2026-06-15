@@ -24,6 +24,7 @@ let previewAudio;
 let activePreviewButton = null;
 let currentVoicePickerFilter = "all";
 let isGeneratingVoice = false;
+let bypassVoiceConfirm = false;
 
 function isMobileComposerViewport() {
   return window.matchMedia("(max-width: 900px)").matches;
@@ -61,6 +62,7 @@ window.addEventListener("load", () => {
   switchComposerPanel("voice");
   closeMobileComposerPanel();
   updateCharacterCount();
+  scheduleAutoDismissAlerts();
 });
 
 function setPreset(name) {
@@ -379,6 +381,7 @@ function bindVoiceFormAsync() {
 }
 
 async function submitVoiceFormAsync(form) {
+  focusRecentHistoryPanel();
   const pendingItem = insertPendingHistoryItem();
   setCreateButtonsBusy(true);
   try {
@@ -398,8 +401,7 @@ async function submitVoiceFormAsync(form) {
     updatePointBalance(data.currentBalance);
     if (data.ok) {
       renderRecentHistoryList(data.recentJobs || []);
-      if (isMobileComposerViewport()) openMobileComposerPanel("history");
-      else switchComposerPanel("history");
+      focusRecentHistoryPanel();
       return;
     }
     if (pendingItem) pendingItem.remove();
@@ -416,6 +418,16 @@ async function submitVoiceFormAsync(form) {
   } finally {
     setCreateButtonsBusy(false);
   }
+}
+
+function focusRecentHistoryPanel() {
+  if (isMobileComposerViewport()) openMobileComposerPanel("history");
+  else switchComposerPanel("history");
+  const container = document.getElementById("recentHistoryList");
+  if (!container) return;
+  requestAnimationFrame(() => {
+    container.scrollTop = 0;
+  });
 }
 
 function setCreateButtonsBusy(isBusy) {
@@ -508,12 +520,27 @@ function renderIndexMessages(result) {
   if (!stack) return;
   const blocks = [];
   if (result.message) {
-    blocks.push(`<div class="alert ${result.ok ? "ok" : "err"}">${escapeHtml(result.message)}</div>`);
+    blocks.push(`<div class="alert ${result.ok ? "ok alert-floating" : "err"}"${result.ok ? ' data-auto-dismiss="2000"' : ""}>${escapeHtml(result.message)}</div>`);
   }
   if (typeof result.currentBalance === "number" && typeof result.lowPointWarning === "number" && result.currentBalance <= result.lowPointWarning) {
     blocks.push(`<div class="alert warn">Điểm của anh sắp hết: <b>${formatNumber(result.currentBalance)} điểm</b>. Nên mua thêm điểm để không bị gián đoạn.</div>`);
   }
   stack.innerHTML = blocks.join("");
+  scheduleAutoDismissAlerts();
+}
+
+function scheduleAutoDismissAlerts() {
+  document.querySelectorAll(".alert[data-auto-dismiss]").forEach((alert) => {
+    if (alert.dataset.dismissScheduled === "true") return;
+    alert.dataset.dismissScheduled = "true";
+    const delay = parseInt(alert.dataset.autoDismiss || "3000", 10);
+    window.setTimeout(() => {
+      alert.classList.add("is-hiding");
+      window.setTimeout(() => {
+        alert.remove();
+      }, 280);
+    }, Number.isFinite(delay) ? delay : 3000);
+  });
 }
 
 function updatePointBalance(value) {
@@ -692,6 +719,11 @@ function toggleSidebar(show) {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    const confirmModal = document.getElementById("createVoiceConfirmModal");
+    if (confirmModal && !confirmModal.hidden) {
+      closeCreateVoiceConfirm();
+      return;
+    }
     const modal = document.getElementById("voicePickerModal");
     if (modal && !modal.hidden) {
       closeVoicePicker();
@@ -709,6 +741,8 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("click", (e) => {
   const modal = document.getElementById("voicePickerModal");
   if (modal && !modal.hidden && e.target === modal) closeVoicePicker();
+  const confirmModal = document.getElementById("createVoiceConfirmModal");
+  if (confirmModal && !confirmModal.hidden && e.target === confirmModal) closeCreateVoiceConfirm();
 });
 
 window.addEventListener("resize", () => {
@@ -728,15 +762,54 @@ function copyText(text) {
 }
 
 function confirmCreateVoice() {
+  if (bypassVoiceConfirm) {
+    bypassVoiceConfirm = false;
+    return true;
+  }
   const text = document.getElementById("Text");
   const voice = getSelectedVoiceData();
   if (!text) return true;
   const len = text.value.trim().length;
   if (len <= 0) {
-    alert("Anh chưa nhập nội dung.");
+    renderIndexMessages({
+      ok: false,
+      message: "Anh chưa nhập nội dung."
+    });
+    text.focus();
     return false;
   }
   const rate = voice ? parseFloat(voice.rate) : 1;
   const point = Math.ceil(len * rate);
-  return confirm(`Bài này có ${len.toLocaleString("vi-VN")} ký tự.\nGiọng: ${voice?.name || "giọng đã chọn"}.\nHệ thống sẽ trừ ${point.toLocaleString("vi-VN")} điểm.\n\nNghe lại/tải lại file đã tạo sẽ không trừ điểm.\nAnh đồng ý tạo giọng không?`);
+  openCreateVoiceConfirm({
+    characters: len,
+    voiceName: voice?.name || "Giọng đã chọn",
+    points: point
+  });
+  return false;
+}
+
+function openCreateVoiceConfirm(summary) {
+  const modal = document.getElementById("createVoiceConfirmModal");
+  if (!modal) return;
+  const chars = document.getElementById("confirmVoiceChars");
+  const voiceName = document.getElementById("confirmVoiceName");
+  const points = document.getElementById("confirmVoicePoints");
+  if (chars) chars.textContent = `${formatNumber(summary.characters)} ký tự`;
+  if (voiceName) voiceName.textContent = summary.voiceName;
+  if (points) points.textContent = `${formatNumber(summary.points)} điểm`;
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+}
+
+function closeCreateVoiceConfirm() {
+  const modal = document.getElementById("createVoiceConfirmModal");
+  if (!modal) return;
+  modal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function acceptCreateVoiceConfirm() {
+  bypassVoiceConfirm = true;
+  closeCreateVoiceConfirm();
+  document.getElementById("voiceForm")?.requestSubmit();
 }
