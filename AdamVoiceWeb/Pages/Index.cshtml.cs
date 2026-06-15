@@ -76,7 +76,7 @@ public class IndexModel : PageModel
     private async Task<GenerateVoiceOutcome> GenerateVoiceCoreAsync()
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var maxChars = _config.GetValue<int?>("BusinessRules:MaxCharactersPerJob") ?? 5000;
+        var maxChars = _config.GetValue<int?>("BusinessRules:MaxCharactersPerJob") ?? 8000;
         var maxJobs = _config.GetValue<int?>("BusinessRules:MaxJobsPer10Minutes") ?? 10;
         var originalText = Text ?? "";
         var normalized = AutoNormalize ? _textService.Normalize(originalText) : originalText.Trim();

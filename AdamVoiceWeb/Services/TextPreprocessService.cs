@@ -7,7 +7,7 @@ public class TextPreprocessService
     public string Normalize(string input)
     {
         if (string.IsNullOrWhiteSpace(input)) return string.Empty;
-        var text = input.Trim();
+        var text = input.Replace("\r\n", "\n").Trim();
 
         text = Regex.Replace(text, @"(\d+)\s*(kg|kilogram|kí)\b", "$1 ki lô gam", RegexOptions.IgnoreCase);
         text = text.Replace("đ/kg", "đồng một ki lô gam", StringComparison.OrdinalIgnoreCase);
@@ -18,9 +18,34 @@ public class TextPreprocessService
         text = text.Replace("feedback", "phản hồi", StringComparison.OrdinalIgnoreCase);
         text = text.Replace("sale", "giảm giá", StringComparison.OrdinalIgnoreCase);
         text = text.Replace("TikTok", "tích tóc", StringComparison.OrdinalIgnoreCase);
-        text = Regex.Replace(text, @"\s+", " ");
-        text = text.Replace(" .", ".").Replace(" ,", ",").Replace(" !", "!").Replace(" ?", "?");
-        return text;
+
+        // Gộp space/tab dư trong từng dòng nhưng vẫn giữ bố cục đoạn văn.
+        text = Regex.Replace(text, @"[^\S\n]+", " ");
+
+        var compactLines = new List<string>();
+        var previousBlank = false;
+        foreach (var rawLine in text.Split('\n'))
+        {
+            var line = rawLine
+                .Trim()
+                .Replace(" .", ".")
+                .Replace(" ,", ",")
+                .Replace(" !", "!")
+                .Replace(" ?", "?");
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                if (previousBlank) continue;
+                compactLines.Add(string.Empty);
+                previousBlank = true;
+                continue;
+            }
+
+            compactLines.Add(line);
+            previousBlank = false;
+        }
+
+        return string.Join("\n", compactLines).Trim();
     }
 
     public int CountCharacters(string input)

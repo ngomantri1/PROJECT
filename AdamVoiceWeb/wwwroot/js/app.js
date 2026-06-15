@@ -226,9 +226,12 @@ function renderRecentHistoryItem(job) {
         <span class="play-icon">▶</span>
       </button>
       <div class="history-main">
-        <b>${escapeHtml(job.textPreview)}</b><br><span class="muted">${escapeHtml(job.voiceName)} • ${formatNumber(job.characterCount)} ký tự</span>
+        <b>${escapeHtml(job.textPreview)}</b><span class="muted history-subline">${escapeHtml(job.voiceName)} • ${formatNumber(job.characterCount)} ký tự</span>
       </div>
-      <div class="muted history-time">${escapeHtml(job.createdAtText)}</div>
+      <div class="history-side">
+        <div class="muted history-time">${escapeHtml(job.createdAtText)}</div>
+        <a class="history-download" href="${escapeHtml(job.audioUrl)}" download aria-label="Tải MP3">⬇</a>
+      </div>
       <div class="history-audio-bar" hidden>
         <span class="history-audio-current">0:00</span>
         <input type="range" class="history-progress" min="0" max="100" step="0.1" value="0" oninput="seekHistoryAudio(this)" aria-label="Tua audio" />

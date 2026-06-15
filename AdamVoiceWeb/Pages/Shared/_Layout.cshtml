@@ -28,9 +28,9 @@
     <div class="mobile-overlay" id="mobileOverlay" onclick="toggleSidebar(false)"></div>
     <div class="app-shell">
         <aside class="sidebar" id="sidebar">
-            <div class="brand brand-image">
+            <a class="brand brand-image home-brand-link" href="/" aria-label="Về trang chủ">
                 <img class="brand-logo-full" src="~/images/logo-full-420.png" alt="Adam Voice" />
-            </div>
+            </a>
             <nav>
                 <a class="@Active("/Index")" href="/">🎙️ Tạo giọng nói</a>
                 <a class="@Active("/History")" href="/History">🕘 Lịch sử</a>
@@ -49,10 +49,10 @@
             <header class="topbar">
                 <div>
                     <button class="mobile-menu-btn" type="button" onclick="toggleSidebar(true)">☰</button>
-                    <div class="mobile-brand">
+                    <a class="mobile-brand home-brand-link" href="/" aria-label="Về trang chủ">
                         <img class="brand-logo-icon" src="~/images/logo-icon-64.png" alt="Adam Voice" />
                         <span>ADAM VOICE</span>
-                    </div>
+                    </a>
                 </div>
                 <div class="top-actions">
                     <div class="point-card" data-point-balance-card title="@points.ToString("N0") điểm"><span>🪙</span><div>Số điểm của bạn<br><b data-point-balance>@points.ToString("N0") điểm</b></div></div>

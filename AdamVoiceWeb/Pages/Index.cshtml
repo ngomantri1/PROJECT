@@ -4,8 +4,6 @@
     ViewData["Title"] = "Tạo giọng nói";
 }
 <div class="page has-sticky-submit">
-  <h1>Tạo giọng nói</h1>
-  <div class="breadcrumbs">Trang chủ / Tạo giọng nói</div>
   <div id="indexMessageStack">
     @if(!string.IsNullOrWhiteSpace(Model.Success)){<div class="alert ok">@Model.Success</div>}
     @if(!string.IsNullOrWhiteSpace(Model.Error)){<div class="alert err">@Model.Error</div>}
@@ -20,11 +18,11 @@
           <span>Xóa hết</span>
         </button>
       </div>
-      <textarea id="Text" class="textarea" asp-for="Text" maxlength="5000" placeholder="Nhập nội dung cần tạo giọng..."></textarea>
+      <textarea id="Text" class="textarea" asp-for="Text" maxlength="8000" placeholder="Nhập nội dung cần tạo giọng..."></textarea>
       <div class="draft-note">Nội dung đang được tự lưu trên thiết bị này.</div>
       <label class="check-row"><input asp-for="AutoNormalize" type="checkbox" checked /> Tự tối ưu văn bản tiếng Việt trước khi tạo giọng</label>
       <details class="normalize-box"><summary>Xem ví dụ tối ưu văn bản</summary><p>Ví dụ: <b>40.000đ/kg</b> → <b>40 nghìn đồng một ki lô gam</b>, <b>ship</b> → <b>giao hàng</b>, <b>22h</b> → <b>22 giờ</b>.</p></details>
-      <div class="meta">Số ký tự: <b id="charCount">0</b> / 5.000 ký tự</div>
+      <div class="meta">Số ký tự: <b id="charCount">0</b> / 8.000 ký tự</div>
 
       <div class="section-title">2. Chọn giọng nói <a href="/MyVoices" style="float:right;color:#6d35e8;font-size:14px">+ Giọng của bạn</a></div>
       <div class="voice-grid">
@@ -89,9 +87,12 @@
                 <span class="play-icon">▶</span>
               </button>
               <div class="history-main">
-                <b>@(j.Text.Length>30?j.Text[..30]+"...":j.Text)</b><br><span class="muted">@j.VoiceName • @j.CharacterCount ký tự</span>
+                <b>@(j.Text.Length>30?j.Text[..30]+"...":j.Text)</b><span class="muted history-subline">@j.VoiceName • @j.CharacterCount ký tự</span>
               </div>
-              <div class="muted history-time">@j.CreatedAt.ToString("dd/MM HH:mm")</div>
+              <div class="history-side">
+                <div class="muted history-time">@j.CreatedAt.ToString("dd/MM HH:mm")</div>
+                <a class="history-download" href="@j.AudioUrl" download aria-label="Tải MP3">⬇</a>
+              </div>
               <div class="history-audio-bar" hidden>
                 <span class="history-audio-current">0:00</span>
                 <input type="range" class="history-progress" min="0" max="100" step="0.1" value="0" oninput="seekHistoryAudio(this)" aria-label="Tua audio" />
