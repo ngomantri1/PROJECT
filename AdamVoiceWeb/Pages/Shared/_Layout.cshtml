@@ -1,10 +1,9 @@
 @using System.Security.Claims
-@inject AdamVoiceWeb.Services.DataStore Store
+@inject AdamVoiceWeb.Data.AppDbContext Db
 @{
     var isAuth = User.Identity?.IsAuthenticated == true;
     var username = User.Identity?.Name ?? "";
-    var db = Store.Read();
-    var currentUser = db.Users.FirstOrDefault(x => x.Username == username);
+    var currentUser = Db.Users.FirstOrDefault(x => x.Username == username);
     var points = currentUser?.PointBalance ?? 0;
     var role = currentUser?.Role ?? "";
     var page = ViewContext.RouteData.Values["page"]?.ToString() ?? "";

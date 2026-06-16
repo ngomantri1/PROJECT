@@ -21,6 +21,8 @@ public class AppUser
     public int Id { get; set; }
     public string Username { get; set; } = "";
     public string PasswordHash { get; set; } = "";
+    public string AuthProvider { get; set; } = "";
+    public string ExternalId { get; set; } = "";
     public string FullName { get; set; } = "";
     public string Phone { get; set; } = "";
     public string ZaloOrTelegram { get; set; } = "";

@@ -1545,3 +1545,152 @@ body.modal-open{
     font-size:16px;
   }
 }
+.auth-shell{
+  background:
+    radial-gradient(circle at top left, rgba(168,60,244,.10), transparent 28%),
+    radial-gradient(circle at top right, rgba(91,46,229,.10), transparent 24%),
+    linear-gradient(180deg,#f7f4ff 0%,#ffffff 42%,#f8faff 100%);
+}
+.google-auth-card{
+  width:100%;
+  max-width:560px;
+  padding:40px 40px 34px;
+  border-radius:30px;
+  text-align:center;
+}
+.google-auth-brand{
+  margin-bottom:26px;
+}
+.google-auth-copy h1{
+  margin:0 0 10px;
+  font-size:52px;
+  line-height:1.02;
+  letter-spacing:-.04em;
+  color:#121826;
+}
+.google-auth-copy .muted{
+  margin:0;
+  font-size:28px;
+  color:#7b8498;
+}
+.google-auth-form{
+  margin-top:34px;
+}
+.google-login-button{
+  width:100%;
+  min-height:72px;
+  border:0;
+  border-radius:18px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  padding:14px 22px;
+  cursor:pointer;
+  color:#fff;
+  font-size:26px;
+  font-weight:800;
+  letter-spacing:-.02em;
+  background:linear-gradient(135deg,#4f46e5 0%,#5B2EE5 42%,#7c3aed 100%);
+  box-shadow:0 18px 38px rgba(91,46,229,.24);
+  transition:.18s ease;
+}
+.google-login-button:hover{
+  transform:translateY(-1px);
+  box-shadow:0 22px 44px rgba(91,46,229,.30);
+}
+.google-login-button:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+  transform:none;
+  box-shadow:none;
+}
+.google-login-mark{
+  width:44px;
+  height:44px;
+  border-radius:14px;
+  background:#fff;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.04);
+}
+.google-login-mark svg{
+  width:24px;
+  height:24px;
+  display:block;
+}
+.auth-alert{
+  margin:22px 0 0;
+  padding:13px 16px;
+  border-radius:14px;
+  border:1px solid #fecaca;
+  background:#fff1f2;
+  color:#b42318;
+  font-size:15px;
+}
+.auth-config-note{
+  margin:18px auto 0;
+  max-width:420px;
+  color:#667085;
+  font-size:14px;
+  line-height:1.6;
+}
+.auth-terms{
+  margin:26px auto 0;
+  max-width:430px;
+  color:#98a2b3;
+  font-size:15px;
+  line-height:1.7;
+}
+.auth-terms code,
+.auth-config-note code{
+  color:#5B2EE5;
+  background:#f4efff;
+  padding:2px 6px;
+  border-radius:8px;
+}
+@media(max-width:900px){
+  .google-auth-card{
+    max-width:520px;
+    padding:34px 22px 28px;
+    border-radius:24px;
+  }
+  .google-auth-copy h1{
+    font-size:40px;
+  }
+  .google-auth-copy .muted{
+    font-size:22px;
+  }
+  .google-login-button{
+    min-height:64px;
+    font-size:22px;
+    border-radius:16px;
+  }
+}
+@media(max-width:520px){
+  .google-auth-copy h1{
+    font-size:34px;
+  }
+  .google-auth-copy .muted{
+    font-size:18px;
+  }
+  .google-login-button{
+    gap:12px;
+    min-height:58px;
+    padding:12px 16px;
+    font-size:18px;
+  }
+  .google-login-mark{
+    width:38px;
+    height:38px;
+    border-radius:12px;
+  }
+  .google-login-mark svg{
+    width:22px;
+    height:22px;
+  }
+  .auth-terms{
+    font-size:14px;
+  }
+}

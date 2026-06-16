@@ -411,3 +411,6 @@ FodyWeavers.xsd
 *.dll
 *.txt
 /ABXHubSolution/_tmp_build
+*.dylib
+*.so
+*.mp3

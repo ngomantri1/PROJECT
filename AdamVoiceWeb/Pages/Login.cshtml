@@ -4,19 +4,46 @@
     Layout = "_Layout";
     ViewData["Title"] = "Đăng nhập";
 }
-<div class="login-page">
-  <form method="post" class="login-card">
-    <div class="brand brand-image auth-brand" style="margin-bottom:20px">
-        <img class="brand-logo-full auth-logo" src="~/images/logo-full-420.png" alt="Adam Voice" />
+
+<div class="login-page auth-shell">
+    <div class="login-card google-auth-card">
+        <div class="brand brand-image auth-brand google-auth-brand">
+            <img class="brand-logo-full auth-logo" src="~/images/logo-full-420.png" alt="Adam Voice" />
+        </div>
+
+        <div class="google-auth-copy">
+            <h1>Đăng nhập</h1>
+            <p class="muted">Chào mừng bạn quay trở lại</p>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Model.Error))
+        {
+            <div class="auth-alert">@Model.Error</div>
+        }
+
+        <form method="post" asp-page-handler="Google" class="google-auth-form">
+            <button class="google-login-button" type="submit" @(Model.IsGoogleConfigured ? null : "disabled")>
+                <span class="google-login-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                        <path fill="#4285F4" d="M21.6 12.23c0-.68-.06-1.33-.17-1.96H12v3.71h5.39a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.89-1.74 2.98-4.3 2.98-7.27Z" />
+                        <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.62-2.43l-3.23-2.5c-.9.6-2.04.96-3.39.96-2.61 0-4.83-1.76-5.62-4.12H3.05v2.58A9.99 9.99 0 0 0 12 22Z" />
+                        <path fill="#FBBC05" d="M6.38 13.91A5.98 5.98 0 0 1 6.07 12c0-.66.11-1.3.31-1.91V7.5H3.05A9.99 9.99 0 0 0 2 12c0 1.61.39 3.13 1.05 4.5l3.33-2.59Z" />
+                        <path fill="#EA4335" d="M12 5.97c1.47 0 2.79.5 3.83 1.5l2.87-2.87C16.96 2.98 14.7 2 12 2A9.99 9.99 0 0 0 3.05 7.5l3.33 2.59C7.17 7.73 9.39 5.97 12 5.97Z" />
+                    </svg>
+                </span>
+                <span>Đăng nhập với Google</span>
+            </button>
+        </form>
+
+        @if (!Model.IsGoogleConfigured)
+        {
+            <p class="auth-config-note">
+                Chưa cấu hình Google OAuth. Hãy điền <code>Authentication:Google:ClientId</code> và <code>Authentication:Google:ClientSecret</code>.
+            </p>
+        }
+
+        <p class="auth-terms">
+            Bằng cách đăng nhập, bạn đồng ý với điều khoản sử dụng và chính sách bảo mật của chúng tôi.
+        </p>
     </div>
-    <h2>Đăng nhập</h2>
-    <p class="muted">Tài khoản demo: <b>demo</b> / <b>123456</b><br/>Admin: <b>admin</b> / <b>admin123</b></p>
-    @if (!string.IsNullOrWhiteSpace(Model.Error)) { <div class="alert err">@Model.Error</div> }
-    <label>Tên đăng nhập</label>
-    <input class="input" asp-for="Username" autocomplete="username" />
-    <label>Mật khẩu</label>
-    <input class="input" asp-for="Password" type="password" autocomplete="current-password" />
-    <button class="primary" style="width:100%;margin-top:8px">Đăng nhập</button>
-    <p class="muted" style="text-align:center">Chưa có tài khoản? <a style="color:#6d35e8" href="/Register">Đăng ký dùng thử</a></p>
-  </form>
 </div>

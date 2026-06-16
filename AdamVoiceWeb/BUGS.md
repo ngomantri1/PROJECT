@@ -1,87 +1,171 @@
 # BUGS
 
 ## Bug hiện tại
-- Chưa ghi nhận bug runtime chắc chắn sau bản fix gần nhất.
-- Môi trường tạo project trước đó không build được trực tiếp bằng `dotnet`; cần developer build/test trên máy thật.
-- `BusinessRules:AudioRetentionDays` chưa có tác dụng vì chưa có cleanup job.
-- Password hash hiện là SHA256 + salt demo, chưa đạt chuẩn production mạnh.
-- JSON database phù hợp MVP nhưng có rủi ro khi traffic cao hoặc chạy nhiều instance.
+- Chưa ghi nhận bug nghiệp vụ blocking nào mới sau đợt chỉnh UI gần nhất.
+- Vẫn còn warning build:
+  - `NETSDK1194`
+  - nguyên nhân: dùng `dotnet build -o` ở solution level.
+  - đây không phải bug runtime nhưng cần dọn lại quy trình build.
+- `BusinessRules:AudioRetentionDays` chưa có tác dụng thực tế vì chưa có cleanup job.
+- Password hash hiện vẫn là dạng demo, chưa đạt chuẩn production.
+- JSON datastore vẫn có rủi ro khi chạy nhiều instance.
 
 ## Bug đã fix
-### Razor malformed form/table trong Admin
-- Triệu chứng: Visual Studio báo `RZ1025`, `RZ1026`, `RZ1034` ở `Pages/Admin.cshtml`.
-- Nguyên nhân: `<form>` đặt sai trong `<tr>/<td>`, thẻ `tr/td/form` không cân bằng.
-- Fix: tách form đúng cấu trúc, không mở form xuyên qua nhiều cell/table row.
-- Vùng cần cẩn thận: mọi form trong table ở `Admin.cshtml`.
 
-### Link ZIP UI theme lỗi tải
-- Triệu chứng: UI báo lấy trạng thái tải file ZIP không thành công.
-- Nguyên nhân: file ZIP chưa được tạo đúng đường dẫn trước khi trả link.
-- Fix: tạo lại ZIP `AdamVoiceWeb_UITheme_v2.zip`.
-- Workaround: nếu link file lỗi, kiểm tra file tồn tại thực tế trong `/mnt/data` trước khi gửi.
+### Nhầm Model ID và Voice ID của ElevenLabs
+- Triệu chứng:
+  - tạo giọng lỗi `400 model_not_found`
+  - message kiểu: model ID không tồn tại.
+- Nguyên nhân:
+  - lấy nhầm `Voice ID` gán vào `DefaultModelId`, hoặc ngược lại.
+- Fix:
+  - `DefaultModelId` dùng model thật, ví dụ `eleven_flash_v2_5`;
+  - `ApiVoiceId` dùng đúng voice ID, ví dụ của Adam.
+- Ghi chú:
+  - đây là rule quan trọng, rất dễ tái phát khi sửa config.
 
-### Logo cũ chưa đồng bộ
-- Triệu chứng: sidebar/login vẫn dùng logo giả bằng ký tự `▮▮▮`.
-- Fix: thêm `wwwroot/images/*`, favicon, cập nhật `_Layout.cshtml`, `Login.cshtml`, `Register.cshtml`, CSS brand.
+### Chọn giọng / preset không nhớ cho lần sau
+- Triệu chứng:
+  - vào lại trang bị mất giọng đã chọn hoặc preset đã chọn.
+- Fix:
+  - lưu vào `localStorage`:
+    - selected voice
+    - selected preset
+    - recent voices
+
+### Nội dung nhập bị mất khi tắt/mở lại
+- Triệu chứng:
+  - draft text mất sau reload hoặc mở lại trang.
+- Fix:
+  - lưu draft text bằng `localStorage`.
+
+### Lịch sử gần đây phát nhiều audio song song
+- Triệu chứng:
+  - click nhiều item thì audio phát chồng.
+- Fix:
+  - dùng shared audio player;
+  - reset item cũ khi phát item mới.
+
+### Lịch sử gần đây không hiện seek bar / icon play-pause không đúng
+- Triệu chứng:
+  - audio đang chạy nhưng icon không đổi;
+  - không tua được trong recent history;
+  - mobile từng có trường hợp không thấy thanh seek.
+- Fix:
+  - state `idle/playing/paused` cho từng item;
+  - mở `history-audio-bar` trên item active;
+  - đồng bộ current time / duration / progress.
+
+### Popup chọn giọng auto-open khi mới vào trang
+- Triệu chứng:
+  - mở `/Index` là popup voice picker bật sẵn.
+- Fix:
+  - gọi `closeVoicePicker()` khi load.
+
+### Popup mobile cao thấp không đồng đều
+- Triệu chứng:
+  - popup `Giọng nói`, `Lịch sử`, `Chọn giọng` không cùng chiều cao, nhìn lệch.
+- Fix:
+  - chuẩn hóa height/max-height của bottom-sheet/popup mobile.
+
+### Success alert chèn vào layout
+- Triệu chứng:
+  - alert thành công đẩy composer xuống thay vì nổi đè lên.
+- Fix:
+  - success alert dùng `alert-floating`;
+  - `position: absolute` trong `#indexMessageStack`;
+  - auto-hide sau 2 giây.
+
+### Native confirm / alert không đồng bộ theme
+- Triệu chứng:
+  - popup xác nhận tạo giọng và một số alert dùng UI hệ điều hành, lệch style trang.
+- Fix:
+  - thay `confirm()` tạo giọng bằng modal nội bộ;
+  - lỗi `chưa nhập nội dung` chuyển sang alert trong trang.
+
+### Điểm hiển thị ở topbar làm bố cục rối
+- Triệu chứng:
+  - card điểm ở topbar chiếm chỗ, không hợp layout mới.
+- Fix:
+  - chuyển điểm xuống dưới logo sidebar;
+  - bỏ card điểm ở topbar.
 
 ## Bug chưa fix / rủi ro kỹ thuật
+
 ### Race condition ngoài single process
-- Hiện `DataStore` lock chỉ bảo vệ trong cùng process.
-- Nếu scale nhiều instance/server, JSON DB có thể bị race/lost update.
-- Workaround: chạy 1 instance hoặc chuyển SQL DB trước khi scale.
+- `DataStore` chỉ lock trong cùng process.
+- Nếu nhiều instance:
+  - có thể lost update;
+  - có thể lệch điểm / order / voice job.
+- Workaround:
+  - chạy 1 instance;
+  - hoặc chuyển sang SQL trước khi scale.
 
 ### Refund không cùng transaction vật lý với API call
-- Flow hiện tại: trừ điểm → gọi API → nếu lỗi thì hoàn điểm.
-- Nếu process chết giữa lúc trừ điểm và hoàn điểm, có thể cần kiểm tra thủ công ledger/job.
-- Workaround: thêm status `Processing` trước khi gọi API và job recovery khi app start; hoặc dùng DB transaction + queue.
+- Flow hiện tại:
+  - trừ điểm
+  - gọi API
+  - lỗi thì hoàn điểm
+- Nếu process chết ở giữa:
+  - có thể cần xử lý tay.
+- Workaround:
+  - thêm recovery flow / queue / transaction DB thật.
 
-### Password hashing demo
-- `DataStore.HashPassword()` dùng SHA256 + fixed salt.
-- Workaround production: dùng ASP.NET Core Identity hoặc PBKDF2/BCrypt/Argon2.
+### Audio local storage
+- Audio đang nằm trong `wwwroot/audio`.
+- Rủi ro:
+  - đầy disk;
+  - mất file khi deploy sai.
 
-### Không có phân trang lớn
-- Admin/History/Transactions có thể nặng nếu dữ liệu nhiều.
-- Workaround: thêm paging/filter, hoặc chuyển SQL query.
-
-### Audio storage local
-- File audio nằm trong `wwwroot/audio`.
-- Rủi ro: mất file khi deploy ghi đè nhầm hoặc hết dung lượng VPS.
-- Workaround: tách thư mục audio ngoài publish hoặc dùng object storage.
-
-### ElevenLabs API thay đổi/giới hạn
-- Nếu endpoint/model/voice ID thay đổi hoặc API rate limit, tạo giọng lỗi.
-- Workaround: log error response, cho admin sửa Voice ID/model, giữ auto-refund.
+### File CSS/JS đã lớn
+- `app.css` và `app.js` đang ôm khá nhiều logic UI.
+- Rủi ro:
+  - dễ đè rule responsive;
+  - khó lần bug popup/history.
 
 ## Nguyên nhân bug thường gặp
-- Sửa Razor table/form sai nesting.
-- Đổi status/type string nhưng quên update view/page model liên quan.
-- Ghi đè `App_Data/db.json` khi copy project mới.
-- Ghi đè `wwwroot/audio` khi publish.
-- Đưa API key vào frontend hoặc commit nhầm config thật.
-- Quên kiểm tra `OwnerUserId` khi query custom voice.
-- Cộng/trừ điểm trực tiếp nhưng không tạo `PointTransaction`.
+- Nhầm `Voice ID` với `Model ID`.
+- Sửa popup mobile nhưng quên desktop, hoặc ngược lại.
+- Sửa CSS responsive nhưng không test cả:
+  - desktop
+  - tablet
+  - mobile
+- Ghi đè layout nhưng quên giữ `data-point-balance` / hook JS.
+- Chỉnh UI history nhưng bỏ sót player state dùng chung.
+- Chỉnh localStorage key hoặc flow restore mà quên migrate logic cũ.
 
 ## Workaround tạm thời
-- Trước khi update code trên server:
-  - backup `App_Data/db.json`;
-  - backup `wwwroot/audio`;
-  - backup `appsettings.json` production.
+- Trước khi update production:
+  - backup `App_Data/db.json`
+  - backup `wwwroot/audio`
+  - backup `appsettings.json`
 - Nếu khách báo mất điểm:
-  - kiểm tra `PointTransactions` theo user;
-  - kiểm tra `VoiceJobs` status `Refunded/Completed`;
-  - nếu lỗi API nhưng chưa refund, admin dùng `AdminAdjust` để hoàn.
-- Nếu voice không hiện:
-  - kiểm tra `VoiceOption.IsActive=true`;
-  - `Status=Approved`;
-  - system voice: `OwnerUserId` null/0;
-  - custom voice: `OwnerUserId` đúng user.
+  - kiểm tra `PointTransactions`
+  - kiểm tra `VoiceJobs`
+  - nếu cần, hoàn thủ công bằng `AdminAdjust`
+- Nếu tạo giọng lỗi ElevenLabs:
+  - kiểm tra `DefaultModelId`
+  - kiểm tra `ApiVoiceId`
+  - kiểm tra API key
 
 ## Vùng code dễ lỗi
-- `Pages/Index.cshtml.cs`: trừ điểm, gọi API, hoàn điểm.
-- `Pages/Admin.cshtml`: form trong table, nhiều handler POST.
-- `Pages/Admin.cshtml.cs`: duyệt order, cộng/trừ điểm, update package/voice.
-- `Pages/Packages.cshtml.cs`: tạo order, order code, period monthly/yearly.
-- `Pages/MyVoices.cshtml.cs`: quyền sở hữu voice riêng.
-- `Services/DataStore.cs`: normalize/seed DB, next id, JSON write.
-- `Services/ElevenLabsService.cs`: API payload, lưu file audio.
-- `wwwroot/js/app.js`: chỉ UX; không được xem là validation bảo mật.
+- `Pages/Index.cshtml.cs`
+  - trừ điểm
+  - hoàn điểm
+  - async JSON generate flow
+- `Pages/Index.cshtml`
+  - popup confirm
+  - popup voice/history
+  - recent history layout
+- `wwwroot/js/app.js`
+  - shared history audio
+  - localStorage restore
+  - async generate
+  - popup open/close
+- `wwwroot/css/app.css`
+  - responsive popup
+  - floating alert
+  - 3-column desktop layout
+- `Services/ElevenLabsService.cs`
+  - payload/model/voice mapping
+  - lưu file audio

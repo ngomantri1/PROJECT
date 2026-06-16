@@ -1,6 +1,71 @@
 @page
 @model AdamVoiceWeb.Pages.AccountModel
-@{ViewData["Title"]="Tài khoản";}
-<div class="page"><h1>Tài khoản</h1><div class="breadcrumbs">Quản lý thông tin liên hệ và mật khẩu.</div>@if(!string.IsNullOrWhiteSpace(Model.Message)){<div class="alert ok">@Model.Message</div>}@if(!string.IsNullOrWhiteSpace(Model.Error)){<div class="alert err">@Model.Error</div>}
-<div class="grid"><div class="card"><h3>Thông tin tài khoản</h3><p><b>Tài khoản:</b> @Model.UserInfo.Username</p><p><b>Vai trò:</b> @Model.UserInfo.Role</p><p><b>Số điểm:</b> @Model.UserInfo.PointBalance.ToString("N0") điểm</p><p><b>Ngày tạo:</b> @Model.UserInfo.CreatedAt.ToString("dd/MM/yyyy HH:mm")</p><form method="post" asp-page-handler="UpdateProfile"><label>Họ tên</label><input class="input" asp-for="FullName"/><label>Số điện thoại/Zalo</label><input class="input" asp-for="Phone"/><label>Telegram/Ghi chú liên hệ</label><input class="input" asp-for="ZaloOrTelegram"/><button class="primary">Lưu thông tin</button></form></div>
-<div class="card"><h3>Đổi mật khẩu</h3><form method="post" asp-page-handler="ChangePassword"><label>Mật khẩu cũ</label><input class="input" asp-for="OldPassword" type="password"/><label>Mật khẩu mới</label><input class="input" asp-for="NewPassword" type="password"/><button class="primary">Đổi mật khẩu</button></form><hr/><h3>Quy định điểm</h3><p class="muted">Tạo giọng mới sẽ trừ điểm theo số ký tự và hệ số giọng. Nghe lại hoặc tải lại file trong lịch sử không trừ điểm.</p></div></div></div>
+@{
+    ViewData["Title"] = "Tài khoản";
+    var providerLabel = Model.UserInfo.AuthProvider == "Google" ? "Google" : "Nội bộ";
+}
+
+<div class="page">
+    <h1>Tài khoản</h1>
+    <div class="breadcrumbs">Quản lý thông tin liên hệ và phương thức đăng nhập.</div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.Message))
+    {
+        <div class="alert ok">@Model.Message</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Model.Error))
+    {
+        <div class="alert err">@Model.Error</div>
+    }
+
+    <div class="grid">
+        <div class="card">
+            <h3>Thông tin tài khoản</h3>
+            <p><b>Tài khoản:</b> @Model.UserInfo.Username</p>
+            <p><b>Đăng nhập:</b> @providerLabel</p>
+            <p><b>Vai trò:</b> @Model.UserInfo.Role</p>
+            <p><b>Số điểm:</b> @Model.UserInfo.PointBalance.ToString("N0") điểm</p>
+            <p><b>Ngày tạo:</b> @Model.UserInfo.CreatedAt.ToString("dd/MM/yyyy HH:mm")</p>
+
+            <form method="post" asp-page-handler="UpdateProfile">
+                <label>Họ tên</label>
+                <input class="input" asp-for="FullName" />
+
+                <label>Số điện thoại/Zalo</label>
+                <input class="input" asp-for="Phone" />
+
+                <label>Telegram/Ghi chú liên hệ</label>
+                <input class="input" asp-for="ZaloOrTelegram" />
+
+                <button class="primary" type="submit">Lưu thông tin</button>
+            </form>
+        </div>
+
+        <div class="card">
+            @if (Model.CanChangePassword)
+            {
+                <h3>Đổi mật khẩu</h3>
+                <form method="post" asp-page-handler="ChangePassword">
+                    <label>Mật khẩu cũ</label>
+                    <input class="input" asp-for="OldPassword" type="password" />
+
+                    <label>Mật khẩu mới</label>
+                    <input class="input" asp-for="NewPassword" type="password" />
+
+                    <button class="primary" type="submit">Đổi mật khẩu</button>
+                </form>
+            }
+            else
+            {
+                <h3>Đăng nhập Google</h3>
+                <p class="muted">Tài khoản này đang dùng Google để đăng nhập, nên không có mật khẩu nội bộ trong hệ thống.</p>
+            }
+
+            <hr />
+
+            <h3>Quy định điểm</h3>
+            <p class="muted">Tạo giọng mới sẽ trừ điểm theo số ký tự và hệ số giọng. Nghe lại hoặc tải lại file trong lịch sử không trừ điểm.</p>
+        </div>
+    </div>
+</div>

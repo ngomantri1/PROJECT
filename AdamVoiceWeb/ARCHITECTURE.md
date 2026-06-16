@@ -6,81 +6,83 @@ AdamVoiceWeb/
 ├─ AdamVoiceWeb.csproj
 ├─ Program.cs
 ├─ appsettings.json
-├─ App_Data/db.json              # sinh khi chạy, database JSON
-├─ Models/AppModels.cs           # toàn bộ entity/model
+├─ App_Data/db.json
+├─ Models/
+│  └─ AppModels.cs
 ├─ Services/
-│  ├─ DataStore.cs               # đọc/ghi seed/normalize db JSON
-│  ├─ ElevenLabsService.cs       # tạo audio mock hoặc gọi ElevenLabs
-│  └─ TextPreprocessService.cs   # normalize text tiếng Việt và đếm ký tự
+│  ├─ DataStore.cs
+│  ├─ ElevenLabsService.cs
+│  └─ TextPreprocessService.cs
 ├─ Pages/
-│  ├─ Index.*                    # tạo giọng
-│  ├─ Packages.*                 # mua gói, tạo/confirm/hủy đơn
-│  ├─ Admin.*                    # dashboard, duyệt đơn, quản trị user/voice/package
-│  ├─ MyVoices.*                 # giọng riêng của user
-│  ├─ Voices.*                   # danh sách giọng hệ thống
-│  ├─ History.*                  # lịch sử audio
-│  ├─ Transactions.*             # lịch sử điểm
-│  ├─ Account.*                  # hồ sơ, đổi mật khẩu
+│  ├─ Index.cshtml / Index.cshtml.cs
+│  ├─ Packages.*
+│  ├─ Admin.*
+│  ├─ MyVoices.*
+│  ├─ Voices.*
+│  ├─ History.*
+│  ├─ Transactions.*
+│  ├─ Account.*
 │  ├─ Login.* / Register.* / Logout.*
 │  ├─ Help.cshtml
-│  └─ Shared/_Layout.cshtml      # layout, sidebar, topbar, mobile nav
+│  └─ Shared/_Layout.cshtml
 └─ wwwroot/
-   ├─ audio/                     # file audio tạo ra
-   ├─ css/app.css                # giao diện chính
-   ├─ css/site.css               # CSS phụ/legacy
-   ├─ images/                    # logo/favicon
-   └─ js/app.js                  # JS UX
+   ├─ audio/
+   ├─ css/app.css
+   ├─ images/
+   └─ js/app.js
 ```
 
 ## Module chính
+
 ### Program.cs
-- Cấu hình Razor Pages.
-- Bật cookie auth.
-- Cho anonymous `/Login`, `/Register`.
-- Đăng ký DI:
-  - `DataStore` singleton
-  - `TextPreprocessService` singleton
+- cấu hình Razor Pages;
+- cookie auth;
+- DI cho:
+  - `DataStore`
+  - `TextPreprocessService`
   - `HttpClient<ElevenLabsService>`
 
 ### Models/AppModels.cs
-- `AppDb`: root object của JSON database.
-- `AppUser`: tài khoản, role, điểm, khóa tài khoản.
-- `VoiceOption`: giọng hệ thống/giọng riêng.
-- `PointPackage`: gói Starter/Pro/Business tháng/năm.
-- `PurchaseOrder`: đơn mua gói chờ duyệt.
-- `VoiceJob`: lịch sử tạo audio.
-- `PointTransaction`: ledger điểm.
+- `AppDb`
+- `AppUser`
+- `VoiceOption`
+- `PointPackage`
+- `PurchaseOrder`
+- `VoiceJob`
+- `PointTransaction`
 
 ### Services/DataStore.cs
-- Quản lý `App_Data/db.json`.
-- Seed user demo/admin, system voices, packages.
-- Normalize DB để tương thích bản cũ.
-- Hash/verify password bằng SHA256 + salt demo.
-- Dùng lock nội bộ để serialize thao tác đọc/ghi trong 1 process.
+- quản lý `App_Data/db.json`;
+- seed dữ liệu mặc định;
+- normalize DB cũ nếu schema thay đổi nhẹ;
+- hash password demo;
+- `_lock` cho đọc/ghi trong cùng process.
 
 ### Services/ElevenLabsService.cs
-- Nếu `ElevenLabs:ApiKey` rỗng và `UseMockWhenApiKeyEmpty=true`: tạo WAV demo.
-- Nếu có API key: POST `https://api.elevenlabs.io/v1/text-to-speech/{voice.ApiVoiceId}`.
-- Lưu file `.mp3` hoặc `.wav` vào `wwwroot/audio`.
-- Trả về URL `/audio/<file>`.
+- mock WAV nếu chưa có API key;
+- gọi ElevenLabs Text-to-Speech nếu đã cấu hình;
+- dùng:
+  - `voice.ApiVoiceId` cho voice endpoint;
+  - `ElevenLabs:DefaultModelId` cho model;
+- lưu audio vào `wwwroot/audio`.
 
 ### Services/TextPreprocessService.cs
-- Chuẩn hóa text tiếng Việt:
-  - `kg` → `ki lô gam`
-  - `đ/kg` → `đồng một ki lô gam`
-  - `40.000đ` → `40 nghìn đồng`
-  - `100k` → `100 nghìn`
-  - `22h` → `22 giờ`
-  - `ship/sale/feedback/TikTok` → từ tiếng Việt dễ đọc hơn
-- `CountCharacters()` dùng trim length.
+- chuẩn hóa text tiếng Việt dễ đọc hơn cho TTS;
+- chuyển số / đơn vị / từ vay mượn sang dạng đọc tốt hơn;
+- `CountCharacters()` dùng để tính điểm và validate.
 
-## Dependency giữa module
+## Dependency giữa các module
 ```text
 Pages/*.cshtml.cs
   ├─ DataStore
   ├─ IConfiguration
-  ├─ TextPreprocessService     # Index only
-  └─ ElevenLabsService         # Index only
+  ├─ TextPreprocessService       # Index
+  └─ ElevenLabsService           # Index
+
+wwwroot/js/app.js
+  ├─ gọi handler Razor async
+  ├─ cập nhật UI pending/history
+  └─ localStorage cho UX state
 
 ElevenLabsService
   ├─ HttpClient
@@ -93,86 +95,134 @@ DataStore
 ```
 
 ## File nào phụ trách gì
-- `Pages/Index.cshtml.cs`: nghiệp vụ tạo giọng, trừ/hoàn điểm, lưu job.
-- `Pages/Packages.cshtml.cs`: hiển thị gói theo kỳ, tạo order, user confirm paid, cancel order.
-- `Pages/Admin.cshtml.cs`: dashboard, approve/reject order, admin adjust point, lock user, update voice/package, approve/reject custom voice.
-- `Pages/MyVoices.cshtml.cs`: user thêm voice ID riêng hoặc gửi request tạo voice.
-- `Pages/History.cshtml.cs`: lấy danh sách `VoiceJob` của user.
-- `Pages/Transactions.cshtml.cs`: lấy ledger điểm của user.
-- `Pages/Voices.cshtml.cs`: danh sách system voices active/approved.
-- `Pages/Account.cshtml.cs`: update profile, đổi password.
-- `Pages/Shared/_Layout.cshtml`: menu, điểm hiện tại, logo, mobile nav.
-- `wwwroot/js/app.js`: frontend helpers, không chứa nghiệp vụ tiền/điểm thật.
+- `Pages/Index.cshtml`
+  - UI tạo giọng chính;
+  - 2 cột/3 vùng tùy theo breakpoint;
+  - popup chọn giọng;
+  - popup xác nhận tạo giọng;
+  - lịch sử gần đây;
+  - vùng nhập và hành động tạo giọng.
+- `Pages/Index.cshtml.cs`
+  - nghiệp vụ tạo giọng;
+  - trừ / hoàn điểm;
+  - trả JSON cho async generate;
+  - preview voice handler nếu có.
+- `Pages/Shared/_Layout.cshtml`
+  - sidebar;
+  - topbar;
+  - logo home link;
+  - điểm hiện tại dưới logo;
+  - mobile nav.
+- `wwwroot/js/app.js`
+  - char count;
+  - localStorage:
+    - draft text
+    - selected voice
+    - selected preset
+    - recent voices
+  - voice picker popup;
+  - preview voice audio;
+  - async create voice;
+  - pending history item;
+  - shared player cho lịch sử;
+  - mobile sheet open/close;
+  - custom confirm modal;
+  - success toast auto-hide.
+- `wwwroot/css/app.css`
+  - theme chính;
+  - responsive layout;
+  - popup / sheet / history player / toast / confirm modal.
 
 ## Data flow
-### Tạo giọng
+
+### Tạo giọng async hiện tại
 ```text
-Index.cshtml form
-→ IndexModel.OnPostAsync
-→ TextPreprocessService.Normalize/CountCharacters
-→ DataStore.Read: validate user/voice/balance/rate limits
-→ DataStore.Update: trừ điểm + UsePoint transaction
-→ ElevenLabsService.GenerateSpeechAsync
-→ DataStore.Update: add VoiceJob Completed
-→ RedirectToPage
+User click "Tạo giọng nói"
+→ JS confirmCreateVoice()
+→ mở modal xác nhận nội bộ
+→ acceptCreateVoiceConfirm()
+→ form.requestSubmit()
+→ JS intercept submit
+→ focusRecentHistoryPanel()
+→ insertPendingHistoryItem()
+→ fetch ?handler=Generate
+→ server validate + trừ điểm + gọi ElevenLabs
+→ server trả JSON
+→ JS renderIndexMessages()
+→ JS renderRecentHistoryList()
+→ JS updatePointBalance()
 ```
 
 ### Lỗi tạo giọng
 ```text
-ElevenLabsService throw exception
-→ catch trong IndexModel
-→ DataStore.Update: cộng lại điểm + RefundPoint transaction + VoiceJob Refunded
-→ TempData Error
-→ RedirectToPage
+GenerateSpeechAsync throw / return lỗi
+→ catch server-side
+→ hoàn điểm
+→ tạo RefundPoint
+→ lưu VoiceJob Refunded
+→ trả JSON lỗi
+→ JS xóa pending item
+→ JS hiện alert lỗi
 ```
 
 ### Mua gói
 ```text
-Packages.cshtml submit packageId
-→ PackagesModel.OnPostCreateOrder
-→ DataStore.Update: add PurchaseOrder Pending
-→ user chuyển khoản thủ công
-→ OnPostConfirmPaid: set UserNote/ConfirmedAt
-→ Admin.OnPostApproveOrder
-→ cộng điểm user + PurchaseApproved transaction + order Paid
+Packages form
+→ OnPostCreateOrder
+→ add PurchaseOrder Pending
+→ user chuyển khoản
+→ OnPostConfirmPaid
+→ Admin approve
+→ cộng điểm + PurchaseApproved
 ```
 
-### Custom voice
+### Chọn giọng
 ```text
-MyVoices form
-→ add VoiceOption OwnerUserId=userId
-→ Status Approved nếu user tự thêm Voice ID
-→ Status Pending nếu yêu cầu admin tạo
-→ Admin approve: fill ApiVoiceId, rate, Status Approved
-→ Index Load hiển thị voice nếu OwnerUserId == current user
+User click selected voice card
+→ openVoicePicker()
+→ filter/search/recent/mine
+→ optional previewVoice()
+→ selectVoiceFromPicker()
+→ lưu radio checked + localStorage
+→ updateSelectedVoiceCard()
 ```
 
 ## WebSocket packet flow
 - Không có WebSocket/SignalR.
 - Không có packet realtime.
-- Các cập nhật UI dựa trên page reload/redirect sau POST.
-- Nếu cần realtime sau này, đề xuất SignalR chỉ để báo trạng thái job; ledger điểm vẫn phải update trong server transaction.
+- Trạng thái realtime hiện tại là fake realtime qua pending item trên client.
 
 ## UI update flow
-- `app.js` cập nhật tức thời:
-  - số ký tự;
-  - điểm ước tính;
-  - preset slider;
-  - confirm trước khi submit;
-  - copy chuyển khoản;
-  - mở/đóng sidebar mobile.
-- Sau POST, server redirect, Razor render lại dữ liệu mới từ `DataStore`.
-- `TempData` dùng cho message success/error sau redirect.
 
-## OCR/canvas flow
+### Voice page
+- `Index` không reload toàn trang khi tạo giọng thành công/lỗi.
+- `RecentHistory` cập nhật cục bộ từ JSON response.
+- success alert:
+  - nổi đè lên vùng message;
+  - không chiếm chỗ layout;
+  - tự ẩn sau 2 giây.
+
+### History audio flow
+- chỉ có **một audio player dùng chung**;
+- click item mới thì item cũ reset;
+- không cho nhiều voice phát song song;
+- thanh seek hiện ngay trên item đang active;
+- `RecentHistory` cũng có nút tải xuống.
+
+### Mobile popup flow
+- `Giọng nói` và `Lịch sử` mở dưới dạng bottom sheet.
+- popup chọn giọng là modal riêng, không auto-open khi vào trang.
+- popup xác nhận tạo giọng trên mobile hiện giữa màn hình, không phải native confirm.
+
+## OCR / canvas flow
 - Không có OCR.
 - Không có canvas automation.
-- Không có capture/screenshot flow.
+- Không có screenshot/capture flow trong app runtime.
 
 ## Lưu trữ file
-- Database JSON: `App_Data/db.json`.
-- Audio: `wwwroot/audio/voice_<timestamp>_<guid>.mp3|wav`.
-- Logo/favicon: `wwwroot/images/*`.
+- DB JSON: `App_Data/db.json`
+- Audio: `wwwroot/audio`
+- Asset UI: `wwwroot/images`
 
 ## Cấu hình quan trọng
 - `ElevenLabs:ApiKey`
@@ -182,4 +232,4 @@ MyVoices form
 - `BusinessRules:MaxCharactersPerJob`
 - `BusinessRules:MaxJobsPer10Minutes`
 - `BusinessRules:LowPointWarning`
-- `BusinessRules:AudioRetentionDays` hiện mới là config, chưa có cleanup job.
+- `BusinessRules:AudioRetentionDays`

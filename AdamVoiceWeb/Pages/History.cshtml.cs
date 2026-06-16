@@ -1,2 +1,27 @@
-using System.Security.Claims; using AdamVoiceWeb.Models; using AdamVoiceWeb.Services; using Microsoft.AspNetCore.Mvc.RazorPages;
-namespace AdamVoiceWeb.Pages; public class HistoryModel:PageModel{private readonly DataStore _store; public HistoryModel(DataStore store)=>_store=store; public List<VoiceJob> Jobs{get;set;}=new(); public void OnGet(){var id=int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!); Jobs=_store.Read().VoiceJobs.Where(x=>x.UserId==id).OrderByDescending(x=>x.CreatedAt).ToList();}}
+using System.Security.Claims;
+using AdamVoiceWeb.Data;
+using AdamVoiceWeb.Models;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+
+namespace AdamVoiceWeb.Pages;
+
+public class HistoryModel : PageModel
+{
+    private readonly AppDbContext _db;
+
+    public HistoryModel(AppDbContext db)
+    {
+        _db = db;
+    }
+
+    public List<VoiceJob> Jobs { get; set; } = new();
+
+    public void OnGet()
+    {
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        Jobs = _db.VoiceJobs
+            .Where(x => x.UserId == userId)
+            .OrderByDescending(x => x.CreatedAt)
+            .ToList();
+    }
+}

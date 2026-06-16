@@ -9,18 +9,18 @@ public class ElevenLabsService
 {
     private readonly HttpClient _http;
     private readonly IConfiguration _config;
-    private readonly IWebHostEnvironment _env;
+    private readonly AppDataPaths _paths;
 
-    public ElevenLabsService(HttpClient http, IConfiguration config, IWebHostEnvironment env)
+    public ElevenLabsService(HttpClient http, IConfiguration config, AppDataPaths paths)
     {
         _http = http;
         _config = config;
-        _env = env;
+        _paths = paths;
     }
 
     public async Task<string> GenerateSpeechAsync(string text, VoiceOption voice, decimal stability, decimal similarity, decimal style, decimal speed)
     {
-        var audioDir = Path.Combine(_env.WebRootPath, "audio");
+        var audioDir = _paths.AudioRootPath;
         Directory.CreateDirectory(audioDir);
 
         var apiKey = _config["ElevenLabs:ApiKey"] ?? string.Empty;
