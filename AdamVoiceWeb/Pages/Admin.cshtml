@@ -53,7 +53,7 @@
                         <td>@o.PackageName</td>
                         <td>@o.PriceVnd.ToString("N0")đ</td>
                         <td>@o.Points.ToString("N0")</td>
-                        <td><b>@o.TransferContent</b></td>
+                        <td><b>@o.TransferContent</b><br /><span class="status @o.Status.ToLower()">@Model.OrderStatusText(o.Status)</span></td>
                         <td>
                             @(o.ConfirmedAt?.ToString("dd/MM HH:mm") ?? "Chưa bấm")<br />
                             <span class="muted">@o.UserNote</span>
@@ -290,7 +290,7 @@
                     <td>@Model.UserName(o.UserId)</td>
                     <td>@o.PackageName</td>
                     <td>@o.PriceVnd.ToString("N0")đ</td>
-                    <td><span class="status @o.Status.ToLower()">@o.Status</span></td>
+                    <td><span class="status @o.Status.ToLower()">@Model.OrderStatusText(o.Status)</span></td>
                     <td>@o.CreatedAt.ToString("dd/MM HH:mm")</td>
                 </tr>
             }

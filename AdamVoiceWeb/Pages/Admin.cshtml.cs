@@ -41,7 +41,7 @@ public class AdminModel : PageModel
     {
         var adminId = CurrentUserId();
         var order = _db.PurchaseOrders.First(x => x.Id == orderId);
-        if (order.Status == "Pending")
+        if (order.Status == "Pending" || order.Status == "Reported")
         {
             var user = _db.Users.First(x => x.Id == order.UserId);
             var before = user.PointBalance;
@@ -76,7 +76,7 @@ public class AdminModel : PageModel
     public IActionResult OnPostRejectOrder(int orderId, string adminNote)
     {
         var order = _db.PurchaseOrders.First(x => x.Id == orderId);
-        if (order.Status == "Pending")
+        if (order.Status == "Pending" || order.Status == "Reported")
         {
             order.Status = "Cancelled";
             order.AdminNote = string.IsNullOrWhiteSpace(adminNote) ? "Admin huy don" : adminNote;
@@ -194,6 +194,14 @@ public class AdminModel : PageModel
     }
 
     public string UserName(int id) => Users.FirstOrDefault(x => x.Id == id)?.Username ?? id.ToString();
+    public string OrderStatusText(string status) => status switch
+    {
+        "Pending" => "Chờ khách chuyển",
+        "Reported" => "Khách đã báo CK",
+        "Paid" => "Đã cộng điểm",
+        "Cancelled" => "Đã hủy",
+        _ => status
+    };
 
     private int CurrentUserId() => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
@@ -203,7 +211,11 @@ public class AdminModel : PageModel
         var month = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
 
         Users = _db.Users.OrderBy(x => x.Username).ToList();
-        PendingOrders = _db.PurchaseOrders.Where(x => x.Status == "Pending").OrderByDescending(x => x.CreatedAt).ToList();
+        PendingOrders = _db.PurchaseOrders
+            .Where(x => x.Status == "Pending" || x.Status == "Reported")
+            .OrderByDescending(x => x.Status == "Reported")
+            .ThenByDescending(x => x.ConfirmedAt ?? x.CreatedAt)
+            .ToList();
         RecentOrders = _db.PurchaseOrders.OrderByDescending(x => x.CreatedAt).Take(30).ToList();
         Voices = _db.Voices.ToList();
         PendingCustomVoices = _db.Voices.Where(x => x.OwnerUserId.HasValue && x.Status == "Pending").OrderByDescending(x => x.CreatedAt).ToList();

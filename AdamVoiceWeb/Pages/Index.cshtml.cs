@@ -98,7 +98,7 @@ public class IndexModel : PageModel
 
         try
         {
-            const string previewText = "Xin chao, day la giong doc thu de anh kiem tra truoc khi tao audio.";
+            const string previewText = "Xin chao, day la giong doc thu de ban kiem tra truoc khi tao audio.";
             var audioUrl = await _tts.GenerateSpeechAsync(previewText, voice, 0.5m, 0.8m, 0.35m, 1.0m);
             return new JsonResult(new { ok = true, audioUrl });
         }
@@ -120,7 +120,7 @@ public class IndexModel : PageModel
 
         if (charCount <= 0)
         {
-            return new GenerateVoiceOutcome(false, "Anh ch\u01b0a nh\u1eadp n\u1ed9i dung.");
+            return new GenerateVoiceOutcome(false, "B\u1ea1n ch\u01b0a nh\u1eadp n\u1ed9i dung.");
         }
 
         if (charCount > maxChars)
@@ -137,7 +137,7 @@ public class IndexModel : PageModel
         var recentCount = _db.VoiceJobs.Count(x => x.UserId == userId && x.CreatedAt > DateTime.Now.AddMinutes(-10));
         if (recentCount >= maxJobs)
         {
-            return new GenerateVoiceOutcome(false, $"Anh t\u1ea1o h\u01a1i nhanh. Vui l\u00f2ng ch\u1edd th\u00eam \u00edt ph\u00fat r\u1ed3i th\u1eed l\u1ea1i. Gi\u1edbi h\u1ea1n {maxJobs} l\u1ea7n/10 ph\u00fat.");
+            return new GenerateVoiceOutcome(false, $"B\u1ea1n t\u1ea1o h\u01a1i nhanh. Vui l\u00f2ng ch\u1edd th\u00eam \u00edt ph\u00fat r\u1ed3i th\u1eed l\u1ea1i. Gi\u1edbi h\u1ea1n {maxJobs} l\u1ea7n/10 ph\u00fat.");
         }
 
         var voice = _db.Voices.FirstOrDefault(x =>

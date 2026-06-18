@@ -77,7 +77,7 @@ public class PurchaseOrder
     public int PriceVnd { get; set; }
     public int Points { get; set; }
     public string TransferContent { get; set; } = "";
-    public string Status { get; set; } = "Pending"; // Pending, Paid, Cancelled
+    public string Status { get; set; } = "Pending"; // Pending, Reported, Paid, Cancelled
     public string UserNote { get; set; } = "";
     public string AdminNote { get; set; } = "";
     public int? ApprovedByUserId { get; set; }

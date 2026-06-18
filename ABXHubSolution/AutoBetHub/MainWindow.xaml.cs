@@ -48,6 +48,7 @@ namespace AutoBetHub
         private IGamePlugin? _active;
 
         private bool _navEventsHooked;
+        private bool _homeDiagnosticsHooked;
         private bool _activating;
         private string? _activatingSlug;
         private readonly string? _startupSlug;
@@ -259,6 +260,7 @@ namespace AutoBetHub
                             options: null);
 
                         await web.EnsureCoreWebView2Async(env);
+                        await HookHomeDiagnosticsAsync();
 
                         try
                         {
@@ -333,7 +335,7 @@ namespace AutoBetHub
         // ========== WebView2 <-> hub.html ==========
 
         // message gửi từ hub.html: { cmd, slug?, file?, title? }
-        private sealed record WebMsg(string cmd, string? slug, string? file, string? title);
+        private sealed record WebMsg(string cmd, string? slug, string? file, string? title, string? level, string? text);
 
         private sealed record UpdateManifest(string appVersion, string? downloadUrl, string? notes);
 
@@ -406,6 +408,17 @@ namespace AutoBetHub
                         case "createShortcut":
                             _log.Info($"[Hub] createShortcut slug={msg.slug} title={msg.title}");
                             CreateDesktopShortcut(msg.slug, msg.title);
+                            break;
+
+                        case "homeDiagnostics":
+                            var level = (msg.level ?? "info").Trim().ToLowerInvariant();
+                            var text = string.IsNullOrWhiteSpace(msg.text) ? "(empty)" : msg.text.Trim();
+                            if (level == "error")
+                                _log.Error("[HomeDiag] " + text);
+                            else if (level == "warn")
+                                _log.Warn("[HomeDiag] " + text);
+                            else
+                                _log.Info("[HomeDiag] " + text);
                             break;
                     }
 
@@ -1210,6 +1223,73 @@ namespace AutoBetHub
                 _log.Info($"[Home] Completed: ok={e.IsSuccess} err={e.WebErrorStatus}");
         }
 
+        private async Task HookHomeDiagnosticsAsync()
+        {
+            if (_homeDiagnosticsHooked || web.CoreWebView2 == null) return;
+            _homeDiagnosticsHooked = true;
+
+            await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
+(() => {
+  const formatPart = (value) => {
+    try {
+      if (value == null) return 'null';
+      if (typeof value === 'string') return value;
+      if (value instanceof Error) return value.stack || value.message || String(value);
+      return typeof value === 'object' ? JSON.stringify(value) : String(value);
+    } catch {
+      return '[unserializable]';
+    }
+  };
+
+  const postDiag = (level, text) => {
+    try {
+      window.chrome?.webview?.postMessage({
+        cmd: 'homeDiagnostics',
+        level,
+        text
+      });
+    } catch {}
+  };
+
+  const origWarn = console.warn ? console.warn.bind(console) : null;
+  const origError = console.error ? console.error.bind(console) : null;
+
+  console.warn = (...args) => {
+    postDiag('warn', args.map(formatPart).join(' '));
+    if (origWarn) origWarn(...args);
+  };
+
+  console.error = (...args) => {
+    postDiag('error', args.map(formatPart).join(' '));
+    if (origError) origError(...args);
+  };
+
+  window.addEventListener('DOMContentLoaded', () => {
+    postDiag('info', 'DOMContentLoaded');
+  });
+
+  window.addEventListener('error', function (event) {
+  try {
+    const source = event && event.filename ? event.filename : 'inline';
+    const line = event && typeof event.lineno === 'number' ? event.lineno : 0;
+    const col = event && typeof event.colno === 'number' ? event.colno : 0;
+    const message = event && event.message ? event.message : 'Unknown script error';
+    postDiag('error', '[window.onerror] ' + source + ':' + line + ':' + col + ' ' + message);
+  } catch {}
+});
+
+window.addEventListener('unhandledrejection', function (event) {
+  try {
+    const reason = event && event.reason
+      ? (event.reason.stack || event.reason.message || String(event.reason))
+      : 'Unknown promise rejection';
+    postDiag('error', '[unhandledrejection] ' + reason);
+  } catch {}
+});
+})();
+");
+        }
+
         // ========== Plugin lifecycle ==========
 
         private async Task ActivatePluginAsync(string? slug)
@@ -1368,6 +1448,7 @@ namespace AutoBetHub
                 if (web.CoreWebView2 == null)
                 {
                     web.EnsureCoreWebView2Async().GetAwaiter().GetResult();
+                    HookHomeDiagnosticsAsync().GetAwaiter().GetResult();
                     HookHomeNavEvents();
                 }
             }

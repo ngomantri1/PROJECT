@@ -414,3 +414,5 @@ FodyWeavers.xsd
 *.dylib
 *.so
 *.mp3
+*.json
+*.a

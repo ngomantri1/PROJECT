@@ -1,0 +1,788 @@
+                    const { useEffect, useMemo, useState } = React;
+
+                    /* ================== DATA ================== */
+                    const GAMES = [
+                      { title: "Xóc Đĩa Live HIT, GO88, NET88, TX88",                      slug: "xoc-dia-live-hit",        tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaLiveHit.png" },
+                      { title: "Tài Xỉu Live HIT, GO88, NET88, TX88",                      slug: "tai-xiu-live-hit",        tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveHit.png" },
+                      { title: "Aviator HIT, GO88, NET88, TX88",                           slug: "aviator-hit",             tag: "aviator",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/AviatorHit.png" },
+                      { title: "Xóc Đĩa Tứ Linh SunWin, ZoWin, NhatVip, GemVip",           slug: "xoc-dia-tu-linh-zowin",   tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaTuLinhZoWin.png" },
+                      { title: "Tài Xỉu Thường SunWin, ZoWin, NhatVip, GemVip",            slug: "tai-xiu-thuong-zowin",    tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuThuongZoWin.png" },
+                      { title: "Tài Xỉu Live SunWin, ZoWin, NhatVip, GemVip",              slug: "tai-xiu-live-sunwin",     tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveSunWin.png" },
+					  { title: "Sicbo X88 Live SunWin, ZoWin, NhatVip, GemVip",            slug: "sic-bo-live-sunwin",      tag: "Tài xỉu Sicbo",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/SicboLiveSunWin.png" },
+                      { title: "Tài Xỉu B29",                                              slug: "tai-xiu-b29",             tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuB29.png" },
+                      { title: "Xóc Đĩa B29",                                              slug: "xoc-dia-b29",             tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaB29.png" },
+                      { title: "Xóc Đĩa B52",                                              slug: "xoc-dia-b52",             tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaB52.png" },
+                      { title: "Xóc Đĩa Sới Live KH24",                                    slug: "xoc-dia-soi-live-kh24",   tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaSoiLiveKH24.png" },
+                      { title: "Xóc Đĩa Sới Vip 389",                                      slug: "xoc-dia-soi-vip389",      tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaSoiVip389.png" },
+                      { title: "Baccarat Sảnh PP Casino trực tuyến",                       slug: "baccarat-pp-rr88",        tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratPPRR88.png" },
+                      { title: "Baccarat Sexy Casino Nhóm 1 : Duba Palace",                slug: "baccarat-sexy-casino",    tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratSexyCasino.png" },
+                      { title: "Baccarat Sexy Casino Nhóm 2 : QH88, UU88, RR88, VIP389, SHBet",   slug: "baccarat-sexy-casino2",   tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratSexyCasino.png" },
+                      { title: "Baccarat WM Casino Nhóm 1 : Duba Palace",                  slug: "baccarat-wm-casino",      tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratWMCasino.png" },
+                      { title: "Baccarat WM Casino Nhóm 2 : QH88, UU88, RR88, VIP389,SHBet",     slug: "baccarat-wm-casino2",     tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratWMCasino.png" },
+                      { title: "Baccarat Sảnh Vivo Gaming trực tuyến",                     slug: "baccarat-vivo-gaming",    tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratVivoGaming.png" },
+                      { title: "Baccarat Sảnh Ezugi trực tuyến",                           slug: "baccarat-ezugi-casino",   tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratEzugiCasino.png" },
+                      { title: "Baccarat Sảnh Pragmatic trực tuyến",                       slug: "baccarat-pragmatic",      tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratPragmatic.png" },
+                      { title: "Baccarat ZoWin Live",                                      slug: "baccarat-zowin-casino",   tag: "Baccarat", gradient: "from-rose-500 to-fuchsia-500", img: "Assets/BaccaratZoWin.png" },
+                    ];
+
+                    function normalizeSearchText(text) {
+                      return (text || "")
+                        .toLowerCase()
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "")
+                        .replace(/đ/g, "d")
+                        .replace(/[^a-z0-9]+/g, " ")
+                        .replace(/\s+/g, " ")
+                        .trim();
+                    }
+
+                    function splitSearchTokens(text) {
+                      const normalized = normalizeSearchText(text);
+                      return normalized ? normalized.split(" ") : [];
+                    }
+
+                    function buildAcronymTokens(tokens) {
+                      if (!Array.isArray(tokens) || tokens.length === 0) return [];
+
+                      const acronym = tokens
+                        .filter(Boolean)
+                        .map((token) => token[0])
+                        .join("");
+
+                      if (!acronym) return [];
+
+                      const variants = [];
+                      for (let i = 1; i <= acronym.length; i++) {
+                        variants.push(acronym.slice(0, i));
+                      }
+
+                      return variants;
+                    }
+
+                    function buildSearchIndex(game) {
+                      const normalizedTitle = normalizeSearchText(game.title);
+                      const normalizedTag = normalizeSearchText(game.tag);
+                      const normalizedSlug = normalizeSearchText(game.slug);
+
+                      const titleTokens = splitSearchTokens(normalizedTitle);
+                      const tagTokens = splitSearchTokens(normalizedTag);
+                      const slugTokens = splitSearchTokens(normalizedSlug);
+
+                      const normalizedParts = [
+                        normalizedTitle,
+                        normalizedTag,
+                        normalizedSlug,
+                        normalizedTitle.replace(/\s+/g, ""),
+                        normalizedTag.replace(/\s+/g, ""),
+                        normalizedSlug.replace(/\s+/g, ""),
+                        ...buildAcronymTokens(titleTokens),
+                        ...buildAcronymTokens(tagTokens),
+                        ...buildAcronymTokens(slugTokens),
+                      ].filter(Boolean);
+
+                      return {
+                        text: Array.from(new Set(normalizedParts)).join(" "),
+                        tokens: Array.from(
+                          new Set([
+                            ...titleTokens,
+                            ...tagTokens,
+                            ...slugTokens,
+                            ...normalizedParts,
+                          ])
+                        ),
+                      };
+                    }
+
+                    function matchesGame(game, query) {
+                      const normalizedQuery = normalizeSearchText(query);
+                      if (!normalizedQuery) return true;
+
+                      const index = buildSearchIndex(game);
+                      const queryTokens = splitSearchTokens(normalizedQuery);
+                      const compactQuery = normalizedQuery.replace(/\s+/g, "");
+                      const compactText = index.text.replace(/\s+/g, "");
+
+                      if (index.text.includes(normalizedQuery)) return true;
+                      if (compactQuery && compactText.includes(compactQuery)) return true;
+
+                      return queryTokens.every((token) =>
+                        index.tokens.some((candidate) =>
+                          candidate === token ||
+                          candidate.startsWith(token) ||
+                          candidate.includes(token))
+                      );
+                    }
+
+                    const LS_KEYS = {
+                      pinned:       "abx.home.pinned",
+                      pinnedList:   "abx.home.pinnedList",
+                      autoJump:     "abx.home.autojump",
+                      autoJumpSlug: "abx.home.autojump.slug",
+                      last:         "abx.home.last",
+                      tone:         "abx.home.tone"
+                    };
+                    const TELEGRAM_URL = "https://t.me/minoauto";
+
+                    // Session flags: kiểm soát tự-động nhảy game và mượt khi về Home
+                    const SS_KEYS = {
+                      didAutoJump:        "abx.session.didAutoJump",        // đã auto-jump 1 lần trong phiên này
+                      suppressAutoJump:   "abx.session.suppressAutoJump"    // đặt khi người dùng bấm 'Trang chủ' -> không auto-jump nữa
+                    };
+
+                    /* ================== THEME (2 nền) ================== */
+                    const TONES = [
+                      {
+                        name: "Nền sáng",
+                        bg: "bg-[#eef2f7]",
+                        panel: "bg-white",
+                        card: "bg-white",
+                        cardHover: "hover:bg-slate-50",
+                        border: "border-slate-200",
+                        panelSoft: "bg-white",
+                        borderSoft: "border-slate-200",
+                        text: "text-black",
+                        textStrong: "text-black",
+                        textSoft: "text-slate-700",
+                        chipActive: "bg-[#e7f3ff] border-[#b3d7ff] text-[#1877F2]",
+                        chip: "text-slate-700 border-slate-200 hover:bg-slate-50",
+                        pillBg: "bg-[#e7f3ff]",
+                        pillText: "text-[#1877F2]",
+                        btnPrimary: "bg-[#1877F2] text-white hover:bg-[#166fe0]",
+                        btnSecondary: "border-slate-300 text-slate-700 hover:bg-slate-50",
+                        divider: "bg-slate-200",
+                      },
+                      {
+                        name: "Nền tối",
+                        bg: "bg-[#18191a]",
+                        panel: "bg-[#242526]",
+                        card: "bg-[#242526]",
+                        cardHover: "hover:bg-[#2e2f30]",
+                        border: "border-[#3a3b3c]",
+                        panelSoft: "bg-[#242526]",
+                        borderSoft: "border-[#3a3b3c]",
+                        text: "text-[#e4e6eb]",
+                        textStrong: "text-[#e4e6eb]",
+                        textSoft: "text-[#b0b3b8]",
+                        chipActive: "bg-[#263951] border-[#3d5b85] text-[#e4e6eb]",
+                        chip: "text-[#e4e6eb] border-[#3a3b3c] hover:bg-[#2e2f30]",
+                        pillBg: "bg-[#263951]",
+                        pillText: "text-[#e4e6eb]",
+                        btnPrimary: "bg-[#2374e1] text-white hover:bg-[#1e63bf]",
+                        btnSecondary: "border-[#3a3b3c] text-[#e4e6eb] hover:bg-[#2e2f30]",
+                        divider: "bg-[#3a3b3c]",
+                      },
+                    ];
+
+                    /* ================== UI Helpers ================== */
+                    const Pill = ({children, t}) => {
+                      const label = typeof children === "string"
+                        ? children.replace(/ /g, "\u00A0")
+                        : children;
+
+                      return (
+                      <span
+                        className={`inline-flex shrink-0 items-center justify-center rounded-full px-3 py-1 text-xs ${t.pillBg} ${t.pillText} backdrop-blur`}
+                        style={{
+                          minWidth: "76px",
+                          height: "32px",
+                          whiteSpace: "nowrap",
+                          wordBreak: "keep-all",
+                          overflowWrap: "normal",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span
+                          className="block text-center"
+                          style={{
+                            whiteSpace: "nowrap",
+                            wordBreak: "keep-all",
+                            overflowWrap: "normal",
+                            lineHeight: 1,
+                          }}
+                        >
+                          {label}
+                        </span>
+                      </span>
+                      );
+                    };
+
+
+                    const TelegramButton = ({ tone }) => {
+                      const base = "text-sm px-3 py-1.5 rounded-xl inline-flex items-center gap-2 transition shadow-sm";
+                      const cls =
+                        tone === 0
+                          ? "bg-[#229ED9] hover:bg-[#1c8fc5] text-white"
+                          : "bg-[#1c8fc5] hover:bg-[#187aa4] text-white";
+                      return (
+                        <a
+                          href={TELEGRAM_URL}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={`${base} ${cls}`}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M120 0C53.73 0 0 53.73 0 120s53.73 120 120 120 120-53.73 120-120S186.27 0 120 0Z" fill="#229ED9"/>
+                            <path d="m175.2 72.61-19.25 91.18c-1.45 6.34-5.26 7.9-10.65 4.92l-29.4-21.66-14.18 13.67c-1.56 1.56-2.87 2.87-5.88 2.87l2.11-30.19 54.93-49.63c2.38-2.11-.52-3.28-3.69-1.17l-67.89 42.75-29.23-9.12c-6.36-1.98-6.48-6.36 1.33-9.42l114.2-44.09c5.26-1.98 9.86 1.17 8.17 9.31Z" fill="white"/>
+                          </svg>
+                          Chat Telegram
+                        </a>
+                      );
+                    };
+
+                    const UpdateBadge = ({ status, tone }) => {
+                      const phase = status?.phase || "idle";
+
+                      let state = "idle";
+                      if (phase === "updateAvailable") state = "need";
+                      else if (phase === "downloading" || phase === "extracting" || phase === "checking") state = "progress";
+                      else if (phase === "error") state = "error";
+                      else if (phase === "upToDate" || phase === "done") state = "ok";
+
+                      const palette = {
+                        idle: { bg: "bg-slate-300", text: "text-slate-700", icon: "dot" },
+                        ok: { bg: "bg-emerald-500", text: "text-white", icon: "check" },
+                        need: { bg: "bg-amber-500", text: "text-white", icon: "arrow" },
+                        progress: { bg: tone === 0 ? "bg-sky-500" : "bg-sky-400", text: "text-white", icon: "spinner" },
+                        error: { bg: "bg-amber-600", text: "text-white", icon: "warn" },
+                      };
+
+                      const style = palette[state] || palette.idle;
+                      const icon = style.icon;
+
+                      const iconView = (() => {
+                        if (icon === "check") {
+                          return (
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 8.5 6.5 12 13 4" />
+                            </svg>
+                          );
+                        }
+                        if (icon === "arrow") {
+                          return (
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M8 2v9" />
+                              <path d="M4.5 8.5 8 12l3.5-3.5" />
+                            </svg>
+                          );
+                        }
+                        if (icon === "spinner") {
+                          return (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                              <circle cx="12" cy="12" r="9" className="opacity-30" />
+                              <path d="M21 12a9 9 0 0 0-9-9" />
+                            </svg>
+                          );
+                        }
+                        if (icon === "warn") {
+                          return (
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M8 3 2.8 13h10.4L8 3Z" />
+                              <path d="M8 6v3" />
+                              <circle cx="8" cy="11.5" r="0.75" fill="currentColor" stroke="none" />
+                            </svg>
+                          );
+                        }
+                        return <span className="h-2 w-2 rounded-full bg-current" />;
+                      })();
+
+                      return (
+                        <span className={`absolute -top-1 -right-1 h-5 min-w-[20px] px-1 rounded-full flex items-center justify-center text-[11px] font-semibold shadow ${style.bg} ${style.text}`}>
+                          {iconView}
+                        </span>
+                      );
+                    };
+
+const TileArtwork = ({ title, gradient, img }) => {
+                // có đường dẫn hình thì ưu tiên hình
+                if (img) {
+                  return (
+                    <div className="relative h-28 w-full rounded-xl overflow-hidden bg-slate-200">
+                      <img src={img} alt={title} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/10 to-transparent pointer-events-none" />
+                    </div>
+                  );
+                }
+
+                // không có hình thì giữ kiểu cũ
+                return (
+                  <div className={`relative h-28 w-full rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center overflow-hidden`}>
+                    <div className="absolute inset-0 opacity-20 mix-blend-overlay bg-[radial-gradient(circle_at_20%_20%,white,transparent_40%),radial-gradient(circle_at_80%_30%,white,transparent_35%)]"/>
+                    <span className="text-white/95 text-2xl font-black drop-shadow-sm select-none">
+                      {title.split(" ").map(w => w[0]).join("")}
+                    </span>
+                  </div>
+                );
+              };
+
+
+                    /* ===== Thẻ game ===== */
+                    function GameCard({ game, isPinned, onPin, onEnter, onShortcut, t }) {
+                      return (
+                        <div className={`group rounded-2xl border ${t.card} ${t.cardHover} transition-all backdrop-blur-md shadow-md hover:shadow-xl ring-1 ring-black/5 p-3 flex flex-col gap-3`}>
+                          <div className="relative">
+                            <TileArtwork title={game.title} gradient={game.gradient} img={game.img} />
+                            <div className="absolute top-2 right-2 inline-flex items-center gap-1">
+                              <button
+                                title="Tao shortcut"
+                                onClick={() => onShortcut?.(game)}
+                                className="inline-flex items-center gap-1 rounded-full text-xs px-2 py-1 backdrop-blur border bg-white/50 border-white/70 text-slate-800 hover:bg-white"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="-mt-[1px]">
+                                  <path d="M14 3h7v7M21 3L10 14M5 7H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-1" />
+                                </svg>
+                                Shortcut
+                              </button>
+                              <button
+                                title={isPinned ? "Bo GHIM" : "GHIM lam muc mac dinh"}
+                                onClick={() => onPin(game.slug)}
+                                className={`inline-flex items-center gap-1 rounded-full text-xs px-2 py-1 backdrop-blur border ${isPinned ? "bg-amber-400/90 border-amber-300 text-black" : "bg-white/50 border-white/70 text-slate-800 hover:bg-white"}`}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className="-mt-[1px]">
+                                  <path d="M6 3l12 12M14 3l7 7-4 4-7-7-3 3-4-4 3-3" />
+                                </svg>
+                                {isPinned ? "Da ghim" : "Ghim"}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex-1 flex flex-col gap-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <h3 className={`min-w-0 flex-1 font-semibold ${t.textStrong} tracking-wide`}>{game.title}</h3>
+                              <Pill t={t}>{game.tag}</Pill>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-center mt-auto">
+                            <button onClick={() => onEnter(game.slug)} className={`w-1/2 rounded-xl ${t.btnPrimary} text-sm py-2 transition`}>
+                              Vào ngay
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    /* ===== DANH SÁCH GHIM ===== */
+                    function PinnedBar({ pinnedList, autoJump, autoJumpSlug, onSelectAutoJump, onEnter, onUnpin, t }) {
+                      if (!pinnedList || pinnedList.length === 0) return null;
+                      return (
+                        <div className={`rounded-3xl border ${t.border} ${t.panel} backdrop-blur p-5 mb-5`}>
+                          <p className={`${t.textSoft} text-sm mb-2`}>
+                            <strong>GHIM tối đa 5 game.</strong> Chọn 1 game để tự vào lần sau.
+                          </p>
+                          <h3 className={`text-lg font-semibold mb-3 ${t.textStrong}`}>Đã ghim ({pinnedList.length}/5)</h3>
+
+                          <div className="space-y-3">
+                            {pinnedList.map((slug) => {
+                              const g = GAMES.find((x) => x.slug === slug);
+                              if (!g) return null;
+                              const isAuto = autoJump && autoJumpSlug === slug;
+
+                              return (
+                                <div key={slug} className={`flex items-center justify-between rounded-2xl border ${t.border} ${t.card} px-4 py-3`}>
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className={`h-8 w-8 rounded-xl bg-gradient-to-br ${g.gradient}`} />
+                                    <div className="truncate">
+                                      <div className={`truncate font-medium ${t.textStrong}`}>{g.title}</div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                                      <input
+                                        type="checkbox"
+                                        checked={isAuto}
+                                        onChange={(e) => onSelectAutoJump(slug, e.target.checked)}
+                                      />
+                                      <span className={`${t.textSoft}`}>Tự vào game đã ghim lần sau</span>
+                                    </label>
+
+                                    <button onClick={() => onEnter(slug)} className="px-4 py-2 rounded-xl text-sm bg-[#1877F2] text-white hover:bg-[#166fe0]">
+                                      Vào ngay
+                                    </button>
+                                    <button onClick={() => onUnpin(slug)} className={`px-3 py-2 rounded-xl text-sm border ${t.btnSecondary}`}>
+                                      Bỏ
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    /* ===== Nav (Trang chủ / Cài đặt + đổi nền) ===== */
+                    function TopNavbar({ t, tone, setTone, goHome, onOpenUpdate, updateStatus }) {
+                      return (
+                        <div className="sticky top-0 z-40">
+                          <div className="w-[min(1280px,95vw)] mx-auto mt-2">
+                            <div className={`rounded-2xl ${t.panel} backdrop-blur border ${t.border} px-3 py-2 shadow`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600" />
+                                  <span className={`font-semibold ${t.textStrong}`}>Automino – Hub</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={goHome}
+                                    className={`text-sm px-3 py-1.5 rounded-xl border ${t.btnSecondary}`}
+                                  >
+                                    Trang chủ
+                                  </button>
+
+                                  {/* NÚT ĐĂNG NHẬP */}
+                                  <button
+                                    onClick={() => {}}
+                                    className={`relative text-sm px-3 py-1.5 rounded-xl border ${t.btnSecondary}`}
+                                  >
+                                    Đăng nhập
+                                  </button>
+
+                                  {/* NÚT CẬP NHẬT + BADGE */}
+                                  <button
+                                    onClick={() => { onOpenUpdate?.(); }}
+                                    className={`relative text-sm px-3 py-1.5 rounded-xl border ${t.btnPrimary}`}
+                                  >
+                                    Cập nhật
+                                    <UpdateBadge status={updateStatus} tone={tone} />
+                                  </button>
+
+                                  <button className={`text-sm px-3 py-1.5 rounded-xl border ${t.btnSecondary}`}>
+                                    Cài đặt
+                                  </button>
+                                  <TelegramButton tone={tone} />
+                                  <button
+                                    onClick={() => setTone(tone === 0 ? 1 : 0)}
+                                    className={`text-sm px-3 py-1.5 rounded-xl border transition ${
+                                      tone === 0
+                                        ? "bg-[#242526] border-[#3a3b3c] text-[#e4e6eb] hover:bg-[#2e2f30]"
+                                        : "bg-white border-slate-200 text-slate-800 hover:bg-slate-50"
+                                    }`}
+                                  >
+                                    {tone === 0 ? "Nền tối" : "Nền sáng"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+
+                    // --- bridge ra WPF host (WebView2) ---
+                    function sendHost(msg) {
+                      try { window.chrome?.webview?.postMessage(msg); }
+                      catch (e) { console.warn("postMessage failed:", e); }
+                    }
+
+                   /* ================== APP ================== */
+                   function HomeHub() {
+                   // tone
+                   const [tone, setToneState] = useState(() => {
+                     const saved = localStorage.getItem(LS_KEYS.tone);
+                     return saved === "1" ? 1 : 0;
+                   });
+                   const t = useMemo(() => TONES[tone], [tone]);
+
+                   const setTonePersist = (i) => {
+                     setToneState(i);
+                     localStorage.setItem(LS_KEYS.tone, String(i));
+                   };
+
+                   // trạng thái cập nhật (badge + popup)
+                   const [updateStatus, setUpdateStatus] = useState({
+                     phase: "idle",
+                     progress: 0,
+                     message: "",
+                     currentVersion: null,
+                     remoteVersion: null,
+                   });
+                   const [updatePopupVisible, setUpdatePopupVisible] = useState(false);
+
+                   useEffect(() => {
+                     function onMessage(e) {
+                       const data = e.data || {};
+                       if (data.type !== "updateStatus") return;
+
+                       setUpdateStatus((prev) => ({
+                         ...prev,
+                         ...data,
+                         progress:
+                           typeof data.progress === "number"
+                             ? data.progress
+                             : prev.progress,
+                       }));
+                     }
+
+                     try {
+                       window.chrome?.webview?.addEventListener("message", onMessage);
+                     } catch {}
+
+                     return () => {
+                       try {
+                         window.chrome?.webview?.removeEventListener("message", onMessage);
+                       } catch {}
+                     };
+                   }, []);
+
+                   // đảm bảo kiểm tra ngầm ngay khi vào home (dù host auto-check, gửi lại cho chắc)
+                   useEffect(() => {
+                     try { sendHost({ cmd: "checkUpdate" }); }
+                     catch (e) { console.warn("checkUpdate auto on load failed:", e); }
+                   }, []);
+
+                   useEffect(() => {
+                     if (!updatePopupVisible) return;
+                     if (updateStatus.phase !== "upToDate") return;
+
+                     const timer = setTimeout(() => {
+                       setUpdatePopupVisible(false);
+                     }, 3000);
+
+                     return () => clearTimeout(timer);
+                   }, [updatePopupVisible, updateStatus.phase]);
+
+                   const openUpdatePopup = () => {
+                     setUpdatePopupVisible(true);
+                     setUpdateStatus((prev) => {
+                       if (prev.phase === "idle") {
+                         return { ...prev, phase: "checking", message: "Đang kiểm tra bản cập nhật…", progress: prev.progress || 5 };
+                       }
+                       return prev;
+                     });
+                     try { sendHost({ cmd: "checkUpdate" }); }
+                     catch (e) { console.warn("checkUpdate failed:", e); }
+                   };
+
+                      // GHIM & Auto-jump
+                      const [pinnedList, setPinnedList] = useState([]);
+                      const [autoJump, setAutoJump] = useState(false);
+                      const [autoJumpSlug, setAutoJumpSlug] = useState(null);
+                      const [searchQuery, setSearchQuery] = useState("");
+
+                      const filteredGames = useMemo(
+                        () => GAMES.filter((game) => matchesGame(game, searchQuery)),
+                        [searchQuery]
+                      );
+
+                      // Khởi tạo từ localStorage
+                      useEffect(() => {
+                        // pinned list (ưu tiên key mới)
+                        const legacyPinned = localStorage.getItem(LS_KEYS.pinned);
+                        let list = [];
+                        try {
+                          const json = localStorage.getItem(LS_KEYS.pinnedList);
+                          list = json ? JSON.parse(json) : (legacyPinned ? [legacyPinned] : []);
+                        } catch {
+                          list = legacyPinned ? [legacyPinned] : [];
+                        }
+                        setPinnedList(Array.isArray(list) ? list : []);
+
+                        // auto jump
+                        const aj = localStorage.getItem(LS_KEYS.autoJump) === "1";
+                        const ajSlug = localStorage.getItem(LS_KEYS.autoJumpSlug);
+                        setAutoJump(aj);
+                        setAutoJumpSlug(ajSlug || null);
+
+                        // Chỉ auto-jump 1 lần duy nhất trong phiên chạy app
+                        // và KHÔNG auto-jump ngay sau khi user vừa bấm "Trang chủ".
+                        if (aj && ajSlug) {
+                          const did = sessionStorage.getItem(SS_KEYS.didAutoJump) === "1";
+                          const suppressed = sessionStorage.getItem(SS_KEYS.suppressAutoJump) === "1";
+                          if (!did && !suppressed) {
+                            setTimeout(() => {
+                              try { sendHost({ cmd: "enterGame", slug: ajSlug }); } catch {}
+                              sessionStorage.setItem(SS_KEYS.didAutoJump, "1");
+                            }, 350);
+                          }
+                        }
+                      }, []);
+
+                      // GHIM/BỎ GHIM
+                      function togglePin(slug) {
+                        setPinnedList(prev => {
+                          let next;
+                          if (prev.includes(slug)) {
+                            next = prev.filter(s => s !== slug);
+                            if (slug === autoJumpSlug) {
+                              setAutoJump(false);
+                              setAutoJumpSlug(null);
+                              localStorage.removeItem(LS_KEYS.autoJump);
+                              localStorage.removeItem(LS_KEYS.autoJumpSlug);
+                            }
+                          } else {
+                            if (prev.length >= 5) {
+                              alert("Bạn chỉ có thể ghim tối đa 5 game.");
+                              return prev;
+                            }
+                            next = [...prev, slug];
+                          }
+                          localStorage.setItem(LS_KEYS.pinnedList, JSON.stringify(next));
+                          if (next.length > 0) localStorage.setItem(LS_KEYS.pinned, next[0]);
+                          else localStorage.removeItem(LS_KEYS.pinned);
+                          return next;
+                        });
+                      }
+
+                      // Chọn/bỏ auto-jump
+                      function selectAutoJump(slug, checked) {
+                        if (checked) {
+                          if (!pinnedList.includes(slug)) return;
+                          setAutoJump(true);
+                          setAutoJumpSlug(slug);
+                          localStorage.setItem(LS_KEYS.autoJump, "1");
+                          localStorage.setItem(LS_KEYS.autoJumpSlug, slug);
+                          // Reset trạng thái phiên, sẽ tự nhảy lần kế tiếp khi mở app (nếu chưa từng jump)
+                          sessionStorage.removeItem(SS_KEYS.didAutoJump);
+                        } else {
+                          if (autoJumpSlug === slug) {
+                            setAutoJump(false);
+                            setAutoJumpSlug(null);
+                            localStorage.removeItem(LS_KEYS.autoJump);
+                            localStorage.removeItem(LS_KEYS.autoJumpSlug);
+                            // Không suppress vĩnh viễn
+                          }
+                        }
+                      }
+
+                      // Vào game: chỉ gửi thông điệp cho WPF, KHÔNG đổi UI web
+                      function enterGame(slug) {
+                        try { sendHost({ cmd: "enterGame", slug }); } catch {}
+                        localStorage.setItem(LS_KEYS.last, slug);
+                      }
+
+                      function createShortcut(game) {
+                        if (!game || !game.slug) return;
+                        try { sendHost({ cmd: "createShortcut", slug: game.slug, title: game.title }); } catch {}
+                      }
+
+                      // Về trang chủ: đặt suppress cho phiên hiện tại để không auto-jump lại
+                      const goHome = () => {
+                        try {
+                          sessionStorage.setItem(SS_KEYS.suppressAutoJump, "1");
+                          sendHost({ cmd: "goHome" });
+                        } catch {}
+                      };
+
+                      return (
+                        <div className={`min-h-screen ${t.bg} ${t.text}`}>
+
+
+                      {updatePopupVisible && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                          <div className={`w-[min(420px,90vw)] rounded-2xl border ${t.border} ${t.panel} p-5 shadow-xl`}>
+                            <h2 className={`text-lg font-semibold mb-2 ${t.textStrong}`}>
+                              Cập nhật AutoBetHub
+                            </h2>
+                            <p className={`${t.textSoft} text-sm mb-4 whitespace-pre-line`}>
+                              {updateStatus.message || "Đang kiểm tra bản cập nhật…"}
+                            </p>
+
+                            <div className="w-full h-2 rounded-full bg-slate-200/70 overflow-hidden mb-3">
+                              <div
+                                className="h-full rounded-full bg-[#1877F2] transition-all"
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, updateStatus.progress || 0))}%`,
+                                }}
+                              />
+                            </div>
+
+                            {(updateStatus.currentVersion || updateStatus.remoteVersion) && (
+                              <div className={`${t.textSoft} text-xs mb-2`}>
+                                {updateStatus.currentVersion && (
+                                  <>
+                                    Phiên bản hiện tại:{" "}
+                                    <span className={t.textStrong}>
+                                      {updateStatus.currentVersion}
+                                    </span>
+                                    <br />
+                                  </>
+                                )}
+                                {updateStatus.remoteVersion && (
+                                  <>
+                                    Phiên bản mới nhất:{" "}
+                                    <span className={t.textStrong}>
+                                      {updateStatus.remoteVersion}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex justify-end gap-2 mt-3">
+                              <button
+                                onClick={() => setUpdatePopupVisible(false)}
+                                className={`px-3 py-1.5 rounded-xl border text-sm ${t.btnSecondary}`}
+                              >
+                                Đóng
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                          <TopNavbar t={t} tone={tone} setTone={setTonePersist} goHome={goHome} onOpenUpdate={openUpdatePopup} updateStatus={updateStatus} />
+
+                          <div className="w-[min(1280px,95vw)] mx-auto pt-6">
+                            {/* ==== GHIM ==== */}
+                            <PinnedBar
+                              pinnedList={pinnedList}
+                              autoJump={autoJump}
+                              autoJumpSlug={autoJumpSlug}
+                              onSelectAutoJump={selectAutoJump}
+                              onEnter={enterGame}
+                              onUnpin={togglePin}
+                              t={t}
+                            />
+
+                            {/* ==== TÌM GAME ==== */}
+                            <div className={`rounded-3xl border ${t.border} ${t.panel} backdrop-blur p-6 mb-4`}>
+                              <div className="flex flex-col md:flex-row items-center gap-4">
+                                <div className="flex-1">
+                                  <h2 className={`text-xl font-semibold ${t.textStrong}`}>Tìm game bạn muốn</h2>
+                                  <p className={`${t.textSoft} text-sm`}>Gõ nhanh để lọc, hoặc chọn ở dưới.</p>
+                                </div>
+                                <input
+                                  placeholder="Tìm kiếm…"
+                                  className={`w-full md:w-96 px-4 py-2 rounded-xl ${t.panel} border ${t.border} ${t.text} placeholder:text-slate-400`}
+                                  onChange={(e) => {
+                                    setSearchQuery(e.target.value);
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* ==== TẤT CẢ GAME ==== */}
+                            <h2 className={`text-xl font-bold mb-4 ${t.textStrong}`}>Tất cả game</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                              {filteredGames.map((g) => (
+                                <div key={g.slug} data-gametitle={g.title}>
+                                  <GameCard
+                                    game={g}
+                                    isPinned={pinnedList.includes(g.slug)}
+                                    onPin={togglePin}
+                                    onEnter={enterGame}
+                                    onShortcut={createShortcut}
+                                    t={t}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+
+                            {filteredGames.length === 0 && (
+                              <div className={`mt-4 rounded-2xl border ${t.border} ${t.panel} px-4 py-6 text-sm ${t.textSoft}`}>
+                                {"Không tìm thấy game phù hợp với từ khóa \"" + searchQuery + "\"."}
+                              </div>
+                            )}
+
+                            <div className="my-8 text-center text-xs text-slate-400/90">
+                              © {new Date().getFullYear()} ABX Hub
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    ReactDOM.createRoot(document.getElementById("root")).render(<HomeHub />);
+    

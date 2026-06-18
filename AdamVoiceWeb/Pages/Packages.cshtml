@@ -1,60 +1,287 @@
 @page
 @model AdamVoiceWeb.Pages.PackagesModel
-@{ ViewData["Title"]="Mua gói"; }
+@{
+    ViewData["Title"] = "Mua gói";
+}
+
 <div class="page pricing-page">
-  <h1>Mua gói</h1>
-  <div class="breadcrumbs">Chọn gói phù hợp với nhu cầu của bạn → chuyển khoản → admin duyệt và cộng credits.</div>
-  @if(!string.IsNullOrWhiteSpace(Model.Message)){<div class="alert ok">@Model.Message</div>}
+    <h1>Mua gói</h1>
+    <div class="breadcrumbs">Chọn gói phù hợp, tạo đơn thanh toán và quét mã chuyển khoản để admin duyệt nhanh hơn.</div>
 
-  <div class="pricing-toggle">
-    <a class="@(Model.Period=="Monthly"?"active":"")" href="/Packages?period=monthly">Tháng</a>
-    <a class="@(Model.Period=="Yearly"?"active":"")" href="/Packages?period=yearly">Năm <span>-@Model.YearDiscount%</span></a>
-  </div>
-
-  <div class="pricing-grid">
-    @foreach(var p in Model.Packages)
+    @if (!string.IsNullOrWhiteSpace(Model.Message) && !Model.HasSelectedOrder)
     {
-      <form method="post" asp-page-handler="CreateOrder" class="pricing-card @(p.IsPopular?"popular":"")">
-        <input type="hidden" name="packageId" value="@p.Id"/>
-        @if(p.IsPopular){<div class="popular-ribbon">Phổ biến nhất</div>}
-        <h3>@p.Name</h3>
-        <div class="pricing-price">
-          @if(p.BillingPeriod=="Yearly")
-          {
-            <b>@p.PriceVnd.ToString("N0")đ</b><span>/năm</span>
-            <small>Tương đương @p.MonthlyEquivalentVnd.ToString("N0")đ/tháng</small>
-          }
-          else
-          {
-            <b>@p.PriceVnd.ToString("N0")đ</b><span>/tháng</span>
-          }
-        </div>
-        <div class="credits-pill">⚡ @Model.FormatCredits(p.Points) credits</div>
-        <ul class="feature-list">
-          @foreach(var f in p.Features)
-          {
-            <li>✓ @f</li>
-          }
-        </ul>
-        <p class="muted plan-desc">@p.Description</p>
-        <button class="@(p.IsPopular?"primary":"secondary plan-buy")" type="submit">Mua ngay</button>
-      </form>
+        <div class="alert @(Model.MessageType == "err" ? "err" : "ok") package-toast-alert" data-auto-hide="3000">@Model.Message</div>
     }
-  </div>
 
-  <div class="credits-info">
-    <div class="info-icon">?</div>
-    <div>
-      <h3>Credits hoạt động như thế nào?</h3>
-      <p>• <b>1 credit = 1 ký tự</b> cần tạo audio với giọng thường.</p>
-      <p>• Giọng có hệ số cao hơn sẽ trừ theo công thức: <b>số ký tự × hệ số giọng</b>.</p>
-      <p>• Hệ thống chỉ trừ credits khi tạo file mới. Nghe lại hoặc tải lại file đã tạo <b>hoàn toàn miễn phí</b>.</p>
-      <p>• Nếu tạo giọng lỗi, hệ thống sẽ <b>tự động hoàn credits</b>.</p>
+    <div class="pricing-toggle">
+        <a class="@(Model.Period == "Monthly" ? "active" : "")" href="/Packages?period=monthly">Tháng</a>
+        <a class="@(Model.Period == "Yearly" ? "active" : "")" href="/Packages?period=yearly">Năm <span>-@Model.YearDiscount%</span></a>
     </div>
-  </div>
 
-  <div class="grid payment-grid">
-    <div class="card"><div class="section-title">Thông tin chuyển khoản</div><div class="bank-box"><p><span>Ngân hàng</span><b>@Model.BankName</b></p><p><span>Chủ tài khoản</span><b>@Model.AccountName</b></p><p><span>Số tài khoản</span><b id="bankAccount">@Model.AccountNumber</b> <button class="copy-btn" onclick="copyText('@Model.AccountNumber')" type="button">Sao chép</button></p></div><p class="muted">Sau khi tạo đơn, hãy chuyển đúng số tiền và đúng nội dung chuyển khoản để admin kiểm tra nhanh.</p><p class="muted">Cần hỗ trợ: <b>@Model.SupportPhone</b></p></div>
-    <div class="card"><div class="section-title">Đơn mua credits của tôi</div>@if(!Model.MyOrders.Any()){<p class="muted">Chưa có đơn mua credits.</p>}else{<table class="table"><thead><tr><th>Mã đơn</th><th>Gói</th><th>Số tiền</th><th>Credits</th><th>Nội dung CK</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>@foreach(var o in Model.MyOrders){<tr><td><b>@o.OrderCode</b></td><td>@o.PackageName</td><td>@o.PriceVnd.ToString("N0")đ</td><td>@o.Points.ToString("N0")</td><td><b id="content-@o.Id">@o.TransferContent</b> <button class="copy-btn" type="button" onclick="copyText('@o.TransferContent')">Copy</button></td><td><span class="status @o.Status.ToLower()">@o.Status</span></td><td>@if(o.Status=="Pending"){<form method="post" asp-page-handler="ConfirmPaid" class="inline-form"><input type="hidden" name="orderId" value="@o.Id"/><input class="input small-input" name="userNote" placeholder="Ghi chú CK nếu có"/><button class="mini-btn fill">Tôi đã CK</button></form><form method="post" asp-page-handler="Cancel" class="inline-form"><input type="hidden" name="orderId" value="@o.Id"/><button class="mini-btn">Hủy</button></form>}else{<span class="muted">@o.ApprovedAt?.ToString("dd/MM HH:mm")</span>}</td></tr>}</tbody></table>}</div>
-  </div>
+    <div class="pricing-grid">
+        @foreach (var p in Model.Packages)
+        {
+            <form method="post" asp-page-handler="CreateOrder" asp-route-period="@Model.PeriodQuery" class="pricing-card @(p.IsPopular ? "popular" : "")">
+                <input type="hidden" name="packageId" value="@p.Id" />
+                @if (p.IsPopular)
+                {
+                    <div class="popular-ribbon">Phổ biến nhất</div>
+                }
+                <h3>@p.Name</h3>
+                <div class="pricing-price">
+                    @if (p.BillingPeriod == "Yearly")
+                    {
+                        <b>@p.PriceVnd.ToString("N0")đ</b><span>/năm</span>
+                        <small>Tương đương @p.MonthlyEquivalentVnd.ToString("N0")đ/tháng</small>
+                    }
+                    else
+                    {
+                        <b>@p.PriceVnd.ToString("N0")đ</b><span>/tháng</span>
+                    }
+                </div>
+                <div class="credits-pill">⚡ @Model.FormatCredits(p.Points) credits</div>
+                <ul class="feature-list">
+                    @foreach (var f in p.Features)
+                    {
+                        <li>✓ @f</li>
+                    }
+                </ul>
+                <p class="muted plan-desc">@p.Description</p>
+                <button class="@(p.IsPopular ? "primary" : "secondary plan-buy")" type="submit">Mua ngay</button>
+            </form>
+        }
+    </div>
+
+    @if (Model.HasSelectedOrder)
+    {
+        <a class="package-payment-backdrop" href="/Packages?period=@Model.PeriodQuery" aria-label="Đóng thanh toán"></a>
+    }
+
+    <section id="payment-section" class="package-payment-shell @(Model.HasSelectedOrder ? "is-active" : "is-empty")">
+        @if (Model.SelectedOrder == null)
+        {
+            <div class="card package-payment-empty">
+                <div class="package-payment-empty-icon">QR</div>
+                <div>
+                    <h3>Tạo đơn để hiện mã chuyển khoản nhanh</h3>
+                    <p class="muted">Sau khi bấm <b>Mua ngay</b>, hệ thống sẽ tạo đơn và hiển thị QR chứa sẵn ngân hàng, số tiền và nội dung chuyển khoản để người dùng quét ngay trên điện thoại.</p>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="package-payment-head">
+                <div>
+                    <span class="package-payment-eyebrow">Bước 2: Thanh toán</span>
+                    <h2>Đơn @Model.SelectedOrder.OrderCode</h2>
+                    <p class="muted">Quét QR hoặc sao chép đúng thông tin chuyển khoản để admin duyệt nhanh.</p>
+                </div>
+                <a class="package-payment-close" href="/Packages?period=@Model.PeriodQuery">Đóng</a>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(Model.Message))
+            {
+                <div class="alert @(Model.MessageType == "err" ? "err" : "ok") package-toast-alert" data-auto-hide="3000">@Model.Message</div>
+            }
+
+            <div class="package-payment-grid">
+                <div class="card payment-summary-card">
+                    <div class="section-title">Tóm tắt đơn thanh toán</div>
+                    <div class="payment-order-hero">
+                        <div>
+                            <span class="status @Model.SelectedOrder.Status.ToLower()">@Model.GetOrderStatusText(Model.SelectedOrder.Status)</span>
+                            <b>@Model.SelectedOrder.PackageName</b>
+                            <p class="muted">Mã đơn: @Model.SelectedOrder.OrderCode</p>
+                        </div>
+                        <a class="mini-btn" href="/Packages?period=@Model.PeriodQuery">Đổi gói</a>
+                    </div>
+
+                    <div class="payment-summary-grid">
+                        <div class="payment-summary-item">
+                            <span>Số tiền</span>
+                            <b>@Model.SelectedOrder.PriceVnd.ToString("N0")đ</b>
+                        </div>
+                        <div class="payment-summary-item">
+                            <span>Credits</span>
+                            <b>@Model.SelectedOrder.Points.ToString("N0")</b>
+                        </div>
+                        <div class="payment-summary-item payment-summary-item-wide">
+                            <span>Nội dung chuyển khoản</span>
+                            <b>@Model.SelectedQrContent</b>
+                            <button class="copy-btn" type="button" onclick="copyText('@Model.SelectedQrContent')">Sao chép</button>
+                        </div>
+                    </div>
+
+                    <div class="payment-guide-box">
+                        <b>Lưu ý thanh toán</b>
+                        <p>Chuyển đúng số tiền và đúng nội dung ở trên. Sau khi chuyển xong, bấm nút xác nhận để admin kiểm tra và cộng credits.</p>
+                    </div>
+
+                    <form method="post" asp-page-handler="ConfirmPaid" class="payment-confirm-form">
+                        <input type="hidden" name="orderId" value="@Model.SelectedOrder.Id" />
+                        <input type="hidden" name="period" value="@Model.PeriodQuery" />
+                        <label>Ghi chú sau chuyển khoản (nếu có)</label>
+                        <input class="input" type="text" name="userNote" placeholder="Ví dụ: chuyển từ MBBank lúc 10:25" value="@Model.SelectedOrder.UserNote" />
+                        <button class="primary package-payment-primary" type="submit">Tôi đã chuyển khoản</button>
+                    </form>
+
+                    @if (Model.SelectedOrder.Status == "Pending")
+                    {
+                        <form method="post" asp-page-handler="Cancel" class="payment-cancel-form">
+                            <input type="hidden" name="orderId" value="@Model.SelectedOrder.Id" />
+                            <input type="hidden" name="period" value="@Model.PeriodQuery" />
+                            <button class="secondary package-payment-cancel" type="submit">Hủy đơn này</button>
+                        </form>
+                    }
+                    else if (Model.SelectedOrder.Status == "Reported")
+                    {
+                        <p class="muted">Đơn này đang chờ admin đối soát nên không thể hủy nữa.</p>
+                    }
+                </div>
+
+                <div class="card payment-qr-card">
+                    <div class="section-title">Quét để chuyển nhanh</div>
+                    <div class="payment-qr-meta">
+                        <div>
+                            <span class="payment-qr-badge">Thanh toán nhanh</span>
+                        </div>
+                    </div>
+                    <div class="payment-qr-frame">
+                        <div
+                            class="payment-qr-local"
+                            id="paymentQr"
+                            data-acq="@Model.BankAcqId"
+                            data-account="@Model.AccountNumber"
+                            data-amount="@Model.SelectedOrder.PriceVnd"
+                            data-content="@Model.SelectedQrContent"
+                            data-account-name="@Model.AccountName"
+                            data-order-code="@Model.SelectedOrder.OrderCode">
+                            <div class="payment-qr-loading">Đang tạo mã QR...</div>
+                        </div>
+                    </div>
+                    <div class="payment-transfer-grid">
+                        <div class="payment-transfer-row">
+                            <span>Ngân hàng</span>
+                            <div>
+                                <b>@Model.BankName</b>
+                                <button class="copy-btn" type="button" onclick="copyText('@Model.BankName')">Sao chép</button>
+                            </div>
+                        </div>
+                        <div class="payment-transfer-row">
+                            <span>Người thụ hưởng</span>
+                            <div>
+                                <b>@Model.AccountName</b>
+                                <button class="copy-btn" type="button" onclick="copyText('@Model.AccountName')">Sao chép</button>
+                            </div>
+                        </div>
+                        <div class="payment-transfer-row">
+                            <span>Số tài khoản</span>
+                            <div>
+                                <b>@Model.AccountNumber</b>
+                                <button class="copy-btn" type="button" onclick="copyText('@Model.AccountNumber')">Sao chép</button>
+                            </div>
+                        </div>
+                        <div class="payment-transfer-row payment-transfer-row-strong">
+                            <span>Số tiền</span>
+                            <div>
+                                <b>@Model.SelectedOrder.PriceVnd.ToString("N0")đ</b>
+                                <button class="copy-btn" type="button" onclick="copyText('@Model.SelectedOrder.PriceVnd')">Sao chép</button>
+                            </div>
+                        </div>
+                        <div class="payment-transfer-row payment-transfer-row-wide payment-transfer-row-strong">
+                            <span>Nội dung CK</span>
+                            <div>
+                                <b>@Model.SelectedQrContent</b>
+                                <button class="copy-btn" type="button" onclick="copyText('@Model.SelectedQrContent')">Sao chép</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="payment-support-strip">
+                        <span>Cần hỗ trợ nhanh</span>
+                        <b>@Model.SupportPhone</b>
+                    </div>
+                </div>
+            </div>
+        }
+    </section>
+
+    <div class="credits-info">
+        <div class="info-icon">?</div>
+        <div>
+            <h3>Credits hoạt động như thế nào?</h3>
+            <p>• <b>1 credit = 1 ký tự</b> cần tạo audio với giọng thường.</p>
+            <p>• Giọng có hệ số cao hơn sẽ trừ theo công thức: <b>số ký tự × hệ số giọng</b>.</p>
+            <p>• Hệ thống chỉ trừ credits khi tạo file mới. Nghe lại hoặc tải lại file đã tạo <b>hoàn toàn miễn phí</b>.</p>
+            <p>• Nếu tạo giọng lỗi, hệ thống sẽ <b>tự động hoàn credits</b>.</p>
+        </div>
+    </div>
+
+    <div class="card package-orders-card">
+        <div class="section-title">Đơn mua credits của tôi</div>
+        @if (!Model.MyOrders.Any())
+        {
+            <p class="muted">Chưa có đơn mua credits.</p>
+        }
+        else
+        {
+            <div class="responsive-table">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Mã đơn</th>
+                            <th>Gói</th>
+                            <th>Số tiền</th>
+                            <th>Credits</th>
+                            <th>Nội dung CK</th>
+                            <th>Trạng thái</th>
+                            <th>Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var o in Model.MyOrders)
+                        {
+                            <tr>
+                                <td><b>@o.OrderCode</b></td>
+                                <td>@o.PackageName</td>
+                                <td>@o.PriceVnd.ToString("N0")đ</td>
+                                <td>@o.Points.ToString("N0")</td>
+                                <td>
+                                    <b>@Model.GetTransferContent(o)</b>
+                                    <button class="copy-btn" type="button" onclick="copyText('@Model.GetTransferContent(o)')">Copy</button>
+                                </td>
+                                <td><span class="status @o.Status.ToLower()">@Model.GetOrderStatusText(o.Status)</span></td>
+                                <td>
+                                    @if (o.Status == "Pending" || o.Status == "Reported")
+                                    {
+                                        <a class="mini-btn fill" href="@Model.BuildPaymentUrl(o)">Mở thanh toán</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="muted">@o.ApprovedAt?.ToString("dd/MM HH:mm")</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
 </div>
+
+@section Scripts {
+    <script src="~/js/vendor/qrcode.js" asp-append-version="true"></script>
+    <script src="~/js/vendor/vietqr.js" asp-append-version="true"></script>
+    <script src="~/js/packages-payment.js" asp-append-version="true"></script>
+    <script>
+        document.querySelectorAll('.package-toast-alert').forEach(function (toast) {
+            var delay = Number(toast.dataset.autoHide || '3000');
+            window.setTimeout(function () {
+                toast.classList.add('is-hiding');
+                window.setTimeout(function () {
+                    toast.remove();
+                }, 280);
+            }, delay);
+        });
+    </script>
+}

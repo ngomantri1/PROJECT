@@ -1,7 +1,6 @@
 function updateCharacterCount() {
   const t = document.getElementById("Text");
   const c = document.getElementById("charCount");
-  const cost = document.getElementById("pointCost");
   const sticky = document.getElementById("stickyPointCost");
   const rateEl = document.querySelector('input[name="VoiceId"]:checked');
   if (!t || !c) return;
@@ -10,10 +9,8 @@ function updateCharacterCount() {
   const point = Math.ceil(len * rate);
   c.textContent = len.toLocaleString("vi-VN");
   const label = `${point.toLocaleString("vi-VN")} điểm`;
-  if (cost) cost.textContent = label;
   if (sticky) sticky.textContent = label;
 }
-
 const voiceStorageKey = "adamvoice.selectedVoiceId";
 const presetStorageKey = "adamvoice.selectedPreset";
 const draftTextStorageKey = "adamvoice.draftText";
@@ -25,7 +22,6 @@ let activePreviewButton = null;
 let currentVoicePickerFilter = "all";
 let isGeneratingVoice = false;
 let bypassVoiceConfirm = false;
-
 function isMobileComposerViewport() {
   return window.matchMedia("(max-width: 900px)").matches;
 }
@@ -143,7 +139,6 @@ function getSelectedVoiceData() {
     isCustom: radio.dataset.isCustom === "true"
   };
 }
-
 function updateSelectedVoiceCard() {
   const voice = getSelectedVoiceData();
   const avatar = document.getElementById("selectedVoiceAvatar");
@@ -166,7 +161,6 @@ function updateSelectedVoiceCard() {
   rate.textContent = `x${voice.rate} điểm`;
   type.textContent = voice.isCustom ? "Giọng của bạn" : "Giọng hệ thống";
 }
-
 function rememberRecentVoice(voiceId) {
   if (!voiceId) return;
   const recent = getRecentVoiceIds().filter((x) => x !== String(voiceId));
@@ -281,7 +275,7 @@ async function previewVoice(voiceId, button) {
     const res = await fetch(`${window.location.pathname}?handler=PreviewVoice&voiceId=${voiceId}`);
     const data = await res.json();
     if (!data.ok || !data.audioUrl) {
-      alert(data.message || "Không thể nghe thử giọng.");
+      showIndexToast(data.message || "Không thể nghe thử giọng.", "err", 3000);
       return;
     }
     activePreviewButton = button;
@@ -290,12 +284,11 @@ async function previewVoice(voiceId, button) {
     await audio.play();
     setPreviewButtonState(button, true);
   } catch {
-    alert("Không thể nghe thử giọng lúc này.");
+    showIndexToast("Không thể nghe thử giọng lúc này.", "err", 3000);
   } finally {
     setPreviewButtonLoading(button, false);
   }
 }
-
 function stopPreviewAudio() {
   if (previewAudio) {
     previewAudio.pause();
@@ -445,7 +438,6 @@ function setCreateButtonsBusy(isBusy) {
     }
   });
 }
-
 function insertPendingHistoryItem() {
   const container = document.getElementById("recentHistoryList");
   if (!container) return null;
@@ -475,7 +467,6 @@ function insertPendingHistoryItem() {
   container.prepend(item);
   return item;
 }
-
 function renderRecentHistoryList(jobs) {
   const container = document.getElementById("recentHistoryList");
   if (!container) return;
@@ -486,13 +477,11 @@ function renderRecentHistoryList(jobs) {
   }
   container.innerHTML = jobs.map(renderRecentHistoryItem).join("");
 }
-
 function ensureRecentHistoryEmptyState() {
   const container = document.getElementById("recentHistoryList");
   if (!container || container.children.length > 0) return;
   container.innerHTML = '<p class="muted history-empty">Chưa có file nào.</p>';
 }
-
 function renderRecentHistoryItem(job) {
   return `
     <div class="history-item" data-audio-item>
@@ -514,7 +503,6 @@ function renderRecentHistoryItem(job) {
     </div>
   `;
 }
-
 function renderIndexMessages(result) {
   const stack = document.getElementById("indexMessageStack");
   if (!stack) return;
@@ -523,12 +511,21 @@ function renderIndexMessages(result) {
     blocks.push(`<div class="alert ${result.ok ? "ok alert-floating" : "err"}"${result.ok ? ' data-auto-dismiss="2000"' : ""}>${escapeHtml(result.message)}</div>`);
   }
   if (typeof result.currentBalance === "number" && typeof result.lowPointWarning === "number" && result.currentBalance <= result.lowPointWarning) {
-    blocks.push(`<div class="alert warn">Điểm của anh sắp hết: <b>${formatNumber(result.currentBalance)} điểm</b>. Nên mua thêm điểm để không bị gián đoạn.</div>`);
+    blocks.push(`<div class="alert warn">Điểm của bạn sắp hết: <b>${formatNumber(result.currentBalance)} điểm</b>. Nên mua thêm điểm để không bị gián đoạn.</div>`);
   }
   stack.innerHTML = blocks.join("");
   scheduleAutoDismissAlerts();
 }
-
+function showIndexToast(message, type = "ok", autoDismiss = 2200) {
+  const stack = document.getElementById("indexMessageStack");
+  if (!stack || !message) return;
+  const toast = document.createElement("div");
+  toast.className = `alert ${type} alert-floating`;
+  if (autoDismiss > 0) toast.dataset.autoDismiss = String(autoDismiss);
+  toast.innerHTML = escapeHtml(message);
+  stack.prepend(toast);
+  scheduleAutoDismissAlerts();
+}
 function scheduleAutoDismissAlerts() {
   document.querySelectorAll(".alert[data-auto-dismiss]").forEach((alert) => {
     if (alert.dataset.dismissScheduled === "true") return;
@@ -750,17 +747,16 @@ window.addEventListener("resize", () => {
 });
 
 function copyText(text) {
-  navigator.clipboard?.writeText(text).then(() => alert(`Đã sao chép: ${text}`)).catch(() => {
+  navigator.clipboard?.writeText(text).then(() => showIndexToast(`Đã sao chép: ${text}`, "ok", 1800)).catch(() => {
     const ta = document.createElement("textarea");
     ta.value = text;
     document.body.appendChild(ta);
     ta.select();
     document.execCommand("copy");
     document.body.removeChild(ta);
-    alert(`Đã sao chép: ${text}`);
+    showIndexToast(`Đã sao chép: ${text}`, "ok", 1800);
   });
 }
-
 function confirmCreateVoice() {
   if (bypassVoiceConfirm) {
     bypassVoiceConfirm = false;
@@ -773,7 +769,7 @@ function confirmCreateVoice() {
   if (len <= 0) {
     renderIndexMessages({
       ok: false,
-      message: "Anh chưa nhập nội dung."
+      message: "Bạn chưa nhập nội dung."
     });
     text.focus();
     return false;
@@ -787,7 +783,6 @@ function confirmCreateVoice() {
   });
   return false;
 }
-
 function openCreateVoiceConfirm(summary) {
   const modal = document.getElementById("createVoiceConfirmModal");
   if (!modal) return;
@@ -800,7 +795,6 @@ function openCreateVoiceConfirm(summary) {
   modal.hidden = false;
   document.body.classList.add("modal-open");
 }
-
 function closeCreateVoiceConfirm() {
   const modal = document.getElementById("createVoiceConfirmModal");
   if (!modal) return;

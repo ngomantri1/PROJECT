@@ -7,7 +7,7 @@
   <div id="indexMessageStack">
     @if(!string.IsNullOrWhiteSpace(Model.Success)){<div class="alert ok alert-floating" data-auto-dismiss="2000">@Model.Success</div>}
     @if(!string.IsNullOrWhiteSpace(Model.Error)){<div class="alert err">@Model.Error</div>}
-    @if(Model.CurrentBalance <= Model.LowPointWarning){<div class="alert warn">Điểm của anh sắp hết: <b>@Model.CurrentBalance.ToString("N0") điểm</b>. Nên mua thêm điểm để không bị gián đoạn.</div>}
+    @if(Model.CurrentBalance <= Model.LowPointWarning){<div class="alert warn">Điểm của bạn sắp hết: <b>@Model.CurrentBalance.ToString("N0") điểm</b>. Nên mua thêm điểm để không bị gián đoạn.</div>}
   </div>
 
   <form method="post" class="composer-grid" id="voiceForm" onsubmit="return confirmCreateVoice()" data-async-generate="true">
@@ -23,8 +23,8 @@
           data-name="@v.Name"
           data-description="@v.Description"
           data-avatar="@v.AvatarEmoji"
-          data-is-custom="@(v.OwnerUserId.HasValue && v.OwnerUserId>0 ? "true" : "false")"
-          @(v.Id==Model.VoiceId ? "checked" : "") />
+          data-is-custom="@(v.OwnerUserId.HasValue && v.OwnerUserId > 0 ? "true" : "false")"
+          @(v.Id == Model.VoiceId ? "checked" : "") />
       }
     </div>
 
@@ -108,14 +108,14 @@
           <a href="/History" class="composer-history-link">Xem tất cả</a>
         </div>
         <div id="recentHistoryList">
-          @foreach(var j in Model.RecentJobs)
+          @foreach (var j in Model.RecentJobs)
           {
             <div class="history-item" data-audio-item>
               <button type="button" class="play history-play" data-audio-url="@j.AudioUrl" data-state="idle" onclick="toggleHistoryAudio(this)" aria-label="Phát audio">
                 <span class="play-icon">▶</span>
               </button>
               <div class="history-main">
-                <b>@(j.Text.Length>30?j.Text[..30]+"...":j.Text)</b><span class="muted history-subline">@j.VoiceName • @j.CharacterCount ký tự</span>
+                <b>@(j.Text.Length > 30 ? j.Text[..30] + "..." : j.Text)</b><span class="muted history-subline">@j.VoiceName • @j.CharacterCount ký tự</span>
               </div>
               <div class="history-side">
                 <div class="muted history-time">@j.CreatedAt.ToString("dd/MM HH:mm")</div>
@@ -128,7 +128,10 @@
               </div>
             </div>
           }
-          @if(!Model.RecentJobs.Any()){<p class="muted history-empty">Chưa có file nào.</p>}
+          @if (!Model.RecentJobs.Any())
+          {
+            <p class="muted history-empty">Chưa có file nào.</p>
+          }
         </div>
       </div>
     </aside>
@@ -140,7 +143,7 @@
       <div class="voice-modal-head">
         <div>
           <h2 id="voicePickerTitle">Chọn giọng nói</h2>
-          <p class="muted">Tìm kiếm, nghe thử và chọn giọng phù hợp cho nội dung của anh.</p>
+          <p class="muted">Tìm kiếm, nghe thử và chọn giọng phù hợp cho nội dung của bạn.</p>
         </div>
         <button type="button" class="voice-modal-close" onclick="closeVoicePicker()" aria-label="Đóng popup">×</button>
       </div>
@@ -203,7 +206,7 @@
       <div class="confirm-accent"></div>
       <div class="confirm-icon" aria-hidden="true">🎙️</div>
       <h3 id="createVoiceConfirmTitle">Xác nhận tạo giọng nói</h3>
-      <p class="muted confirm-lead">Anh kiểm tra nhanh trước khi hệ thống tạo file MP3 mới.</p>
+      <p class="muted confirm-lead">Bạn kiểm tra nhanh trước khi hệ thống tạo file MP3 mới.</p>
       <div class="confirm-stats">
         <div class="confirm-stat">
           <span>Nội dung</span>
