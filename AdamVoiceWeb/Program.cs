@@ -49,6 +49,7 @@ builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
 });
 builder.Services.AddSingleton<TextPreprocessService>();
 builder.Services.AddHttpClient<ElevenLabsService>();
+builder.Services.AddHttpClient<AiEnhanceService>();
 builder.Services.AddHostedService<SqliteBootstrapService>();
 
 var app = builder.Build();

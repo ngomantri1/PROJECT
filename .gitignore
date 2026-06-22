@@ -416,3 +416,8 @@ FodyWeavers.xsd
 *.mp3
 *.json
 *.a
+*.json
+*.json
+*.db-wal
+*.db-shm
+*.db

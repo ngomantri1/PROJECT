@@ -61,6 +61,93 @@ window.addEventListener("load", () => {
   scheduleAutoDismissAlerts();
 });
 
+async function handleEnhanceToggle(toggle) {
+  const text = document.getElementById("Text");
+  const normalize = document.getElementById("AutoNormalize");
+  const editor = document.getElementById("enhanceEditor");
+  if (!toggle || !text || isEnhancingText) return;
+  if (!toggle.checked) {
+    if (text.dataset.enhanceOriginal && text.dataset.enhanceDirty !== "true") {
+      text.value = text.dataset.enhanceOriginal;
+      saveDraftText();
+      updateCharacterCount();
+    }
+    delete text.dataset.enhanceOriginal;
+    delete text.dataset.enhanceDirty;
+    editor?.classList.remove("is-enhance-active");
+    updateEnhanceOverlay();
+    return;
+  }
+  if (!text.value.trim()) {
+    toggle.checked = false;
+    showIndexToast("Bạn hãy nhập nội dung trước khi bật Enhance.", "err", 2600);
+    return;
+  }
+  isEnhancingText = true;
+  toggle.disabled = true;
+  text.dataset.enhanceOriginal = text.value;
+  text.dataset.enhanceDirty = "false";
+  try {
+    const formData = new FormData();
+    formData.append("Text", text.value);
+    formData.append("AutoNormalize", normalize?.checked ? "true" : "false");
+    const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+    if (token) formData.append("__RequestVerificationToken", token);
+    const res = await fetch(`${window.location.pathname}?handler=EnhanceText`, {
+      method: "POST",
+      body: formData,
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    });
+    const data = await res.json();
+    if (!data.ok || !data.text) {
+      toggle.checked = false;
+      delete text.dataset.enhanceOriginal;
+      delete text.dataset.enhanceDirty;
+      showIndexToast(data.message || "Không thể enhance nội dung lúc này.", "err", 2800);
+      return;
+    }
+    text.value = data.text;
+    saveDraftText();
+    updateCharacterCount();
+    editor?.classList.add("is-enhance-active");
+    updateEnhanceOverlay();
+    showIndexToast(data.message || "Đã chèn biểu cảm vào nội dung.", "ok", 2200);
+  } catch {
+    toggle.checked = false;
+    delete text.dataset.enhanceOriginal;
+    delete text.dataset.enhanceDirty;
+    editor?.classList.remove("is-enhance-active");
+    updateEnhanceOverlay();
+    showIndexToast("Không thể enhance nội dung lúc này.", "err", 2800);
+  } finally {
+    toggle.disabled = false;
+    isEnhancingText = false;
+  }
+}
+
+function updateEnhanceOverlay() {
+  const toggle = document.getElementById("EnableEnhance");
+  const text = document.getElementById("Text");
+  const overlay = document.getElementById("enhanceTextOverlay");
+  const editor = document.getElementById("enhanceEditor");
+  if (!text || !overlay || !editor) return;
+  const active = !!toggle?.checked;
+  editor.classList.toggle("is-enhance-active", active);
+  if (!active) {
+    overlay.innerHTML = "";
+    return;
+  }
+  overlay.innerHTML = renderEnhanceMarkup(text.value);
+  overlay.scrollTop = text.scrollTop;
+  overlay.scrollLeft = text.scrollLeft;
+}
+
+function renderEnhanceMarkup(value) {
+  const escaped = escapeHtml(value || "");
+  if (!escaped) return "";
+  return escaped.replace(/\[[^\]]+\]/g, (tag) => `<span class="enhance-tag">${tag}</span>`);
+}
+
 function setPreset(name) {
   document.querySelectorAll(".preset").forEach((x) => x.classList.remove("active"));
   const b = document.querySelector(`[data-preset="${name}"]`);

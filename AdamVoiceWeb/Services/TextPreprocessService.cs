@@ -4,6 +4,11 @@ namespace AdamVoiceWeb.Services;
 
 public class TextPreprocessService
 {
+    private static readonly string[] LaughKeywords = ["cười", "ha ha", "haha", "hí hửng", "khúc khích", "vui lắm"];
+    private static readonly string[] SighKeywords = ["thở dài", "buồn", "ngậm ngùi", "não nề", "mệt quá", "bất lực"];
+    private static readonly string[] AnnoyedKeywords = ["bực", "cáu", "tức", "khó chịu", "gắt", "bực mình"];
+    private static readonly string[] WhisperKeywords = ["thì thầm", "nói nhỏ", "khẽ nói", "rụt rè", "nhỏ nhẹ"];
+
     public string Normalize(string input)
     {
         if (string.IsNullOrWhiteSpace(input)) return string.Empty;
@@ -48,9 +53,77 @@ public class TextPreprocessService
         return string.Join("\n", compactLines).Trim();
     }
 
+    public string EnhanceExpressiveness(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return string.Empty;
+
+        var enhancedLines = new List<string>();
+        foreach (var rawLine in input.Replace("\r\n", "\n").Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                enhancedLines.Add(string.Empty);
+                continue;
+            }
+
+            if (Regex.IsMatch(line, @"\[[^\]]+\]"))
+            {
+                enhancedLines.Add(line);
+                continue;
+            }
+
+            var sentences = Regex.Split(line, @"(?<=[\.\!\?…])\s+");
+            var taggedCount = 0;
+            for (int i = 0; i < sentences.Length; i++)
+            {
+                var sentence = sentences[i].Trim();
+                if (string.IsNullOrWhiteSpace(sentence) || Regex.IsMatch(sentence, @"\[[^\]]+\]"))
+                {
+                    sentences[i] = sentence;
+                    continue;
+                }
+
+                var tag = PickAudioTag(sentence, taggedCount);
+                if (!string.IsNullOrWhiteSpace(tag))
+                {
+                    sentences[i] = $"{tag} {sentence}";
+                    taggedCount++;
+                }
+                else
+                {
+                    sentences[i] = sentence;
+                }
+            }
+
+            enhancedLines.Add(string.Join(" ", sentences.Where(static x => !string.IsNullOrWhiteSpace(x))));
+        }
+
+        return string.Join("\n", enhancedLines).Trim();
+    }
+
     public int CountCharacters(string input)
     {
         return string.IsNullOrWhiteSpace(input) ? 0 : input.Trim().Length;
+    }
+
+    private static string PickAudioTag(string sentence, int taggedCount)
+    {
+        if (taggedCount >= 3)
+        {
+            return string.Empty;
+        }
+
+        var text = sentence.ToLowerInvariant();
+
+        if (LaughKeywords.Any(text.Contains)) return "[chuckles]";
+        if (SighKeywords.Any(text.Contains)) return "[sighs]";
+        if (AnnoyedKeywords.Any(text.Contains)) return "[annoyed]";
+        if (WhisperKeywords.Any(text.Contains)) return "[whispering]";
+        if (sentence.Contains('!')) return taggedCount == 0 ? "[excited]" : "[happy]";
+        if (sentence.Contains('?')) return "[thoughtful]";
+
+        return string.Empty;
     }
 
     private string MoneyToVietnamese(string value)

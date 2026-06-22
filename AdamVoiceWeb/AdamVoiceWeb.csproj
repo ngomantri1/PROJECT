@@ -12,4 +12,14 @@
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.28" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="app.db" Watch="false" />
+    <None Update="app.db-*" Watch="false" />
+    <None Update="audio\**\*" Watch="false" />
+    <None Update="App_RuntimeData\**\*" Watch="false" />
+    <Content Update="app.db" Watch="false" />
+    <Content Update="app.db-*" Watch="false" />
+    <Content Update="audio\**\*" Watch="false" />
+    <Content Update="App_RuntimeData\**\*" Watch="false" />
+  </ItemGroup>
 </Project>

@@ -49,7 +49,7 @@ namespace TaiXiuLiveSun.Tasks
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
         private static long _lastBetMs = 0;
-        // Reset UI 1 lần ngay khi vào cửa sổ đặt (p >= DecisionPercent)
+        // Reset UI 1 lần ngay khi vào cửa sổ đặt theo ngưỡng giây còn lại
         private static bool _uiRoundResetDone = false;
         public static string SeqToParityString(string digitSeq)
         {
@@ -120,11 +120,11 @@ namespace TaiXiuLiveSun.Tasks
 
 
 
-        // Gọi khi đã có p (percent) để reset đúng 1 lần
-        public static void UiRoundMaybeReset(double p, double decisionPercent)
+        // Gọi khi đã có số giây còn lại để reset đúng 1 lần
+        public static void UiRoundMaybeReset(int secLeft, int decisionSeconds)
         {
             if (_uiRoundResetDone) return;
-            if (p >= decisionPercent)
+            if (secLeft <= decisionSeconds)
             {
                 _uiRoundResetDone = true;
                 UiResetRoundControls();
@@ -136,31 +136,44 @@ namespace TaiXiuLiveSun.Tasks
 
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
         {
-            // Quy ước: prog = phần trăm thời gian đã trôi/hoặc còn lại. Ở code bạn set LblProg = p*100,
-            // ta chọn ngưỡng “<= DecisionPercent” để vào tiền trễ (15% cuối).
+            var decisionSeconds = Math.Clamp(ctx.DecisionSeconds, 1, 45);
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
-                //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
-                if (p <= ctx.DecisionPercent && p > 0) break;
-                await Task.Delay(60, ct);
+                var secLeft = GetRemainingSeconds(s);
+                //TaskUtil.UiRoundMaybeReset(secLeft ?? 45, decisionSeconds);
+                if (secLeft.HasValue && secLeft.Value <= decisionSeconds && secLeft.Value > 0) break;
+                await Task.Delay(120, ct);
             }
         }
 
-        // Chờ sang phiên mới rồi đặt NGAY khi mở cửa (đặt sớm, KHÔNG phụ thuộc DecisionPercent)
+        // Chờ tới ngưỡng giây còn lại rồi đặt. Giữ nguyên tên hàm để không phải sửa các strategy hiện có.
         public static async Task WaitUntilNewRoundStart(GameContext ctx, CancellationToken ct)
         {
+            var decisionSeconds = Math.Clamp(ctx.DecisionSeconds, 1, 45);
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 1.0;
-                //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
-                if (p >= ctx.DecisionPercent) break;
-                await Task.Delay(60, ct);
+                var secLeft = GetRemainingSeconds(s);
+                if (secLeft.HasValue && secLeft.Value <= decisionSeconds && secLeft.Value > 0)
+                    break;
+                await Task.Delay(120, ct);
             }
+        }
+
+        private static int? GetRemainingSeconds(CwSnapshot? snap)
+        {
+            if (snap == null || !snap.prog.HasValue || !double.IsFinite(snap.prog.Value))
+                return null;
+
+            var raw = snap.prog.Value;
+            if (snap.progIsSec == true || raw > 1.001)
+                return Math.Clamp((int)Math.Round(raw, MidpointRounding.AwayFromZero), 0, 120);
+
+            var ratio = Math.Clamp(raw, 0.0, 1.0);
+            return (int)Math.Round(ratio * 45.0, MidpointRounding.AwayFromZero);
         }
 
 

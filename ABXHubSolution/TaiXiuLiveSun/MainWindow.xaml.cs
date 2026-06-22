@@ -369,7 +369,7 @@ namespace TaiXiuLiveSun
         // Chỉ dùng cho hiển thị LblLevel: vị trí hiện tại trong _stakeSeq
         private int _stakeLevelIndexForUi = -1;
 
-        private double _decisionPercent = 5; // 5s
+        private int _decisionSeconds = 10;
 
         // Chống bắn trùng khi vừa cược
         private bool _cooldown = false;
@@ -737,7 +737,7 @@ Ví dụ không hợp lệ:
             public long[] RunStakeSeq { get; set; } = Array.Empty<long>();
             public List<long[]> RunStakeChains { get; set; } = new();
             public long[] RunStakeChainTotals { get; set; } = Array.Empty<long>();
-            public double RunDecisionPercent { get; set; } = 0;
+            public int RunDecisionSeconds { get; set; } = -1;
             public bool RunAutoResetStakeOnNonNegativeWin { get; set; } = false;
             public bool AutoResetStakeRequested { get; set; } = false;
             public bool CutStopTriggered { get; set; } = false;
@@ -1209,7 +1209,7 @@ Ví dụ không hợp lệ:
 
             // Các ô dưới đây LUÔN cho phép nhập (kể cả khi đang chạy)
             if (TxtStakeCsv != null) TxtStakeCsv.IsReadOnly = false; // Chuỗi tiền
-            if (TxtDecisionSecond != null) TxtDecisionSecond.IsReadOnly = false; // Đặt khi còn %
+            if (TxtDecisionSecond != null) TxtDecisionSecond.IsReadOnly = false; // Đặt khi còn giây
             if (TxtCutProfit != null) TxtCutProfit.IsReadOnly = false; // Cắt lãi
             if (TxtCutLoss != null) TxtCutLoss.IsReadOnly = false; // Cắt lỗ
         }
@@ -1246,6 +1246,7 @@ Ví dụ không hợp lệ:
         private static string T(TextBox tb, string def = "") => (tb?.Text ?? def).Trim();
         private static string P(PasswordBox? pb, string def = "") => pb?.Password ?? def;
         private static int I(string? s, int def = 0) => int.TryParse(s, out var n) ? n : def;
+        private static int ClampDecisionSeconds(int value) => Math.Clamp(value, 1, 45);
 
         // DPAPI
         private static string ProtectString(string? s)
@@ -1559,7 +1560,9 @@ Ví dụ không hợp lệ:
                 UpdateTooltips();
                 UpdateBetStrategyUi();
 
-                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _cfg.DecisionSeconds.ToString();
+                _decisionSeconds = ClampDecisionSeconds(_cfg.DecisionSeconds);
+                _cfg.DecisionSeconds = _decisionSeconds;
+                if (TxtDecisionSecond != null) TxtDecisionSecond.Text = _decisionSeconds.ToString();
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();
                 if (ChkAutoResetStakeOnNonNegativeWin != null)
@@ -1610,7 +1613,7 @@ Ví dụ không hợp lệ:
         {
             cfg.Url = T(TxtUrl);
             cfg.StakeCsv = T(TxtStakeCsv, "1000,2000,4000,8000,16000");
-            cfg.DecisionSeconds = I(T(TxtDecisionSecond, "10"), 10);
+            cfg.DecisionSeconds = ClampDecisionSeconds(I(T(TxtDecisionSecond, "10"), 10));
             cfg.BetStrategyIndex = CmbBetStrategy?.SelectedIndex ?? cfg.BetStrategyIndex;
             cfg.BetSeq = T(TxtChuoiCau, cfg.BetSeq);
             cfg.BetPatterns = T(TxtTheCau, cfg.BetPatterns);
@@ -4891,7 +4894,7 @@ Ví dụ không hợp lệ:
             var stakeChainTotals = (tab?.RunStakeChainTotals != null && tab.RunStakeChainTotals.Length > 0)
                 ? tab.RunStakeChainTotals
                 : _stakeChainTotals;
-            var decisionPercent = (tab != null && tab.RunDecisionPercent > 0) ? tab.RunDecisionPercent : _decisionPercent;
+            var decisionSeconds = (tab != null && tab.RunDecisionSeconds > 0) ? tab.RunDecisionSeconds : _decisionSeconds;
 
             var stakeSeqArr = stakeSeq.ToArray();
             var stakeChainsArr = stakeChains.Select(a => a.ToArray()).ToArray();
@@ -4910,7 +4913,7 @@ Ví dụ không hợp lệ:
                 StakeChains = stakeChainsArr,
                 StakeChainTotals = stakeChainTotalsArr,
 
-                DecisionPercent = decisionPercent,
+                DecisionSeconds = decisionSeconds,
                 AutoResetStakeOnNonNegativeWin = tab.RunAutoResetStakeOnNonNegativeWin,
                 ConsumeAutoResetStakeRequest = () =>
                 {
@@ -5134,7 +5137,8 @@ Ví dụ không hợp lệ:
                 activeTab.RunStakeSeq = _stakeSeq.ToArray();
                 activeTab.RunStakeChains = _stakeChains.Select(a => a.ToArray()).ToList();
                 activeTab.RunStakeChainTotals = _stakeChainTotals.ToArray();
-                activeTab.RunDecisionPercent = _decisionPercent;
+                _decisionSeconds = ClampDecisionSeconds(I(T(TxtDecisionSecond, _cfg.DecisionSeconds.ToString()), _cfg.DecisionSeconds));
+                activeTab.RunDecisionSeconds = _decisionSeconds;
                 activeTab.RunAutoResetStakeOnNonNegativeWin = _cfg.AutoResetStakeOnNonNegativeWin;
                 activeTab.AutoResetStakeRequested = false;
                 activeTab.IsRunning = true;

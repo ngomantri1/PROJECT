@@ -18,7 +18,7 @@ public class ElevenLabsService
         _paths = paths;
     }
 
-    public async Task<string> GenerateSpeechAsync(string text, VoiceOption voice, decimal stability, decimal similarity, decimal style, decimal speed)
+    public async Task<string> GenerateSpeechAsync(string text, VoiceOption voice, decimal stability, decimal similarity, decimal style, decimal speed, string? modelIdOverride = null)
     {
         var audioDir = _paths.AudioRootPath;
         Directory.CreateDirectory(audioDir);
@@ -40,7 +40,7 @@ public class ElevenLabsService
         if (string.IsNullOrWhiteSpace(voice.ApiVoiceId))
             throw new InvalidOperationException("Giọng này chưa có ApiVoiceId.");
 
-        var modelId = _config["ElevenLabs:DefaultModelId"] ?? "eleven_multilingual_v2";
+        var modelId = modelIdOverride ?? _config["ElevenLabs:DefaultModelId"] ?? "eleven_multilingual_v2";
         var url = $"https://api.elevenlabs.io/v1/text-to-speech/{voice.ApiVoiceId}";
 
         var payload = new

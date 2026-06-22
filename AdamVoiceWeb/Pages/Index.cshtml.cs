@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using AdamVoiceWeb.Data;
 using AdamVoiceWeb.Models;
 using AdamVoiceWeb.Services;
@@ -12,13 +13,20 @@ public class IndexModel : PageModel
     private readonly AppDbContext _db;
     private readonly TextPreprocessService _textService;
     private readonly ElevenLabsService _tts;
+    private readonly AiEnhanceService _enhance;
     private readonly IConfiguration _config;
 
-    public IndexModel(AppDbContext db, TextPreprocessService textService, ElevenLabsService tts, IConfiguration config)
+    public IndexModel(
+        AppDbContext db,
+        TextPreprocessService textService,
+        ElevenLabsService tts,
+        AiEnhanceService enhance,
+        IConfiguration config)
     {
         _db = db;
         _textService = textService;
         _tts = tts;
+        _enhance = enhance;
         _config = config;
     }
 
@@ -31,6 +39,7 @@ public class IndexModel : PageModel
     [BindProperty] public string Text { get; set; } = "Hello cac ban, day la noi dung mau de tao giong noi.";
     [BindProperty] public int VoiceId { get; set; } = 1;
     [BindProperty] public bool AutoNormalize { get; set; } = true;
+    [BindProperty] public bool EnableEnhance { get; set; }
     [BindProperty] public decimal Speed { get; set; } = 1.0m;
     [BindProperty] public decimal Stability { get; set; } = 0.5m;
     [BindProperty] public decimal Similarity { get; set; } = 0.8m;
@@ -93,51 +102,88 @@ public class IndexModel : PageModel
 
         if (voice == null)
         {
-            return new JsonResult(new { ok = false, message = "Gi\u1ecdng n\u00f3i kh\u00f4ng h\u1ee3p l\u1ec7." });
+            return new JsonResult(new { ok = false, message = "Giọng nói không hợp lệ." });
         }
 
         try
         {
-            const string previewText = "Xin chao, day la giong doc thu de ban kiem tra truoc khi tao audio.";
+            const string previewText = "Xin chào, đây là giọng đọc thử để bạn kiểm tra trước khi tạo audio.";
             var audioUrl = await _tts.GenerateSpeechAsync(previewText, voice, 0.5m, 0.8m, 0.35m, 1.0m);
             return new JsonResult(new { ok = true, audioUrl });
         }
         catch (Exception ex)
         {
-            return new JsonResult(new { ok = false, message = "Nghe thu giong loi: " + ex.Message });
+            return new JsonResult(new { ok = false, message = "Nghe thử giọng lỗi: " + ex.Message });
         }
+    }
+
+    public async Task<IActionResult> OnPostEnhanceText()
+    {
+        var enhanced = await _enhance.EnhanceAsync(Text ?? string.Empty, AutoNormalize, HttpContext.RequestAborted);
+
+        return new JsonResult(new
+        {
+            ok = enhanced.Ok,
+            text = enhanced.Text,
+            message = enhanced.Message,
+            usedAi = enhanced.UsedAi
+        });
     }
 
     private async Task<GenerateVoiceOutcome> GenerateVoiceCoreAsync()
     {
         var userId = CurrentUserId();
         var maxChars = _config.GetValue<int?>("BusinessRules:MaxCharactersPerJob") ?? 8000;
+        var maxEnhanceChars = 5000;
         var maxJobs = _config.GetValue<int?>("BusinessRules:MaxJobsPer10Minutes") ?? 10;
-        var originalText = Text ?? "";
+        var originalText = Text ?? string.Empty;
         var normalized = AutoNormalize ? _textService.Normalize(originalText) : originalText.Trim();
         var originalCount = _textService.CountCharacters(originalText);
         var charCount = _textService.CountCharacters(normalized);
 
         if (charCount <= 0)
         {
-            return new GenerateVoiceOutcome(false, "B\u1ea1n ch\u01b0a nh\u1eadp n\u1ed9i dung.");
+            return new GenerateVoiceOutcome(false, "Bạn chưa nhập nội dung.");
         }
 
         if (charCount > maxChars)
         {
-            return new GenerateVoiceOutcome(false, $"M\u1ed7i l\u1ea7n t\u1ea1o gi\u1edbi h\u1ea1n {maxChars:N0} k\u00fd t\u1ef1 \u0111\u1ec3 b\u1ea3o v\u1ec7 h\u1ec7 th\u1ed1ng.");
+            return new GenerateVoiceOutcome(false, $"Mỗi lần tạo giới hạn {maxChars:N0} ký tự để bảo vệ hệ thống.");
+        }
+
+        var hasVisibleTags = Regex.IsMatch(normalized, @"\[[^\]]+\]");
+        var synthesisText = normalized;
+        if (EnableEnhance)
+        {
+            if (hasVisibleTags)
+            {
+                synthesisText = normalized;
+            }
+            else
+            {
+                var enhanced = await _enhance.EnhanceAsync(normalized, false, HttpContext.RequestAborted);
+                synthesisText = enhanced.Text;
+            }
+        }
+
+        var synthesisModelId = EnableEnhance ? (_config["ElevenLabs:EnhanceModelId"] ?? "eleven_v3") : null;
+        var synthesisCharCount = _textService.CountCharacters(synthesisText);
+
+        if (EnableEnhance && synthesisCharCount > maxEnhanceChars)
+        {
+            return new GenerateVoiceOutcome(false, $"Enhance hiện hỗ trợ tối đa {maxEnhanceChars:N0} ký tự vì đang dùng model Eleven v3.");
         }
 
         var user = _db.Users.First(x => x.Id == userId);
         if (user.IsLocked)
         {
-            return new GenerateVoiceOutcome(false, "T\u00e0i kho\u1ea3n \u0111\u00e3 b\u1ecb kh\u00f3a. Vui l\u00f2ng li\u00ean h\u1ec7 admin.");
+            return new GenerateVoiceOutcome(false, "Tài khoản đã bị khóa. Vui lòng liên hệ admin.");
         }
 
         var recentCount = _db.VoiceJobs.Count(x => x.UserId == userId && x.CreatedAt > DateTime.Now.AddMinutes(-10));
         if (recentCount >= maxJobs)
         {
-            return new GenerateVoiceOutcome(false, $"B\u1ea1n t\u1ea1o h\u01a1i nhanh. Vui l\u00f2ng ch\u1edd th\u00eam \u00edt ph\u00fat r\u1ed3i th\u1eed l\u1ea1i. Gi\u1edbi h\u1ea1n {maxJobs} l\u1ea7n/10 ph\u00fat.");
+            return new GenerateVoiceOutcome(false, $"Bạn tạo hơi nhanh. Vui lòng chờ thêm ít phút rồi thử lại. Giới hạn {maxJobs} lần/10 phút.");
         }
 
         var voice = _db.Voices.FirstOrDefault(x =>
@@ -148,13 +194,13 @@ public class IndexModel : PageModel
 
         if (voice == null)
         {
-            return new GenerateVoiceOutcome(false, "Gi\u1ecdng n\u00f3i kh\u00f4ng h\u1ee3p l\u1ec7.");
+            return new GenerateVoiceOutcome(false, "Giọng nói không hợp lệ.");
         }
 
         var cost = (int)Math.Ceiling(charCount * voice.PointRate);
         if (user.PointBalance < cost)
         {
-            return new GenerateVoiceOutcome(false, $"Kh\u00f4ng \u0111\u1ee7 \u0111i\u1ec3m. C\u1ea7n {cost:N0} \u0111i\u1ec3m, hi\u1ec7n c\u00f3 {user.PointBalance:N0} \u0111i\u1ec3m.", true);
+            return new GenerateVoiceOutcome(false, $"Không đủ điểm. Cần {cost:N0} điểm, hiện có {user.PointBalance:N0} điểm.", true);
         }
 
         try
@@ -162,7 +208,7 @@ public class IndexModel : PageModel
             var debitUser = _db.Users.First(x => x.Id == userId);
             if (debitUser.PointBalance < cost)
             {
-                return new GenerateVoiceOutcome(false, $"Kh\u00f4ng \u0111\u1ee7 \u0111i\u1ec3m. C\u1ea7n {cost:N0} \u0111i\u1ec3m, hi\u1ec7n c\u00f3 {debitUser.PointBalance:N0} \u0111i\u1ec3m.", true);
+                return new GenerateVoiceOutcome(false, $"Không đủ điểm. Cần {cost:N0} điểm, hiện có {debitUser.PointBalance:N0} điểm.", true);
             }
 
             var balanceBefore = debitUser.PointBalance;
@@ -181,7 +227,7 @@ public class IndexModel : PageModel
             });
             _db.SaveChanges();
 
-            var audioUrl = await _tts.GenerateSpeechAsync(normalized, voice, Stability, Similarity, Style, Speed);
+            var audioUrl = await _tts.GenerateSpeechAsync(synthesisText, voice, Stability, Similarity, Style, Speed, synthesisModelId);
 
             _db.VoiceJobs.Add(new VoiceJob
             {
@@ -200,7 +246,7 @@ public class IndexModel : PageModel
             });
             _db.SaveChanges();
 
-            return new GenerateVoiceOutcome(true, $"T\u1ea1o gi\u1ecdng th\u00e0nh c\u00f4ng. \u0110\u00e3 tr\u1eeb {cost:N0} \u0111i\u1ec3m. Nghe l\u1ea1i/t\u1ea3i l\u1ea1i trong l\u1ecbch s\u1eed kh\u00f4ng tr\u1eeb \u0111i\u1ec3m.");
+            return new GenerateVoiceOutcome(true, $"Tạo giọng thành công. Đã trừ {cost:N0} điểm. Nghe lại/tải lại trong lịch sử không trừ điểm.");
         }
         catch (Exception ex)
         {
@@ -234,7 +280,7 @@ public class IndexModel : PageModel
             });
             _db.SaveChanges();
 
-            return new GenerateVoiceOutcome(false, "T\u1ea1o gi\u1ecdng l\u1ed7i, h\u1ec7 th\u1ed1ng \u0111\u00e3 ho\u00e0n \u0111i\u1ec3m: " + ex.Message);
+            return new GenerateVoiceOutcome(false, "Tạo giọng lỗi, hệ thống đã hoàn điểm: " + ex.Message);
         }
     }
 
@@ -274,7 +320,7 @@ public class IndexModel : PageModel
     private sealed class GenerateVoiceAjaxResponse
     {
         public bool Ok { get; set; }
-        public string Message { get; set; } = "";
+        public string Message { get; set; } = string.Empty;
         public string? RedirectUrl { get; set; }
         public int CurrentBalance { get; set; }
         public int LowPointWarning { get; set; }
@@ -283,10 +329,10 @@ public class IndexModel : PageModel
 
     private sealed class RecentJobDto
     {
-        public string TextPreview { get; set; } = "";
-        public string VoiceName { get; set; } = "";
+        public string TextPreview { get; set; } = string.Empty;
+        public string VoiceName { get; set; } = string.Empty;
         public int CharacterCount { get; set; }
-        public string AudioUrl { get; set; } = "";
-        public string CreatedAtText { get; set; } = "";
+        public string AudioUrl { get; set; } = string.Empty;
+        public string CreatedAtText { get; set; } = string.Empty;
     }
 }

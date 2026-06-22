@@ -254,6 +254,60 @@ body.modal-open{
 .composer-meta-row .meta{
   margin:0;
 }
+.enhance-chip{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+}
+.enhance-chip input{
+  position:absolute;
+  inset:0;
+  opacity:0;
+  cursor:pointer;
+}
+.enhance-chip-ui{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 12px;
+  border:1px solid #ddd3ff;
+  border-radius:999px;
+  background:#fff;
+  color:#475467;
+  font-size:13px;
+  font-weight:800;
+  line-height:1;
+  box-shadow:0 8px 20px rgba(91,46,229,.06);
+  transition:.18s ease;
+}
+.enhance-chip-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:28px;
+  height:22px;
+  padding:0 8px;
+  border-radius:999px;
+  background:#f3eeff;
+  color:#5B2EE5;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.02em;
+}
+.enhance-chip:hover .enhance-chip-ui{
+  border-color:#cdbdff;
+  background:#fbf8ff;
+}
+.enhance-chip input:checked + .enhance-chip-ui{
+  border-color:transparent;
+  background:linear-gradient(135deg,#5B2EE5 0%,#7C3AED 48%,#B03BFF 100%);
+  color:#fff;
+  box-shadow:0 12px 26px rgba(91,46,229,.24);
+}
+.enhance-chip input:checked + .enhance-chip-ui .enhance-chip-badge{
+  background:rgba(255,255,255,.14);
+  color:#fff;
+}
 .composer-actions{
   margin-top:14px;
 }

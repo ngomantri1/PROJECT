@@ -39,8 +39,8 @@ namespace TaiXiuLiveSun.Tasks
         // tiền thắng đã tích lũy được trong chuỗi hiện tại
         public double MoneyChainProfit { get; set; } = 0;
 
-        // Ngưỡng % còn lại để ra quyết định
-        public double DecisionPercent { get; init; }
+        // Ngưỡng giây còn lại để ra quyết định
+        public int DecisionSeconds { get; init; }
         public bool AutoResetStakeOnNonNegativeWin { get; init; } = false;
         public Func<bool>? ConsumeAutoResetStakeRequest { get; init; }
 
