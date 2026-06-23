@@ -73,6 +73,8 @@
   - same-page launch flow
   - popup fallback
   - bridge/frame injection
+  - `PULL_POPUP_TICK_NOW` để kéo snapshot khi cần
+  - chọn bridge result giữa top/frame qua `ExecuteOnBetWebAsync` / `ShouldPreferFrameBridgeResult`
   - seq sync
   - pending settle
   - DevTools hotkey
@@ -80,6 +82,7 @@
   - detect game context
   - scan canvas/DOM/text
   - render Canvas Watch
+  - build `totals()` / `snapshot` / `username`
   - TextMap / MoneyMap / BetMap
   - queue bet JS side
 - `Tasks\TaskUtil.cs`
@@ -99,6 +102,22 @@
 6. Strategy tính quyết định.
 7. `TaskUtil.PlaceBet()` gọi JS bet queue.
 8. Pending row được giữ cho tới khi settle đủ điều kiện.
+
+## Luồng tên nhân vật / account hiện tại
+
+1. JS scan text/canvas và tạo `t.N` trong `totals()`.
+2. `buildSnapshotNow()` ưu tiên đẩy `snap.username` từ chính nguồn này.
+3. Canvas Watch render dòng `TÊN NHÂN VẬT : ...` từ snapshot đó.
+4. `__cw_last_panel_snapshot.username` cache lại giá trị đang render.
+5. C# dùng `PULL_POPUP_TICK_NOW` hoặc `tick` thường để lấy JSON snapshot.
+6. `HandleIncomingWebMessageAsync("tick")` -> `QueueTickUiUpdate(...)`.
+7. `Dispatcher` apply vào `LblUserName`.
+
+### Điểm yếu đang mở
+
+- Canvas có thể đang đúng nhưng `main-pull` vẫn trả tick rỗng hoặc lấy từ sai context top/frame.
+- Vì vậy `LblUserName` ở C# có thể là `-` trong khi canvas vẫn hiện `minoauto6`.
+- Đây là divergence giữa `panel render` và `pull path`, không phải lúc nào cũng là lỗi scanner canvas.
 
 ## Flow vào game / launch flow
 
@@ -145,9 +164,17 @@
 4. `Dispatcher` apply UI:
   - progress/status
   - sequence
+  - tên nhân vật
   - account/balance
   - history/stats
 5. Strategy callback cập nhật panel chiến lược
+
+### Ghi chú quan trọng về panel phải
+
+- `LblUserName` nằm dưới nhãn `TÊN NHÂN VẬT`
+- `LblAmount` nằm dưới nhãn `TÀI KHOẢN`
+- Đã có giai đoạn `LblAmount` default `"0"` khi thiếu dữ liệu, gây hiểu nhầm là luồng account vẫn chạy tốt
+- Hiện tại khi thiếu amount phải hiện `-` để phân biệt dữ liệu thật với giá trị mặc định
 
 ## WebView / frame architecture
 
@@ -165,6 +192,21 @@
   - auto-start
   - auto-show detail
   - overlay pass-through để không chặn click web
+- Chuỗi kết quả hiện tại đã chuyển sang logic scan mới tham chiếu từ `DevTools\cw_probe_seq_roi.js`
+- Không được fallback lại nghiệp vụ road cũ nếu phần scan mới đã là nguồn chuẩn
+
+## Log/diagnostic architecture
+
+- JS `console.*` có thể được mirror về log C# qua `js_console`
+- Nhóm log `CWUSER` được dùng riêng để chẩn đoán luồng tên nhân vật:
+  - host fallback có đang trả gì hay không
+  - `TAIL_USER_NAME` có match trên site mới không
+  - candidate nào được scanner nhìn thấy
+  - canvas cuối cùng đang render giá trị nào
+- C# cũng log lúc nạp embedded JS:
+  - resource name
+  - `seqScriptRev`
+  - giúp phân biệt bản JS đang chạy thật
 
 ## Điểm kiến trúc quan trọng
 
@@ -172,3 +214,4 @@
 - `WebView2LiveBridge.cs` không phải nguồn sự thật chính
 - Same-page flow trên `zowin` là điều mới nhất cần ưu tiên
 - Tên một số helper/log vẫn mang dấu vết legacy, nhưng logic đã chuyển sang modern shell flow
+- `main-pull` không được phép làm mất dữ liệu mà canvas cùng thời điểm đang có

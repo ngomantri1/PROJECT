@@ -4938,6 +4938,18 @@
                 'seqfunc|' + Number(_cwSeqFuncLogSeq || 0) + '|' + String(phase || '') + '|' + String(name || ''));
         } catch (_) {}
     }
+    function brSeqAuditLog(reason, data, throttleMs, key) {
+        try {
+            var safe = cwSafeDataForHost(data);
+            brSeqDiagPost(reason, safe, throttleMs, key);
+            cwQueueHostLog({
+                ts: Date.now(),
+                tag: 'SEQAUDIT',
+                msg: String(reason || ''),
+                data: safe
+            }, false);
+        } catch (_) {}
+    }
     function brPublishSeqState() {
         var managed = String(_domBeadSeqManaged || '');
         var ver = Number(_domSeqVersion || 0) || 0;
@@ -6622,33 +6634,87 @@
             return null;
         }
     }
-    function brFindVisibleCanvasForSeq() {
+    function brListVisibleCanvasesForSeq() {
+        var out = [];
         try {
             var rootWin = domGetSameOriginRoot(window);
-            var rootDoc = rootWin && rootWin.document ? rootWin.document : document;
-            var all = rootDoc.querySelectorAll('canvas');
-            var best = null;
-            var bestArea = 0;
-            for (var i = 0; i < all.length; i++) {
-                var el = all[i];
-                if (!el)
+            var contexts = [];
+            domWalkContexts(rootWin, 'top', 0, 0, contexts, []);
+            var seen = [];
+            for (var ci = 0; ci < contexts.length; ci++) {
+                var ctx = contexts[ci];
+                var doc = ctx && ctx.doc ? ctx.doc : null;
+                var ownerWin = ctx && ctx.win ? ctx.win : null;
+                if (!doc || !doc.querySelectorAll)
                     continue;
-                var r = el.getBoundingClientRect();
-                if (!r || r.width < 80 || r.height < 80)
-                    continue;
-                var area = Number(r.width || 0) * Number(r.height || 0);
-                if (area > bestArea) {
-                    bestArea = area;
-                    best = el;
+                var all = doc.querySelectorAll('canvas');
+                for (var i = 0; i < all.length; i++) {
+                    var el = all[i];
+                    if (!el || seen.indexOf(el) >= 0)
+                        continue;
+                    var r = null;
+                    try {
+                        r = el.getBoundingClientRect();
+                    } catch (_) {
+                        r = null;
+                    }
+                    if (!r || r.width < 80 || r.height < 80)
+                        continue;
+                    seen.push(el);
+                    try {
+                        el.__cw_seq_owner_win = ownerWin || window;
+                        el.__cw_seq_owner_source = String(ctx && ctx.source || '');
+                        el.__cw_seq_owner_href = String(ctx && ctx.href || '');
+                    } catch (_) {}
+                    out.push({
+                        canvas: el,
+                        rect: r,
+                        win: ownerWin || window,
+                        source: String(ctx && ctx.source || ''),
+                        href: String(ctx && ctx.href || '')
+                    });
                 }
             }
-            return best;
-        } catch (_) {
-            return null;
-        }
+        } catch (_) {}
+        out.sort(function (a, b) {
+            var ar = a && a.rect ? a.rect : null;
+            var br = b && b.rect ? b.rect : null;
+            var aArea = ar ? (Number(ar.width || 0) * Number(ar.height || 0)) : 0;
+            var bArea = br ? (Number(br.width || 0) * Number(br.height || 0)) : 0;
+            var aHref = String(a && a.href || '');
+            var bHref = String(b && b.href || '');
+            var aWin = a && a.win ? a.win : null;
+            var bWin = b && b.win ? b.win : null;
+            var aScore = aArea;
+            var bScore = bArea;
+            try {
+                if (aWin && aWin.cc && aWin.cc.game && aWin.cc.game._renderContext)
+                    aScore += 10000000;
+            } catch (_) {}
+            try {
+                if (bWin && bWin.cc && bWin.cc.game && bWin.cc.game._renderContext)
+                    bScore += 10000000;
+            } catch (_) {}
+            if (/baccarat|xoc[\-_]?dia|selectedgame=baccarat|activations\/baccarat/i.test(aHref))
+                aScore += 5000000;
+            if (/baccarat|xoc[\-_]?dia|selectedgame=baccarat|activations\/baccarat/i.test(bHref))
+                bScore += 5000000;
+            return bScore - aScore;
+        });
+        return out;
+    }
+    function brFindVisibleCanvasForSeq() {
+        var list = brListVisibleCanvasesForSeq();
+        return list.length ? list[0].canvas : null;
     }
     function brTryGetCanvasWebGlContextForSeq(canvas) {
-        var rootWin = domGetSameOriginRoot(window);
+        var ownerWin = null;
+        try {
+            ownerWin = canvas && canvas.__cw_seq_owner_win ? canvas.__cw_seq_owner_win : null;
+        } catch (_) {
+            ownerWin = null;
+        }
+        var rootWin = ownerWin || domGetSameOriginRoot(window);
         var tried = [];
         function one(label, getter) {
             try {
@@ -6767,7 +6833,10 @@
                 x1: x1,
                 y1: yTop,
                 x2: x2,
-                y2: yBottomTop
+                y2: yBottomTop,
+                yGl: yGl,
+                glCanvasWidth: canvas.width,
+                glCanvasHeight: canvas.height
             };
         } catch (_) {
             return null;
@@ -6942,7 +7011,24 @@
                 meta: {
                     mode: scan.mode,
                     source: scan.source,
-                    reason: 'grid-too-small'
+                    reason: 'grid-too-small',
+                    canvasRect: {
+                        x: rect.left,
+                        y: rect.top,
+                        w: rect.width,
+                        h: rect.height
+                    },
+                    sample: {
+                        x1: scan.x1,
+                        y1: scan.y1,
+                        x2: scan.x2,
+                        y2: scan.y2,
+                        sw: sw,
+                        sh: sh,
+                        step: step,
+                        gw: gw,
+                        gh: gh
+                    }
                 }
             };
         }
@@ -6954,8 +7040,10 @@
             classifiedSamples: 0,
             classB: 0,
             classP: 0,
-            classT: 0
+            classT: 0,
+            topColors: []
         };
+        var colorBins = Object.create(null);
         function mi(x, y) {
             return y * gw + x;
         }
@@ -6976,6 +7064,12 @@
                 var rgbMin = Math.min(rgba[0], rgba[1], rgba[2]);
                 if (rgbMax >= 55 && (rgbMax - rgbMin) >= 24)
                     diag.brightSamples++;
+                var binKey = [
+                    Math.round(rgba[0] / 16) * 16,
+                    Math.round(rgba[1] / 16) * 16,
+                    Math.round(rgba[2] / 16) * 16
+                ].join(',');
+                colorBins[binKey] = Number(colorBins[binKey] || 0) + 1;
                 var v = brClassifyCanvasSeqPixel(rgba[0], rgba[1], rgba[2], rgba[3]);
                 if (v === 'B') mask[mi(gx, gy)] = 1;
                 else if (v === 'P') mask[mi(gx, gy)] = 2;
@@ -6988,22 +7082,28 @@
                 }
             }
         }
+        diag.topColors = Object.keys(colorBins).map(function (k) {
+            return { rgb: k, count: colorBins[k] };
+        }).sort(function (a, b) {
+            return Number(b.count || 0) - Number(a.count || 0);
+        }).slice(0, 12);
         var seen = new Uint8Array(gw * gh);
         var items = [];
+        var neighbors = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
         var cssScaleX = rect.width / canvas.width;
         var cssScaleY = rect.height / canvas.height;
-        for (var y = 0; y < gh; y++) {
-            for (var x = 0; x < gw; x++) {
-                var idx = mi(x, y);
-                var kind = mask[idx];
-                if (!kind || seen[idx])
+        for (var sy = 0; sy < gh; sy++) {
+            for (var sx = 0; sx < gw; sx++) {
+                var start = mi(sx, sy);
+                var kind = mask[start];
+                if (!kind || seen[start])
                     continue;
-                var q = [[x, y]];
-                seen[idx] = 1;
-                var head = 0;
-                var minGX = x, maxGX = x, minGY = y, maxGY = y, count = 0;
-                while (head < q.length) {
-                    var cur = q[head++];
+                var q = [[sx, sy]];
+                seen[start] = 1;
+                var count = 0;
+                var minGX = 1e9, minGY = 1e9, maxGX = -1e9, maxGY = -1e9;
+                while (q.length) {
+                    var cur = q.pop();
                     var cx = cur[0];
                     var cy = cur[1];
                     count++;
@@ -7011,10 +7111,9 @@
                     if (cx > maxGX) maxGX = cx;
                     if (cy < minGY) minGY = cy;
                     if (cy > maxGY) maxGY = cy;
-                    var ns = [[cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1]];
-                    for (var ni = 0; ni < ns.length; ni++) {
-                        var nx = ns[ni][0];
-                        var ny = ns[ni][1];
+                    for (var ni = 0; ni < neighbors.length; ni++) {
+                        var nx = cx + neighbors[ni][0];
+                        var ny = cy + neighbors[ni][1];
                         if (nx < 0 || ny < 0 || nx >= gw || ny >= gh)
                             continue;
                         var nidx = mi(nx, ny);
@@ -7024,30 +7123,72 @@
                         q.push([nx, ny]);
                     }
                 }
-                var compW = maxGX - minGX + 1;
-                var compH = maxGY - minGY + 1;
-                if (count < 3 || compW < 2 || compH < 2 || count > 600)
+                var compWpx = (maxGX - minGX + 1) * step;
+                var compHpx = (maxGY - minGY + 1) * step;
+                if (count < 4 || count > 220)
                     continue;
-                var sx1 = minGX * step;
-                var sy1 = minGY * step;
-                var sx2 = Math.min(sw, (maxGX + 1) * step);
-                var sy2 = Math.min(sh, (maxGY + 1) * step);
+                if (compWpx < 6 || compHpx < 6 || compWpx > 48 || compHpx > 48)
+                    continue;
+                if (items.length >= 600)
+                    continue;
+                var leftCss = roi.x + minGX * step * cssScaleX;
+                var topCss = roi.y + minGY * step * cssScaleY;
                 items.push({
+                    id: 'roi|' + items.length,
                     v: kindToSymbol(kind),
-                    x: Math.round(rect.left + (scan.x1 + sx1) * cssScaleX),
-                    y: Math.round(rect.top + (scan.y1 + sy1) * cssScaleY),
-                    w: Math.max(4, Math.round((sx2 - sx1) * cssScaleX)),
-                    h: Math.max(4, Math.round((sy2 - sy1) * cssScaleY)),
+                    x: Math.round(leftCss),
+                    y: Math.round(topCss),
+                    w: Math.round(compWpx * cssScaleX),
+                    h: Math.round(compHpx * cssScaleY),
                     pixels: count
                 });
             }
         }
+        var deduped = [];
+        var itemSeen = Object.create(null);
+        for (var ii = 0; ii < items.length; ii++) {
+            var item = items[ii];
+            var itemKey = [
+                String(item && item.v || ''),
+                Math.round(Number(item && item.x || 0)),
+                Math.round(Number(item && item.y || 0)),
+                Math.round(Number(item && item.w || 0)),
+                Math.round(Number(item && item.h || 0))
+            ].join('|');
+            if (itemSeen[itemKey])
+                continue;
+            itemSeen[itemKey] = 1;
+            deduped.push(item);
+        }
+        items = deduped;
         return {
             items: items,
             meta: {
                 mode: scan.mode,
                 source: scan.source,
-                diag: diag
+                canvasRect: {
+                    x: rect.left,
+                    y: rect.top,
+                    w: rect.width,
+                    h: rect.height
+                },
+                sample: {
+                    x1: scan.x1,
+                    y1: scan.y1,
+                    x2: scan.x2,
+                    y2: scan.y2,
+                    sw: sw,
+                    sh: sh,
+                    step: step,
+                    gw: gw,
+                    gh: gh
+                },
+                diag: diag,
+                gl: scan.mode === 'webgl' ? {
+                    yGl: scan.yGl,
+                    canvasWidth: scan.glCanvasWidth,
+                    canvasHeight: scan.glCanvasHeight
+                } : null
             }
         };
     }
@@ -7172,6 +7313,7 @@
             }
         }
         var rowParts = [];
+        var orderedRows = [];
         for (var rowTopIdx = rows.length - 1; rowTopIdx >= 0; rowTopIdx--) {
             var visualRowTopIndex = rowTopIdx + 1;
             var dir = (visualRowTopIndex % 2 === 1) ? 'ltr' : 'rtl';
@@ -7180,19 +7322,125 @@
                 order.push(ci);
             if (dir === 'rtl')
                 order.reverse();
+            var arr = [];
             var s = '';
             for (var oi = 0; oi < order.length; oi++) {
                 var cell = grid[rowTopIdx][order[oi]];
                 if (cell)
-                    s += String(cell.v || '');
+                    arr.push(cell);
             }
+            for (var ai = 0; ai < arr.length; ai++)
+                s += String(arr[ai].v || '');
             rowParts.push(s);
+            orderedRows.push({
+                visualRowTopIndex: visualRowTopIndex,
+                seqRowIndexFromBottom: rows.length - rowTopIdx,
+                dir: dir,
+                y: Math.round(Number(rows[rowTopIdx].cy || 0)),
+                count: arr.length,
+                seq: s,
+                items: arr
+            });
         }
         return {
             seq: normalizeSeqNoLimit(rowParts.join('')),
             cols: cols,
-            rows: rows
+            rows: orderedRows
         };
+    }
+    function brGetCanvasRoadBoardCountTarget() {
+        try {
+            if (typeof readBoardResultCountersSafe !== 'function')
+                return null;
+            var bc = readBoardResultCountersSafe(false);
+            if (!bc)
+                return null;
+            var b = bc.B == null ? null : Number(bc.B);
+            var p = bc.P == null ? null : Number(bc.P);
+            var t = bc.T == null ? null : Number(bc.T);
+            if (!isFinite(b) || !isFinite(p) || !isFinite(t))
+                return null;
+            b = Math.max(0, Math.round(b));
+            p = Math.max(0, Math.round(p));
+            t = Math.max(0, Math.round(t));
+            var len = b + p + t;
+            if (len <= 0 || len > 60)
+                return null;
+            return {
+                B: b,
+                P: p,
+                T: t,
+                len: len,
+                source: String(bc.source || '')
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+    function brTryTrimCanvasRoadPackByBoardCounts(pack, boardTarget) {
+        try {
+            if (!pack || !boardTarget || !boardTarget.len)
+                return pack;
+            var rows = pack.rows || [];
+            if (!rows.length)
+                return pack;
+            var targetLen = Math.max(0, Number(boardTarget.len || 0));
+            if (!targetLen)
+                return pack;
+            function exactCountMatch(seqVal) {
+                var st = brSeqCountsBPT(seqVal);
+                return st.len === targetLen &&
+                    Number(st.B || 0) === Number(boardTarget.B || 0) &&
+                    Number(st.P || 0) === Number(boardTarget.P || 0) &&
+                    Number(st.T || 0) === Number(boardTarget.T || 0);
+            }
+            var best = null;
+            for (var i = 0; i < rows.length; i++) {
+                var joined = '';
+                for (var j = i; j < rows.length; j++) {
+                    joined += brSanitizeSeq(rows[j] && rows[j].seq || '');
+                    if (!joined || joined.length > targetLen)
+                        continue;
+                    if (!exactCountMatch(joined))
+                        continue;
+                    var cand = {
+                        seq: joined,
+                        rowFrom: i,
+                        rowTo: j,
+                        rowSpan: (j - i + 1),
+                        rowCount: Number(rows[j] && rows[j].count || 0)
+                    };
+                    if (!best ||
+                        Number(cand.rowSpan || 99) < Number(best.rowSpan || 99) ||
+                        (Number(cand.rowSpan || 99) === Number(best.rowSpan || 99) &&
+                            Number(cand.rowCount || 0) > Number(best.rowCount || 0))) {
+                        best = cand;
+                    }
+                }
+            }
+            if (!best || !best.seq)
+                return pack;
+            var trimmed = Object.assign({}, pack);
+            trimmed.rawSeq = String(best.seq || '');
+            trimmed.seq = String(best.seq || '');
+            trimmed.reason = '';
+            trimmed.meta = Object.assign({}, pack.meta || {}, {
+                boardCountTrim: {
+                    applied: 1,
+                    rowFrom: Number(best.rowFrom || 0),
+                    rowTo: Number(best.rowTo || 0),
+                    rowSpan: Number(best.rowSpan || 0),
+                    targetLen: targetLen,
+                    targetB: Number(boardTarget.B || 0),
+                    targetP: Number(boardTarget.P || 0),
+                    targetT: Number(boardTarget.T || 0),
+                    source: String(boardTarget.source || '')
+                }
+            });
+            return trimmed;
+        } catch (_) {
+            return pack;
+        }
     }
     function brScanCanvasRoadRoi(canvas, roi) {
         if (!canvas || !roi)
@@ -7221,10 +7469,139 @@
                 rowFilter: {
                     rowCount: filtered.rows ? filtered.rows.length : 0,
                     keepFrom: filtered.keepFrom,
-                    keepTo: filtered.keepTo
+                    keepTo: filtered.keepTo,
+                    keepCount:
+                        (filtered.keepFrom != null && filtered.keepTo != null && filtered.keepTo >= filtered.keepFrom)
+                            ? (Number(filtered.keepTo || 0) - Number(filtered.keepFrom || 0) + 1)
+                            : (filtered.rows ? filtered.rows.length : 0)
                 }
             })
         };
+    }
+    function brCanvasRoadPackArea(pack) {
+        try {
+            var roi = pack && pack.roi ? pack.roi : null;
+            return roi ? (Math.max(1, Number(roi.w || 0)) * Math.max(1, Number(roi.h || 0))) : 0;
+        } catch (_) {
+            return 0;
+        }
+    }
+    function brCanvasRoadPackKeepCount(pack) {
+        try {
+            var rf = pack && pack.meta && pack.meta.rowFilter ? pack.meta.rowFilter : null;
+            return Math.max(0, Number(rf && rf.keepCount || 0));
+        } catch (_) {
+            return 0;
+        }
+    }
+    function brCanvasRoadPackTotalRows(pack) {
+        try {
+            var rf = pack && pack.meta && pack.meta.rowFilter ? pack.meta.rowFilter : null;
+            return Math.max(0, Number(rf && rf.rowCount || 0));
+        } catch (_) {
+            return 0;
+        }
+    }
+    function brCanvasRoadPackBoardFit(pack, boardTarget) {
+        try {
+            if (!boardTarget || !boardTarget.len) {
+                return {
+                    hasTarget: 0,
+                    exact: 0,
+                    lenDiff: 0,
+                    countDiff: 0,
+                    overshoot: 0
+                };
+            }
+            var seqVal = String(pack && (pack.rawSeq || pack.seq) || '');
+            var st = brSeqCountsBPT(seqVal);
+            var lenDiff = Math.abs(Number(st.len || 0) - Number(boardTarget.len || 0));
+            var countDiff =
+                Math.abs(Number(st.B || 0) - Number(boardTarget.B || 0)) +
+                Math.abs(Number(st.P || 0) - Number(boardTarget.P || 0)) +
+                Math.abs(Number(st.T || 0) - Number(boardTarget.T || 0));
+            var overshoot = Math.max(0, Number(st.len || 0) - Number(boardTarget.len || 0));
+            return {
+                hasTarget: 1,
+                exact: (lenDiff === 0 && countDiff === 0) ? 1 : 0,
+                lenDiff: lenDiff,
+                countDiff: countDiff,
+                overshoot: overshoot
+            };
+        } catch (_) {
+            return {
+                hasTarget: boardTarget && boardTarget.len ? 1 : 0,
+                exact: 0,
+                lenDiff: 999,
+                countDiff: 999,
+                overshoot: 999
+            };
+        }
+    }
+    function brShouldPreferCanvasRoadPack(candidate, incumbent, boardTarget) {
+        if (!candidate)
+            return false;
+        if (!incumbent)
+            return true;
+        var candSeq = String(candidate.rawSeq || candidate.seq || '');
+        var bestSeq = String(incumbent.rawSeq || incumbent.seq || '');
+        var candArea = brCanvasRoadPackArea(candidate);
+        var bestArea = brCanvasRoadPackArea(incumbent);
+        var candKeep = brCanvasRoadPackKeepCount(candidate);
+        var bestKeep = brCanvasRoadPackKeepCount(incumbent);
+        var candRows = brCanvasRoadPackTotalRows(candidate);
+        var bestRows = brCanvasRoadPackTotalRows(incumbent);
+        var candFit = brCanvasRoadPackBoardFit(candidate, boardTarget);
+        var bestFit = brCanvasRoadPackBoardFit(incumbent, boardTarget);
+        if (candFit.hasTarget || bestFit.hasTarget) {
+            if (candFit.exact !== bestFit.exact)
+                return candFit.exact > bestFit.exact;
+            if (candFit.countDiff !== bestFit.countDiff)
+                return candFit.countDiff < bestFit.countDiff;
+            if (candFit.lenDiff !== bestFit.lenDiff)
+                return candFit.lenDiff < bestFit.lenDiff;
+            if (candFit.overshoot !== bestFit.overshoot)
+                return candFit.overshoot < bestFit.overshoot;
+        }
+        if (candSeq && bestSeq) {
+            if (bestSeq.indexOf(candSeq) === 0 &&
+                candSeq.length < bestSeq.length &&
+                candSeq.length >= 8 &&
+                candArea > 0 &&
+                bestArea > 0 &&
+                candArea <= (bestArea * 0.92) &&
+                (candKeep > 0 && bestKeep > 0 ? candKeep <= bestKeep : true) &&
+                (candRows > 0 && bestRows > 0 ? candRows <= bestRows : true)) {
+                return true;
+            }
+            if (candSeq.indexOf(bestSeq) === 0 &&
+                bestSeq.length < candSeq.length &&
+                bestSeq.length >= 8 &&
+                bestArea > 0 &&
+                candArea > 0 &&
+                bestArea <= (candArea * 0.92) &&
+                (bestKeep > 0 && candKeep > 0 ? bestKeep <= candKeep : true) &&
+                (bestRows > 0 && candRows > 0 ? bestRows <= candRows : true)) {
+                return false;
+            }
+        }
+        var candDiag = candidate && candidate.meta && candidate.meta.diag ? candidate.meta.diag : {};
+        var bestDiag = incumbent && incumbent.meta && incumbent.meta.diag ? incumbent.meta.diag : {};
+        var candScore =
+            candSeq.length * 40 +
+            Number(candidate && candidate.cells && candidate.cells.length || 0) * 6 +
+            Number(candDiag.classifiedSamples || 0) -
+            Math.max(0, candKeep - 3) * 90 -
+            Math.max(0, candRows - candKeep) * 120 -
+            Math.round(candArea / 1800);
+        var bestScore =
+            bestSeq.length * 40 +
+            Number(incumbent && incumbent.cells && incumbent.cells.length || 0) * 6 +
+            Number(bestDiag.classifiedSamples || 0) -
+            Math.max(0, bestKeep - 3) * 90 -
+            Math.max(0, bestRows - bestKeep) * 120 -
+            Math.round(bestArea / 1800);
+        return candScore > bestScore;
     }
     function brAutoDetectCanvasRoadRois(canvas) {
         var out = [];
@@ -7363,9 +7740,13 @@
         } catch (_) {}
         return out;
     }
-    function brReadCanvasRoadSeq() {
-        var canvas = brFindVisibleCanvasForSeq();
-        if (!canvas) {
+    function brReadCanvasRoadSeq(options) {
+        options = options || {};
+        var ignoreCache = !!options.ignoreCache;
+        var skipBoardCountTrim = !!options.skipBoardCountTrim;
+        var boardTarget = brGetCanvasRoadBoardCountTarget();
+        var canvasEntries = brListVisibleCanvasesForSeq();
+        if (!canvasEntries.length) {
             return {
                 ok: false,
                 reason: 'no-canvas',
@@ -7376,65 +7757,82 @@
                 meta: {}
             };
         }
-        var rect = null;
-        try {
-            rect = canvas.getBoundingClientRect();
-        } catch (_) {}
-        var canvasKey = rect
-            ? [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height), Number(canvas.width || 0), Number(canvas.height || 0)].join('|')
-            : 'canvas';
-        var rois = [];
-        if (_domSeqCanvasRoi && _domSeqCanvasRoiKey === canvasKey)
-            rois.push(Object.assign({ name: 'cached-roi' }, _domSeqCanvasRoi));
-        var guessed = brGuessCanvasRoadRois(canvas);
-        for (var gi = 0; gi < guessed.length; gi++)
-            rois.push(guessed[gi]);
-        var seen = Object.create(null);
-        var uniq = [];
-        for (var ri = 0; ri < rois.length; ri++) {
-            var roi = rois[ri];
-            if (!roi || roi.w < 8 || roi.h < 8)
-                continue;
-            var key = [Math.round(roi.x / 4), Math.round(roi.y / 4), Math.round(roi.w / 4), Math.round(roi.h / 4)].join('|');
-            if (seen[key])
-                continue;
-            seen[key] = 1;
-            uniq.push(roi);
-        }
         var best = null;
-        for (var ui = 0; ui < uniq.length; ui++) {
-            var picked = uniq[ui];
-            var scan = brScanCanvasRoadRoi(canvas, picked);
-            var seq = String(scan && scan.seq || '');
-            var items = scan && scan.items ? scan.items : [];
-            var diag = scan && scan.meta && scan.meta.diag ? scan.meta.diag : {};
-            var score = seq.length * 40 + Number(items.length || 0) * 6 + Number(diag.classifiedSamples || 0);
-            var pack = {
-                ok: seq.length > 0,
-                reason: seq.length > 0 ? '' : String(scan && scan.meta && scan.meta.reason || 'empty-seq'),
-                rawSeq: seq,
-                seq: seq,
-                cols: scan && scan.cols ? scan.cols : [],
-                cells: items,
-                rows: scan && scan.rows ? scan.rows : [],
-                roi: {
-                    x: picked.x,
-                    y: picked.y,
-                    w: picked.w,
-                    h: picked.h,
-                    name: String(picked.name || '')
-                },
-                meta: scan && scan.meta ? scan.meta : {},
-                score: score,
-                canvasRect: rect ? {
-                    x: Math.round(rect.left),
-                    y: Math.round(rect.top),
-                    w: Math.round(rect.width),
-                    h: Math.round(rect.height)
-                } : null
-            };
-            if (!best || pack.score > best.score)
-                best = pack;
+        for (var ce = 0; ce < canvasEntries.length; ce++) {
+            var canvasEntry = canvasEntries[ce];
+            var canvas = canvasEntry && canvasEntry.canvas ? canvasEntry.canvas : null;
+            if (!canvas)
+                continue;
+            var rect = canvasEntry && canvasEntry.rect ? canvasEntry.rect : null;
+            var canvasKey = rect
+                ? [
+                    String(canvasEntry && canvasEntry.source || ''),
+                    Math.round(rect.left),
+                    Math.round(rect.top),
+                    Math.round(rect.width),
+                    Math.round(rect.height),
+                    Number(canvas.width || 0),
+                    Number(canvas.height || 0)
+                ].join('|')
+                : ('canvas|' + ce);
+            var rois = [];
+            if (!ignoreCache && _domSeqCanvasRoi && _domSeqCanvasRoiKey === canvasKey)
+                rois.push(Object.assign({ name: 'cached-roi' }, _domSeqCanvasRoi));
+            var guessed = brGuessCanvasRoadRois(canvas);
+            for (var gi = 0; gi < guessed.length; gi++)
+                rois.push(guessed[gi]);
+            var seen = Object.create(null);
+            var uniq = [];
+            for (var ri = 0; ri < rois.length; ri++) {
+                var roi = rois[ri];
+                if (!roi || roi.w < 8 || roi.h < 8)
+                    continue;
+                var key = [Math.round(roi.x / 4), Math.round(roi.y / 4), Math.round(roi.w / 4), Math.round(roi.h / 4)].join('|');
+                if (seen[key])
+                    continue;
+                seen[key] = 1;
+                uniq.push(roi);
+            }
+            for (var ui = 0; ui < uniq.length; ui++) {
+                var picked = uniq[ui];
+                var scan = brScanCanvasRoadRoi(canvas, picked);
+                var seq = String(scan && scan.seq || '');
+                var items = scan && scan.items ? scan.items : [];
+                var diag = scan && scan.meta && scan.meta.diag ? scan.meta.diag : {};
+                var pack = {
+                    ok: seq.length > 0,
+                    reason: seq.length > 0 ? '' : String(scan && scan.meta && scan.meta.reason || 'empty-seq'),
+                    rawSeq: seq,
+                    seq: seq,
+                    cols: scan && scan.cols ? scan.cols : [],
+                    cells: items,
+                    rows: scan && scan.rows ? scan.rows : [],
+                    roi: {
+                        x: picked.x,
+                        y: picked.y,
+                        w: picked.w,
+                        h: picked.h,
+                        name: String(picked.name || '')
+                    },
+                    meta: scan && scan.meta ? Object.assign({}, scan.meta, {
+                        contextSource: String(canvasEntry && canvasEntry.source || ''),
+                        contextHref: String(canvasEntry && canvasEntry.href || '')
+                    }) : {
+                        contextSource: String(canvasEntry && canvasEntry.source || ''),
+                        contextHref: String(canvasEntry && canvasEntry.href || '')
+                    },
+                    canvasRect: rect ? {
+                        x: Math.round(rect.left),
+                        y: Math.round(rect.top),
+                        w: Math.round(rect.width),
+                        h: Math.round(rect.height)
+                    } : null
+                };
+                if (!skipBoardCountTrim)
+                    pack = brTryTrimCanvasRoadPackByBoardCounts(pack, boardTarget);
+                if (brShouldPreferCanvasRoadPack(pack, best, boardTarget))
+                    best = pack;
+            }
         }
         if (best && best.ok && best.roi) {
             _domSeqCanvasRoi = {
@@ -7457,6 +7855,241 @@
             meta: {}
         };
     }
+    function brTryProbeCanvasRoadSeqRescue(reasonTag) {
+        try {
+            var picked = brReadCanvasRoadSeq({ ignoreCache: true });
+            var rawSeq = String(picked && picked.rawSeq || '');
+            var rawStat = brSeqStats(rawSeq);
+            if (!rawSeq || !brIsReliableRoadSeq(rawSeq)) {
+                brSeqAuditLog('probe-canvas-rescue-miss', {
+                    reason: String(reasonTag || ''),
+                    rawSeq: rawSeq,
+                    rawLen: Number(rawStat.len || 0),
+                    rawBP: Number(rawStat.bp || 0),
+                    rawT: Number(rawStat.t || 0),
+                    roi: picked && picked.roi ? picked.roi : null,
+                    canvasRect: picked && picked.canvasRect ? picked.canvasRect : null,
+                    meta: picked && picked.meta ? picked.meta : null
+                }, 900, 'probe-canvas-rescue-miss|' + String(reasonTag || '') + '|' + rawSeq + '|' + Number(_domSeqVersion || 0));
+                return null;
+            }
+            var beforeManaged = String(_domBeadSeqManaged || '');
+            var managed = String(brMergeManagedSeq(rawSeq) || '');
+            try {
+                window.__cw_bead_raw_seq = rawSeq;
+                window.__cw_bead_managed_seq = managed;
+            } catch (_) {}
+            brSeqAuditLog('probe-canvas-rescue-hit', {
+                reason: String(reasonTag || ''),
+                rawSeq: rawSeq,
+                rawLen: Number(rawStat.len || 0),
+                rawBP: Number(rawStat.bp || 0),
+                rawT: Number(rawStat.t || 0),
+                managedBefore: beforeManaged,
+                managedAfter: managed,
+                managedLenAfter: managed.length,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || ''),
+                roi: picked && picked.roi ? picked.roi : null,
+                canvasRect: picked && picked.canvasRect ? picked.canvasRect : null,
+                meta: picked && picked.meta ? picked.meta : null
+            }, 700, 'probe-canvas-rescue-hit|' + String(reasonTag || '') + '|' + rawSeq + '|' + Number(_domSeqVersion || 0));
+            return {
+                seq: managed,
+                rawSeq: rawSeq,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || ''),
+                seqWhich: 'probe-canvas-rescue',
+                cols: picked && picked.cols ? picked.cols : [],
+                cells: picked && picked.cells ? picked.cells : [],
+                rows: picked && picked.rows ? picked.rows : [],
+                roi: picked && picked.roi ? picked.roi : null,
+                canvasRect: picked && picked.canvasRect ? picked.canvasRect : null,
+                meta: picked && picked.meta ? picked.meta : null
+            };
+        } catch (err) {
+            brSeqAuditLog('probe-canvas-rescue-error', {
+                reason: String(reasonTag || ''),
+                error: String(err && err.message || err),
+                stack: cwShort(String(err && err.stack || ''), 500),
+                managedLen: String(_domBeadSeqManaged || '').length,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || '')
+            }, 1200, 'probe-canvas-rescue-error|' + String(reasonTag || '') + '|' + String(err && err.message || err));
+            return null;
+        }
+    }
+    var _cwProbeRoadSeqCache = null;
+    var _cwProbeRoadSeqCacheAt = 0;
+    var _cwProbeRoadSeqBusy = false;
+    var _cwProbeRoadSeqLastKickAt = 0;
+    var _cwProbeRoadSeqPromise = null;
+    function brShouldPreferProbeRoadVisualPack(probePack, currentPack) {
+        try {
+            var probeRaw = String(probePack && (probePack.rawSeq || probePack.probeSeq || probePack.seq) || '');
+            var currentRaw = String(currentPack && (currentPack.rawSeq || currentPack.probeSeq || currentPack.seq) || '');
+            if (!brIsReliableRoadSeq(probeRaw))
+                return false;
+            if (!brIsReliableRoadSeq(currentRaw))
+                return true;
+            if (probeRaw === currentRaw)
+                return false;
+            if (probeRaw.length >= (currentRaw.length + 4))
+                return true;
+            if (probeRaw.length > currentRaw.length && probeRaw.indexOf(currentRaw) === 0)
+                return true;
+            return false;
+        } catch (_) {
+            return false;
+        }
+    }
+    function brSelectBestProbeRoadFrame(results) {
+        var arr = (results || []).slice();
+        var boardTarget = brGetCanvasRoadBoardCountTarget();
+        arr.sort(function (a, b) {
+            var af = brCanvasRoadPackBoardFit(a, boardTarget);
+            var bf = brCanvasRoadPackBoardFit(b, boardTarget);
+            if (bf.exact !== af.exact)
+                return Number(bf.exact || 0) - Number(af.exact || 0);
+            if (af.countDiff !== bf.countDiff)
+                return Number(af.countDiff || 0) - Number(bf.countDiff || 0);
+            if (af.lenDiff !== bf.lenDiff)
+                return Number(af.lenDiff || 0) - Number(bf.lenDiff || 0);
+            if (af.overshoot !== bf.overshoot)
+                return Number(af.overshoot || 0) - Number(bf.overshoot || 0);
+            var ad = a && a.meta && a.meta.diag ? a.meta.diag : {};
+            var bd = b && b.meta && b.meta.diag ? b.meta.diag : {};
+            return (Number(bd.classifiedSamples || 0) - Number(ad.classifiedSamples || 0)) ||
+                   (Number(bd.brightSamples || 0) - Number(ad.brightSamples || 0)) ||
+                   (Number((b && b.cells && b.cells.length) || 0) - Number((a && a.cells && a.cells.length) || 0));
+        });
+        return arr[0] || null;
+    }
+    function brCommitProbeRoadPack(pack, reasonTag) {
+        try {
+            var rawSeq = String(pack && pack.rawSeq || '');
+            if (!rawSeq || !brIsReliableRoadSeq(rawSeq))
+                return null;
+            var managedBefore = String(_domBeadSeqManaged || '');
+            var rawBefore = String(window.__cw_bead_raw_seq || '');
+            var managed = managedBefore;
+            if (rawSeq !== rawBefore || !managedBefore) {
+                managed = String(brMergeManagedSeq(rawSeq) || '');
+                try {
+                    window.__cw_bead_raw_seq = rawSeq;
+                    window.__cw_bead_managed_seq = managed;
+                } catch (_) {}
+            }
+            var cached = {
+                seq: managed || rawSeq,
+                rawSeq: rawSeq,
+                probeSeq: String(pack && pack.seq || rawSeq),
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || ''),
+                seqWhich: 'probe-canvas-frames',
+                cols: pack && pack.cols ? pack.cols : [],
+                cells: pack && pack.cells ? pack.cells : [],
+                rows: pack && pack.rows ? pack.rows : [],
+                roi: pack && pack.roi ? pack.roi : null,
+                canvasRect: pack && pack.canvasRect ? pack.canvasRect : null,
+                meta: pack && pack.meta ? pack.meta : null,
+                ts: Date.now()
+            };
+            _cwProbeRoadSeqCache = cached;
+            _cwProbeRoadSeqCacheAt = Number(cached.ts || Date.now());
+            brSeqAuditLog('probe-canvas-frames-hit', {
+                reason: String(reasonTag || ''),
+                rawSeq: rawSeq,
+                rawLen: rawSeq.length,
+                managedSeq: String(cached.seq || ''),
+                managedLen: String(cached.seq || '').length,
+                seqVersion: Number(cached.seqVersion || 0),
+                seqEvent: String(cached.seqEvent || ''),
+                roi: cached.roi,
+                canvasRect: cached.canvasRect,
+                meta: cached.meta
+            }, 700, 'probe-canvas-frames-hit|' + String(reasonTag || '') + '|' + rawSeq + '|' + Number(cached.seqVersion || 0));
+            return cached;
+        } catch (err) {
+            brSeqAuditLog('probe-canvas-frames-commit-error', {
+                reason: String(reasonTag || ''),
+                error: String(err && err.message || err),
+                stack: cwShort(String(err && err.stack || ''), 500)
+            }, 1200, 'probe-canvas-frames-commit-error|' + String(reasonTag || '') + '|' + String(err && err.message || err));
+            return null;
+        }
+    }
+    function brKickProbeRoadSeqFrames(reasonTag, frameCount) {
+        try {
+            frameCount = Math.max(1, Number(frameCount || 8));
+            var now = Date.now();
+            if (_cwProbeRoadSeqBusy)
+                return _cwProbeRoadSeqPromise || Promise.resolve(_cwProbeRoadSeqCache);
+            if ((now - Number(_cwProbeRoadSeqLastKickAt || 0)) < 500)
+                return _cwProbeRoadSeqPromise || Promise.resolve(_cwProbeRoadSeqCache);
+            _cwProbeRoadSeqLastKickAt = now;
+            _cwProbeRoadSeqBusy = true;
+            _cwProbeRoadSeqPromise = new Promise(function (resolve) {
+                var frames = [];
+                function finish() {
+                    _cwProbeRoadSeqBusy = false;
+                    var best = brSelectBestProbeRoadFrame(frames);
+                    var committed = brCommitProbeRoadPack(best, reasonTag);
+                    if (!committed) {
+                        brSeqAuditLog('probe-canvas-frames-miss', {
+                            reason: String(reasonTag || ''),
+                            frameCount: frames.length,
+                            best: best ? {
+                                rawSeq: String(best.rawSeq || ''),
+                                seq: String(best.seq || ''),
+                                roi: best.roi || null,
+                                canvasRect: best.canvasRect || null,
+                                meta: best.meta || null
+                            } : null
+                        }, 900, 'probe-canvas-frames-miss|' + String(reasonTag || '') + '|' + frames.length);
+                    }
+                    if (best) {
+                        try {
+                            best.probeSeq = String(best.seq || '');
+                            best.seqWhich = 'probe-canvas-frames-raw';
+                        } catch (_) {}
+                    }
+                    resolve(best || committed || _cwProbeRoadSeqCache);
+                }
+                function step(left) {
+                    try {
+                        (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(function () {
+                            try {
+                                var r = brReadCanvasRoadSeq({ ignoreCache: true, skipBoardCountTrim: true });
+                                if (r)
+                                    frames.push(r);
+                            } catch (_) {}
+                            if (left <= 1) {
+                                finish();
+                                return;
+                            }
+                            step(left - 1);
+                        });
+                    } catch (_) {
+                        finish();
+                    }
+                }
+                step(frameCount);
+            }).then(function (r) {
+                _cwProbeRoadSeqPromise = null;
+                return r;
+            }, function () {
+                _cwProbeRoadSeqBusy = false;
+                _cwProbeRoadSeqPromise = null;
+                return _cwProbeRoadSeqCache;
+            });
+            return _cwProbeRoadSeqPromise;
+        } catch (_) {
+            _cwProbeRoadSeqBusy = false;
+            _cwProbeRoadSeqPromise = null;
+            return Promise.resolve(_cwProbeRoadSeqCache);
+        }
+    }
     function readDomBeadSeq() {
         brSeqFuncLog('enter', 'readDomBeadSeq', {
             managedTitle: String(_domManagedTableTitle || ''),
@@ -7468,6 +8101,49 @@
         });
         try {
             var picked = brReadCanvasRoadSeq();
+            try {
+                var pickedRawForPrime = String(picked && picked.rawSeq || '');
+                if (__cw_hasCocos() &&
+                    (
+                        !brIsReliableRoadSeq(pickedRawForPrime) ||
+                        String(_domBeadSeqManaged || '').length >= (pickedRawForPrime.length + 4)
+                    )) {
+                    brKickProbeRoadSeqFrames('readDomBeadSeq-prime', 8);
+                }
+            } catch (_) {}
+            try {
+                var probeCache = _cwProbeRoadSeqCache;
+                var probeCacheAge = _cwProbeRoadSeqCacheAt > 0 ? (Date.now() - _cwProbeRoadSeqCacheAt) : 999999;
+                if (__cw_hasCocos() &&
+                    probeCache &&
+                    probeCacheAge <= 5000 &&
+                    brShouldPreferProbeRoadVisualPack(probeCache, picked)) {
+                    brSeqAuditLog('readDomBeadSeq-prefer-probe-cache', {
+                        pickedRawSeq: String(picked && picked.rawSeq || ''),
+                        pickedSeq: String(picked && picked.seq || ''),
+                        probeRawSeq: String(probeCache.rawSeq || ''),
+                        probeSeq: String(probeCache.probeSeq || probeCache.seq || ''),
+                        pickedLen: String(picked && picked.rawSeq || '').length,
+                        probeLen: String(probeCache.rawSeq || '').length,
+                        seqVersion: Number(_domSeqVersion || 0),
+                        seqEvent: String(_domSeqEvent || ''),
+                        pickedRoi: picked && picked.roi ? picked.roi : null,
+                        probeRoi: probeCache && probeCache.roi ? probeCache.roi : null
+                    }, 700, 'readDomBeadSeq-prefer-probe-cache|' + String(probeCache.rawSeq || '') + '|' + Number(_domSeqVersion || 0));
+                    picked = {
+                        ok: true,
+                        reason: '',
+                        rawSeq: String(probeCache.rawSeq || ''),
+                        seq: String(probeCache.probeSeq || probeCache.rawSeq || probeCache.seq || ''),
+                        cols: probeCache.cols || [],
+                        cells: probeCache.cells || [],
+                        rows: probeCache.rows || [],
+                        roi: probeCache.roi || null,
+                        canvasRect: probeCache.canvasRect || null,
+                        meta: probeCache.meta || {}
+                    };
+                }
+            } catch (_) {}
             var rawSeq = String(picked && picked.rawSeq || '');
             if (!rawSeq) {
                 var failReason = String(picked && picked.reason || 'no-canvas-road-seq');
@@ -7488,6 +8164,16 @@
                     roi: failDiag.roi,
                     canvasRect: failDiag.canvasRect
                 }, 1200, 'no-board|' + failReason);
+                brSeqAuditLog('readDomBeadSeq-no-board', {
+                    reason: failReason,
+                    managedSeq: String(_domBeadSeqManaged || ''),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    roi: failDiag.roi,
+                    canvasRect: failDiag.canvasRect,
+                    meta: failDiag.meta
+                }, 1200, 'readDomBeadSeq-no-board|' + failReason + '|' + String(_domBeadSeqManaged || '').length + '|' + Number(_domSeqVersion || 0));
                 brArmShoeResetByNoBoard(failReason);
                 try {
                     window.__cw_bead_raw_seq = '';
@@ -7580,6 +8266,23 @@
                     seqVersion: Number(_domSeqVersion || 0),
                     seqEvent: String(_domSeqEvent || '')
                 }, 900, 'dom-bead-reject|' + rejectReason + '|' + String(rawSeq || ''));
+                brSeqAuditLog('readDomBeadSeq-reject', {
+                    reason: rejectReason,
+                    rawSeq: String(rawSeq || ''),
+                    rawLen: Number(rawStat.len || 0),
+                    rawBP: Number(rawStat.bp || 0),
+                    rawT: Number(rawStat.t || 0),
+                    managedSeq: String(_domBeadSeqManaged || ''),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    profileName: pickedProfileName,
+                    boardItems: boardItems,
+                    boardRows: boardRows,
+                    boardCols: boardCols,
+                    roi: picked && picked.roi ? picked.roi : null,
+                    canvasRect: picked && picked.canvasRect ? picked.canvasRect : null
+                }, 1000, 'readDomBeadSeq-reject|' + rejectReason + '|' + String(rawSeq || '') + '|' + Number(_domSeqVersion || 0));
                 brArmShoeResetByNoBoard(rejectReason);
                 try {
                     window.__cw_bead_raw_seq = '';
@@ -8199,6 +8902,16 @@
                         seqVersion: _domSeqVersion,
                         seqEvent: _domSeqEvent
                     }, 1200, 'seqsrc-active-live-fallback-blocked|' + activeTitle + '|' + String(activeSeq || '').length + '|' + _domSeqVersion);
+                    brSeqAuditLog('readTKSeq-active-live-fallback-blocked', {
+                        reason: _domTableSwitchWaitBeadPending ? 'wait-bead' : 'policy-disabled',
+                        activeTitle: activeTitle,
+                        activeSeqLen: String(activeSeq || '').length,
+                        beadRawLen: String(beadRawSeq || '').length,
+                        managedLen: String(_domBeadSeqManaged || '').length,
+                        seqVersion: Number(_domSeqVersion || 0),
+                        seqEvent: String(_domSeqEvent || ''),
+                        which: 'dom-baccarat-hold-managed'
+                    }, 1000, 'readTKSeq-active-live-fallback-blocked|' + activeTitle + '|' + String(activeSeq || '').length + '|' + Number(_domSeqVersion || 0));
                     brSeqFuncLog('return', 'readTKSeq', {
                         branch: 'active-live-fallback-blocked',
                         seq: _domTableSwitchWaitBeadPending ? '' : String(_domBeadSeqManaged || ''),
@@ -8530,6 +9243,16 @@
                     seqVersion: _domSeqVersion,
                     seqEvent: _domSeqEvent
                 }, 500, 'seqsrc-active-fallback-blocked|' + activeTitle + '|' + activeSeq.length + '|' + _domSeqVersion);
+                brSeqAuditLog('readTKSeq-active-fallback-blocked-empty-managed', {
+                    activeTitle: activeTitle,
+                    activeSeqLen: activeSeq.length,
+                    beadRawLen: String(beadRawSeq || '').length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    resetPending: _domShoeResetPending ? 1 : 0,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    which: 'dom-baccarat-hold-managed'
+                }, 1000, 'readTKSeq-active-fallback-blocked-empty-managed|' + activeTitle + '|' + activeSeq.length + '|' + Number(_domSeqVersion || 0));
                 brSeqFuncLog('return', 'readTKSeq', {
                     branch: 'active-fallback-blocked-empty-managed',
                     seq: '',
@@ -8563,6 +9286,16 @@
                 seqEvent: _domSeqEvent,
                 resetPending: _domShoeResetPending ? 1 : 0
             }, 1200, 'readseq-empty|' + _domSeqVersion + '|' + _domSeqEvent);
+            brSeqAuditLog('readTKSeq-dom-empty', {
+                managedSeq: String(_domBeadSeqManaged || ''),
+                managedLen: String(_domBeadSeqManaged || '').length,
+                beadRawWindow: String(window.__cw_bead_raw_seq || ''),
+                activeTitle: String(_domLastActiveSeqTitle || ''),
+                activeSeqLen: String(_domLastActiveSeq || '').length,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || ''),
+                resetPending: _domShoeResetPending ? 1 : 0
+            }, 1200, 'readTKSeq-dom-empty|' + Number(_domSeqVersion || 0) + '|' + String(_domSeqEvent || '') + '|' + String(_domBeadSeqManaged || '').length);
             brSeqFuncLog('return', 'readTKSeq', {
                 branch: 'readTKSeq-dom-empty',
                 seq: String(_domBeadSeqManaged || ''),
@@ -10023,6 +10756,16 @@
         S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
         S.seqEvent = String(tk && tk.seqEvent ? tk.seqEvent : (window.__cw_seq_event || ''));
         if (brShouldMaskSeqForDisplay(S.status, S.seqEvent)) {
+            brSeqAuditLog('tick-mask-seq-display', {
+                status: String(S.status || ''),
+                seqBeforeMask: String(S.seq || ''),
+                rawBeforeMask: String(S.rawSeq || ''),
+                seqLenBeforeMask: String(S.seq || '').length,
+                rawLenBeforeMask: String(S.rawSeq || '').length,
+                seqVersion: Number(S.seqVersion || 0),
+                seqEvent: String(S.seqEvent || ''),
+                source: 'tick'
+            }, 900, 'tick-mask-seq-display|' + String(S.seqEvent || '') + '|' + String(S.status || ''));
             S.seq = '';
             S.rawSeq = '';
         }
@@ -14507,8 +15250,10 @@
                 statusSource: obj.statusSource,
                 statusTail: obj.statusTail,
                 seq: obj.seq,
+                rawSeq: obj.rawSeq,
                 seqVersion: obj.seqVersion,
                 seqEvent: obj.seqEvent,
+                seqWhich: obj.seqWhich,
                 boardCountB: obj.boardCountB,
                 boardCountP: obj.boardCountP,
                 boardCountT: obj.boardCountT,
@@ -14664,7 +15409,17 @@
                         seqWhich: String(r && r.which ? r.which : '')
                     };
                 }
-            } catch (_) {}
+            } catch (err) {
+                brSeqAuditLog('readSeqStateSafe-error', {
+                    error: String(err && err.message || err),
+                    stack: cwShort(String(err && err.stack || ''), 500),
+                    beadRawWindow: String(window.__cw_bead_raw_seq || ''),
+                    managedSeq: String(_domBeadSeqManaged || ''),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(window.__cw_seq_version || _domSeqVersion || 0) || 0,
+                    seqEvent: String(window.__cw_seq_event || _domSeqEvent || '')
+                }, 1200, 'readSeqStateSafe-error|' + String(err && err.message || err));
+            }
             return {
                 seq: '',
                 rawSeq: String(window.__cw_bead_raw_seq || ''),
@@ -15363,6 +16118,76 @@
                 seqEvent = String(window.__cw_seq_event || '');
                 seqWhich = '';
             }
+            if (!String(seqFresh || '').length && __cw_hasCocos() && buildSource === 'pull') {
+                var probeCache = _cwProbeRoadSeqCache;
+                var probeCacheAge = _cwProbeRoadSeqCacheAt > 0 ? (Date.now() - _cwProbeRoadSeqCacheAt) : 999999;
+                if (probeCache &&
+                    probeCacheAge <= 5000 &&
+                    brIsReliableRoadSeq(String(probeCache.rawSeq || ''))) {
+                    seqFresh = String(probeCache.probeSeq || probeCache.rawSeq || probeCache.seq || '');
+                    rawSeqFresh = String(probeCache.rawSeq || '');
+                    seqVersion = Number(probeCache.seqVersion || 0) || 0;
+                    seqEvent = String(probeCache.seqEvent || '');
+                    seqWhich = String(probeCache.seqWhich || 'probe-canvas-frames');
+                }
+            }
+            if (__cw_hasCocos() && probeCache &&
+                probeCacheAge <= 5000 &&
+                brShouldPreferProbeRoadVisualPack(probeCache, {
+                    seq: seqFresh,
+                    rawSeq: rawSeqFresh
+                })) {
+                brSeqAuditLog('buildSnapshotNow-prefer-probe-cache', {
+                    buildId: buildId,
+                    source: buildSource,
+                    seqFresh: String(seqFresh || ''),
+                    rawSeqFresh: String(rawSeqFresh || ''),
+                    probeSeq: String(probeCache.probeSeq || probeCache.seq || ''),
+                    probeRawSeq: String(probeCache.rawSeq || ''),
+                    seqFreshLen: String(seqFresh || '').length,
+                    rawSeqFreshLen: String(rawSeqFresh || '').length,
+                    probeLen: String(probeCache.rawSeq || '').length,
+                    seqVersion: Number(seqVersion || 0),
+                    seqEvent: String(seqEvent || ''),
+                    seqWhichBefore: String(seqWhich || '')
+                }, 700, 'buildSnapshotNow-prefer-probe-cache|' + buildSource + '|' + buildId + '|' + String(probeCache.rawSeq || '').length);
+                seqFresh = String(probeCache.probeSeq || probeCache.rawSeq || probeCache.seq || '');
+                rawSeqFresh = String(probeCache.rawSeq || '');
+                if (!seqWhich)
+                    seqWhich = String(probeCache.seqWhich || 'probe-canvas-frames');
+            }
+            if (!String(seqFresh || '').length && __cw_hasCocos() && buildSource === 'pull') {
+                var probeRescue = brTryProbeCanvasRoadSeqRescue('buildSnapshotNow-empty-pull');
+                if (probeRescue) {
+                    seqFresh = String(probeRescue.seq || '');
+                    rawSeqFresh = String(probeRescue.rawSeq || '');
+                    seqVersion = Number(probeRescue.seqVersion || 0) || 0;
+                    seqEvent = String(probeRescue.seqEvent || '');
+                    seqWhich = String(probeRescue.seqWhich || 'probe-canvas-rescue');
+                } else {
+                    try { brKickProbeRoadSeqFrames('buildSnapshotNow-empty-pull', 8); } catch (_) {}
+                }
+            }
+            if (!String(seqFresh || '').length &&
+                (
+                    String(rawSeqFresh || '').length ||
+                    String(window.__cw_bead_raw_seq || '').length ||
+                    String(_domBeadSeqManaged || '').length ||
+                    Number(seqVersion || 0) > 0
+                )) {
+                brSeqAuditLog('buildSnapshotNow-empty-seqState-with-evidence', {
+                    buildId: buildId,
+                    source: buildSource,
+                    seqFreshLen: String(seqFresh || '').length,
+                    rawSeqFreshLen: String(rawSeqFresh || '').length,
+                    beadRawWindowLen: String(window.__cw_bead_raw_seq || '').length,
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    seqVersion: Number(seqVersion || 0),
+                    seqEvent: String(seqEvent || ''),
+                    seqWhich: String(seqWhich || ''),
+                    managedTitle: String(_domManagedTableTitle || '')
+                }, 700, 'buildSnapshotNow-empty-seqState|' + buildSource + '|' + buildId + '|' + Number(seqVersion || 0) + '|' + String(seqEvent || ''));
+            }
             var seqEventNowLower = String(seqEvent || '').toLowerCase();
             var noBoardLikeEvent =
                 (seqEventNowLower.indexOf('shoe-reset-arm') >= 0) ||
@@ -15370,6 +16195,20 @@
                 (seqEventNowLower.indexOf('no-board') >= 0) ||
                 (seqEventNowLower.indexOf('table-switch-wait-bead') >= 0);
             if (noBoardLikeEvent) {
+                brSeqAuditLog('buildSnapshotNow-clear-by-noBoardLikeEvent', {
+                    buildId: buildId,
+                    source: buildSource,
+                    seqFresh: String(seqFresh || ''),
+                    rawSeqFresh: String(rawSeqFresh || ''),
+                    seqFreshLen: String(seqFresh || '').length,
+                    rawSeqFreshLen: String(rawSeqFresh || '').length,
+                    seqVersion: Number(seqVersion || 0),
+                    seqEvent: String(seqEvent || ''),
+                    seqWhich: String(seqWhich || ''),
+                    managedSeq: String(_domBeadSeqManaged || ''),
+                    managedLen: String(_domBeadSeqManaged || '').length,
+                    beadRawWindowLen: String(window.__cw_bead_raw_seq || '').length
+                }, 700, 'buildSnapshotNow-clear-by-noBoardLikeEvent|' + buildSource + '|' + buildId + '|' + String(seqEvent || ''));
                 _abxSnapCache.seqState = null;
                 _abxSnapCache.seqAt = 0;
                 useSeqCache = false;
@@ -15378,11 +16217,78 @@
             rawSeq = rawSeqFresh ? String(rawSeqFresh || '') : '';
             if (!rawSeq && seq)
                 rawSeq = seq;
+            if (__cw_hasCocos() &&
+                !noBoardLikeEvent &&
+                brIsReliableRoadSeq(String(rawSeq || '')) &&
+                String(rawSeq || '') !== String(seq || '')) {
+                brSeqAuditLog('buildSnapshotNow-use-raw-primary', {
+                    buildId: buildId,
+                    source: buildSource,
+                    seqBefore: String(seq || ''),
+                    rawSeq: String(rawSeq || ''),
+                    seqLenBefore: String(seq || '').length,
+                    rawLen: String(rawSeq || '').length,
+                    seqVersion: Number(seqVersion || 0),
+                    seqEvent: String(seqEvent || ''),
+                    seqWhichBefore: String(seqWhich || '')
+                }, 700, 'buildSnapshotNow-use-raw-primary|' + buildSource + '|' + buildId + '|' + String(rawSeq || '').length);
+                seq = String(rawSeq || '');
+                if (!seqWhich || String(seqWhich || '').indexOf('probe-canvas') >= 0)
+                    seqWhich = 'probe-raw-primary';
+            }
+            if (__cw_hasCocos() &&
+                !noBoardLikeEvent &&
+                brIsReliableRoadSeq(String(rawSeq || ''))) {
+                var seqGapForDisplay = String(rawSeq || '').length - String(seq || '').length;
+                var seqEventForDisplay = String(seqEvent || '').toLowerCase();
+                var useRawDisplayFallback =
+                    !String(seq || '').length ||
+                    (
+                        seqGapForDisplay >= 4 &&
+                        (
+                            seqEventForDisplay.indexOf('board-jump-hold') >= 0 ||
+                            seqEventForDisplay.indexOf('append-delta-queue') >= 0 ||
+                            seqEventForDisplay.indexOf('append-reconcile-bead') >= 0
+                        )
+                    );
+                if (useRawDisplayFallback) {
+                    brSeqAuditLog('buildSnapshotNow-use-raw-display-fallback', {
+                        buildId: buildId,
+                        source: buildSource,
+                        seqBefore: String(seq || ''),
+                        rawSeq: String(rawSeq || ''),
+                        seqLenBefore: String(seq || '').length,
+                        rawLen: String(rawSeq || '').length,
+                        seqGap: seqGapForDisplay,
+                        seqVersion: Number(seqVersion || 0),
+                        seqEvent: String(seqEvent || ''),
+                        seqWhich: String(seqWhich || ''),
+                        managedSeq: String(_domBeadSeqManaged || ''),
+                        managedLen: String(_domBeadSeqManaged || '').length
+                    }, 700, 'buildSnapshotNow-use-raw-display-fallback|' + buildSource + '|' + buildId + '|' + String(seqEvent || '') + '|' + String(rawSeq || '').length);
+                    seq = String(rawSeq || '');
+                    rawSeqFromFallback = true;
+                    if (!seqWhich)
+                        seqWhich = 'raw-display-fallback';
+                }
+            }
             if (noBoardLikeEvent) {
                 seq = '';
                 rawSeq = '';
             }
             if (brShouldMaskSeqForDisplay(st, seqEvent)) {
+                brSeqAuditLog('buildSnapshotNow-mask-seq-display', {
+                    buildId: buildId,
+                    source: buildSource,
+                    status: String(st || ''),
+                    seqBeforeMask: String(seq || ''),
+                    rawBeforeMask: String(rawSeq || ''),
+                    seqLenBeforeMask: String(seq || '').length,
+                    rawLenBeforeMask: String(rawSeq || '').length,
+                    seqVersion: Number(seqVersion || 0),
+                    seqEvent: String(seqEvent || ''),
+                    seqWhich: String(seqWhich || '')
+                }, 900, 'buildSnapshotNow-mask-seq-display|' + buildSource + '|' + String(seqEvent || '') + '|' + String(st || ''));
                 seq = '';
                 rawSeq = '';
                 rawSeqFromFallback = false;
@@ -15612,6 +16518,36 @@
             } catch (_) {
                 return null;
             }
+        };
+        window.__cw_probeRoadSeqNow = function () {
+            try {
+                var r = brReadCanvasRoadSeq({ ignoreCache: true, skipBoardCountTrim: true });
+                if (r) {
+                    try {
+                        r.probeSeq = String(r.seq || '');
+                        r.seqWhich = 'probe-canvas-now-raw';
+                    } catch (_) {}
+                    return r;
+                }
+                return {
+                    seq: '',
+                    rawSeq: '',
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    seqWhich: 'probe-canvas-now-raw'
+                };
+            } catch (_) {
+                return {
+                    seq: '',
+                    rawSeq: '',
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    seqWhich: 'probe-canvas-now-raw'
+                };
+            }
+        };
+        window.__cw_probeRoadSeqFrames = function (count) {
+            return brKickProbeRoadSeqFrames('manual-window-frames', count || 8);
         };
 
         // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}

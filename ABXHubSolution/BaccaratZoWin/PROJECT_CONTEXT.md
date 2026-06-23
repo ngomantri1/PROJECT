@@ -48,6 +48,27 @@
   - nhưng `Canvas Watch` trong app thật vẫn có lúc hiển thị `SEQ META len=0`
   - cần bám tiếp luồng `readTKSeq -> readSeqStateSafe -> buildSnapshotNow -> panel render/push`
   - cần tận dụng `cwDbg`, `brSeqFuncLog`, `seq_diag`, `cwLogBatch`, `js_console` để soi đúng điểm mất `seq`
+- Đã có thêm một nhánh điều tra lớn về `tên nhân vật` và chuỗi kết quả:
+  - canvas đang hiện được tên nhân vật `minoauto6`
+  - bảng điều khiển C# ở `LblUserName` vẫn có lúc chỉ hiện `-`
+  - yêu cầu hiện tại là canvas và bảng điều khiển phải dùng cùng một nguồn tên
+  - nguồn mong muốn là `t.N` / `snap.username` từ scanner/canvas, không phải host fallback
+- Fallback cũ `__cw_readHostUsername()` chỉ còn giá trị chẩn đoán:
+  - đã log ra file app log bằng nhóm `[CWUSER]`
+  - đã xác nhận có trường hợp fallback này trả rỗng hoàn toàn
+  - không được xem đây là nguồn nghiệp vụ chính cho tên nhân vật
+- Đã đổi nội dung hiển thị trên canvas:
+  - từ `TÀI KHOẢN`
+  - thành `TÊN NHÂN VẬT`
+  - để đúng bản chất dữ liệu đang hiển thị
+- Đã thêm log C# khi nạp embedded JS:
+  - ghi rõ `resource name`
+  - ghi rõ `seqScriptRev`
+  - mục đích là phân biệt ngay binary đang chạy thực sự dùng bản JS nào
+- Một chẩn đoán quan trọng đã rút ra:
+  - số `0` từng hiện ở ô `TÀI KHOẢN` phía C# không chứng minh là luồng `username` đang đúng
+  - trước đó UI từng default `LblAmount = "0"` khi thiếu dữ liệu
+  - hiện tại rule đúng là thiếu amount thì phải hiện `-` để tránh đánh lừa việc debug
 
 ## Flow vào game hiện tại
 
@@ -122,11 +143,25 @@
 - `Canvas Watch` là panel debug trong `v4_js_xoc_dia_live.js`.
 - Overlay debug hiện mặc định nhưng đã chỉnh `pointer-events` để không chặn click web.
 - `TextMap/MoneyMap/BetMap` phụ thuộc đúng game frame/context; nếu panel hiện mà map rỗng thì thường là bám sai frame, không phải lỗi render đơn thuần.
+- `Canvas Watch` hiện đang là nơi gần nguồn thật nhất cho:
+  - chuỗi kết quả road
+  - tên nhân vật từ scanner/canvas
+  - số dư đọc từ cùng snapshot
+- Nếu canvas có dữ liệu nhưng bảng điều khiển C# không có:
+  - ưu tiên kiểm tra `main-pull` / `PULL_POPUP_TICK_NOW`
+  - kiểm tra host đang lấy snapshot từ top/frame nào
+  - không kết luận vội là scanner canvas hỏng
 - `F12` và `Ctrl+Shift+I` mở DevTools cho WebView đang active.
 - Log JS đã có sẵn 3 đường:
   - `cwDbg` / `cwLogBatch` ghi file JS debug
   - `seq_diag` cho chẩn đoán sequence
   - `js_console` để mirror `console.*` từ JS lên host log
+- Với bug tên nhân vật hiện tại, các log cần nhìn đầu tiên:
+  - `[CWUSER][HOST_READ]`
+  - `[CWUSER][TOTALS_NONCOCOS]`
+  - `[CWUSER][TOTALS_COCOS]`
+  - `[CWUSER][USER_CANDIDATES]`
+  - `[CWUSER][ACCOUNT_RENDER]`
 
 ## Những điều tuyệt đối không được phá
 
@@ -137,3 +172,4 @@
 - Plugin lifecycle `CreateView()` / `Stop()` / host shutdown
 - Click-through của overlay debug
 - Flow same-page trên `zowin` hiện tại
+- Nguồn tên nhân vật giữa canvas và panel C# phải hội tụ về một snapshot, không để mỗi nơi một nguồn

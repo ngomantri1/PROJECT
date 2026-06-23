@@ -1333,11 +1333,12 @@ try{
         }catch(_){}
         return false;
       }
-      function pullFrom(win, depth){
-        try{
-          if (!win) return null;
-          var snap = null;
-          function parseMoney(txt){
+          function pullFrom(win, depth){
+            try{
+              if (!win) return null;
+              var snap = null;
+              var readMode = '';
+              function parseMoney(txt){
             try{
               txt = String(txt || '').trim().toUpperCase();
               if (!txt) return null;
@@ -1439,13 +1440,16 @@ try{
             }catch(_){ return null; }
           }
           try{
-            if (typeof win.__cw_readSnapshot === 'function')
+            if (typeof win.__cw_readSnapshot === 'function'){
               snap = win.__cw_readSnapshot();
+              if (snap) readMode = 'readSnapshot';
+            }
           }catch(_){}
           try{
             if ((!snap || (!snap.seq && !(snap.totals && snap.totals.A != null) && !(Number(snap.progValid || 0) === 1))) &&
                 win.__cw_last_panel_snapshot){
               snap = win.__cw_last_panel_snapshot;
+              if (snap) readMode = 'panelSnapshot';
             }
           }catch(_){}
           try{
@@ -1459,7 +1463,10 @@ try{
                           !snapUserNow &&
                           !(Number(snap.progValid || 0) === 1))){
               var panelSnap = parsePanelFallback();
-              if (panelSnap) snap = panelSnap;
+              if (panelSnap){
+                snap = panelSnap;
+                readMode = 'panelText';
+              }
             }
           }catch(_){}
           if (!snap){
@@ -1481,6 +1488,7 @@ try{
               statusTail:String(win.__cw_status_tail || ''),
               ts:Date.now()
             };
+            readMode = 'minimalFallback';
           }
           var p = snap ? snap.prog : null;
           var progValid = snap ? Number(snap.progValid || 0) : Number(win.__cw_prog_valid || 0);
@@ -1510,6 +1518,25 @@ try{
           var hasStatus = !!(st && String(st).trim());
           var href = '';
           try{ href = String((win.location && win.location.href) || ''); }catch(_){}
+          var pullSeqDiag = null;
+          try{
+            var seqDiagState = null;
+            if (typeof win.__cw_get_seq_diag_state === 'function')
+              seqDiagState = win.__cw_get_seq_diag_state();
+            pullSeqDiag = {
+              readMode: String(readMode || ''),
+              hasReadSnapshot: (typeof win.__cw_readSnapshot === 'function') ? 1 : 0,
+              hasPanelSnapshot: win.__cw_last_panel_snapshot ? 1 : 0,
+              beadRawWindow: String(win.__cw_bead_raw_seq || ''),
+              beadManagedWindow: String(win.__cw_bead_managed_seq || ''),
+              seqWindow: String(win.__cw_seq || ''),
+              seqVerWindow: Number(win.__cw_seq_version || 0) || 0,
+              seqEvtWindow: String(win.__cw_seq_event || ''),
+              lastNoBoard: seqDiagState && seqDiagState.lastNoBoard ? seqDiagState.lastNoBoard : null,
+              lastSourcePick: seqDiagState && seqDiagState.lastSourcePick ? seqDiagState.lastSourcePick : null,
+              lastParserError: seqDiagState && seqDiagState.lastParserError ? seqDiagState.lastParserError : null
+            };
+          }catch(_){}
           var isModernShell =
             ((/\/\/(?:[^\/]+\.)?zowin\.nu\//i.test(href) ||
               /\/\/(?:[^\/]+\.)?game8b\.com\//i.test(href) ||
@@ -1561,6 +1588,7 @@ try{
             status:String(st || ''),
             statusSource:statusSource,
             statusTail:statusTail,
+            pullSeqDiag:pullSeqDiag,
             ts:Date.now(),
             __score:score,
             __depth:Number(depth || 0),
@@ -2755,7 +2783,7 @@ try{
         private void QueueTickUiUpdate(double? progUi, string progModeUi, long snapshotTsUi, string statusUiDisplay, string seqForUi, double? amountUi, string userNameUi, string source, long seqVersion, string seqEvent)
         {
             var seqFiltered = FilterResultDisplaySeqWindow(seqForUi ?? "");
-            var queueKey = $"{source}|{seqFiltered.Length}|{seqVersion}|{seqEvent}|{statusUiDisplay}";
+            var queueKey = $"{source}|{seqFiltered}|{statusUiDisplay}";
             if (!string.Equals(_lastSeqUiQueueLogKey, queueKey, StringComparison.Ordinal))
             {
                 _lastSeqUiQueueLogKey = queueKey;
@@ -5016,9 +5044,15 @@ try{
                         lock (_snapLock) _lastSnap = snap;
 
                         var seqForUi = snap.seq ?? "";
+                        if (ShouldUseRawSeqForUi(seqForUi, snap.rawSeq, snap.seqEvent))
+                        {
+                            var rawForUi = FilterResultDisplaySeqWindow(snap.rawSeq);
+                            Log($"[SEQ][UI][RAW-FALLBACK] src={source} | seqLen={FilterResultDisplaySeqWindow(seqForUi).Length} | rawLen={rawForUi.Length} | evt={(string.IsNullOrWhiteSpace(snap.seqEvent) ? "-" : snap.seqEvent)}");
+                            seqForUi = rawForUi;
+                        }
                         var seqForUiFiltered = FilterResultDisplaySeqWindow(seqForUi);
                         var seqUiTail = Tail(seqForUiFiltered, 20);
-                        var seqUiSig = $"{seqForUiFiltered.Length}:{(snap?.seqVersion ?? 0)}:{seqUiTail}";
+                        var seqUiSig = seqForUiFiltered;
                         int progRounded = progUi.HasValue
                             ? (int)Math.Round(
                                 string.Equals(progModeUi, "seconds", StringComparison.OrdinalIgnoreCase)
@@ -5085,6 +5119,51 @@ try{
                         var hudUserDiag = string.IsNullOrWhiteSpace(hudUserDiagRaw) ? "-" : Shrink(hudUserDiagRaw, 48);
                         Log($"[TickDiag] src={source} | prog={progDiag} | progValid={progValidDiag} | progMode={progModeDiag} | progRaw={progRawDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
                         Log($"[HUDBAL] src={source} | A={hudBalDiag} | balSrc={hudBalSourceDiag} | user={hudUserDiag}");
+                        if (seqLen == 0 &&
+                            (source.IndexOf("main-pull", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             source.IndexOf("popup-pull", StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            string pullRawText;
+                            try
+                            {
+                                pullRawText = root.GetRawText()
+                                    .Replace('\r', ' ')
+                                    .Replace('\n', ' ')
+                                    .Replace('\t', ' ')
+                                    .Trim();
+                                if (pullRawText.Length > 2200)
+                                    pullRawText = pullRawText.Substring(0, 2200) + "...";
+                            }
+                            catch
+                            {
+                                pullRawText = "";
+                            }
+                            if (!string.IsNullOrWhiteSpace(pullRawText))
+                                Log($"[PULLRAW] src={source} | payload={pullRawText}");
+
+                            if (root.TryGetProperty("pullSeqDiag", out var pullSeqDiagEl) &&
+                                pullSeqDiagEl.ValueKind != JsonValueKind.Null &&
+                                pullSeqDiagEl.ValueKind != JsonValueKind.Undefined)
+                            {
+                                string pullSeqDiagText;
+                                try
+                                {
+                                    pullSeqDiagText = pullSeqDiagEl.GetRawText()
+                                        .Replace('\r', ' ')
+                                        .Replace('\n', ' ')
+                                        .Replace('\t', ' ')
+                                        .Trim();
+                                    if (pullSeqDiagText.Length > 2200)
+                                        pullSeqDiagText = pullSeqDiagText.Substring(0, 2200) + "...";
+                                }
+                                catch
+                                {
+                                    pullSeqDiagText = "";
+                                }
+                                if (!string.IsNullOrWhiteSpace(pullSeqDiagText))
+                                    Log($"[PULLSEQ] src={source} | diag={pullSeqDiagText}");
+                            }
+                        }
                     }
                     return;
                 }
@@ -6639,6 +6718,80 @@ try{
             return rawDisplay.StartsWith(jsDisplay, StringComparison.Ordinal);
         }
 
+        private static bool IsTrustedLiveRawAuthoritySeq(string? jsDisplayRaw, string? rawDisplayRaw, string? netDisplayRaw, string? statusRaw, string? seqEventRaw)
+        {
+            var jsDisplay = FilterResultDisplaySeqWindow(jsDisplayRaw);
+            var rawDisplay = FilterResultDisplaySeqWindow(rawDisplayRaw);
+            var netDisplay = FilterResultDisplaySeqWindow(netDisplayRaw);
+            if (rawDisplay.Length < 8)
+                return false;
+            if (IsChangingShoeStatus(statusRaw) || IsNoBoardSeqEvent(seqEventRaw))
+                return false;
+
+            CountSeqChars(rawDisplay, out var b, out var p, out var t, out var h, out var other);
+            int bp = b + p;
+            if (bp < 4 || h > 0 || other > 0)
+                return false;
+            if (t >= rawDisplay.Length)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(netDisplay))
+            {
+                if (rawDisplay.Length < (netDisplay.Length + 4))
+                    return false;
+                if (!rawDisplay.StartsWith(netDisplay, StringComparison.Ordinal))
+                    return false;
+            }
+            if (!string.IsNullOrWhiteSpace(jsDisplay) &&
+                !string.Equals(rawDisplay, jsDisplay, StringComparison.Ordinal) &&
+                !rawDisplay.StartsWith(jsDisplay, StringComparison.Ordinal))
+                return false;
+
+            return true;
+        }
+
+        private static bool ShouldUseRawSeqForUi(string? seqRaw, string? rawSeqRaw, string? seqEventRaw)
+        {
+            var seq = FilterResultDisplaySeqWindow(seqRaw);
+            var raw = FilterResultDisplaySeqWindow(rawSeqRaw);
+            if (raw.Length == 0)
+                return false;
+            if (raw.Length < 8)
+                return false;
+
+            CountSeqChars(raw, out var b, out var p, out var t, out var h, out var other);
+            int bp = b + p;
+            if (bp < 4 || h > 0 || other > 0)
+                return false;
+            if (t >= raw.Length)
+                return false;
+
+            if (string.IsNullOrWhiteSpace(seq))
+                return true;
+
+            if (string.Equals(raw, seq, StringComparison.Ordinal))
+                return false;
+
+            if (raw.StartsWith(seq, StringComparison.Ordinal))
+                return true;
+
+            if (raw.Length == seq.Length)
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(seq) &&
+                !raw.StartsWith(seq, StringComparison.Ordinal))
+            {
+                var evt = (seqEventRaw ?? "").Trim();
+                if (evt.IndexOf("append-delta-queue", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    evt.IndexOf("board-jump-hold", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    evt.IndexOf("js-raw-authority", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    evt.IndexOf("raw-visual-authority", StringComparison.OrdinalIgnoreCase) < 0)
+                    return false;
+            }
+
+            return true;
+        }
+
         private static string NormalizeSeqContractMode(string? seqModeRaw, string? seqEventRaw, string? seqAppendRaw)
         {
             var mode = (seqModeRaw ?? "").Trim().ToLowerInvariant();
@@ -7224,6 +7377,36 @@ try{
                 jsSeqVersion = Math.Max(0, jsDisplay.Length);
                 incomingBoardEvent = string.IsNullOrWhiteSpace(incomingBoardEvent) ? "raw-authority" : ("raw-authority-" + incomingBoardEvent);
             }
+            bool rawCountExact = false;
+            bool jsCountExact = false;
+            if (TryReadSnapshotBoardCounts(snap, out var countB, out var countP, out var countT))
+            {
+                CountSeqChars(rawDisplayInput, out var rawB, out var rawP, out var rawT, out _, out _);
+                CountSeqChars(jsDisplay, out var jsB, out var jsP, out var jsT, out _, out _);
+                rawCountExact = rawB == countB && rawP == countP && rawT == countT;
+                jsCountExact = jsB == countB && jsP == countP && jsT == countT;
+            }
+            bool rawVisualAheadOfJs =
+                rawDisplayInput.Length >= 8 &&
+                !noBoardLikeIncoming &&
+                !IsChangingShoeStatus(statusRaw) &&
+                !string.Equals(rawDisplayInput, jsDisplay, StringComparison.Ordinal) &&
+                (
+                    rawDisplayInput.Length > jsDisplay.Length &&
+                    (string.IsNullOrWhiteSpace(jsDisplay) || rawDisplayInput.StartsWith(jsDisplay, StringComparison.Ordinal))
+                    ||
+                    (rawDisplayInput.Length == jsDisplay.Length && rawCountExact)
+                    ||
+                    (rawCountExact && !jsCountExact)
+                );
+            if (rawVisualAheadOfJs)
+            {
+                LogSyncDiag("normalize", "raw-visual-ahead-of-js", $"gap={rawDisplayInput.Length - jsDisplay.Length}");
+                Log($"[NETSEQ][RAW-AUTHORITY] src={source} | reason=raw-visual-ahead-of-js | jsLen={jsDisplay.Length} | rawLen={rawDisplayInput.Length} | rawExact={(rawCountExact ? 1 : 0)} | jsExact={(jsCountExact ? 1 : 0)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                jsDisplay = rawDisplayInput;
+                jsSeqVersion = Math.Max(jsSeqVersion, rawDisplayInput.Length);
+                incomingBoardEvent = string.IsNullOrWhiteSpace(incomingBoardEvent) ? "raw-visual-authority" : ("raw-visual-authority-" + incomingBoardEvent);
+            }
 
             if (string.IsNullOrWhiteSpace(jsDisplay))
             {
@@ -7408,6 +7591,36 @@ try{
                 !string.IsNullOrWhiteSpace(_syncSeqPrefixDisplay) ||
                 _shoeChangeRebaseArmed;
             bool hasAuthoritativeSeq = !string.IsNullOrWhiteSpace(_netSeqDisplay);
+            bool trustedLiveRawAuthority =
+                hasAuthoritativeSeq &&
+                IsTrustedLiveRawAuthoritySeq(jsDisplay, rawDisplayInput, _netSeqDisplay, statusRaw, incomingBoardEvent) &&
+                (
+                    string.Equals(_netSeqSource, "js-bootstrap", StringComparison.OrdinalIgnoreCase) ||
+                    _netSeqDisplay.Length <= 3 ||
+                    incomingBoardEvent.IndexOf("board-jump-hold", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    incomingBoardEvent.IndexOf("append-delta-queue", StringComparison.OrdinalIgnoreCase) >= 0
+                );
+
+            if (trustedLiveRawAuthority)
+            {
+                string prevNetDisplay = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                long prevNetVersion = _netSeqVersion;
+                string prevNetEvent = _netSeqEvent;
+                _netSeqDisplay = rawDisplayInput;
+                _netSeqVersion = ComputeNextSyncSeqVersion(_netSeqVersion, prevNetDisplay, _netSeqDisplay, Math.Max(jsSeqVersion, _netSeqDisplay.Length));
+                _netSeqEvent = string.IsNullOrWhiteSpace(incomingBoardEvent) ? "js-raw-authority" : "js-raw-authority-" + incomingBoardEvent;
+                _netSeqSource = "js-raw-authority";
+                SeedAuthorityBoardCountsFromDisplayLocked(_netSeqDisplay, "live-raw-authority");
+                SeedAuthorityBoardCountsFromSnapshotLocked(snap, "live-raw-authority-snapshot");
+                Log($"[NETSEQ][RAW-AUTHORITY] src={source} | reason=live-raw-recover | prevLen={prevNetDisplay.Length} | rawLen={rawDisplayInput.Length} | jsLen={jsDisplay.Length} | prevVer={prevNetVersion} | netVer={_netSeqVersion} | prevEvt={(string.IsNullOrWhiteSpace(prevNetEvent) ? "-" : prevNetEvent)} | evt={(string.IsNullOrWhiteSpace(incomingBoardEvent) ? "-" : incomingBoardEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                LogSyncDiag("recover", "live-raw-authority", $"prevLen={prevNetDisplay.Length} | prevVer={prevNetVersion} | prevEvt={(string.IsNullOrWhiteSpace(prevNetEvent) ? "-" : prevNetEvent)}");
+                snap.seq = FilterResultDisplaySeqWindow(_netSeqDisplay);
+                snap.rawSeq = rawDisplayInput;
+                snap.seqVersion = _netSeqVersion;
+                snap.seqEvent = _netSeqEvent;
+                snap.seqSource = _netSeqSource;
+                return;
+            }
 
             if (hasAuthoritativeSeq && hasShoeAnchorForContract)
             {
@@ -11471,37 +11684,50 @@ try{
 
         void UpdateSeqUI(string fullSeq)
         {
-            var tail = (fullSeq.Length <= 20) ? fullSeq : fullSeq.Substring(fullSeq.Length - 20, 20);
-            if (tail == _lastSeqTailShown)
+            var renderSeq = FilterResultDisplaySeqWindow(fullSeq);
+            if (renderSeq == _lastSeqTailShown)
             {
-                var skipKey = $"skip|{fullSeq.Length}|{tail}|{_lastSeqTailShown}";
+                var skipKey = $"skip|{renderSeq.Length}|{renderSeq}|{_lastSeqTailShown}";
                 if (!string.Equals(_lastSeqUiRenderLogKey, skipKey, StringComparison.Ordinal))
                 {
                     _lastSeqUiRenderLogKey = skipKey;
                     int currentItemsSkip = SeqIcons?.Items.Count ?? -1;
                     int tooltipLenSkip = SeqIcons?.ToolTip is string ttSkip ? ttSkip.Length : -1;
-                    Log($"[SEQ][UI][SKIP] len={fullSeq.Length} | tailLen={tail.Length} | tail={(tail.Length == 0 ? "-" : tail)} | lastTailShownLen={_lastSeqTailShown.Length} | items={currentItemsSkip} | tooltipLen={tooltipLenSkip}");
+                    Log($"[SEQ][UI][SKIP] len={renderSeq.Length} | tailLen={renderSeq.Length} | tail={(renderSeq.Length == 0 ? "-" : Shrink(renderSeq, 64))} | lastTailShownLen={_lastSeqTailShown.Length} | items={currentItemsSkip} | tooltipLen={tooltipLenSkip}");
                 }
                 return; // QUAN TRỌNG: đừng reset animation
             }
 
-            var items = new List<SeqIconVM>(tail.Length);
-            for (int i = 0; i < tail.Length; i++)
+            var items = new List<SeqIconVM>(renderSeq.Length);
+            for (int i = 0; i < renderSeq.Length; i++)
             {
-                var ch = tail[i];
+                var ch = renderSeq[i];
                 if (_seqIconMap.TryGetValue(ch, out var img))
-                    items.Add(new SeqIconVM { Img = img, IsLatest = (i == tail.Length - 1) });
+                    items.Add(new SeqIconVM { Img = img, IsLatest = (i == renderSeq.Length - 1) });
             }
             SeqIcons.ItemsSource = items;
-            SeqIcons.ToolTip = fullSeq;
-            var renderKey = $"render|{fullSeq.Length}|{tail}|{items.Count}";
+            SeqIcons.ToolTip = renderSeq;
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        SeqIconsScroll?.UpdateLayout();
+                        SeqIconsScroll?.ScrollToRightEnd();
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+            var renderKey = $"render|{renderSeq.Length}|{renderSeq}|{items.Count}";
             if (!string.Equals(_lastSeqUiRenderLogKey, renderKey, StringComparison.Ordinal))
             {
                 _lastSeqUiRenderLogKey = renderKey;
-                char renderTail = fullSeq.Length > 0 ? fullSeq[^1] : '-';
-                Log($"[SEQ][UI][RENDER] len={fullSeq.Length} | tail={renderTail} | tailLen={tail.Length} | items={items.Count} | prevTailShownLen={_lastSeqTailShown.Length}");
+                char renderTail = renderSeq.Length > 0 ? renderSeq[^1] : '-';
+                Log($"[SEQ][UI][RENDER] len={renderSeq.Length} | tail={renderTail} | tailLen={renderSeq.Length} | items={items.Count} | prevTailShownLen={_lastSeqTailShown.Length}");
             }
-            _lastSeqTailShown = tail;
+            _lastSeqTailShown = renderSeq;
         }
 
 
