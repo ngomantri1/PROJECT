@@ -5,12 +5,12 @@
 // - CONTRARIAN: Đặt cửa đảo so với quyết định panel (ContrarianEnabled=true).
 // - FEEDBACK SIMULATED: AI học/guard/ewma cập nhật theo "thắng/thua GIẢ LẬP của panel gốc",
 //   không theo kết quả thực tế của cửa đã đặt (để tránh poison khi đánh ngược).
-// - SEQ: luôn lấy trực tiếp từ snap.seq mỗi vòng, chuyển về B/P theo quy tắc:
+// - SEQ: luôn lấy trực tiếp từ snap.rawSeq mỗi vòng, chuyển về B/P theo quy tắc:
 //     + Số: 1,3 => L ; 0,2,4 => C
 //     + Chữ: 'P'/'l' => L ; 'B'/'c' => C
 //   Bỏ qua ký tự khác. Chỉ lấy TỐI ĐA 50 phần tử cuối. An toàn khi chuỗi < 50.
 // - Không còn tự "append" kết quả vào st.lastHands; thay vào đó mỗi vòng luôn refresh từ snap.
-// - Log rõ ràng: REFRESH from snap.seq, BEAUTY-SCAN, quyết định panel vs cửa đặt (đảo), ok thực,
+// - Log rõ ràng: REFRESH from snap.rawSeq, BEAUTY-SCAN, quyết định panel vs cửa đặt (đảo), ok thực,
 //   panelWin (giả lập), trainingWin (dùng để học).
 //
 // Giữ nguyên khung IBetTask, TaskUtil, MoneyManager… như file gốc dự án.
@@ -116,7 +116,7 @@ namespace BaccaratZoWin.Tasks
 
         private sealed class PanelState
         {
-            // Đây là chuỗi kết quả BANKER/PLAYER thực tế, luôn refresh từ snap.seq mỗi vòng
+            // Đây là chuỗi kết quả BANKER/PLAYER thực tế, luôn refresh từ snap.rawSeq mỗi vòng
             public List<int> lastHands = new();
 
             // Các trạng thái học/guard/ewma dựa trên trainingWin (giả lập)
@@ -162,7 +162,7 @@ namespace BaccaratZoWin.Tasks
 
                 await WaitUntilNewRoundStart(ctx, ct);
 
-                // Luôn refresh từ snap.seq MỖI VÒNG, an toàn chiều dài < 50
+                // Luôn refresh từ snap.rawSeq MỖI VÒNG, an toàn chiều dài < 50
                 SafeRefreshLastHandsFromSnap(ctx, st);
 
                 var w20 = WinRate(st.lastHands, 20);
@@ -206,7 +206,7 @@ namespace BaccaratZoWin.Tasks
 
                 // Chấm điểm thực tế theo cửa đã đặt
                 var snapBefore = ctx.GetSnap();
-                string baseSeq = snapBefore?.seq ?? string.Empty;
+                string baseSeq = snapBefore?.rawSeq ?? string.Empty;
                 bool? ok = await WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
 
                 // P&L theo kết quả thực
@@ -261,13 +261,13 @@ namespace BaccaratZoWin.Tasks
             return Task.CompletedTask;
         }
 
-        // Đọc snap.seq -> chuẩn hoá về danh sách 0/1 (B/P) và chuỗi chữ 'B'/'P' để log
+        // Đọc snap.rawSeq -> chuẩn hoá về danh sách 0/1 (B/P) và chuỗi chữ 'B'/'P' để log
         private static void SafeRefreshLastHandsFromSnap(GameContext ctx, PanelState st, bool firstLog = false)
         {
             try
             {
                 var snap = ctx.GetSnap();
-                var raw = snap?.seq ?? string.Empty;
+                var raw = snap?.rawSeq ?? string.Empty;
 
                 // Parse: nhận cả số (0..4) lẫn chữ (B/P), lọc ký tự khác
                 var tmp = new List<int>(50);
@@ -304,7 +304,7 @@ namespace BaccaratZoWin.Tasks
 
                 if (tmp.Count == 0)
                 {
-                    if (firstLog) Log(ctx, "[AI15] SEED: snap.seq chưa sẵn.");
+                    if (firstLog) Log(ctx, "[AI15] SEED: snap.rawSeq chưa sẵn.");
                     return;
                 }
 
@@ -313,12 +313,12 @@ namespace BaccaratZoWin.Tasks
                 {
                     st.lastHands = tmp;
                     st.lastSeqStr = seqCL;
-                    Log(ctx, $"[AI15] REFRESH from snap.seq -> n={tmp.Count} | {seqCL}");
+                    Log(ctx, $"[AI15] REFRESH from snap.rawSeq -> n={tmp.Count} | {seqCL}");
                 }
                 else if (firstLog)
                 {
                     // Lần đầu có chuỗi nhưng không thay đổi so với st.lastSeqStr (hiếm)
-                    Log(ctx, $"[AI15] REFRESH from snap.seq -> n={tmp.Count} | {seqCL}");
+                    Log(ctx, $"[AI15] REFRESH from snap.rawSeq -> n={tmp.Count} | {seqCL}");
                 }
             }
             catch (Exception ex)
@@ -446,7 +446,7 @@ namespace BaccaratZoWin.Tasks
                 st.hardGuardConsecWins = 0;
             }
 
-            // Beauty scan trên chuỗi thực tế từ snap.seq
+            // Beauty scan trên chuỗi thực tế từ snap.rawSeq
             var (curLen, curSide, prevPen, prevSide, prev2Len, prev2Side) = GetTail3Blocks(st.lastHands);
             var (streakLen, streakSide) = CurrentStreakLen(st.lastHands);
 

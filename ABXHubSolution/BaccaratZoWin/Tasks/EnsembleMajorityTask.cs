@@ -337,7 +337,7 @@ namespace BaccaratZoWin.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetRawSnap?.Invoke() ?? ctx.GetSnap();
-                var rawSeqBefore = snap?.seq ?? "";
+                var rawSeqBefore = snap?.rawSeq ?? "";
                 var history = NormalizeBpHistory(rawSeqBefore);
                 var bundle = Decide(history, experts);
                 ctx.Log?.Invoke(BuildDecisionLog(bundle));
@@ -362,7 +362,7 @@ namespace BaccaratZoWin.Tasks
                 bool? win = await WaitRoundFinishAndJudge(ctx, side, rawSeqBefore, ct);
 
                 var snapAfter = ctx.GetRawSnap?.Invoke() ?? ctx.GetSnap();
-                var actualResult = GetLastResultChar(snapAfter?.seq);
+                var actualResult = GetLastResultChar(snapAfter?.rawSeq);
                 if (actualResult == 'B' || actualResult == 'P')
                 {
                     foreach (var d in bundle.Experts)

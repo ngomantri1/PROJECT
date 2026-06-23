@@ -33,7 +33,7 @@ namespace BaccaratZoWin.Tasks
                 await TaskUtil.WaitUntilBetWindow(ctx, ct);
 
                 var snap = ctx.GetSnap();
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSeq = snap?.rawSeq ?? string.Empty;
 
                 string side = PickSideByNI(seq[k], snap?.totals);
                 long stake;

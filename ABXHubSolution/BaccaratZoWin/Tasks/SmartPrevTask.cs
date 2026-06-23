@@ -55,8 +55,8 @@ namespace BaccaratZoWin.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap();
-                string parity = SeqToParityString(snap?.seq ?? "");
-                string baseSeq = snap?.seq ?? string.Empty;
+                string parity = SeqToParityString(snap?.rawSeq ?? "");
+                string baseSeq = snap?.rawSeq ?? string.Empty;
 
                 string side = DecideNextSide(parity);
                 long stake;

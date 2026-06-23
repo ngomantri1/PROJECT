@@ -28,7 +28,7 @@ namespace BaccaratZoWin.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap();
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSeq = snap?.rawSeq ?? string.Empty;
 
                 string side = DecideRandomSide();
                 long stake;

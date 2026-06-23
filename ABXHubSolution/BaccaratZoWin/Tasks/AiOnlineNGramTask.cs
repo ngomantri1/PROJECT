@@ -105,7 +105,7 @@ namespace BaccaratZoWin.Tasks
             if (!_warmed)
             {
                 var initSnap = ctx.GetSnap?.Invoke();
-                string fullParity = SeqToParityString(initSnap?.seq ?? "");
+                string fullParity = SeqToParityString(initSnap?.rawSeq ?? "");
                 if (fullParity.Length >= 2)
                 {
                     _model.WarmStart(fullParity, maxSteps: _warmSteps);
@@ -129,7 +129,7 @@ namespace BaccaratZoWin.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var preSnap = ctx.GetSnap();
-                string preSeq = preSnap?.seq ?? "";
+                string preSeq = preSnap?.rawSeq ?? "";
                 string preParity = SeqToParityString(preSeq);
 
                 // 1) Tính tham số hiệu lực (ease-in theo SafetyEscalations & S5/S8 flags)
@@ -186,7 +186,7 @@ namespace BaccaratZoWin.Tasks
 
                 // 7) Học online từ kết quả thực
                 var postSnap = ctx.GetSnap?.Invoke();
-                string postParity = SeqToParityString(postSnap?.seq ?? "");
+                string postParity = SeqToParityString(postSnap?.rawSeq ?? "");
                 if (postParity.Length >= preParity.Length + 1)
                 {
                     char actual = postParity[^1];

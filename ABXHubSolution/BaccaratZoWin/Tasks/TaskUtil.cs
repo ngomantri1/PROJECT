@@ -183,7 +183,7 @@ namespace BaccaratZoWin.Tasks
             var playableSnap = ctx.GetSnap?.Invoke();
             var snap = ctx.GetRawSnap?.Invoke() ?? playableSnap;
             var roundId = 0;
-            var issueSeqDisplay = snap?.seq ?? "";
+            var issueSeqDisplay = snap?.rawSeq ?? "";
             var issueSeqVersion = 0L;
             try
             {
@@ -196,7 +196,7 @@ namespace BaccaratZoWin.Tasks
                 }
                 else
                 {
-                    roundId = (snap?.seq ?? "").Length;
+                    roundId = (snap?.rawSeq ?? "").Length;
                     issueSeqVersion = roundId;
                 }
             }

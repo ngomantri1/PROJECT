@@ -8,20 +8,14 @@
 - Giữ `TextMap/MoneyMap/BetMap` bám đúng game frame thật
 - Giữ settle authoritative giữa JS tick và network/CDP
 - Ổn định lại luồng `chuỗi kết quả` theo scan mới, không quay về nghiệp vụ road cũ
-- Sửa dứt điểm việc canvas có `tên nhân vật` nhưng bảng điều khiển C# vẫn rỗng
+- Sửa dứt điểm việc canvas có sequence đúng nhưng panel C# vẫn hiển thị sai
 
 ## Task chưa hoàn thành
 
-- Đổi tên helper/log legacy còn sót:
-  - `TryRouteRecentPlayerFlowGameToPopupAsync`
-  - `TryRouteHostIframeToPopupAsync`
-  - các tên còn mang dấu vết `player-flow`
 - Chuẩn hóa một nguồn nhận diện game context giữa C# và JS
-- Chuẩn hóa một nguồn `tên nhân vật` giữa canvas và `LblUserName`
 - Tách `MainWindow.xaml.cs` thành service nhỏ hơn
 - Làm rõ vai trò `WebView2LiveBridge.cs`
-- Xác nhận lại `TAIL_USER_NAME` / rule chọn candidate trên site mới
-- Khóa lại contract `PULL_POPUP_TICK_NOW` để không trả tick rỗng khi canvas vẫn có dữ liệu
+- Khóa lại contract `PULL_POPUP_TICK_NOW` để không trả snapshot rỗng khi canvas vẫn có dữ liệu
 
 ## Task cần refactor
 
@@ -30,51 +24,57 @@
   - `GameLaunchService`
   - `SeqSyncService`
   - `PendingBetService`
-  - `LicenseService`
-- Gom shared host detection rule vào một chỗ
 - Giảm duplication giữa main/popup/frame inject path
 - Tách Canvas Watch/debug config khỏi business flow
-- Tách riêng helper chẩn đoán username/seq khỏi business snapshot nếu log đã đủ ổn định
 
 ## Task ưu tiên cao
 
-- Rà lại `isLikelyGameContext()` trong JS để bỏ hẳn heuristics URL cũ nếu không còn cần
-- Rà lại strategy index/tooltip mismatch
-- Rà lại pending settle khi đổi table/shoe/round
-- Giữ popup fallback chỉ cho host legacy, không để lấn flow same-page
-- Kiểm tra lại `ShouldPreferFrameBridgeResult(...)` để chắc `PULL_POPUP_TICK_NOW` lấy đúng top-level best candidate
-- Test lại parser panel fallback của `PULL_POPUP_TICK_NOW` với cả `TÊN NHÂN VẬT` và `TÀI KHOẢN`
-- Theo dõi log `[CWUSER]` và `main-pull` để xác nhận user/balance/seq cùng một snapshot
+- Test lại nhánh authority `stale-authority-resync`
+- Xác nhận `__cw_probeRoadSeqFrames(8).rawSeq` và panel `CHUỖI KẾT QUẢ` luôn cùng nội dung
+- Rà lại `header-prune` trong `cw_probe_seq_roi.js` / `v4_js_xoc_dia_live.js` trên nhiều layout
+- Giữ popup fallback chỉ cho host legacy, không lấn flow same-page
 
 ## Task cần test lại
 
 - `zowin` same-page launch flow
-- `TextMap` sau khi trang đổi layout/frame
 - `Canvas Watch`:
   - hiện panel
   - hiện đủ info
   - không chặn click web
-- `F12` / `Ctrl+Shift+I` mở DevTools đúng WebView
-- rebuild embedded JS và plugin copy path
-- popup fallback trên host legacy
-- start/stop strategy nhiều lần cùng tab
+- rebuild embedded JS và binary copy path
 - đổi table/shoe khi có pending bet
-- tên nhân vật:
-  - canvas và `LblUserName` phải cùng nguồn
-  - không được còn trường hợp canvas hiện `minoauto6` nhưng panel phải là `-`
-- `LblAmount`:
-  - thiếu dữ liệu thì phải hiện `-`
-  - không được tự default `0` gây chẩn đoán sai
 - chuỗi kết quả:
-  - canvas có dữ liệu
-  - panel/phần điều khiển nhận đúng chuỗi đó
-  - không fallback lại rule road cũ
+  - probe đúng
+  - snapshot đúng
+  - authority đúng
+  - panel hiển thị đúng toàn bộ chuỗi
 
-## Gợi ý thứ tự
+## Cập nhật từ chat 2026-06-23
 
-1. Chốt lại luồng `main-pull` để tên nhân vật và chuỗi kết quả không bị rỗng khi canvas đang có
-2. Test trên host thực với log `[CWUSER]`, `main-pull`, `seqScriptRev`
-3. Chuẩn hóa rule game detection C# + JS
-4. Dọn helper/log legacy còn sót
-5. Tách `PendingBetService`
-6. Tách `BridgeService`
+### Task gấp
+
+- Tắt app, rebuild binary mới, chạy lại để chắc XAML/embedded JS mới đã được nạp.
+- Test log `reason=stale-authority-resync` trên host thực.
+- Xác nhận panel `CHUỖI KẾT QUẢ` không còn chỉ hiện phần đuôi.
+
+### Chưa xong
+
+- Xác nhận `stale-authority-resync` không cướp authority nhầm khi:
+  - changing shoe
+  - no-board
+  - table-switch transient
+- Rà lại `cw_probe_seq_roi.js` trên các bàn có cùng UI nhưng khác tỉ lệ.
+
+### Checklist debug sequence
+
+1. Probe:
+   - `(await __cw_probeRoadSeqFrames(8)).rawSeq`
+2. Snapshot:
+   - `readDomBeadSeq()`
+   - `buildSnapshotNow()`
+3. Authority:
+   - `[NETSEQ][RAW-AUTHORITY]`
+   - `[NETSEQ][COUNT-ONLY-HOLD]`
+4. UI:
+   - `[SEQ][UI][QUEUE]`
+   - `[SEQ][UI][APPLY]`

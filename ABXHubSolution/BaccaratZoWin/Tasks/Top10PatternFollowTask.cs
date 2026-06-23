@@ -87,7 +87,7 @@ namespace BaccaratZoWin.Tasks
             long tick = 0;
 
             var snap0 = ctx.GetSnap?.Invoke();
-            string clAll0 = SeqToParityString(snap0?.seq ?? "");
+            string clAll0 = SeqToParityString(snap0?.rawSeq ?? "");
             string cl50 = TakeLast50CL(clAll0);
 
             // Ông chủ nói luôn có sẵn 50 → không chờ; nhưng vẫn an toàn nếu ngắn hơn.
@@ -126,7 +126,7 @@ namespace BaccaratZoWin.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap?.Invoke();
-                string baseSeq = snap?.seq ?? string.Empty; // dùng cho Judge: chờ chuỗi đổi (không phụ thuộc tăng độ dài)
+                string baseSeq = snap?.rawSeq ?? string.Empty; // dùng cho Judge: chờ chuỗi đổi (không phụ thuộc tăng độ dài)
 
                 // Nếu chưa có best (đề phòng), pick lại
                 if (string.IsNullOrEmpty(curPattern))
@@ -148,7 +148,7 @@ namespace BaccaratZoWin.Tasks
 
                         // Cập nhật lại list 10 mới về
                         var s2 = ctx.GetSnap?.Invoke();
-                        string clAll2 = SeqToParityString(s2?.seq ?? "");
+                        string clAll2 = SeqToParityString(s2?.rawSeq ?? "");
                         string cl50_2 = TakeLast50CL(clAll2);
                         if (!string.Equals(cl50_2, lastSeenCl50, StringComparison.Ordinal))
                         {
@@ -185,7 +185,7 @@ namespace BaccaratZoWin.Tasks
 
                 // Sau khi có kết quả: cập nhật CL50 & +1 cho "10 mới về" (41..50)
                 var sAfter = ctx.GetSnap?.Invoke();
-                string clAll = SeqToParityString(sAfter?.seq ?? "");
+                string clAll = SeqToParityString(sAfter?.rawSeq ?? "");
                 string cl50_now = TakeLast50CL(clAll);
                 if (!string.Equals(cl50_now, lastSeenCl50, StringComparison.Ordinal))
                 {

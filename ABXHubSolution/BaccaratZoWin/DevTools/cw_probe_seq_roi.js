@@ -338,7 +338,6 @@
     var rows = clusterRows(items);
     var colCenters = cols.map(function (c) { return Number(c.cx || 0); });
     var rowCenters = rows.map(function (r) { return Number(r.cy || 0); });
-
     function nearestIndex(value, centers) {
       var best = -1;
       var bestDist = 1e18;
@@ -409,6 +408,20 @@
 
   function filterRoadBodyItems(items, roi) {
     var rows = clusterRows(items);
+    function rowSpan(row) {
+      var arr = row && row.items ? row.items : [];
+      if (!arr.length) return 0;
+      var minX = 1e18;
+      var maxX = -1e18;
+      for (var i = 0; i < arr.length; i++) {
+        var it = arr[i];
+        var x1 = Number(it.x || 0);
+        var x2 = x1 + Number(it.w || 0);
+        if (x1 < minX) minX = x1;
+        if (x2 > maxX) maxX = x2;
+      }
+      return Math.max(0, maxX - minX);
+    }
     if (rows.length <= 1) {
       return {
         items: items.slice(),
@@ -417,6 +430,27 @@
         keepFrom: 0,
         keepTo: rows.length ? rows.length - 1 : -1
       };
+    }
+
+    if (rows.length >= 2) {
+      var head = rows[0];
+      var next = rows[1];
+      var headCount = Number(head && head.items && head.items.length || 0);
+      var nextCount = Number(next && next.items && next.items.length || 0);
+      var headSpan = rowSpan(head);
+      var nextSpan = rowSpan(next);
+      var gap = Math.abs(Number(next && next.cy || 0) - Number(head && head.cy || 0));
+      var sizeMedHead = median(items.map(function (x) {
+        return Math.max(Number(x.w || 0), Number(x.h || 0));
+      })) || 18;
+      if (headCount > 0 &&
+          headCount <= 3 &&
+          nextCount >= Math.max(5, headCount + 2) &&
+          headSpan > 0 &&
+          nextSpan >= headSpan * 1.35 &&
+          gap <= Math.max(18, Math.round(sizeMedHead * 2.4))) {
+        rows = rows.slice(1);
+      }
     }
 
     var denseMin = 4;

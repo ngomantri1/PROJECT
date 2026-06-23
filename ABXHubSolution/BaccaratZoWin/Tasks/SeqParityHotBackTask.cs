@@ -190,7 +190,7 @@ namespace BaccaratZoWin.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap();
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSeq = snap?.rawSeq ?? string.Empty;
 
                 if (string.IsNullOrEmpty(pattern) || patternIndex >= PatternLen)
                 {
@@ -237,7 +237,7 @@ namespace BaccaratZoWin.Tasks
                 await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, win, netDelta, ct);
 
                 var snapAfter = ctx.GetSnap();
-                string latestSeq = snapAfter?.seq ?? baseSeq;
+                string latestSeq = snapAfter?.rawSeq ?? baseSeq;
                 hasLastWindow = TryGetLatestWindow(latestSeq, out lastWindow, out lastWindowRev);
                 if (hasLastWindow && candidates != null && candidates.Count > 0)
                 {

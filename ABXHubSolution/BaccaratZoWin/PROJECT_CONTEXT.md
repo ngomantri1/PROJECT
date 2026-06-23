@@ -2,116 +2,59 @@
 
 > Tài liệu phục vụ AI coding. Ưu tiên logic đang chạy thực tế, không phải spec lý tưởng.
 
-## Tổng quan
+## Tổng quan project
 
-- `BaccaratZoWin` là app `WPF .NET 8` và cũng chạy như plugin cho `ABX.Core`.
-- App điều khiển `WebView2`, tiêm JS `v4_js_xoc_dia_live.js`, đọc trạng thái game realtime, chạy strategy, quản lý vốn, lưu history/stats.
-- Code trung tâm vẫn là `MainWindow.xaml.cs`.
-- Runtime hiện tại ưu tiên host/live shell kiểu `same-page` trên `zowin` hơn là điều hướng sang link `webMain.jsp` / `singleBacTable.jsp` cũ.
+- `BaccaratZoWin` là app `WPF .NET 8`, đồng thời có thể chạy như plugin cho `ABX.Core`.
+- App điều khiển `WebView2`, tiêm JS runtime `v4_js_xoc_dia_live.js`, đọc trạng thái game realtime, chạy strategy, quản lý vốn, lưu history/stats.
+- Code điều phối trung tâm vẫn là `MainWindow.xaml.cs`.
+- Runtime hiện tại ưu tiên `same-page flow` trên ZoWin/shell host mới, không ưu tiên route cũ kiểu `webMain.jsp` / `singleBacTable.jsp`.
 
-## Công nghệ
+## Công nghệ sử dụng
 
 - `C#`, `WPF`, `net8.0-windows`
 - `Microsoft.Web.WebView2`
-- `ABX.Core` plugin contract
+- `ABX.Core`
 - Embedded JS runtime: `v4_js_xoc_dia_live.js`
 - `System.Text.Json`
 - `DPAPI`
-- CDP / `CallDevToolsProtocolMethodAsync` cho network + trusted click
-- Local storage tại `%LOCALAPPDATA%\BaccaratZoWin`
+- CDP / `CallDevToolsProtocolMethodAsync`
 
 ## Flow hoạt động chính
 
 1. `MainWindow` khởi tạo config, stats, log, WebView2.
-2. Host đăng ký bridge script vào top doc, frame, popup khi cần.
-3. JS quét canvas/DOM/text, đẩy `tick` về C#.
+2. C# inject bridge script vào top doc, frame, popup khi cần.
+3. JS quét canvas/DOM/text và đẩy `tick` về C#.
 4. C# hợp nhất `tick` với authority từ network/CDP.
 5. Strategy đọc snapshot authoritative qua `GameContext`.
 6. `TaskUtil.PlaceBet()` gọi JS queue đặt cược.
-7. Pending row được giữ tới khi settle đủ context/seq gating.
-8. UI/history/stats/money cập nhật trên `Dispatcher`.
-
-## Bối cảnh chat mới nhất
-
-- Đã chuyển hướng đọc chuỗi Baccarat road từ nhánh profile cũ sang nhánh `auto-road` trong `readDomBeadSeq()`.
-- Rule mới của road:
-  - chỉ lấy các chấm tròn trong bảng kết quả
-  - bỏ phần tổng `PLAYER/BANKER/TIE`
-  - bỏ phần item bên dưới bảng road không liên quan
-  - map màu: xanh=`P`, đỏ=`B`, tím=`T`
-  - nối chuỗi theo hàng `6 -> 5 -> 4 -> 3 -> 2 -> 1`
-  - hướng từng hàng xen kẽ trái/phải theo đúng layout người dùng đã xác nhận
-- Không được fallback lại `brFindBoardWithProfiles` cho Baccarat road authority.
-- Một điểm rất quan trọng: app đang nạp `v4_js_xoc_dia_live.js` từ `EmbeddedResource`, nên sửa file JS xong phải rebuild và chạy đúng binary mới thì runtime mới nhận.
-- Trạng thái hiện tại của bug đang mở:
-  - DevTools probe đã lấy được `seq` đúng
-  - nhưng `Canvas Watch` trong app thật vẫn có lúc hiển thị `SEQ META len=0`
-  - cần bám tiếp luồng `readTKSeq -> readSeqStateSafe -> buildSnapshotNow -> panel render/push`
-  - cần tận dụng `cwDbg`, `brSeqFuncLog`, `seq_diag`, `cwLogBatch`, `js_console` để soi đúng điểm mất `seq`
-- Đã có thêm một nhánh điều tra lớn về `tên nhân vật` và chuỗi kết quả:
-  - canvas đang hiện được tên nhân vật `minoauto6`
-  - bảng điều khiển C# ở `LblUserName` vẫn có lúc chỉ hiện `-`
-  - yêu cầu hiện tại là canvas và bảng điều khiển phải dùng cùng một nguồn tên
-  - nguồn mong muốn là `t.N` / `snap.username` từ scanner/canvas, không phải host fallback
-- Fallback cũ `__cw_readHostUsername()` chỉ còn giá trị chẩn đoán:
-  - đã log ra file app log bằng nhóm `[CWUSER]`
-  - đã xác nhận có trường hợp fallback này trả rỗng hoàn toàn
-  - không được xem đây là nguồn nghiệp vụ chính cho tên nhân vật
-- Đã đổi nội dung hiển thị trên canvas:
-  - từ `TÀI KHOẢN`
-  - thành `TÊN NHÂN VẬT`
-  - để đúng bản chất dữ liệu đang hiển thị
-- Đã thêm log C# khi nạp embedded JS:
-  - ghi rõ `resource name`
-  - ghi rõ `seqScriptRev`
-  - mục đích là phân biệt ngay binary đang chạy thực sự dùng bản JS nào
-- Một chẩn đoán quan trọng đã rút ra:
-  - số `0` từng hiện ở ô `TÀI KHOẢN` phía C# không chứng minh là luồng `username` đang đúng
-  - trước đó UI từng default `LblAmount = "0"` khi thiếu dữ liệu
-  - hiện tại rule đúng là thiếu amount thì phải hiện `-` để tránh đánh lừa việc debug
-
-## Flow vào game hiện tại
-
-- Ưu tiên `same-page flow` cho host hiện đại:
-  - `zowin.nu`
-  - `game8b.com`
-  - `bpweb.*`
-  - `games.*`
-  - shell/provider tương tự
-- Rule mới nhận diện game theo:
-  - `activations/baccarat`
-  - `selectedgame=baccarat` và không phải `application=lobby`
-  - keyword `baccarat` / `xocdia`
-- Không fallback lại `webMain.jsp` / `singleBacTable.jsp` như flow cũ.
-- Với host same-page, app ưu tiên click mở live item ngay trên trang và chờ game signal thực.
-- Popup/fallback route chỉ còn là nhánh phụ cho host/flow legacy.
+7. Pending row được giữ tới khi settle đủ `context + seq gating`.
+8. UI/history/stats được cập nhật trên `Dispatcher`.
 
 ## Coding rules
 
-- Không bypass `TaskUtil.PlaceBet` và flow settle authoritative.
+- Không bypass `TaskUtil.PlaceBet()` và flow settle authoritative.
 - Không update WPF control ngoài `Dispatcher`.
-- Không sửa contract JSON giữa JS và C# nếu chưa sửa cả hai đầu.
-- Không đổi index strategy nếu chưa migrate config cũ.
-- Không nhét logic nghiệp vụ mới trực tiếp vào handler UI nếu có thể tách vào `Tasks\*.cs`.
-- Mọi thay đổi JS phải nhớ: file đang là embedded resource, phải rebuild để runtime nhận bản mới.
+- Không đổi contract JSON JS ↔ C# nếu chưa sửa cả hai đầu.
+- Không đưa logic nghiệp vụ mới trực tiếp vào handler UI nếu có thể tách vào `Tasks\*.cs`.
+- Mọi thay đổi JS phải nhớ: file đang là embedded resource, phải rebuild thì runtime mới nhận bản mới.
 
 ## Naming rules
 
 - Side chuẩn: `BANKER`, `PLAYER`, `TIE`
-- Seq chuẩn: `B`, `P`, `T`
+- Sequence chuẩn: `B`, `P`, `T`
 - Major/minor: `N`, `I`
 - Runtime strategy dùng `IBetTask.Id`
-- Log prefix nên rõ nghĩa: `[Bridge]`, `[PlayEnsureGame]`, `[SEQ]`, `[BET]`, `[NETSEQ]`
+- Log prefix cần rõ nghĩa: `[Bridge]`, `[SEQ]`, `[BET]`, `[NETSEQ]`, `[CWUSER]`
 
 ## Rule quan trọng
 
-- `MainWindow.xaml.cs` vẫn là orchestration thật; sửa nhỏ, đúng chỗ.
-- Snapshot dùng cho strategy phải là snapshot authoritative, không dùng text UI raw.
+- `MainWindow.xaml.cs` vẫn là orchestration thật, sửa nhỏ và đúng chỗ.
+- Snapshot cho strategy phải là snapshot authoritative, không dùng text UI raw.
 - Pending bet chỉ được settle khi qua `context + seq gating`.
-- Với `zowin` hiện tại, đừng đưa logic quay về assumption `webMain.jsp` / `singleBacTable.jsp`.
-- Same-page flow và popup flow cùng tồn tại; phải biết host nào dùng path nào.
+- Với ZoWin hiện tại, không được kéo logic quay về assumption `webMain.jsp` / `singleBacTable.jsp`.
+- `same-page flow` và popup flow cùng tồn tại; phải biết host nào dùng path nào.
 
-## WebSocket / Network flow
+## WebSocket / network flow
 
 - Có 2 nguồn dữ liệu:
   - JS `tick` từ page/frame
@@ -123,7 +66,7 @@
 ## Pending flow
 
 - Khi bet được queue/send, app tạo `_pendingRows`.
-- Row giữ `IssuedSeqVersion`, `IssuedTableId`, `IssuedGameShoe`, `IssuedObservedRound`.
+- Pending row giữ `IssuedSeqVersion`, `IssuedTableId`, `IssuedGameShoe`, `IssuedObservedRound`.
 - Khi settle:
   - match theo context nếu có
   - check `seq advanced`
@@ -141,35 +84,45 @@
 ## Canvas / debug rules
 
 - `Canvas Watch` là panel debug trong `v4_js_xoc_dia_live.js`.
-- Overlay debug hiện mặc định nhưng đã chỉnh `pointer-events` để không chặn click web.
-- `TextMap/MoneyMap/BetMap` phụ thuộc đúng game frame/context; nếu panel hiện mà map rỗng thì thường là bám sai frame, không phải lỗi render đơn thuần.
-- `Canvas Watch` hiện đang là nơi gần nguồn thật nhất cho:
-  - chuỗi kết quả road
-  - tên nhân vật từ scanner/canvas
-  - số dư đọc từ cùng snapshot
-- Nếu canvas có dữ liệu nhưng bảng điều khiển C# không có:
+- Overlay debug mặc định phải click-through, không chặn click web.
+- `TextMap/MoneyMap/BetMap` phụ thuộc đúng game frame/context.
+- Nếu canvas có dữ liệu nhưng panel C# không có:
   - ưu tiên kiểm tra `main-pull` / `PULL_POPUP_TICK_NOW`
-  - kiểm tra host đang lấy snapshot từ top/frame nào
+  - kiểm tra host đang kéo snapshot từ top/frame nào
   - không kết luận vội là scanner canvas hỏng
-- `F12` và `Ctrl+Shift+I` mở DevTools cho WebView đang active.
-- Log JS đã có sẵn 3 đường:
-  - `cwDbg` / `cwLogBatch` ghi file JS debug
-  - `seq_diag` cho chẩn đoán sequence
-  - `js_console` để mirror `console.*` từ JS lên host log
-- Với bug tên nhân vật hiện tại, các log cần nhìn đầu tiên:
-  - `[CWUSER][HOST_READ]`
-  - `[CWUSER][TOTALS_NONCOCOS]`
-  - `[CWUSER][TOTALS_COCOS]`
-  - `[CWUSER][USER_CANDIDATES]`
-  - `[CWUSER][ACCOUNT_RENDER]`
+
+## Chuỗi kết quả / road sequence
+
+- Nguồn chuẩn để đối chiếu khi debug hiện tại là:
+  - `(await __cw_probeRoadSeqFrames(8)).rawSeq`
+- `DevTools\cw_probe_seq_roi.js` là script manual probe/reference để xác nhận ROI và sequence trong DevTools.
+- `readDomBeadSeq()` / `buildSnapshotNow()` phải ưu tiên `rawSeq` từ probe-canvas khi chuỗi đủ tin cậy.
+- Có 2 nhóm lỗi thực tế:
+  - ROI nuốt nhầm hàng thống kê `CON/HOÀ/CÁI`
+  - C# giữ authority cũ ngắn hơn `rawSeq`, làm UI hiển thị sai dù probe đúng
+
+## Cập nhật từ chat 2026-06-23
+
+- Đã hoàn thiện nhánh `auto-road` theo hướng bám sát `DevTools\cw_probe_seq_roi.js`.
+- Đã thêm log/diagnostic để soi `rawSeq`, `seqWhich`, source build snapshot và authority C#.
+- Đã thêm nhánh authority mới trong C#:
+  - `reason=stale-authority-resync`
+  - dùng khi `rawSeq` khớp board count nhưng `_netSeqDisplay` hiện tại stale/quá ngắn
+- Đã xác nhận một lớp lỗi presentation:
+  - trước đây UI `CHUỖI KẾT QUẢ` auto-scroll sang phải nên người dùng chỉ nhìn thấy phần đuôi
+  - giờ rule mong muốn là hiển thị toàn bộ chuỗi giống `rawSeq`
+- Rule hiển thị mới:
+  - không auto-scroll right
+  - ưu tiên wrap nhiều dòng
+  - phải nhìn được toàn bộ nội dung chuỗi
 
 ## Những điều tuyệt đối không được phá
 
 - Contract JS ↔ C# của `tick`, `bet`, `bet_error`, `result`
-- Seq authority sync khi đổi table/shoe
-- Pending settle gating theo context + version
+- Sequence authority sync khi đổi table/shoe
+- Pending settle gating theo `context + version`
 - Embedded JS load path
-- Plugin lifecycle `CreateView()` / `Stop()` / host shutdown
+- Plugin lifecycle `CreateView()` / `Stop()`
 - Click-through của overlay debug
-- Flow same-page trên `zowin` hiện tại
-- Nguồn tên nhân vật giữa canvas và panel C# phải hội tụ về một snapshot, không để mỗi nơi một nguồn
+- Flow same-page trên ZoWin hiện tại
+- Nguồn tên nhân vật giữa canvas và panel C# phải hội tụ về một snapshot

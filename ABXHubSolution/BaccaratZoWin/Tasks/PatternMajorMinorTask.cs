@@ -109,7 +109,7 @@ namespace BaccaratZoWin.Tasks
                     continue;
                 }
                 // Lấy baseSeq NGAY TRƯỚC khi đặt (ảnh chụp mới nhất)
-                string baseSeq = snapNow?.seq ?? string.Empty;
+                string baseSeq = snapNow?.rawSeq ?? string.Empty;
                 // Lấy 1 ký tự N/I theo kế hoạch và quy đổi N/I -> BANKER/PLAYER theo totals GIỜ NÀY
                 char planNI = planned.Dequeue();
                 string side = NOrIToSide(planNI, snapNow?.totals);

@@ -66,7 +66,7 @@ namespace BaccaratZoWin.Tasks
                 await WaitUntilNewRoundStart(ctx, ct);
 
                 var snap = ctx.GetSnap();
-                var parity = SeqToParityString(snap?.seq ?? "");
+                var parity = SeqToParityString(snap?.rawSeq ?? "");
 
                 char next = Decide(parity);
                 long stake;
@@ -85,7 +85,7 @@ namespace BaccaratZoWin.Tasks
                 ctx.Log?.Invoke($"[DualSched] r={_roundInBlock % 10 + 1}/10 next={side}, stake={stake:N0}");
 
                 await PlaceBet(ctx, side, stake, ct);
-                bool? win = await WaitRoundFinishAndJudge(ctx, side, snap?.seq ?? "", ct);
+                bool? win = await WaitRoundFinishAndJudge(ctx, side, snap?.rawSeq ?? "", ct);
                 var netDelta = CalcNetDelta(side, stake, win);
                 await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, win, netDelta, ct);
 

@@ -1689,65 +1689,59 @@
                                             Grid.Row="5"
                                             Grid.Column="1"
                                             Style="{StaticResource GhostCell}">
-                                            <ScrollViewer
-                                                x:Name="SeqIconsScroll"
-                                                HorizontalScrollBarVisibility="Auto"
-                                                VerticalScrollBarVisibility="Disabled"
-                                                CanContentScroll="False">
-                                                <ItemsControl x:Name="SeqIcons" VerticalAlignment="Center">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate>
-                                                            <StackPanel Orientation="Horizontal" />
-                                                        </ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemContainerStyle>
-                                                        <Style TargetType="ContentPresenter">
-                                                            <Setter Property="Margin" Value="1,0" />
-                                                        </Style>
-                                                    </ItemsControl.ItemContainerStyle>
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate DataType="{x:Type local:SeqIconVM}">
-                                                            <Image
-                                                                x:Name="Icon"
-                                                                Width="19"
-                                                                Height="19"
-                                                                Opacity="1"
-                                                                Source="{Binding Img}">
-                                                                <Image.CacheMode>
-                                                                    <BitmapCache />
-                                                                </Image.CacheMode>
-                                                            </Image>
-                                                            <DataTemplate.Triggers>
-                                                                <DataTrigger Binding="{Binding IsLatest}" Value="True">
-                                                                    <DataTrigger.EnterActions>
-                                                                        <BeginStoryboard x:Name="FadeSink">
-                                                                            <Storyboard RepeatBehavior="Forever">
-                                                                                <DoubleAnimationUsingKeyFrames Storyboard.TargetName="Icon" Storyboard.TargetProperty="Opacity">
-                                                                                    <EasingDoubleKeyFrame KeyTime="0:0:0.0" Value="1.0" />
-                                                                                    <EasingDoubleKeyFrame KeyTime="0:0:1.5" Value="0.2">
-                                                                                        <EasingDoubleKeyFrame.EasingFunction>
-                                                                                            <SineEase EasingMode="EaseIn" />
-                                                                                        </EasingDoubleKeyFrame.EasingFunction>
-                                                                                    </EasingDoubleKeyFrame>
-                                                                                    <DiscreteDoubleKeyFrame KeyTime="0:0:2" Value="0.2" />
-                                                                                    <EasingDoubleKeyFrame KeyTime="0:0:4.0" Value="1.0">
-                                                                                        <EasingDoubleKeyFrame.EasingFunction>
-                                                                                            <SineEase EasingMode="EaseOut" />
-                                                                                        </EasingDoubleKeyFrame.EasingFunction>
-                                                                                    </EasingDoubleKeyFrame>
-                                                                                </DoubleAnimationUsingKeyFrames>
-                                                                            </Storyboard>
-                                                                        </BeginStoryboard>
-                                                                    </DataTrigger.EnterActions>
-                                                                    <DataTrigger.ExitActions>
-                                                                        <StopStoryboard BeginStoryboardName="FadeSink" />
-                                                                    </DataTrigger.ExitActions>
-                                                                </DataTrigger>
-                                                            </DataTemplate.Triggers>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </ScrollViewer>
+                                            <ItemsControl x:Name="SeqIcons" VerticalAlignment="Center">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel Orientation="Horizontal" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemContainerStyle>
+                                                    <Style TargetType="ContentPresenter">
+                                                        <Setter Property="Margin" Value="1,1" />
+                                                    </Style>
+                                                </ItemsControl.ItemContainerStyle>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type local:SeqIconVM}">
+                                                        <Image
+                                                            x:Name="Icon"
+                                                            Width="19"
+                                                            Height="19"
+                                                            Opacity="1"
+                                                            Source="{Binding Img}">
+                                                            <Image.CacheMode>
+                                                                <BitmapCache />
+                                                            </Image.CacheMode>
+                                                        </Image>
+                                                        <DataTemplate.Triggers>
+                                                            <DataTrigger Binding="{Binding IsLatest}" Value="True">
+                                                                <DataTrigger.EnterActions>
+                                                                    <BeginStoryboard x:Name="FadeSink">
+                                                                        <Storyboard RepeatBehavior="Forever">
+                                                                            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="Icon" Storyboard.TargetProperty="Opacity">
+                                                                                <EasingDoubleKeyFrame KeyTime="0:0:0.0" Value="1.0" />
+                                                                                <EasingDoubleKeyFrame KeyTime="0:0:1.5" Value="0.2">
+                                                                                    <EasingDoubleKeyFrame.EasingFunction>
+                                                                                        <SineEase EasingMode="EaseIn" />
+                                                                                    </EasingDoubleKeyFrame.EasingFunction>
+                                                                                </EasingDoubleKeyFrame>
+                                                                                <DiscreteDoubleKeyFrame KeyTime="0:0:2" Value="0.2" />
+                                                                                <EasingDoubleKeyFrame KeyTime="0:0:4.0" Value="1.0">
+                                                                                    <EasingDoubleKeyFrame.EasingFunction>
+                                                                                        <SineEase EasingMode="EaseOut" />
+                                                                                    </EasingDoubleKeyFrame.EasingFunction>
+                                                                                </EasingDoubleKeyFrame>
+                                                                            </DoubleAnimationUsingKeyFrames>
+                                                                        </Storyboard>
+                                                                    </BeginStoryboard>
+                                                                </DataTrigger.EnterActions>
+                                                                <DataTrigger.ExitActions>
+                                                                    <StopStoryboard BeginStoryboardName="FadeSink" />
+                                                                </DataTrigger.ExitActions>
+                                                            </DataTrigger>
+                                                        </DataTemplate.Triggers>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
                                         </Border>
 
                                     </Grid>

@@ -103,7 +103,7 @@ namespace BaccaratZoWin.Tasks
 
                 // Ảnh chụp chuỗi trước khi đặt (để chấm thắng/thua)
                 var snap = ctx.GetSnap();
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSeq = snap?.rawSeq ?? string.Empty;
 
                 // Chuyển lịch sử sang B/P (cũ->mới)
                 string parity = SeqToParityString(baseSeq);

@@ -44,13 +44,13 @@ namespace BaccaratZoWin.Tasks
             if (patterns.Count == 0) throw new InvalidOperationException("Chua nhap CAC THE CAU (dang BPP-BBP;PP-P;...)");
 
             var planned = new Queue<char>(); // hàng đợi các lệnh 'B'/'P' cần đánh
-            int lastSeqLen = ctx.GetSnap()?.seq?.Length ?? 0;
+            int lastSeqLen = ctx.GetSnap()?.rawSeq?.Length ?? 0;
 
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var snap = ctx.GetSnap();
-                var parity = SeqToParityString(snap?.seq ?? "");
+                var parity = SeqToParityString(snap?.rawSeq ?? "");
 
                 // nếu không còn kế hoạch → dò pattern
                 if (planned.Count == 0)
@@ -72,7 +72,7 @@ namespace BaccaratZoWin.Tasks
                     // không khớp thế cầu nào → bỏ qua ván này
                     await Task.Delay(150, ct);
                     // cập nhật chốt ván khi có kết quả mới
-                    var len = ctx.GetSnap()?.seq?.Length ?? 0;
+                    var len = ctx.GetSnap()?.rawSeq?.Length ?? 0;
                     if (len > lastSeqLen) lastSeqLen = len;
                     continue;
                 }
@@ -80,7 +80,7 @@ namespace BaccaratZoWin.Tasks
                 // có plan → chờ đến lúc vào tiền
                 await WaitUntilNewRoundStart(ctx, ct);
 
-                string baseSeq = snap?.seq ?? string.Empty;
+                string baseSeq = snap?.rawSeq ?? string.Empty;
                 char plan = planned.Dequeue();
                 string side = ParityCharToSide(plan);
                 long stake;
@@ -101,7 +101,7 @@ namespace BaccaratZoWin.Tasks
                 var netDelta = CalcNetDelta(side, stake, win);
                 await TaskUtil.ApplyPostRoundMoneyAsync(ctx, money, win, netDelta, ct);
 
-                lastSeqLen = ctx.GetSnap()?.seq?.Length ?? lastSeqLen;
+                lastSeqLen = ctx.GetSnap()?.rawSeq?.Length ?? lastSeqLen;
             }
         }
     }
