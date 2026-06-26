@@ -1,128 +1,187 @@
 # PROJECT_CONTEXT
 
-> Tài liệu phục vụ AI coding. Ưu tiên logic đang chạy thực tế, không phải spec lý tưởng.
+> Tài liệu ngữ cảnh thực tế cho AI/coding agent. Ưu tiên trạng thái code đang chạy thật và các quyết định đã chốt trong chat, không ưu tiên spec lý tưởng cũ.
 
-## Tổng quan project
+## Mô tả tổng quan project
 
-- `BaccaratZoWin` là app `WPF .NET 8`, đồng thời có thể chạy như plugin cho `ABX.Core`.
-- App điều khiển `WebView2`, tiêm JS runtime `v4_js_xoc_dia_live.js`, đọc trạng thái game realtime, chạy strategy, quản lý vốn, lưu history/stats.
-- Code điều phối trung tâm vẫn là `MainWindow.xaml.cs`.
-- Runtime hiện tại ưu tiên `same-page flow` trên ZoWin/shell host mới, không ưu tiên route cũ kiểu `webMain.jsp` / `singleBacTable.jsp`.
+- `BaccaratZoWin` là app `WPF .NET 8` dùng `WebView2` để điều khiển game Baccarat ZoWin.
+- App có thể chạy standalone hoặc theo kiểu plugin gắn với `ABX.Core`.
+- Runtime chính nằm ở:
+  - `MainWindow.xaml.cs`
+  - embedded JS `v4_js_xoc_dia_live.js`
+- App làm các việc chính:
+  - mở web game
+  - inject JS bridge vào top/frame
+  - đọc countdown, kết quả, tên nhân vật, số dư, chuỗi road
+  - quyết định cược theo strategy
+  - click bet/click chip
+  - lưu pending/history/stats
 
 ## Công nghệ sử dụng
 
-- `C#`, `WPF`, `net8.0-windows`
+- `C#`
+- `WPF`
+- `.NET 8 (net8.0-windows)`
 - `Microsoft.Web.WebView2`
-- `ABX.Core`
-- Embedded JS runtime: `v4_js_xoc_dia_live.js`
 - `System.Text.Json`
+- `Dispatcher / async-await`
 - `DPAPI`
-- CDP / `CallDevToolsProtocolMethodAsync`
+- `ABX.Core`
+- embedded JavaScript runtime
 
 ## Flow hoạt động chính
 
 1. `MainWindow` khởi tạo config, stats, log, WebView2.
-2. C# inject bridge script vào top doc, frame, popup khi cần.
-3. JS quét canvas/DOM/text và đẩy `tick` về C#.
-4. C# hợp nhất `tick` với authority từ network/CDP.
-5. Strategy đọc snapshot authoritative qua `GameContext`.
-6. `TaskUtil.PlaceBet()` gọi JS queue đặt cược.
-7. Pending row được giữ tới khi settle đủ `context + seq gating`.
-8. UI/history/stats được cập nhật trên `Dispatcher`.
+2. C# inject JS bridge vào top document và các frame game.
+3. JS đọc snapshot game và đẩy `tick` về C#.
+4. C# nhận `tick`, chuẩn hóa snapshot, cập nhật state hiện tại.
+5. Strategy đọc snapshot qua `GameContext`.
+6. `TaskUtil.PlaceBet()` gọi JS để click chip/cửa cược.
+7. Sau khi issue bet, app tạo `pending row`.
+8. Khi round settle, app finalize pending row, cập nhật history/stats/UI.
 
 ## Coding rules
 
-- Không bypass `TaskUtil.PlaceBet()` và flow settle authoritative.
-- Không update WPF control ngoài `Dispatcher`.
-- Không đổi contract JSON JS ↔ C# nếu chưa sửa cả hai đầu.
-- Không đưa logic nghiệp vụ mới trực tiếp vào handler UI nếu có thể tách vào `Tasks\*.cs`.
-- Mọi thay đổi JS phải nhớ: file đang là embedded resource, phải rebuild thì runtime mới nhận bản mới.
+- Không phá luồng nghiệp vụ đặt cược hiện tại từ C# xuống JS nếu chưa có bằng chứng rõ ràng.
+- Không bypass `TaskUtil.PlaceBet()`.
+- Không update control WPF ngoài `Dispatcher`.
+- Không đổi contract JSON JS -> C# nếu chưa sửa cả hai đầu.
+- Không thêm logic nghiệp vụ lớn trực tiếp vào event UI nếu có thể tách helper/service.
+- Mọi thay đổi trong `v4_js_xoc_dia_live.js` đều cần rebuild vì đây là embedded resource.
+- Khi sửa bridge/frame logic, luôn ưu tiên exact live frame thay vì shell/top frame.
 
 ## Naming rules
 
-- Side chuẩn: `BANKER`, `PLAYER`, `TIE`
-- Sequence chuẩn: `B`, `P`, `T`
-- Major/minor: `N`, `I`
-- Runtime strategy dùng `IBetTask.Id`
-- Log prefix cần rõ nghĩa: `[Bridge]`, `[SEQ]`, `[BET]`, `[NETSEQ]`, `[CWUSER]`
+- Side chuẩn:
+  - `BANKER`
+  - `PLAYER`
+  - `TIE`
+- Sequence chuẩn:
+  - `B`
+  - `P`
+  - `T`
+- Major/minor:
+  - `N`
+  - `I`
+- Log prefix chuẩn:
+  - `[Bridge]`
+  - `[SEQ]`
+  - `[BET]`
+  - `[BET][HIST]`
+  - `[NETSEQ]`
+  - `[PERF]`
+  - `[TickIngress]`
 
-## Rule quan trọng
+## Các rule quan trọng
 
-- `MainWindow.xaml.cs` vẫn là orchestration thật, sửa nhỏ và đúng chỗ.
-- Snapshot cho strategy phải là snapshot authoritative, không dùng text UI raw.
-- Pending bet chỉ được settle khi qua `context + seq gating`.
-- Với ZoWin hiện tại, không được kéo logic quay về assumption `webMain.jsp` / `singleBacTable.jsp`.
-- `same-page flow` và popup flow cùng tồn tại; phải biết host nào dùng path nào.
+- `rawSeq` là nguồn hiển thị ưu tiên cho chuỗi kết quả ở panel C#.
+- Không quay lại phụ thuộc `snap.seq` cho phần display nếu `snap.rawSeq` đã có dữ liệu tốt.
+- Không dùng lại `boardCountB/P/T/boardCountSource` và không khôi phục `_netSeqDisplay` cũ theo kiểu phụ thuộc điều kiện cứng.
+- Exact live game frame hiện phải ưu tiên các URL dạng:
+  - `/internal/livestream_page/...bcrlive...`
+  - đặc biệt các frame `c5_bcrlive_withautoplay...` hoặc `c5_bcrlive_withoutoplay...`
+- Với ZoWin hiện tại, `top` và `web.zowin.ph` thường chỉ là shell; không được coi là nguồn thật nếu live frame đã có.
+- Countdown đặt cược giờ dùng logic `đặt khi còn giây`, không còn dùng `%`.
 
-## WebSocket / network flow
+## WebSocket flow
 
-- Có 2 nguồn dữ liệu:
-  - JS `tick` từ page/frame
-  - network/CDP packet cho observed context / winner
-- JS tick nhanh cho UI và board snapshot.
-- Network/CDP là authority bổ sung để tránh settle sai.
-- C# hợp nhất thành `_netSeq*`, observed context và settle authority.
+### Trạng thái hiện tại
+
+- Luồng `CDP websocket/network tap` đã bị tắt hẳn cho runtime ZoWin hiện tại.
+- Lý do:
+  - log thực tế cho thấy `wsR` tăng rất mạnh
+  - nhưng `obsPkt=0`, `winnerPkt=0`
+  - tức là tốn tài nguyên nhưng không giúp đồng bộ hoặc settle
+
+### Kết luận thực tế
+
+- Hiện tại app không dùng websocket/CDP để điều khiển luồng bet chính.
+- Snapshot/authority hiện chạy chủ yếu bằng JS bridge + frame pull.
+- Code CDP cũ vẫn còn trong source như một nhánh legacy/debug, nhưng không được bật trong profile hiện tại.
 
 ## Pending flow
 
-- Khi bet được queue/send, app tạo `_pendingRows`.
-- Pending row giữ `IssuedSeqVersion`, `IssuedTableId`, `IssuedGameShoe`, `IssuedObservedRound`.
-- Khi settle:
-  - match theo context nếu có
-  - check `seq advanced`
-  - reject multi-match sai
-- Nếu issue time thiếu context, code dùng `late bind`.
-- Đổi table/shoe có thể drop pending cũ để tránh settle nhầm.
+- Khi issue bet, app tạo `_pendingRows`.
+- Mỗi pending row giữ các dữ liệu như:
+  - side
+  - stake
+  - `IssuedSeqDisplay`
+  - `IssuedSeqVersion`
+  - `IssuedTableId`
+  - `IssuedGameShoe`
+  - `IssuedObservedRound`
+- Pending row chỉ được settle khi qua gating:
+  - context phù hợp
+  - seq advanced hoặc điều kiện settle hợp lệ
+- Có logic:
+  - late bind context
+  - drop stale row khi reset context
+  - multi-match guard
 
 ## Threading / UI rules
 
-- Task/strategy chạy nền; UI luôn quay về `Dispatcher`.
-- WebView event rất dày; đã có coalesce/throttle ở nhiều nhánh.
-- Không đưa IO/blocking dài lên UI thread.
-- Popup/main/frame bridge đều có thể callback bất kỳ lúc nào; tránh assumption thread đơn giản.
+- UI chỉ được chạm qua `Dispatcher`.
+- WebView callback, frame callback, timer callback có thể đến từ thread nền.
+- Không đọc `TextBox`, `PasswordBox`, `CheckBox` từ background thread.
+- `SaveConfigAsync()` phải marshal về UI thread trước khi đọc control.
+- Tick UI phải coalesce/throttle để tránh spam render.
+- Không để log/file IO/blocking dài chạy trên UI thread.
 
-## Canvas / debug rules
+## OCR / canvas / frame rules
 
-- `Canvas Watch` là panel debug trong `v4_js_xoc_dia_live.js`.
-- Overlay debug mặc định phải click-through, không chặn click web.
-- `TextMap/MoneyMap/BetMap` phụ thuộc đúng game frame/context.
-- Nếu canvas có dữ liệu nhưng panel C# không có:
-  - ưu tiên kiểm tra `main-pull` / `PULL_POPUP_TICK_NOW`
-  - kiểm tra host đang kéo snapshot từ top/frame nào
-  - không kết luận vội là scanner canvas hỏng
-
-## Chuỗi kết quả / road sequence
-
-- Nguồn chuẩn để đối chiếu khi debug hiện tại là:
-  - `(await __cw_probeRoadSeqFrames(8)).rawSeq`
-- `DevTools\cw_probe_seq_roi.js` là script manual probe/reference để xác nhận ROI và sequence trong DevTools.
-- `readDomBeadSeq()` / `buildSnapshotNow()` phải ưu tiên `rawSeq` từ probe-canvas khi chuỗi đủ tin cậy.
-- Có 2 nhóm lỗi thực tế:
-  - ROI nuốt nhầm hàng thống kê `CON/HOÀ/CÁI`
-  - C# giữ authority cũ ngắn hơn `rawSeq`, làm UI hiển thị sai dù probe đúng
-
-## Cập nhật từ chat 2026-06-23
-
-- Đã hoàn thiện nhánh `auto-road` theo hướng bám sát `DevTools\cw_probe_seq_roi.js`.
-- Đã thêm log/diagnostic để soi `rawSeq`, `seqWhich`, source build snapshot và authority C#.
-- Đã thêm nhánh authority mới trong C#:
-  - `reason=stale-authority-resync`
-  - dùng khi `rawSeq` khớp board count nhưng `_netSeqDisplay` hiện tại stale/quá ngắn
-- Đã xác nhận một lớp lỗi presentation:
-  - trước đây UI `CHUỖI KẾT QUẢ` auto-scroll sang phải nên người dùng chỉ nhìn thấy phần đuôi
-  - giờ rule mong muốn là hiển thị toàn bộ chuỗi giống `rawSeq`
-- Rule hiển thị mới:
-  - không auto-scroll right
-  - ưu tiên wrap nhiều dòng
-  - phải nhìn được toàn bộ nội dung chuỗi
+- Project không dùng OCR engine riêng; chủ yếu dùng scan canvas/DOM/text trong JS.
+- `Canvas Watch` là panel debug để soi nguồn dữ liệu gần runtime thật.
+- Hàm debug visual road đang dùng để đối chiếu trực tiếp là:
+  - `await __cw_showRoadSeqDebug(8)`
+  - `__cw_clearRoadSeqDebug()`
+- Yêu cầu hiện tại đã chốt: chuỗi ở panel C# `CHUỖI KẾT QUẢ` phải đồng bộ theo đúng `rawSeq` mà `await __cw_showRoadSeqDebug(8)` trả về.
+- Không được để các probe nền như `buildSnapshotNow-empty-pull` hoặc ROI auto sai vùng ghi đè chuỗi visual authority nếu chúng không cùng nguồn với visual debug.
+- Khi panel debug đúng nhưng C# sai:
+  - ưu tiên kiểm tra frame source
+  - kiểm tra exact live frame có được chọn chưa
+  - kiểm tra `main-pull` có đang rơi về `top` hay không
+  - kiểm tra log `probe-canvas-visual-authority`, `push-visual-sync`, `PULLRAW`, `[SEQ][RX]`, `[SEQ][UI][RENDER]`
+- Exact frame hiện phải lấy trực tiếp từ live frame, không chỉ lọc theo shell host.
 
 ## Những điều tuyệt đối không được phá
 
-- Contract JS ↔ C# của `tick`, `bet`, `bet_error`, `result`
-- Sequence authority sync khi đổi table/shoe
-- Pending settle gating theo `context + version`
-- Embedded JS load path
-- Plugin lifecycle `CreateView()` / `Stop()`
-- Click-through của overlay debug
-- Flow same-page trên ZoWin hiện tại
-- Nguồn tên nhân vật giữa canvas và panel C# phải hội tụ về một snapshot
+- Contract bridge JS <-> C# của `tick`, `result`, `bet`, `bet_error`.
+- Luồng start/stop strategy hiện tại.
+- Luồng pending/history settle đang dùng.
+- Exact frame betting đã sửa cho 3 cửa `BANKER/PLAYER/TIE`.
+- Rule hiển thị chuỗi kết quả theo `rawSeq`.
+- Logic countdown theo giây còn lại.
+- Cơ chế click thật vào cửa cược trong live frame.
+- Click một lần cho mỗi hành động cược.
+
+## Cập nhật quan trọng từ chat hiện tại
+
+- Đã bỏ `_netSeqDisplay` theo hướng cũ và đổi ưu tiên hiển thị sang `rawSeq`.
+- Đã đổi các chỗ dùng `snap.seq` sang `snap.rawSeq` cho phần display/authority liên quan.
+- Đã bỏ các biến `boardCountB/P/T/boardCountSource` khỏi hướng xử lý mới.
+- Đã thêm ưu tiên exact live frame thay vì quét dàn trải shell/top.
+- Đã sửa logic click cửa cược để phù hợp DOM/tail mới của ZoWin.
+- Đã sửa countdown để dùng số giây còn lại.
+- Đã ghi nhận root cause freeze lớn:
+  - flood message bridge
+  - pull snapshot sai frame
+  - CDP websocket vô ích nhưng nặng
+  - đọc UI control từ background thread
+- Trạng thái mới nhất của chuỗi kết quả:
+  - Countdown đã được người dùng xác nhận đồng bộ OK, không được sửa phá phần này.
+  - JS debug `await __cw_showRoadSeqDebug(8)` đọc được visual road đúng hơn panel C#.
+  - Panel C# từng hiển thị sai do probe nền/ROI auto ghi đè chuỗi đúng và do lỗi scope `_forcePushOnce`.
+  - Đã thử hướng `push-visual-sync` chạy thưa để đồng bộ visual road lên C#, nhưng người dùng báo hiện tại panel C# không còn hiển thị chuỗi kết quả; cần tiếp tục debug log/code trước khi coi là fix xong.
+  - Log mới đã xác nhận app có chạy embedded JS mới hơn (`len=792314`) nhưng payload `[PULLRAW]` vẫn có `seq=""`, `rawSeq=""` vì luồng `buildSnapshotNow-empty-pull` chỉ kick probe/cache, không publish visual authority lên `window.__cw_seq*`.
+  - Đã vá tiếp để khi `pull` trống thì kick `brKickProbeRoadSeqFrames('push-visual-sync', 8)` thay vì reason `buildSnapshotNow-empty-pull`, đồng thời thêm log `buildSnapshotNow-empty-pull-kick-visual-sync`, `visual-road-publish-state`, `readSeqStateSafe-published-fallback`.
+  - Bản vá mới nhất chưa được xác nhận runtime vì `BaccaratZoWin.dll` bị khóa bởi app đang chạy và Visual Studio; phải đóng app/debugger rồi build lại để embedded JS mới thật sự vào app.
+  - Khi sửa tiếp, ưu tiên tối thiểu: giữ countdown, không bật CDP websocket, không đổi contract tick/result/bet.
+
+## Ghi chú build/runtime mới nhất
+
+- `v4_js_xoc_dia_live.js` là embedded resource; sửa JS mà không build/restart app thì runtime không đổi.
+- `AutoBetHub` Debug đã cần build trước để tạo dependency `AutoBetHub\bin\Debug\net8.0-windows\ABX.Core.dll`.
+- Lỗi build hay gặp:
+  - `BaccaratZoWin.exe` hoặc `BaccaratZoWin.dll` bị khóa bởi process `BaccaratZoWin`.
+  - Visual Studio có thể giữ lock DLL khi đang debug/mở project.
+- Nếu log `Loaded JS from embedded` vẫn không đổi `len` sau sửa JS, nghĩa là app chưa chạy bản build mới.

@@ -1060,12 +1060,12 @@
                                         Unchecked="ChkS7ResetOnProfit_Changed"
                                         Visibility="Collapsed" />
 
-                                    <!--  ĐẶT KHI CÒN (%)  -->
+                                    <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     <TextBlock
                                         Grid.Row="5"
                                         Grid.Column="0"
                                         Style="{StaticResource CapsLabel}"
-                                        Text="ĐẶT KHI CÒN (%)" />
+                                        Text="ĐẶT KHI CÒN (GIÂY)" />
                                     <TextBox
                                         x:Name="TxtDecisionSecond"
                                         Grid.Row="5"

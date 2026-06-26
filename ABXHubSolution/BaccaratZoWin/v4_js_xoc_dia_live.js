@@ -158,7 +158,7 @@
             var h = String(href || '').toLowerCase();
             if (!h)
                 return false;
-            return /\/\/(?:[^\/]+\.)?zowin\.nu\//.test(h) ||
+            return /\/\/(?:[^\/]+\.)?zowin\.(?:nu|vu|tw|ph)\//.test(h) ||
                 /\/\/(?:[^\/]+\.)?game8b\.com\//.test(h) ||
                 /\/\/bpweb\./.test(h) ||
                 /\/\/games\./.test(h) ||
@@ -1045,6 +1045,11 @@
         return a.slice(-limit).join('/');
     }
     var GAME_PREFAB_KEY = 'prefab_game_14';
+    var GAME_PATH_KEYS = [
+        'prefab_game_14',
+        'c5_baccarat_livestream',
+        'bacc_live'
+    ];
     function fullPath(n, limit) {
         limit = limit || 80;
         var a = [];
@@ -1061,13 +1066,23 @@
         a.reverse();
         return a.join('/');
     }
+    function pathHasGameKey(path) {
+        try {
+            var src = String(path || '').toLowerCase();
+            for (var i = 0; i < GAME_PATH_KEYS.length; i++) {
+                if (src.indexOf(String(GAME_PATH_KEYS[i] || '').toLowerCase()) !== -1)
+                    return true;
+            }
+        } catch (e) {}
+        return false;
+    }
     function nodeInGame(n) {
         try {
             var t = n,
             c = 0;
             while (t && c < 200) {
                 var nm = t.name || '';
-                if (String(nm).toLowerCase().indexOf(GAME_PREFAB_KEY) !== -1)
+                if (pathHasGameKey(nm))
                     return true;
                 t = t.parent || t._parent || null;
                 c++;
@@ -1075,7 +1090,7 @@
         } catch (e) {}
         try {
             var p = fullPath(n, 200);
-            return String(p || '').toLowerCase().indexOf(GAME_PREFAB_KEY) !== -1;
+            return pathHasGameKey(p);
         } catch (e) {
             return false;
         }
@@ -7239,6 +7254,30 @@
                 rows = rows.slice(1);
             }
         }
+        if (rows.length >= 3) {
+            var statHead = rows[0];
+            var roadA = rows[1];
+            var roadB = rows[2];
+            var statHeadCount = Number(statHead && statHead.items && statHead.items.length || 0);
+            var roadACount = Number(roadA && roadA.items && roadA.items.length || 0);
+            var roadBCount = Number(roadB && roadB.items && roadB.items.length || 0);
+            var statHeadSpan = rowSpan(statHead);
+            var roadASpan = rowSpan(roadA);
+            var gapToRoad = Math.abs(Number(roadA && roadA.cy || 0) - Number(statHead && statHead.cy || 0));
+            var roadGap = Math.abs(Number(roadB && roadB.cy || 0) - Number(roadA && roadA.cy || 0));
+            var sizeMedStats = median(items.map(function (x) {
+                return Math.max(Number(x.w || 0), Number(x.h || 0));
+            })) || 18;
+            if (statHeadCount > 0 &&
+                statHeadCount <= 4 &&
+                roadACount >= 7 &&
+                roadBCount >= 7 &&
+                roadASpan >= Math.max(80, statHeadSpan * 1.45) &&
+                gapToRoad >= Math.max(20, Math.round(sizeMedStats * 1.35)) &&
+                (roadGap <= 0 || gapToRoad >= roadGap * 1.45)) {
+                rows = rows.slice(1);
+            }
+        }
         var denseMin = 4;
         var denseRows = [];
         for (var i = 0; i < rows.length; i++) {
@@ -7414,6 +7453,52 @@
             return null;
         }
     }
+    function brPublishVisualRoadSeqState(rawSeq, reasonTag) {
+        try {
+            var seq = brSanitizeSeq(rawSeq || '');
+            if (!brIsReliableRoadSeq(seq))
+                return false;
+            var ver = Number(_domSeqVersion || 0) || seq.length;
+            var evt = String(_domSeqEvent || 'visual-road-authority');
+            window.__cw_seq = seq;
+            window.__cw_seq_version = ver;
+            window.__cw_seq_event = evt;
+            window.__cw_seq_append = String(_domSeqAppend || seq);
+            window.__cw_seq_raw = seq;
+            window.__cw_seq_raw_len = seq.length;
+            window.__cw_seq_raw_fp = brBuildRawFingerprint(seq);
+            window.__cw_bead_raw_seq = seq;
+            window.__cw_bead_managed_seq = seq;
+            window.__cw_seq_pub = {
+                seq: seq,
+                ver: ver,
+                len: seq.length,
+                evt: evt,
+                append: String(_domSeqAppend || seq),
+                rawSeq: seq,
+                rawLen: seq.length,
+                rawFp: brBuildRawFingerprint(seq),
+                boardPrev: String(_domBeadSeqPrevRaw || ''),
+                resetPending: _domShoeResetPending ? 1 : 0,
+                buildId: Number(_cwSnapshotBuildId || 0),
+                buildSource: String(_cwSnapshotBuildSource || ''),
+                visualAuthority: 1,
+                reason: String(reasonTag || '')
+            };
+            brSeqAuditLog('visual-road-publish-state', {
+                reason: String(reasonTag || ''),
+                seq: seq,
+                len: seq.length,
+                ver: ver,
+                evt: evt,
+                buildId: Number(_cwSnapshotBuildId || 0),
+                buildSource: String(_cwSnapshotBuildSource || '')
+            }, 700, 'visual-road-publish-state|' + String(reasonTag || '') + '|' + seq + '|' + ver);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
     function brTryTrimCanvasRoadPackByBoardCounts(pack, boardTarget) {
         try {
             if (!pack || !boardTarget || !boardTarget.len)
@@ -7537,6 +7622,24 @@
             return Math.max(0, Number(rf && rf.rowCount || 0));
         } catch (_) {
             return 0;
+        }
+    }
+    function brVisualRoadPresetRank(pack) {
+        try {
+            var name = String(pack && pack.roi && pack.roi.name || '');
+            if (name === 'left-road-a')
+                return 1;
+            if (name === 'left-road-b')
+                return 2;
+            if (name === 'left-road-c')
+                return 3;
+            if (name === 'left-road-d')
+                return 4;
+            if (/^auto-road/i.test(name))
+                return 20;
+            return 30;
+        } catch (_) {
+            return 30;
         }
     }
     function brCanvasRoadPackBoardFit(pack, boardTarget) {
@@ -7781,6 +7884,7 @@
         options = options || {};
         var ignoreCache = !!options.ignoreCache;
         var skipBoardCountTrim = !!options.skipBoardCountTrim;
+        var preferVisualRoadPreset = !!options.preferVisualRoadPreset;
         var boardTarget = brGetCanvasRoadBoardCountTarget();
         var canvasEntries = brListVisibleCanvasesForSeq();
         if (!canvasEntries.length) {
@@ -7867,6 +7971,15 @@
                 };
                 if (!skipBoardCountTrim)
                     pack = brTryTrimCanvasRoadPackByBoardCounts(pack, boardTarget);
+                if (preferVisualRoadPreset && best && brIsStrongVisualRoadPack(pack) && brIsStrongVisualRoadPack(best)) {
+                    var candRank = brVisualRoadPresetRank(pack);
+                    var bestRank = brVisualRoadPresetRank(best);
+                    if (candRank !== bestRank) {
+                        if (candRank < bestRank)
+                            best = pack;
+                        continue;
+                    }
+                }
                 if (brShouldPreferCanvasRoadPack(pack, best, boardTarget))
                     best = pack;
             }
@@ -7961,6 +8074,8 @@
     var _cwProbeRoadSeqBusy = false;
     var _cwProbeRoadSeqLastKickAt = 0;
     var _cwProbeRoadSeqPromise = null;
+    var _cwVisualSeqSyncLastAt = 0;
+    var _cwVisualSeqSyncMinMs = 1800;
     function brShouldPreferProbeRoadVisualPack(probePack, currentPack) {
         try {
             var probeRaw = String(probePack && (probePack.rawSeq || probePack.probeSeq || probePack.seq) || '');
@@ -7976,6 +8091,39 @@
             if (probeRaw.length > currentRaw.length && probeRaw.indexOf(currentRaw) === 0)
                 return true;
             return false;
+        } catch (_) {
+            return false;
+        }
+    }
+    function brIsStrongVisualRoadPack(pack) {
+        try {
+            var rawSeq = String(pack && pack.rawSeq || '');
+            if (!brIsReliableRoadSeq(rawSeq))
+                return false;
+            var cells = pack && pack.cells ? pack.cells : [];
+            var rows = pack && pack.rows ? pack.rows : [];
+            var keepCount = brCanvasRoadPackKeepCount(pack);
+            if (rawSeq.length >= 8) {
+                return cells.length >= Math.max(8, rawSeq.length - 1) &&
+                    rows.length >= 2 &&
+                    keepCount >= 2;
+            }
+            return cells.length >= rawSeq.length &&
+                rows.length >= 1 &&
+                keepCount >= 1;
+        } catch (_) {
+            return false;
+        }
+    }
+    function brShouldForceVisualRoadAuthority(pack, reasonTag, managedBefore) {
+        try {
+            var reason = String(reasonTag || '');
+            if (!/manual-debug-overlay|push-visual-sync/i.test(reason))
+                return false;
+            var rawSeq = String(pack && pack.rawSeq || '');
+            if (!rawSeq || rawSeq === String(managedBefore || ''))
+                return false;
+            return brIsStrongVisualRoadPack(pack);
         } catch (_) {
             return false;
         }
@@ -8010,12 +8158,49 @@
             var managedBefore = String(_domBeadSeqManaged || '');
             var rawBefore = String(window.__cw_bead_raw_seq || '');
             var managed = managedBefore;
-            if (rawSeq !== rawBefore || !managedBefore) {
+            var visualSyncReason = /manual-debug-overlay|push-visual-sync/i.test(String(reasonTag || ''));
+            var visualRawAuthority =
+                visualSyncReason &&
+                (
+                    brShouldPreferProbeRoadVisualPack({ rawSeq: rawSeq }, { rawSeq: managedBefore }) ||
+                    brShouldForceVisualRoadAuthority(pack, reasonTag, managedBefore)
+                );
+            if (visualRawAuthority) {
+                _domBeadSeqManaged = normalizeSeqNoLimit(rawSeq);
+                managed = String(_domBeadSeqManaged || '');
+                _domSeqVersion = Math.max(Number(_domSeqVersion || 0) + 1, managed.length);
+                _domSeqEvent = 'visual-road-authority';
+                _domSeqAppend = (managedBefore && managed.indexOf(managedBefore) === 0)
+                    ? managed.slice(managedBefore.length)
+                    : managed;
+                _domShoeResetPending = false;
+                try {
+                    window.__cw_bead_raw_seq = rawSeq;
+                    window.__cw_bead_managed_seq = managed;
+                } catch (_) {}
+                brClearSeqSnapshotCache('visual-road-authority');
+                brPublishSeqState();
+                brPublishVisualRoadSeqState(rawSeq, reasonTag);
+                try { window.__cw_force_push_once = 1; } catch (_) {}
+                brSeqAuditLog('probe-canvas-visual-authority', {
+                    reason: String(reasonTag || ''),
+                    rawSeq: rawSeq,
+                    rawLen: rawSeq.length,
+                    managedBefore: managedBefore,
+                    managedBeforeLen: managedBefore.length,
+                    managedAfter: managed,
+                    seqVersion: Number(_domSeqVersion || 0),
+                    seqEvent: String(_domSeqEvent || ''),
+                    roi: pack && pack.roi ? pack.roi : null,
+                    rowFilter: pack && pack.meta && pack.meta.rowFilter ? pack.meta.rowFilter : null
+                }, 700, 'probe-canvas-visual-authority|' + String(reasonTag || '') + '|' + rawSeq + '|' + Number(_domSeqVersion || 0));
+            } else if (visualSyncReason && (rawSeq !== rawBefore || !managedBefore)) {
                 managed = String(brMergeManagedSeq(rawSeq) || '');
                 try {
                     window.__cw_bead_raw_seq = rawSeq;
                     window.__cw_bead_managed_seq = managed;
                 } catch (_) {}
+                brPublishVisualRoadSeqState(rawSeq, reasonTag);
             }
             var cached = {
                 seq: managed || rawSeq,
@@ -8030,6 +8215,7 @@
                 roi: pack && pack.roi ? pack.roi : null,
                 canvasRect: pack && pack.canvasRect ? pack.canvasRect : null,
                 meta: pack && pack.meta ? pack.meta : null,
+                visualAuthority: visualRawAuthority ? 1 : 0,
                 ts: Date.now()
             };
             _cwProbeRoadSeqCache = cached;
@@ -8097,7 +8283,12 @@
                     try {
                         (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(function () {
                             try {
-                                var r = brReadCanvasRoadSeq({ ignoreCache: true, skipBoardCountTrim: true });
+                                var preferPreset = /manual-debug-overlay|push-visual-sync|buildSnapshotNow-empty-pull/i.test(String(reasonTag || ''));
+                                var r = brReadCanvasRoadSeq({
+                                    ignoreCache: true,
+                                    skipBoardCountTrim: true,
+                                    preferVisualRoadPreset: preferPreset
+                                });
                                 if (r)
                                     frames.push(r);
                             } catch (_) {}
@@ -8127,6 +8318,21 @@
             return Promise.resolve(_cwProbeRoadSeqCache);
         }
     }
+    function brMaybeSyncVisualRoadSeq(reasonTag, minMs) {
+        try {
+            var now = Date.now();
+            var gap = Math.max(900, Number(minMs || _cwVisualSeqSyncMinMs || 1800));
+            if ((now - Number(_cwVisualSeqSyncLastAt || 0)) < gap)
+                return false;
+            if (_cwProbeRoadSeqBusy)
+                return false;
+            _cwVisualSeqSyncLastAt = now;
+            brKickProbeRoadSeqFrames(reasonTag || 'push-visual-sync', 8);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
     function readDomBeadSeq() {
         brSeqFuncLog('enter', 'readDomBeadSeq', {
             managedTitle: String(_domManagedTableTitle || ''),
@@ -8154,6 +8360,7 @@
                 if (__cw_hasCocos() &&
                     probeCache &&
                     probeCacheAge <= 5000 &&
+                    Number(probeCache.visualAuthority || 0) === 1 &&
                     brShouldPreferProbeRoadVisualPack(probeCache, picked)) {
                     brSeqAuditLog('readDomBeadSeq-prefer-probe-cache', {
                         pickedRawSeq: String(picked && picked.rawSeq || ''),
@@ -9375,6 +9582,21 @@
                 cols: digits.cols || [],
                 cells: digits.cells || []
             };
+        try {
+            var pub = window.__cw_seq_pub || null;
+            var pubSeq = brSanitizeSeq((pub && (pub.rawSeq || pub.seq)) || window.__cw_seq_raw || window.__cw_seq || window.__cw_bead_raw_seq || '');
+            if (brIsReliableRoadSeq(pubSeq)) {
+                return {
+                    seq: pubSeq,
+                    rawSeq: pubSeq,
+                    which: (pub && Number(pub.visualAuthority || 0) === 1) ? 'visual-road-authority-published' : 'published-seq',
+                    seqVersion: Number((pub && pub.ver) || window.__cw_seq_version || 0) || pubSeq.length,
+                    seqEvent: String((pub && pub.evt) || window.__cw_seq_event || ''),
+                    cols: [],
+                    cells: []
+                };
+            }
+        } catch (_) {}
         return {
             seq: '',
             rawSeq: '',
@@ -10182,12 +10404,13 @@
         seqEvent: '',
         focusPinned: null
     };
+    var _lastDirectProgPostKey = '';
 
     function setProgMeta(source, tail, isSec, mode, raw, valid) {
         S.progSource = String(source || '');
         S.progTail = String(tail || '');
         S._progTail = S.progTail;
-        S._progIsSec = false;
+        S._progIsSec = !!isSec;
         S.progMode = String(mode || (valid ? (isSec ? 'seconds' : 'percent') : 'none'));
         S.progRaw = (raw == null || !isFinite(Number(raw))) ? null : Number(raw);
         S.progValid = !!valid;
@@ -11652,8 +11875,8 @@
         return s;
     }
     var SIDE_REGEX = {
-        BANKER: /(BANKER|CHAN|EVEN|\bB\b)\b/i,
-        PLAYER: /(PLAYER|\bLE\b|ODD|\bP\b)\b/i,
+        BANKER: /(BANKER|NHA\s*CAI|CAI|BANCO|CHAN|EVEN|\bB\b)\b/i,
+        PLAYER: /(PLAYER|NHA\s*CON|TAY\s*CON|CON|\bLE\b|ODD|\bP\b)\b/i,
         TIE: /(TIE|HOA|\bT\b)\b/i,
         SAP_DOI: /(SAP\s*DOI|SAPDOI|2\s*DO\s*2\s*TRANG|2D2T|2R2W|2DO2TRANG)/i,
         TRANG3_DO1: /(3\s*TRANG\s*1\s*DO|3T1D|3W1R|3TRANG1DO|1\s*DO\s*3\s*TRANG|1D3T|1R3W|1DO3TRANG)/i,
@@ -11684,12 +11907,198 @@
         '5000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value1',
         '1000': 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_in_fullmode/HUD/bet_panel/chips/chip_panel/chip_mask/panel/lbl_chip_value0'
     };
+    var BACCARAT_CHIP_LABEL_TAIL = 'c5_baccarat_livestream/Canvas/bacc_live/root/right/node_chips/scroll_view/view/content/lbl_value';
+    var BACCARAT_BET_ANCHOR_TAILS = [
+        'c5_baccarat_livestream/Canvas/bacc_live/root/node_text/font_money_2/lbl_totalBet',
+        'c5_baccarat_livestream/Canvas/bacc_live/root/node_text/font_money_2/lbl_currentBet',
+        'c5_baccarat_livestream/Canvas/bacc_live/root/node_text/font_money_2/lbl_refundMoney',
+        'c5_baccarat_livestream/Canvas/bacc_live/root/node_text/roboto_30/lbl_text'
+    ];
     function tailMatch(full, tail) {
         if (!full || !tail)
             return false;
         var f = String(full || '').toLowerCase();
         var t = String(tail || '').toLowerCase();
         return f === t || f.indexOf(t, Math.max(0, f.length - t.length)) !== -1;
+    }
+    function tailMatchesAny(full, tails) {
+        if (!full || !tails || !tails.length)
+            return false;
+        for (var i = 0; i < tails.length; i++) {
+            if (tailMatch(full, tails[i]))
+                return true;
+        }
+        return false;
+    }
+    function normalizeScreenRect(rect) {
+        if (!rect)
+            return null;
+        var x = Number(rect.sx != null ? rect.sx : rect.x || 0);
+        var y = Number(rect.sy != null ? rect.sy : rect.y || 0);
+        var w = Number(rect.sw != null ? rect.sw : rect.w || 0);
+        var h = Number(rect.sh != null ? rect.sh : rect.h || 0);
+        return {
+            x: x,
+            y: y,
+            w: w,
+            h: h,
+            sx: x,
+            sy: y,
+            sw: w,
+            sh: h
+        };
+    }
+    function clampNum(v, lo, hi) {
+        v = Number(v || 0);
+        lo = Number(lo || 0);
+        hi = Number(hi || 0);
+        if (v < lo)
+            return lo;
+        if (v > hi)
+            return hi;
+        return v;
+    }
+    function rectIntersectArea(a, b) {
+        if (!a || !b)
+            return 0;
+        var ax1 = Number(a.x != null ? a.x : a.sx || 0);
+        var ay1 = Number(a.y != null ? a.y : a.sy || 0);
+        var ax2 = ax1 + Number(a.w != null ? a.w : a.sw || 0);
+        var ay2 = ay1 + Number(a.h != null ? a.h : a.sh || 0);
+        var bx1 = Number(b.x != null ? b.x : b.sx || 0);
+        var by1 = Number(b.y != null ? b.y : b.sy || 0);
+        var bx2 = bx1 + Number(b.w != null ? b.w : b.sw || 0);
+        var by2 = by1 + Number(b.h != null ? b.h : b.sh || 0);
+        var iw = Math.max(0, Math.min(ax2, bx2) - Math.max(ax1, bx1));
+        var ih = Math.max(0, Math.min(ay2, by2) - Math.max(ay1, by1));
+        return iw * ih;
+    }
+    function rectContainsPoint(rect, x, y) {
+        if (!rect)
+            return false;
+        var rx = Number(rect.x != null ? rect.x : rect.sx || 0);
+        var ry = Number(rect.y != null ? rect.y : rect.sy || 0);
+        var rw = Number(rect.w != null ? rect.w : rect.sw || 0);
+        var rh = Number(rect.h != null ? rect.h : rect.sh || 0);
+        return x >= rx && x <= (rx + rw) && y >= ry && y <= (ry + rh);
+    }
+    function baccaratClickablePathPenalty(path) {
+        var p = String(path || '').toLowerCase();
+        var score = 0;
+        if (/node_text|lbl_|roboto_|font_money|font_chu/.test(p))
+            score -= 900;
+        if (/node_chips|chip|coin|scroll_view|scroll\/view|chat|edit_box|session_analytics|rule_node|popup|tipdealer|countdown|count_down/.test(p))
+            score -= 1400;
+        if (/icon|avatar|dealer|flag|road|history|result|video|camera/.test(p))
+            score -= 400;
+        return score;
+    }
+    function findBaccaratClickableNodeForGroup(group) {
+        if (!group || !group.pickRect)
+            return null;
+        var focus = normalizeScreenRect({
+            x: Number(group.pickRect.x || 0) + Number(group.pickRect.w || 0) * 0.08,
+            y: Number(group.pickRect.y || 0) + Number(group.pickRect.h || 0) * 0.46,
+            w: Number(group.pickRect.w || 0) * 0.84,
+            h: Number(group.pickRect.h || 0) * 0.48
+        });
+        var targetPt = group.pickPoint || {
+            x: Number(group.pickRect.x || 0) + Number(group.pickRect.w || 0) * 0.5,
+            y: Number(group.pickRect.y || 0) + Number(group.pickRect.h || 0) * 0.72
+        };
+        var best = null;
+        var bestScore = -1e18;
+        walkNodes(function (n) {
+            if (!n || !active(n) || !clickable(n) || !nodeInGame(n))
+                return;
+            var rect = normalizeScreenRect(rectFromNodeCompat(n) || rectFromNodeScreen(n));
+            if (!baccaratRectAcceptable(rect))
+                return;
+            var path = String(fullPath(n, 240) || '');
+            var cx = Number(rect.x || 0) + Number(rect.w || 0) / 2;
+            var cy = Number(rect.y || 0) + Number(rect.h || 0) / 2;
+            var overlap = rectIntersectArea(rect, focus);
+            var contains = rectContainsPoint(rect, Number(targetPt.x || 0), Number(targetPt.y || 0)) ? 1 : 0;
+            if (!contains && overlap <= 0)
+                return;
+            var score = 0;
+            score += overlap;
+            if (contains)
+                score += 1200000;
+            if (n._touchListener)
+                score += 50000;
+            if (hasBtn(n) || hasTgl(n))
+                score += 20000;
+            score += baccaratClickablePathPenalty(path);
+            score -= Math.round(dist2(cx, cy, Number(targetPt.x || 0), Number(targetPt.y || 0)) * 0.8);
+            score -= Math.round(Math.abs(cx - Number(group.cx || cx)) * 4);
+            if (cy < Number(focus.y || 0))
+                score -= 120000;
+            if (Number(rect.w || 0) > Number(group.pickRect.w || 0) * 1.15)
+                score -= 60000;
+            if (Number(rect.h || 0) > Number(group.pickRect.h || 0) * 1.25)
+                score -= 60000;
+            if (score > bestScore) {
+                bestScore = score;
+                best = {
+                    node: n,
+                    rect: rect,
+                    score: score,
+                    tail: path,
+                    contains: contains,
+                    overlap: Math.round(overlap)
+                };
+            }
+        });
+        return best;
+    }
+    function baccaratRectAcceptable(rect) {
+        try {
+            rect = normalizeScreenRect(rect);
+            if (!rect)
+                return false;
+            var w = Number(rect.sw || rect.w || 0);
+            var h = Number(rect.sh || rect.h || 0);
+            var x = Number(rect.sx != null ? rect.sx : rect.x || 0);
+            var y = Number(rect.sy != null ? rect.sy : rect.y || 0);
+            var maxW = Math.max(640, (window.innerWidth || 1920) * 0.78);
+            var maxH = Math.max(260, (window.innerHeight || 1080) * 0.55);
+            if (!(w > 10 && h > 8))
+                return false;
+            if (w > maxW || h > maxH)
+                return false;
+            if (x < -80 || y < -80)
+                return false;
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function pickBaccaratBetClickNode(anchor) {
+        var best = null;
+        var bestClickable = null;
+        var cur = anchor;
+        var depth = 0;
+        while (cur && depth < 18) {
+            var rect = normalizeScreenRect(rectFromNodeCompat(cur) || rectFromNodeScreen(cur));
+            if (baccaratRectAcceptable(rect)) {
+                var area = Math.max(0, Number(rect.sw || rect.w || 0) * Number(rect.sh || rect.h || 0));
+                var cand = {
+                    node: cur,
+                    rect: rect,
+                    area: area,
+                    depth: depth,
+                    tail: String(fullPath(cur, 240) || '')
+                };
+                if (!best || cand.area > best.area || (cand.area === best.area && cand.depth < best.depth))
+                    best = cand;
+                if (clickable(cur) && (!bestClickable || cand.area > bestClickable.area || (cand.area === bestClickable.area && cand.depth < bestClickable.depth)))
+                    bestClickable = cand;
+            }
+            cur = cur.parent || cur._parent || null;
+            depth++;
+        }
+        return bestClickable || best || null;
     }
     function findNodeByTail(tail) {
         if (!tail)
@@ -11775,6 +12184,44 @@
         })(cc.director.getScene());
         return hit;
     }
+    function scanChipsByDynamicLabel() {
+        var out = {};
+        walkNodes(function (n) {
+            if (!n || !active(n))
+                return;
+            var p = fullPath(n, 220);
+            if (!tailMatch(p, BACCARAT_CHIP_LABEL_TAIL))
+                return;
+            var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
+            var rawText = lb && typeof lb.string !== 'undefined' ? String(lb.string || '') : String(n.name || '');
+            var val = parseAmountLoose(rawText);
+            if (!(val > 0))
+                return;
+            var target = findChipNodeFromLabel(n) || clickableOf(n, 10) || n;
+            if (!target)
+                return;
+            var rect = rectFromNodeScreen(n) || rectFromNodeCompat(target) || rectFromNodeCompat(n);
+            var area = rect ? Math.max(0, Number(rect.sw || rect.w || 0) * Number(rect.sh || rect.h || 0)) : 0;
+            var score = area;
+            if (target !== n)
+                score += 8000;
+            if (String(fullPath(target, 220) || '').toLowerCase().indexOf('/right/node_chips/') >= 0)
+                score += 12000;
+            var key = String(val);
+            if (!out[key] || score > Number(out[key]._score || 0)) {
+                out[key] = {
+                    entry: target,
+                    node: target,
+                    rect: rect,
+                    _score: score
+                };
+            }
+        });
+        var keys = Object.keys(out);
+        for (var i = 0; i < keys.length; i++)
+            delete out[keys[i]]._score;
+        return out;
+    }
     function listClickableTargets(root) {
         var list = [];
         (function walk(n) {
@@ -11797,6 +12244,293 @@
             return (b.area || 0) - (a.area || 0);
         });
         return list;
+    }
+    function collectBaccaratBetCandidates() {
+        var rows = [];
+        var rawMatchCount = 0;
+        var rejected = [];
+        walkNodes(function (n) {
+            if (!n || !active(n))
+                return;
+            var p = fullPath(n, 240);
+            if (!tailMatchesAny(p, BACCARAT_BET_ANCHOR_TAILS))
+                return;
+            rawMatchCount++;
+            var pick = pickBaccaratBetClickNode(clickableOf(n, 12) || n) || pickBaccaratBetClickNode(n);
+            var target = pick && pick.node ? pick.node : (clickableOf(n, 12) || n);
+            if (!target) {
+                rejected.push({
+                    reason: 'no-target',
+                    anchorTail: String(p || '')
+                });
+                return;
+            }
+            var anchorRect = normalizeScreenRect(rectFromNodeScreen(n) || rectFromNodeCompat(n)) || null;
+            var rect = normalizeScreenRect(pick && pick.rect ? pick.rect : (rectFromNodeCompat(target) || anchorRect));
+            if (!rect && anchorRect)
+                rect = anchorRect;
+            if (!baccaratRectAcceptable(rect)) {
+                rejected.push({
+                    reason: 'rect-rejected',
+                    anchorTail: String(p || ''),
+                    tail: String(fullPath(target, 240) || ''),
+                    w: Math.round(Number(rect && (rect.sw || rect.w) || 0)),
+                    h: Math.round(Number(rect && (rect.sh || rect.h) || 0))
+                });
+                return;
+            }
+            if (!baccaratRectAcceptable(anchorRect))
+                anchorRect = rect;
+            var area = Math.max(0, Number(rect.sw || rect.w || 0) * Number(rect.sh || rect.h || 0));
+            rows.push({
+                node: target,
+                rect: rect,
+                anchorRect: anchorRect,
+                cx: Number(anchorRect.x || rect.x || 0) + Number(anchorRect.w || rect.w || 0) / 2,
+                cy: Number(anchorRect.y || rect.y || 0) + Number(anchorRect.h || rect.h || 0) / 2,
+                area: area,
+                tail: String(fullPath(target, 240) || ''),
+                anchorTail: String(p || ''),
+                anchorW: Math.round(Number(anchorRect.w || 0)),
+                anchorH: Math.round(Number(anchorRect.h || 0))
+            });
+        });
+        rows.sort(function (a, b) {
+            return a.cx - b.cx || a.cy - b.cy;
+        });
+        var groups = [];
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            var grp = groups.length ? groups[groups.length - 1] : null;
+            if (!grp || Math.abs(row.cx - grp.cx) > 120) {
+                groups.push({
+                    cx: row.cx,
+                    rows: [row],
+                    best: row,
+                    minX: row.anchorRect ? row.anchorRect.x : row.cx,
+                    maxX: row.anchorRect ? (row.anchorRect.x + row.anchorRect.w) : row.cx,
+                    minY: row.anchorRect ? row.anchorRect.y : row.cy,
+                    maxY: row.anchorRect ? (row.anchorRect.y + row.anchorRect.h) : row.cy
+                });
+                continue;
+            }
+            grp.rows.push(row);
+            grp.cx = (grp.cx * (grp.rows.length - 1) + row.cx) / grp.rows.length;
+            if (row.anchorRect) {
+                grp.minX = Math.min(Number(grp.minX || row.anchorRect.x), row.anchorRect.x);
+                grp.maxX = Math.max(Number(grp.maxX || (row.anchorRect.x + row.anchorRect.w)), row.anchorRect.x + row.anchorRect.w);
+                grp.minY = Math.min(Number(grp.minY || row.anchorRect.y), row.anchorRect.y);
+                grp.maxY = Math.max(Number(grp.maxY || (row.anchorRect.y + row.anchorRect.h)), row.anchorRect.y + row.anchorRect.h);
+            }
+            if ((row.area || 0) > (grp.best.area || 0))
+                grp.best = row;
+        }
+        groups.sort(function (a, b) {
+            return Number(a && a.cx || 0) - Number(b && b.cx || 0);
+        });
+        var fullW = Math.max(1280, window.innerWidth || 1920);
+        var fullH = Math.max(720, window.innerHeight || 1080);
+        for (var gi = 0; gi < groups.length; gi++) {
+            var g = groups[gi];
+            var prev = gi > 0 ? groups[gi - 1] : null;
+            var next = gi + 1 < groups.length ? groups[gi + 1] : null;
+            var leftMid = prev ? ((Number(prev.cx || 0) + Number(g.cx || 0)) / 2) : null;
+            var rightMid = next ? ((Number(next.cx || 0) + Number(g.cx || 0)) / 2) : null;
+            var left = leftMid != null ? Math.round(leftMid) : Math.round((Number(g.cx || 0) * 2) - Number(rightMid || g.cx || 0));
+            var right = rightMid != null ? Math.round(rightMid) : Math.round((Number(g.cx || 0) * 2) - Number(leftMid || g.cx || 0));
+            var lowerRows = [];
+            var lowerCut = Number(g.maxY || g.cy || 0) - 190;
+            for (var lr = 0; lr < g.rows.length; lr++) {
+                var rr = g.rows[lr];
+                var ary = Number(rr && rr.anchorRect && rr.anchorRect.y || rr && rr.cy || 0);
+                if (ary >= lowerCut)
+                    lowerRows.push(rr);
+            }
+            if (!lowerRows.length)
+                lowerRows = g.rows.slice();
+            var bandTop = 1e9;
+            var bandBottom = -1e9;
+            var bandCxSum = 0;
+            for (var bi = 0; bi < lowerRows.length; bi++) {
+                var br = lowerRows[bi];
+                var bar = br && br.anchorRect ? br.anchorRect : null;
+                if (!bar)
+                    continue;
+                bandTop = Math.min(bandTop, Number(bar.y || 0));
+                bandBottom = Math.max(bandBottom, Number(bar.y || 0) + Number(bar.h || 0));
+                bandCxSum += Number(br.cx || 0);
+            }
+            if (!isFinite(bandTop))
+                bandTop = Number(g.minY || 240);
+            if (!isFinite(bandBottom))
+                bandBottom = Number(g.maxY || Math.round(fullH * 0.58));
+            var top = Math.round(bandTop - 110);
+            var bottom = Math.round(bandBottom + 185);
+            if (right - left < 120) {
+                var pad = Math.round((120 - (right - left)) / 2);
+                left -= pad;
+                right += pad;
+            }
+            if (bottom - top < 250) {
+                var padY = Math.round((250 - (bottom - top)) / 2);
+                top -= padY;
+                bottom += padY;
+            }
+            var trimX = Math.round((right - left) * 0.04);
+            left += trimX;
+            right -= trimX;
+            left = Math.max(10, left);
+            right = Math.min(fullW - 10, right);
+            top = Math.max(10, top);
+            bottom = Math.min(fullH - 10, bottom);
+            var clickCx = lowerRows.length ? (bandCxSum / lowerRows.length) : Number(g.cx || 0);
+            var clickX = Math.round(clampNum(clickCx, left + Math.max(26, (right - left) * 0.18), right - Math.max(26, (right - left) * 0.18)));
+            var clickY = Math.round(clampNum(bandBottom + 88, top + Math.max(56, (bottom - top) * 0.48), bottom - Math.max(32, (bottom - top) * 0.12)));
+            g.pickRect = normalizeScreenRect({
+                x: left,
+                y: top,
+                w: Math.max(1, right - left),
+                h: Math.max(1, bottom - top)
+            });
+            g.pickPoint = {
+                x: clickX,
+                y: clickY
+            };
+            g.clickableHit = findBaccaratClickableNodeForGroup(g);
+        }
+        return {
+            rows: rows,
+            groups: groups,
+            rawMatchCount: rawMatchCount,
+            rejected: rejected.slice(0, 40)
+        };
+    }
+    function baccaratSideByGroupIndex(index, groupCount) {
+        if (index < 0 || groupCount <= 0)
+            return '';
+        if (groupCount === 1)
+            return 'TIE';
+        if (groupCount === 2)
+            return index === 0 ? 'PLAYER' : 'BANKER';
+        if (index === 0)
+            return 'PLAYER';
+        if (index === groupCount - 1)
+            return 'BANKER';
+        return 'TIE';
+    }
+    function buildBaccaratBetProbePack() {
+        var pack = collectBaccaratBetCandidates();
+        var groups = pack.groups || [];
+        var rows = pack.rows || [];
+        var candidates = [];
+        for (var gi = 0; gi < groups.length; gi++) {
+            var grp = groups[gi];
+            var assigned = baccaratSideByGroupIndex(gi, groups.length);
+            var best = grp && grp.best ? grp.best : null;
+            candidates.push({
+                groupIndex: gi,
+                assignedSide: assigned,
+                count: grp && grp.rows ? grp.rows.length : 0,
+                x: Math.round(Number(grp && grp.pickRect && grp.pickRect.x || best && best.rect && best.rect.x || 0)),
+                y: Math.round(Number(grp && grp.pickRect && grp.pickRect.y || best && best.rect && best.rect.y || 0)),
+                w: Math.round(Number(grp && grp.pickRect && grp.pickRect.w || best && best.rect && best.rect.w || 0)),
+                h: Math.round(Number(grp && grp.pickRect && grp.pickRect.h || best && best.rect && best.rect.h || 0)),
+                clickX: Math.round(Number(grp && grp.pickPoint && grp.pickPoint.x || 0)),
+                clickY: Math.round(Number(grp && grp.pickPoint && grp.pickPoint.y || 0)),
+                nodeX: Math.round(Number(grp && grp.clickableHit && grp.clickableHit.rect && grp.clickableHit.rect.x || 0)),
+                nodeY: Math.round(Number(grp && grp.clickableHit && grp.clickableHit.rect && grp.clickableHit.rect.y || 0)),
+                nodeW: Math.round(Number(grp && grp.clickableHit && grp.clickableHit.rect && grp.clickableHit.rect.w || 0)),
+                nodeH: Math.round(Number(grp && grp.clickableHit && grp.clickableHit.rect && grp.clickableHit.rect.h || 0)),
+                nodeTail: String(grp && grp.clickableHit && grp.clickableHit.tail || ''),
+                area: Math.round(Number(best && best.area || 0)),
+                tail: String(best && best.tail || ''),
+                anchorTail: String(best && best.anchorTail || '')
+            });
+        }
+        var rowDump = [];
+        for (var ri = 0; ri < rows.length; ri++) {
+            var row = rows[ri];
+            var groupIndex = -1;
+            for (var gj = 0; gj < groups.length; gj++) {
+                if (groups[gj] && groups[gj].rows && groups[gj].rows.indexOf(row) >= 0) {
+                    groupIndex = gj;
+                    break;
+                }
+            }
+            rowDump.push({
+                groupIndex: groupIndex,
+                assignedSide: baccaratSideByGroupIndex(groupIndex, groups.length),
+                x: Math.round(Number(row && row.anchorRect && row.anchorRect.x || row && row.rect && row.rect.x || 0)),
+                y: Math.round(Number(row && row.anchorRect && row.anchorRect.y || row && row.rect && row.rect.y || 0)),
+                w: Math.round(Number(row && row.anchorRect && row.anchorRect.w || row && row.rect && row.rect.w || 0)),
+                h: Math.round(Number(row && row.anchorRect && row.anchorRect.h || row && row.rect && row.rect.h || 0)),
+                area: Math.round(Number(row && row.area || 0)),
+                tail: String(row && row.tail || ''),
+                anchorTail: String(row && row.anchorTail || '')
+            });
+        }
+        return {
+            mode: 'cocos-baccarat',
+            groupCount: groups.length,
+            rawMatchCount: Number(pack && pack.rawMatchCount || 0),
+            candidates: candidates,
+            rows: rowDump,
+            rejected: pack && pack.rejected ? pack.rejected.slice(0, 40) : []
+        };
+    }
+    function findBaccaratBetTarget(side) {
+        var want = normalizeSide(side);
+        if (want !== 'BANKER' && want !== 'PLAYER' && want !== 'TIE')
+            return null;
+        var pack = collectBaccaratBetCandidates();
+        var rows = pack.rows || [];
+        var groups = pack.groups || [];
+        if (!rows.length)
+            return null;
+        if (!groups.length)
+            return null;
+        var pick = null;
+        if (want === 'PLAYER')
+            pick = groups[0] || null;
+        else if (want === 'BANKER')
+            pick = groups[groups.length - 1] || null;
+        else if (groups.length >= 3)
+            pick = groups[Math.floor(groups.length / 2)] || null;
+        if (!pick || !pick.best || !pick.best.node)
+            return null;
+        var pickRow = pick.best;
+        var pickRect = normalizeScreenRect(pick.pickRect || pickRow.rect || pickRow.anchorRect);
+        var pickPoint = pick && pick.pickPoint ? {
+            x: Math.round(Number(pick.pickPoint.x || 0)),
+            y: Math.round(Number(pick.pickPoint.y || 0))
+        } : null;
+        var clickableHit = pick && pick.clickableHit ? pick.clickableHit : null;
+        cwBetFlowLog('baccarat-target-pick', {
+            side: want,
+            groups: groups.length,
+            x: Math.round(Number(pickRect && pickRect.x || 0)),
+            y: Math.round(Number(pickRect && pickRect.y || 0)),
+            w: Math.round(Number(pickRect && pickRect.w || 0)),
+            h: Math.round(Number(pickRect && pickRect.h || 0)),
+            clickX: Math.round(Number(pickPoint && pickPoint.x || 0)),
+            clickY: Math.round(Number(pickPoint && pickPoint.y || 0)),
+            nodeX: Math.round(Number(clickableHit && clickableHit.rect && clickableHit.rect.x || 0)),
+            nodeY: Math.round(Number(clickableHit && clickableHit.rect && clickableHit.rect.y || 0)),
+            nodeW: Math.round(Number(clickableHit && clickableHit.rect && clickableHit.rect.w || 0)),
+            nodeH: Math.round(Number(clickableHit && clickableHit.rect && clickableHit.rect.h || 0)),
+            nodeTail: String(clickableHit && clickableHit.tail || ''),
+            tail: String(pickRow.tail || ''),
+            anchorTail: String(pickRow.anchorTail || '')
+        }, 0, 'baccarat-target-pick|' + want + '|' + groups.length);
+        return {
+            node: clickableHit && clickableHit.node ? clickableHit.node : pickRow.node,
+            rect: clickableHit && clickableHit.rect ? clickableHit.rect : pickRect,
+            point: pickPoint,
+            area: pickRow.area,
+            tail: clickableHit && clickableHit.tail ? clickableHit.tail : pickRow.tail,
+            synthetic: !(clickableHit && clickableHit.node),
+            cocosNode: !!(clickableHit && clickableHit.node)
+        };
     }
     function findBetTarget(side) {
         if (!__cw_hasCocos()) {
@@ -11853,6 +12587,9 @@
             }, 0, 'target-missing|' + wantDom);
             return null;
         }
+        var baccaratTgt = findBaccaratBetTarget(side);
+        if (baccaratTgt && baccaratTgt.node)
+            return baccaratTgt;
         var WANT = normalizeSide(side);
         var tail = BET_TAILS[WANT];
         if (tail) {
@@ -11924,17 +12661,42 @@
             return domOk;
         }
         var node = tgt.node;
-        var rect = tgt.rect || rectFromNodeCompat(node);
-        var ok = false;
-        if (emitBtnToggle(node))
-            ok = true;
-        if (rect) {
-            if (emitTouchAtRect(node, rect))
-                ok = true;
-            if (clickCanvasXY(rect.sx + rect.sw / 2, rect.sy + rect.sh / 2, true))
-                ok = true;
+        var rect = normalizeScreenRect(tgt.rect || rectFromNodeCompat(node) || rectFromNodeScreen(node));
+        if (tgt.cocosNode) {
+            if (node._touchListener)
+                return !!emitTouchOnNode(node);
+            if (rect)
+                return !!emitTouchAtRect(node, rect);
+            if (hasBtn(node) || hasTgl(node))
+                return !!emitBtnToggle(node);
+            if (clickable(node))
+                return !!emitClick(node);
+            return false;
         }
-        if (!ok && clickable(node))
+        var ok = false;
+        if (!tgt.synthetic && emitBtnToggle(node))
+            ok = true;
+        if (tgt.synthetic && tgt.point && Number.isFinite(Number(tgt.point.x)) && Number.isFinite(Number(tgt.point.y))) {
+            ok = clickAtWin(Number(tgt.point.x), Number(tgt.point.y)) || ok;
+            return ok;
+        }
+        if (rect) {
+            if (!tgt.synthetic && emitTouchAtRect(node, rect))
+                ok = true;
+            var samples = [
+                [0.50, 0.50]
+            ];
+            for (var si = 0; si < samples.length; si++) {
+                var pt = samples[si];
+                var px = rect.sx + rect.sw * pt[0];
+                var py = rect.sy + rect.sh * pt[1];
+                if (clickAtWin(px, py))
+                    ok = true;
+                if (!tgt.synthetic && clickCanvasXY(px, py, true))
+                    ok = true;
+            }
+        }
+        if (!ok && !tgt.synthetic && clickable(node))
             ok = emitClick(node) || ok;
         return ok;
     }
@@ -13450,10 +14212,86 @@
         try { console.table(pack.rows); } catch (_) { console.log(pack.rows); }
         return pack;
     }
+    function publicProbeBaccaratBetTails(force) {
+        if (!__cw_hasCocos()) {
+            var domPack = domScanBetTargetRows(!!force);
+            var rows = [];
+            var srcRows = domPack && domPack.rows ? domPack.rows : [];
+            for (var i = 0; i < srcRows.length; i++) {
+                var r = srcRows[i];
+                var side = normalizeSide(r && r.side || '');
+                if (side !== 'PLAYER' && side !== 'BANKER' && side !== 'TIE')
+                    continue;
+                rows.push({
+                    side: side,
+                    source: String(r && r.source || ''),
+                    best: Number(r && r.best || 0),
+                    score: Math.round(Number(r && (r.pickScore != null ? r.pickScore : r.score) || 0)),
+                    x: Math.round(Number(r && r.x || 0)),
+                    y: Math.round(Number(r && r.y || 0)),
+                    w: Math.round(Number(r && r.w || 0)),
+                    h: Math.round(Number(r && r.h || 0)),
+                    tail: String(r && r.tail || ''),
+                    selector: String(r && r.selector || ''),
+                    text: String(r && r.text || ''),
+                    attrs: String(r && r.attrs || '')
+                });
+            }
+            var best = domPickBestBetTargets(!!force);
+            var picked = [];
+            var sides = ['PLAYER', 'TIE', 'BANKER'];
+            for (var si = 0; si < sides.length; si++) {
+                var hit = best && best.targets ? best.targets[sides[si]] : null;
+                if (!hit)
+                    continue;
+                picked.push({
+                    side: sides[si],
+                    source: String(hit.source || ''),
+                    x: Math.round(Number(hit.x || 0)),
+                    y: Math.round(Number(hit.y || 0)),
+                    w: Math.round(Number(hit.w || 0)),
+                    h: Math.round(Number(hit.h || 0)),
+                    tail: String(hit.tail || ''),
+                    selector: String(hit.selector || ''),
+                    text: String(hit.text || ''),
+                    attrs: String(hit.attrs || '')
+                });
+            }
+            var outDom = {
+                mode: 'dom-baccarat',
+                picked: picked,
+                rows: rows
+            };
+            try {
+                console.log('[cwProbeBaccaratBetTails][DOM]', outDom);
+                if (rows.length)
+                    console.table(rows);
+                if (picked.length)
+                    console.table(picked);
+            } catch (_) {}
+            return outDom;
+        }
+        var out = buildBaccaratBetProbePack();
+        try {
+            console.log('[cwProbeBaccaratBetTails][COCOS]', out);
+            if (out.candidates && out.candidates.length)
+                console.table(out.candidates);
+            if (out.rows && out.rows.length)
+                console.table(out.rows);
+            if ((!out.rows || !out.rows.length) && out.rejected && out.rejected.length)
+                console.table(out.rejected);
+        } catch (_) {}
+        return out;
+    }
     window.cwScanDomBetTargets = function (force) {
         return domPublicBetTargetRows(force);
     };
     window.__cw_scan_bet_targets = window.cwScanDomBetTargets;
+    window.cwProbeBaccaratBetTails = function (force) {
+        return publicProbeBaccaratBetTails(force);
+    };
+    window.__cw_probe_baccarat_bet_tails = window.cwProbeBaccaratBetTails;
+    window.__cw_probeBaccaratBetTails = window.cwProbeBaccaratBetTails;
     window.cwScanBetDom = function (force) {
         return {
             chips: domPublicChipRows(force),
@@ -13477,6 +14315,287 @@
             targetAgeMs: _domBetTargetCache.at ? Date.now() - Number(_domBetTargetCache.at || 0) : null,
             targetReason: String(_domBetTargetCache.reason || '')
         };
+    };
+    window.cwTestClickBaccaratBet = async function (side, opts) {
+        side = normalizeSide(side);
+        opts = opts || {};
+        var probe = publicProbeBaccaratBetTails(!!opts.force);
+        var tgt = findBetTarget(side);
+        if (!tgt || !tgt.node) {
+            console.warn('[cwTestClickBaccaratBet] target not found', {
+                side: side,
+                probe: probe
+            });
+            return {
+                ok: false,
+                side: side,
+                error: 'target-not-found',
+                probe: probe
+            };
+        }
+        var clicked = clickBetTarget(tgt);
+        await sleep(Math.max(40, Number(opts.waitMs || 90)));
+        var out = {
+            ok: !!clicked,
+            side: side,
+            clicked: clicked ? 1 : 0,
+            tail: String(tgt.tail || ''),
+            rect: tgt.rect ? {
+                x: Math.round(Number(tgt.rect.x || 0)),
+                y: Math.round(Number(tgt.rect.y || 0)),
+                w: Math.round(Number(tgt.rect.w || 0)),
+                h: Math.round(Number(tgt.rect.h || 0))
+            } : null,
+            probe: probe
+        };
+        try { console.log('[cwTestClickBaccaratBet]', out); } catch (_) {}
+        return out;
+    };
+    window.__cw_testClickBaccaratBet = window.cwTestClickBaccaratBet;
+    function collectSameOriginFrames(rootWin, path, out, seen) {
+        out = out || [];
+        seen = seen || [];
+        rootWin = rootWin || window;
+        path = path || 'top';
+        try {
+            if (!rootWin || seen.indexOf(rootWin) >= 0)
+                return out;
+            seen.push(rootWin);
+            out.push({
+                win: rootWin,
+                path: path,
+                href: String(rootWin.location && rootWin.location.href || '')
+            });
+        } catch (_) {
+            return out;
+        }
+        try {
+            for (var i = 0; i < rootWin.frames.length; i++) {
+                var child = rootWin.frames[i];
+                collectSameOriginFrames(child, path + '/frame[' + i + ']', out, seen);
+            }
+        } catch (_) {}
+        return out;
+    }
+    function scoreBaccaratProbePack(pack, href) {
+        var score = 0;
+        try {
+            var candidates = pack && pack.candidates ? pack.candidates.length : 0;
+            var rows = pack && pack.rows ? pack.rows.length : 0;
+            var groups = Number(pack && pack.groupCount || 0);
+            var rawMatches = Number(pack && pack.rawMatchCount || 0);
+            score += candidates * 1000;
+            score += groups * 700;
+            score += Math.min(rows, 40) * 40;
+            score += Math.min(rawMatches, 40) * 25;
+            if (rows > 0 || candidates > 0 || groups > 0 || rawMatches > 0) {
+                if (__cw_isModernGameHref(String(href || '').toLowerCase()))
+                    score += 1800;
+                if (__cw_isKnownGameShellHref(String(href || '').toLowerCase()))
+                    score += 240;
+                if (pack && pack.mode === 'cocos-baccarat')
+                    score += 120;
+                if (pack && pack.mode === 'dom-baccarat')
+                    score += 80;
+            }
+        } catch (_) {}
+        return score;
+    }
+    window.__cw_probeBaccaratBetFrames = function (force) {
+        try {
+            var root = domGetSameOriginRoot(window);
+            var frames = collectSameOriginFrames(root, 'top', [], []);
+            var rows = [];
+            var best = null;
+            var bestScore = -1e9;
+            for (var i = 0; i < frames.length; i++) {
+                var info = frames[i];
+                try {
+                    var w = info.win;
+                    if (!w || typeof w.__cw_probeBaccaratBetTails !== 'function')
+                        continue;
+                    var pack = w.__cw_probeBaccaratBetTails(!!force);
+                    var score = scoreBaccaratProbePack(pack, info.href);
+                    var row = {
+                        framePath: info.path,
+                        href: info.href,
+                        mode: String(pack && pack.mode || ''),
+                        groupCount: Number(pack && pack.groupCount || 0),
+                        rawMatchCount: Number(pack && pack.rawMatchCount || 0),
+                        candidateCount: pack && pack.candidates ? pack.candidates.length : 0,
+                        rowCount: pack && pack.rows ? pack.rows.length : 0,
+                        score: Math.round(score)
+                    };
+                    rows.push(row);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = {
+                            framePath: info.path,
+                            href: info.href,
+                            score: score,
+                            pack: pack
+                        };
+                    }
+                } catch (_) {}
+            }
+            var out = {
+                bestFrame: best ? best.framePath : '',
+                bestHref: best ? best.href : '',
+                bestScore: best ? Math.round(best.score || 0) : 0,
+                frames: rows,
+                pack: best ? best.pack : null
+            };
+            try {
+                console.log('[__cw_probeBaccaratBetFrames]', out);
+                if (rows.length)
+                    console.table(rows);
+                if (best && best.pack && best.pack.candidates && best.pack.candidates.length)
+                    console.table(best.pack.candidates);
+                if (best && best.pack && (!best.pack.rows || !best.pack.rows.length) && best.pack.rejected && best.pack.rejected.length)
+                    console.table(best.pack.rejected);
+            } catch (_) {}
+            return out;
+        } catch (err) {
+            return {
+                bestFrame: '',
+                bestHref: '',
+                bestScore: 0,
+                frames: [],
+                pack: null,
+                error: String(err && err.message || err)
+            };
+        }
+    };
+    window.__cw_testClickBaccaratBetFrames = async function (side, opts) {
+        try {
+            side = normalizeSide(side);
+            opts = opts || {};
+            var scan = window.__cw_probeBaccaratBetFrames(!!opts.force);
+            var bestPath = String(scan && scan.bestFrame || '');
+            var frames = collectSameOriginFrames(domGetSameOriginRoot(window), 'top', [], []);
+            var hitWin = null;
+            for (var i = 0; i < frames.length; i++) {
+                if (String(frames[i].path || '') === bestPath) {
+                    hitWin = frames[i].win;
+                    break;
+                }
+            }
+            if (!hitWin || typeof hitWin.__cw_testClickBaccaratBet !== 'function') {
+                return {
+                    ok: false,
+                    side: side,
+                    error: 'frame-target-not-found',
+                    scan: scan
+                };
+            }
+            var res = await hitWin.__cw_testClickBaccaratBet(side, opts);
+            var out = {
+                ok: !!(res && res.ok),
+                side: side,
+                framePath: bestPath,
+                frameHref: scan && scan.bestHref ? scan.bestHref : '',
+                result: res,
+                scan: scan
+            };
+            try { console.log('[__cw_testClickBaccaratBetFrames]', out); } catch (_) {}
+            return out;
+        } catch (err) {
+            return {
+                ok: false,
+                side: normalizeSide(side),
+                error: String(err && err.message || err)
+            };
+        }
+    };
+    window.__cw_clearBaccaratBetRects = function () {
+        try {
+            var old = document.getElementById('__cw_baccarat_rect_overlay');
+            if (old && old.parentNode)
+                old.parentNode.removeChild(old);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    };
+    window.__cw_showBaccaratBetRects = function (force) {
+        try {
+            window.__cw_clearBaccaratBetRects();
+            var scan = window.__cw_probeBaccaratBetFrames(!!force);
+            var pack = scan && scan.pack ? scan.pack : null;
+            var items = pack && pack.candidates ? pack.candidates : [];
+            var host = document.createElement('div');
+            host.id = '__cw_baccarat_rect_overlay';
+            host.style.position = 'fixed';
+            host.style.left = '0';
+            host.style.top = '0';
+            host.style.width = '100vw';
+            host.style.height = '100vh';
+            host.style.pointerEvents = 'none';
+            host.style.zIndex = '2147483647';
+            for (var i = 0; i < items.length; i++) {
+                var it = items[i];
+                var box = document.createElement('div');
+                box.style.position = 'fixed';
+                box.style.left = Math.round(Number(it && it.x || 0)) + 'px';
+                box.style.top = Math.round(Number(it && it.y || 0)) + 'px';
+                box.style.width = Math.max(1, Math.round(Number(it && it.w || 0))) + 'px';
+                box.style.height = Math.max(1, Math.round(Number(it && it.h || 0))) + 'px';
+                box.style.border = '3px solid ' + (it.assignedSide === 'PLAYER' ? '#1e88e5' : (it.assignedSide === 'BANKER' ? '#e53935' : '#fbc02d'));
+                box.style.background = it.assignedSide === 'PLAYER' ? 'rgba(30,136,229,0.12)' : (it.assignedSide === 'BANKER' ? 'rgba(229,57,53,0.12)' : 'rgba(251,192,45,0.12)');
+                box.style.boxSizing = 'border-box';
+                box.style.borderRadius = '12px';
+                var label = document.createElement('div');
+                label.textContent = String(it.assignedSide || '?') + ' [' + Math.round(Number(it && it.x || 0)) + ',' + Math.round(Number(it && it.y || 0)) + ',' + Math.round(Number(it && it.w || 0)) + ',' + Math.round(Number(it && it.h || 0)) + ']';
+                label.style.position = 'absolute';
+                label.style.left = '0';
+                label.style.top = '-24px';
+                label.style.padding = '2px 6px';
+                label.style.background = 'rgba(0,0,0,0.78)';
+                label.style.color = '#fff';
+                label.style.font = '12px/18px monospace';
+                label.style.whiteSpace = 'nowrap';
+                box.appendChild(label);
+                if (Number(it && it.clickX) > 0 && Number(it && it.clickY) > 0) {
+                    var dot = document.createElement('div');
+                    dot.style.position = 'fixed';
+                    dot.style.left = (Math.round(Number(it.clickX)) - 6) + 'px';
+                    dot.style.top = (Math.round(Number(it.clickY)) - 6) + 'px';
+                    dot.style.width = '12px';
+                    dot.style.height = '12px';
+                    dot.style.borderRadius = '999px';
+                    dot.style.background = '#fff';
+                    dot.style.border = '2px solid ' + (it.assignedSide === 'PLAYER' ? '#1e88e5' : (it.assignedSide === 'BANKER' ? '#e53935' : '#fbc02d'));
+                    dot.style.boxSizing = 'border-box';
+                    host.appendChild(dot);
+                }
+                if (Number(it && it.nodeW) > 0 && Number(it && it.nodeH) > 0) {
+                    var real = document.createElement('div');
+                    real.style.position = 'fixed';
+                    real.style.left = Math.round(Number(it.nodeX || 0)) + 'px';
+                    real.style.top = Math.round(Number(it.nodeY || 0)) + 'px';
+                    real.style.width = Math.max(1, Math.round(Number(it.nodeW || 0))) + 'px';
+                    real.style.height = Math.max(1, Math.round(Number(it.nodeH || 0))) + 'px';
+                    real.style.border = '2px dashed rgba(255,255,255,0.95)';
+                    real.style.boxSizing = 'border-box';
+                    real.style.borderRadius = '8px';
+                    real.title = String(it.nodeTail || '');
+                    host.appendChild(real);
+                }
+                host.appendChild(box);
+            }
+            document.documentElement.appendChild(host);
+            return {
+                ok: true,
+                count: items.length,
+                bestFrame: scan && scan.bestFrame ? scan.bestFrame : '',
+                bestHref: scan && scan.bestHref ? scan.bestHref : ''
+            };
+        } catch (err) {
+            return {
+                ok: false,
+                error: String(err && err.message || err)
+            };
+        }
     };
     function domLooksLikeConfirmText(text) {
         var s = NORM(text || '');
@@ -13849,6 +14968,9 @@
                 console.warn('[cwScanChips++] chưa thấy chip DOM.');
             return dm;
         }
+        var dyn = scanChipsByDynamicLabel();
+        if (dyn && Object.keys(dyn).length)
+            return dyn;
         var m = scanChipsByTail();
         if (m && Object.keys(m).length)
             return m;
@@ -14016,6 +15138,59 @@
                 reason: String(reason || '')
             });
         } catch (_) {}
+    }
+    function betTargetMeta(tgt) {
+        return {
+            tail: String(tgt && tgt.tail || ''),
+            dom: tgt && tgt.dom ? 1 : 0,
+            synthetic: tgt && tgt.synthetic ? 1 : 0,
+            cocosNode: tgt && tgt.cocosNode ? 1 : 0,
+            rect: tgt && tgt.rect ? {
+                x: Math.round(Number(tgt.rect.x || 0)),
+                y: Math.round(Number(tgt.rect.y || 0)),
+                w: Math.round(Number(tgt.rect.w || 0)),
+                h: Math.round(Number(tgt.rect.h || 0))
+            } : null
+        };
+    }
+    function pickBetTargetForExecution(side, currentTarget) {
+        try {
+            var fresh = findBetTarget(side);
+            if (fresh && fresh.node)
+                return fresh;
+        } catch (_) {}
+        return currentTarget || null;
+    }
+    async function executeBetTapAndVerify(side, currentTarget, isDomMode, expectedUnits, waitMs) {
+        var tgt = pickBetTargetForExecution(side, currentTarget);
+        if (!tgt || !tgt.node) {
+            return {
+                ok: false,
+                error: 'target-not-found',
+                target: null,
+                clicked: false,
+                reflected: false
+            };
+        }
+        var before = sampleTotalsNow();
+        var clicked = clickBetTarget(tgt);
+        var reflected = await waitForTotalsChange(before, side, waitMs || 160).catch(function () {
+            return false;
+        });
+        var stakeHit = null;
+        if (!reflected && isDomMode) {
+            stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 140).catch(function () {
+                return null;
+            });
+            reflected = !!(stakeHit && (expectedUnits == null || stakeHit.val === expectedUnits));
+        }
+        return {
+            ok: !!(clicked && reflected),
+            target: tgt,
+            clicked: !!clicked,
+            reflected: !!reflected,
+            stakeHit: stakeHit
+        };
     }
     async function ensureChipFocusedForBet(isDomMode, map, amount) {
         var val = Math.max(0, Math.floor(+amount || 0));
@@ -14309,31 +15484,29 @@
                     console.warn('[cwBet++] không focus được chip exact-hit', X);
                     return failBet('focus exact chip failed', { side: side, amount: raw, chipUnits: X });
                 }
-                var before0 = sampleTotalsNow();
-                var targetClickedOne = clickBetTarget(tgt);
+                var tapOne = await executeBetTapAndVerify(side, tgt, isDomMode, X, 170);
                 cwBetFlowLog('bet-target-clicked', {
                     side: side,
                     amount: raw,
                     chipUnits: X,
-                    clicked: targetClickedOne ? 1 : 0
+                    clicked: tapOne.clicked ? 1 : 0,
+                    reflected: tapOne.reflected ? 1 : 0,
+                    target: betTargetMeta(tapOne.target)
                 }, 0, 'bet-target-clicked|' + side + '|' + X);
-                var appliedOne = await waitForTotalsChange(before0, side, 150).catch(function () {
-                    return false;
-                });
-                if (!appliedOne && isDomMode) {
-                    var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 140).catch(function () {
-                        return null;
-                    });
-                    appliedOne = !!(stakeHitOne && stakeHitOne.val === X);
-                }
-                if (!appliedOne) {
+                if (!tapOne.reflected) {
                     console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
                         side: side,
                         amount: X,
-                        targetClicked: !!targetClickedOne
+                        targetClicked: !!tapOne.clicked
                     });
                     resetChipFocusState(isDomMode, 'exact-hit-not-reflected');
-                    return failBet('bet click not reflected for exact chip', { side: side, amount: raw, chipUnits: X, targetClicked: !!targetClickedOne });
+                    return failBet('bet click not reflected for exact chip', {
+                        side: side,
+                        amount: raw,
+                        chipUnits: X,
+                        targetClicked: !!tapOne.clicked,
+                        target: betTargetMeta(tapOne.target)
+                    });
                 }
                 await sleep(15);
                 clearBetError();
@@ -14389,31 +15562,35 @@
                     return failBet('focus chip failed', { side: side, amount: raw, chipUnits: step.val });
                 }
                 for (var i2 = 0; i2 < step.count; i2++) {
-                    var beforeStep = sampleTotalsNow();
-                    var targetClickedStep = clickBetTarget(tgt);
+                    var tapStep = await executeBetTapAndVerify(side, tgt, isDomMode, step.val, 120);
                     cwBetFlowLog('bet-plan-click', {
                         side: side,
                         denom: step.val,
                         turn: i2 + 1,
-                        clicked: targetClickedStep ? 1 : 0
+                        clicked: tapStep.clicked ? 1 : 0,
+                        reflected: tapStep.reflected ? 1 : 0,
+                        target: betTargetMeta(tapStep.target)
                     }, 0, 'bet-plan-click|' + side + '|' + step.val + '|' + (i2 + 1));
-                    if (!targetClickedStep)
+                    if (!tapStep.clicked)
                         console.warn('[cwBet++] click cửa thất bại', {
                             side: side,
                             denom: step.val,
                             turn: i2 + 1
                         });
-                    var appliedStep = await waitForTotalsChange(beforeStep, side, 100).catch(function () {
-                        return false;
-                    });
-                    if (!appliedStep) {
+                    if (!tapStep.reflected) {
                         console.warn('[cwBet++] click cửa không ghi nhận tiền', {
                             side: side,
                             denom: step.val,
                             turn: i2 + 1
                         });
                         resetChipFocusState(isDomMode, 'plan-not-reflected');
-                        return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
+                        return failBet('bet click not reflected', {
+                            side: side,
+                            amount: raw,
+                            chipUnits: step.val,
+                            turn: i2 + 1,
+                            target: betTargetMeta(tapStep.target)
+                        });
                     }
                     await sleep(15);
                 }
@@ -14719,6 +15896,42 @@
             S.text = buildTextRects();
             renderText();
         }
+        S._lastSnap = {
+            abx: 'tick',
+            prog: S.prog,
+            progValid: S.progValid ? 1 : 0,
+            progMode: String(S.progMode || ''),
+            progRaw: S.progRaw,
+            progSource: String(S.progSource || ''),
+            progTail: String(S.progTail || ''),
+            totals: T,
+            seq: String(S.seq || ''),
+            rawSeq: String(S.rawSeq || S.seq || ''),
+            seqVersion: Number(S.seqVersion || 0),
+            seqEvent: String(S.seqEvent || ''),
+            status: String(S.status || ''),
+            statusSource: String(S.statusSource || ''),
+            statusTail: String(S.statusTail || ''),
+            username: String((T && T.N) || ''),
+            ts: Date.now(),
+            origin: 'canvas-panel'
+        };
+        try {
+            var directProgKey = [
+                S._lastSnap.progValid ? 1 : 0,
+                S._lastSnap.progMode || '',
+                S._lastSnap.progRaw == null ? '' : Number(S._lastSnap.progRaw),
+                S._lastSnap.progSource || '',
+                S._lastSnap.progTail || ''
+            ].join('|');
+            if (S._lastSnap.progValid === 1 &&
+                String(S._lastSnap.progMode || '').toLowerCase() === 'seconds' &&
+                directProgKey !== _lastDirectProgPostKey &&
+                typeof window.__cw_postPanelSnapNow === 'function') {
+                _lastDirectProgPostKey = directProgKey;
+                window.__cw_postPanelSnapNow(S._lastSnap, 'prog-change');
+            }
+        } catch (_) {}
         updatePanel();
     }
     var _seqDomObserver = null;
@@ -15077,6 +16290,10 @@
                 } catch (_) {}
                 if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
                     chrome.webview.postMessage(JSON.stringify(obj));
+                    try {
+                        if (window.parent && window.parent !== window)
+                            window.parent.postMessage(obj, '*');
+                    } catch (_) {}
                 } else {
                     // Fallback: gửi lên TOP bằng DOM message, TOP_FORWARD sẽ relay về C#
                     parent.postMessage(obj, '*');
@@ -15140,12 +16357,51 @@
             }
         };
 
+        window.__cw_postPanelSnapNow = function (panelSnap, reason) {
+            try {
+                if (!panelSnap)
+                    return 'empty';
+                var snap = {
+                    abx: 'tick',
+                    prog: panelSnap.prog,
+                    progValid: Number(panelSnap.progValid || 0),
+                    progMode: String(panelSnap.progMode || ''),
+                    progRaw: panelSnap.progRaw == null ? null : Number(panelSnap.progRaw),
+                    progSource: String(panelSnap.progSource || ''),
+                    progTail: String(panelSnap.progTail || ''),
+                    totals: panelSnap.totals || null,
+                    seq: String(panelSnap.seq || ''),
+                    rawSeq: String(panelSnap.rawSeq || panelSnap.seq || ''),
+                    seqVersion: Number(panelSnap.seqVersion || 0),
+                    seqEvent: String(panelSnap.seqEvent || ''),
+                    status: String(panelSnap.status || ''),
+                    statusSource: String(panelSnap.statusSource || ''),
+                    statusTail: String(panelSnap.statusTail || ''),
+                    username: String(panelSnap.username || ''),
+                    ts: Date.now(),
+                    origin: 'canvas-panel-direct',
+                    reason: String(reason || '')
+                };
+                cwDbg('PUSH', 'panel-direct-send', {
+                    progRaw: snap.progRaw,
+                    progMode: snap.progMode,
+                    progValid: snap.progValid,
+                    reason: snap.reason
+                }, 600, 'panel-direct|' + snap.progMode + '|' + snap.progRaw);
+                safePost(snap);
+                return 'sent';
+            } catch (_) {
+                return 'fail';
+            }
+        };
+
         var _pushTimer = null;
         var _lastJson = '';
         var _lastStableJson = '';
         var _forcePushOnce = false;
         var _lastImportantPushKey = '';
         var _lastImportantPushAt = 0;
+        var _lastPushProgKey = '';
         var _lastPullSeqVersion = 0;
         var _lastPushSeqVersion = 0;
         var _abxSnapCache = {
@@ -15217,6 +16473,8 @@
             try {
                 var href = String((location && location.href) || '');
                 var path = String((location && location.pathname) || '');
+                if (/\/internal\/livestream_page\//i.test(href) && /bcrlive/i.test(href))
+                    return true;
                 if (/singleBacTable\.jsp/i.test(href))
                     return true;
                 if (/\/player\/webMain\.jsp/i.test(href))
@@ -15241,7 +16499,7 @@
             } catch (_) {}
             try {
                 var href3 = String((location && location.href) || '');
-                if (!__cw_isTopDocument() && /\/\/(?:[^\/]+\.)?zowin\.nu\//i.test(href3)) {
+                if (!__cw_isTopDocument() && /\/\/(?:[^\/]+\.)?zowin\.(?:nu|vu|tw|ph)\//i.test(href3)) {
                     var docEl = document && document.documentElement;
                     var body = document && document.body;
                     var vw = Math.max((docEl && docEl.clientWidth) || 0, (body && body.clientWidth) || 0, innerWidth || 0);
@@ -15315,6 +16573,23 @@
                 return true;
             }
             return false;
+        }
+
+        function buildProgPushKey(obj) {
+            try {
+                var valid = Number(obj && obj.progValid || 0);
+                var mode = String(obj && obj.progMode || '').toLowerCase();
+                if (valid !== 1 || mode !== 'seconds')
+                    return '';
+                var raw = (obj && obj.progRaw != null && isFinite(Number(obj.progRaw)))
+                    ? Number(obj.progRaw)
+                    : ((obj && obj.prog != null && isFinite(Number(obj.prog))) ? Number(obj.prog) : null);
+                if (raw == null)
+                    return '';
+                return valid + '|' + mode + '|' + Math.max(0, Math.min(45, Math.floor(raw + 0.0001)));
+            } catch (_) {
+                return '';
+            }
         }
 
         function buildTickSnapFromCached(cached) {
@@ -15438,9 +16713,29 @@
             try {
                 if (typeof readTKSeq === 'function') {
                     var r = readTKSeq();
+                    var rSeq = (r && r.seq) ? String(r.seq || '') : '';
+                    var rRaw = (r && r.rawSeq) ? String(r.rawSeq || '') : String(window.__cw_bead_raw_seq || '');
+                    if (!rSeq) {
+                        var pub = window.__cw_seq_pub || null;
+                        var pubSeq = brSanitizeSeq((pub && (pub.rawSeq || pub.seq)) || window.__cw_seq_raw || window.__cw_seq || rRaw || '');
+                        if (brIsReliableRoadSeq(pubSeq)) {
+                            rSeq = pubSeq;
+                            rRaw = pubSeq;
+                            if (r && !r.which)
+                                r.which = (pub && Number(pub.visualAuthority || 0) === 1) ? 'visual-road-authority-published' : 'published-seq';
+                            brSeqAuditLog('readSeqStateSafe-published-fallback', {
+                                seq: pubSeq,
+                                len: pubSeq.length,
+                                which: String(r && r.which || ''),
+                                pubVer: Number((pub && pub.ver) || 0),
+                                pubEvt: String((pub && pub.evt) || ''),
+                                beadRawLen: String(rRaw || '').length
+                            }, 700, 'readSeqStateSafe-published-fallback|' + pubSeq + '|' + Number((pub && pub.ver) || 0));
+                        }
+                    }
                     return {
-                        seq: (r && r.seq) ? String(r.seq || '') : '',
-                        rawSeq: (r && r.rawSeq) ? String(r.rawSeq || '') : String(window.__cw_bead_raw_seq || ''),
+                        seq: rSeq,
+                        rawSeq: rRaw,
                         seqVersion: Number(r && r.seqVersion != null ? r.seqVersion : (window.__cw_seq_version || 0)) || 0,
                         seqEvent: String(r && r.seqEvent ? r.seqEvent : (window.__cw_seq_event || '')),
                         seqWhich: String(r && r.which ? r.which : '')
@@ -16155,11 +17450,12 @@
                 seqEvent = String(window.__cw_seq_event || '');
                 seqWhich = '';
             }
+            var probeCache = _cwProbeRoadSeqCache;
+            var probeCacheAge = _cwProbeRoadSeqCacheAt > 0 ? (Date.now() - _cwProbeRoadSeqCacheAt) : 999999;
             if (!String(seqFresh || '').length && __cw_hasCocos() && buildSource === 'pull') {
-                var probeCache = _cwProbeRoadSeqCache;
-                var probeCacheAge = _cwProbeRoadSeqCacheAt > 0 ? (Date.now() - _cwProbeRoadSeqCacheAt) : 999999;
                 if (probeCache &&
                     probeCacheAge <= 5000 &&
+                    Number(probeCache.visualAuthority || 0) === 1 &&
                     brIsReliableRoadSeq(String(probeCache.rawSeq || ''))) {
                     seqFresh = String(probeCache.probeSeq || probeCache.rawSeq || probeCache.seq || '');
                     rawSeqFresh = String(probeCache.rawSeq || '');
@@ -16170,6 +17466,7 @@
             }
             if (__cw_hasCocos() && probeCache &&
                 probeCacheAge <= 5000 &&
+                Number(probeCache.visualAuthority || 0) === 1 &&
                 brShouldPreferProbeRoadVisualPack(probeCache, {
                     seq: seqFresh,
                     rawSeq: rawSeqFresh
@@ -16202,7 +17499,16 @@
                     seqEvent = String(probeRescue.seqEvent || '');
                     seqWhich = String(probeRescue.seqWhich || 'probe-canvas-rescue');
                 } else {
-                    try { brKickProbeRoadSeqFrames('buildSnapshotNow-empty-pull', 8); } catch (_) {}
+                    try {
+                        brSeqAuditLog('buildSnapshotNow-empty-pull-kick-visual-sync', {
+                            buildId: buildId,
+                            source: buildSource,
+                            probeBusy: _cwProbeRoadSeqBusy ? 1 : 0,
+                            probeCacheAge: Number(probeCacheAge || 0),
+                            probeCacheLen: String(probeCache && probeCache.rawSeq || '').length
+                        }, 900, 'buildSnapshotNow-empty-pull-kick-visual-sync|' + buildId);
+                        brKickProbeRoadSeqFrames('push-visual-sync', 8);
+                    } catch (_) {}
                 }
             }
             if (!String(seqFresh || '').length &&
@@ -16586,13 +17892,159 @@
         window.__cw_probeRoadSeqFrames = function (count) {
             return brKickProbeRoadSeqFrames('manual-window-frames', count || 8);
         };
+        window.__cw_clearRoadSeqDebug = function () {
+            try {
+                var old = document.getElementById('__cw_road_seq_debug_overlay');
+                if (old && old.parentNode)
+                    old.parentNode.removeChild(old);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        };
+        window.__cw_showRoadSeqDebug = async function (count) {
+            function rectCss(r) {
+                return 'left:' + Math.round(r.x) + 'px;top:' + Math.round(r.y) + 'px;width:' + Math.round(r.w) + 'px;height:' + Math.round(r.h) + 'px;';
+            }
+            function addBox(host, r, border, bg, label, title) {
+                if (!r || !isFinite(r.x) || !isFinite(r.y) || !isFinite(r.w) || !isFinite(r.h) || r.w <= 0 || r.h <= 0)
+                    return null;
+                var box = document.createElement('div');
+                box.style.cssText = 'position:fixed;box-sizing:border-box;pointer-events:none;z-index:2147483647;' + rectCss(r) + 'border:' + border + ';background:' + (bg || 'transparent') + ';';
+                if (title)
+                    box.title = String(title);
+                if (label) {
+                    var tag = document.createElement('div');
+                    tag.textContent = String(label);
+                    tag.style.cssText = 'position:absolute;left:0;top:0;transform:translateY(-100%);max-width:520px;padding:2px 5px;background:rgba(0,0,0,.82);color:#ffd31a;font:12px/1.25 Consolas,monospace;white-space:nowrap;text-shadow:0 1px 1px #000;';
+                    box.appendChild(tag);
+                }
+                host.appendChild(box);
+                return box;
+            }
+            function addLabel(host, x, y, text, color) {
+                var tag = document.createElement('div');
+                tag.textContent = String(text);
+                tag.style.cssText = 'position:fixed;left:' + Math.round(x) + 'px;top:' + Math.round(y) + 'px;z-index:2147483647;pointer-events:none;padding:2px 5px;border:1px solid rgba(255,211,26,.8);background:rgba(0,0,0,.82);color:' + (color || '#ffd31a') + ';font:12px/1.25 Consolas,monospace;white-space:nowrap;text-shadow:0 1px 1px #000;';
+                host.appendChild(tag);
+                return tag;
+            }
+            function shortSeq(s) {
+                s = String(s || '');
+                return s.length > 80 ? (s.slice(0, 40) + '...' + s.slice(-40)) : s;
+            }
+            function colorFor(v) {
+                v = String(v || '').toUpperCase();
+                if (v === 'B')
+                    return '#ff4f5f';
+                if (v === 'P')
+                    return '#45a3ff';
+                if (v === 'T')
+                    return '#36d17d';
+                return '#ffd31a';
+            }
+            try {
+                window.__cw_clearRoadSeqDebug();
+                var frames = Math.max(1, Math.min(30, Number(count) || 1));
+                var pack = null;
+                if (frames > 1) {
+                    try {
+                        pack = await brKickProbeRoadSeqFrames('manual-debug-overlay', frames);
+                    } catch (_) {}
+                }
+                if (!pack)
+                    pack = brReadCanvasRoadSeq({ ignoreCache: true, skipBoardCountTrim: true });
+                var host = document.createElement('div');
+                host.id = '__cw_road_seq_debug_overlay';
+                host.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none;';
+                document.documentElement.appendChild(host);
+
+                var cells = pack && pack.cells ? pack.cells : (pack && pack.items ? pack.items : []);
+                var rows = pack && pack.rows ? pack.rows : [];
+                var rawSeq = String(pack && (pack.rawSeq || pack.seq) || '');
+                var roi = pack && pack.roi ? pack.roi : null;
+                var canvasRect = pack && pack.canvasRect ? pack.canvasRect : null;
+                if (canvasRect)
+                    addBox(host, canvasRect, '1px dashed rgba(255,255,255,.75)', 'rgba(255,255,255,.03)', 'canvas', '');
+                if (roi) {
+                    var label = 'ROI ' + String(roi.name || '') + ' | cells=' + cells.length + ' rows=' + rows.length + ' seqLen=' + rawSeq.length + ' rawSeq=' + shortSeq(rawSeq);
+                    addBox(host, roi, '2px solid #ffd31a', 'rgba(255,211,26,.12)', label, label);
+                } else {
+                    addLabel(host, 12, 12, 'Không có ROI chuỗi kết quả. reason=' + String(pack && pack.reason || ''), '#ff6b6b');
+                }
+                for (var i = 0; i < cells.length; i++) {
+                    var c = cells[i] || {};
+                    var cv = String(c.v || '?').toUpperCase();
+                    var col = colorFor(cv);
+                    addBox(host, {
+                        x: Number(c.x) || 0,
+                        y: Number(c.y) || 0,
+                        w: Math.max(5, Number(c.w) || 0),
+                        h: Math.max(5, Number(c.h) || 0)
+                    }, '1px solid ' + col, 'rgba(0,0,0,.12)', String(i + 1) + ':' + cv, 'cell ' + (i + 1) + ' value=' + cv + ' pixels=' + String(c.pixels || ''));
+                }
+                for (var r = 0; r < rows.length; r++) {
+                    var row = rows[r] || {};
+                    var rowItems = row.items || [];
+                    if (!rowItems.length)
+                        continue;
+                    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    for (var ri = 0; ri < rowItems.length; ri++) {
+                        var it = rowItems[ri] || {};
+                        minX = Math.min(minX, Number(it.x) || 0);
+                        minY = Math.min(minY, Number(it.y) || 0);
+                        maxX = Math.max(maxX, (Number(it.x) || 0) + (Number(it.w) || 0));
+                        maxY = Math.max(maxY, (Number(it.y) || 0) + (Number(it.h) || 0));
+                    }
+                    if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)) {
+                        addBox(host, {
+                            x: minX,
+                            y: minY,
+                            w: Math.max(1, maxX - minX),
+                            h: Math.max(1, maxY - minY)
+                        }, '1px dashed rgba(255,255,255,.55)', 'transparent', 'row ' + (r + 1) + ' n=' + rowItems.length, '');
+                    }
+                }
+                var rf = pack && pack.meta && pack.meta.rowFilter ? pack.meta.rowFilter : null;
+                return {
+                    ok: !!(pack && pack.ok),
+                    reason: String(pack && pack.reason || ''),
+                    rawSeq: rawSeq,
+                    seq: String(pack && pack.seq || ''),
+                    rawLen: rawSeq.length,
+                    cellCount: cells.length,
+                    rowCount: rows.length,
+                    roi: roi,
+                    canvasRect: canvasRect,
+                    rowFilter: rf,
+                    rows: rows.map(function (row, idx) {
+                        return {
+                            index: idx + 1,
+                            count: row && row.items ? row.items.length : 0,
+                            seq: String(row && row.seq || ''),
+                            y: row && row.y != null ? Math.round(Number(row.y) || 0) : null
+                        };
+                    })
+                };
+            } catch (e) {
+                return {
+                    ok: false,
+                    reason: String(e && (e.stack || e.message) || e || 'debug-overlay-error'),
+                    rawSeq: '',
+                    seq: '',
+                    rawLen: 0,
+                    cellCount: 0,
+                    rowCount: 0
+                };
+            }
+        };
 
         // Bắt đầu bắn snapshot định kỳ {abx:'tick', prog, totals, seq, status}
         window.__cw_startPush = function (tickMs) {
             try {
                 tickMs = Number(tickMs) || 220;
-                if (tickMs < 180)
-                    tickMs = 180;
+                if (tickMs < 100)
+                    tickMs = 100;
                 if (tickMs > 1000)
                     tickMs = 1000;
                 if (!isLikelyGameContext()) {
@@ -16604,6 +18056,7 @@
                     _lastStableJson = '';
                     _lastImportantPushKey = '';
                     _lastImportantPushAt = 0;
+                    _lastPushProgKey = '';
                     cwDbg('PUSH', 'startPush skipped (non-game context)', {
                         href: (function () {
                             try {
@@ -16623,17 +18076,57 @@
                 _lastStableJson = '';
                 _lastImportantPushKey = '';
                 _lastImportantPushAt = 0;
+                _lastPushProgKey = '';
                 try { window.__cw_last_push_seq_version = Number(_lastPushSeqVersion || 0) || 0; } catch (_) {}
                 cwDbg('PUSH', 'startPush', { tickMs: tickMs }, 0, 'startPush|' + tickMs);
                 _pushTimer = setInterval(function () {
+                    try {
+                        brMaybeSyncVisualRoadSeq('push-visual-sync', _cwVisualSeqSyncMinMs);
+                    } catch (_) {}
                     var buildT0 = Date.now();
-                    var snap = buildSnapshotNow('push');
+                    var panelSnap = (S && S._lastSnap) ? S._lastSnap : null;
+                    var panelFreshMs = Math.max(260, ((S && Number(S.tickMs)) || 220) + 260);
+                    var usePanelSnap =
+                        panelSnap &&
+                        Number(panelSnap.progValid || 0) === 1 &&
+                        String(panelSnap.progMode || '').toLowerCase() === 'seconds' &&
+                        panelSnap.progRaw != null &&
+                        isFinite(Number(panelSnap.progRaw)) &&
+                        (Date.now() - Number(panelSnap.ts || 0)) <= panelFreshMs;
+                    var snap = usePanelSnap ? (function (last) {
+                        return {
+                            abx: 'tick',
+                            prog: last.prog,
+                            progValid: Number(last.progValid || 0),
+                            progMode: String(last.progMode || ''),
+                            progRaw: last.progRaw == null ? null : Number(last.progRaw),
+                            progSource: String(last.progSource || ''),
+                            progTail: String(last.progTail || ''),
+                            totals: last.totals || null,
+                            seq: String(last.seq || ''),
+                            rawSeq: String(last.rawSeq || last.seq || ''),
+                            seqVersion: Number(last.seqVersion || 0),
+                            seqEvent: String(last.seqEvent || ''),
+                            status: String(last.status || ''),
+                            statusSource: String(last.statusSource || ''),
+                            statusTail: String(last.statusTail || ''),
+                            username: String(last.username || ''),
+                            ts: Date.now(),
+                            origin: 'canvas-panel-push'
+                        };
+                    })(panelSnap) : buildSnapshotNow('push');
                     var jsBuildMs = Date.now() - buildT0;
                     if (snap && jsBuildMs >= 0)
                         snap.jsBuildMs = jsBuildMs;
                     var ev = String(snap && snap.seqEvent ? snap.seqEvent : '');
                     if (/^append|^append-after-reset|^append-reset-seed/i.test(ev))
                         _forcePushOnce = true;
+                    try {
+                        if (Number(window.__cw_force_push_once || 0)) {
+                            _forcePushOnce = true;
+                            window.__cw_force_push_once = 0;
+                        }
+                    } catch (_) {}
                     var curVer = Number(snap && snap.seqVersion != null ? snap.seqVersion : 0) || 0;
                     if (ev === 'no-change' &&
                         curVer === Number(_domLastSeedStepVersion || 0) &&
@@ -16660,6 +18153,10 @@
                         }, 0, 'seqflow-push-jump|' + _lastPushSeqVersion + '|' + curVer);
                     }
                     var changed = shallowChanged(snap);
+                    var progPushKey = buildProgPushKey(snap);
+                    var progChanged = !!(progPushKey && progPushKey !== _lastPushProgKey);
+                    if (progChanged)
+                        changed = true;
                     if (_forcePushOnce || changed) {
                         cwDbg('SEQPUSH', 'tick-send', {
                             changed: changed ? 1 : 0,
@@ -16670,6 +18167,8 @@
                             seqMode: snap && snap.seqMode ? snap.seqMode : '',
                             seqAppend: snap && snap.seqAppend ? snap.seqAppend : '',
                             resetPending: _domShoeResetPending ? 1 : 0,
+                            progChanged: progChanged ? 1 : 0,
+                            progRaw: snap && snap.progRaw != null ? snap.progRaw : null,
                             status: snap && snap.status ? snap.status : ''
                         }, 800, 'seqpush-tick-send|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + ev + '|' + (changed ? '1' : '0') + '|' + (_forcePushOnce ? '1' : '0'));
                         cwDbg('PUSH', 'send tick', {
@@ -16680,9 +18179,13 @@
                             seqEvent: snap && snap.seqEvent ? snap.seqEvent : '',
                             seqMode: snap && snap.seqMode ? snap.seqMode : '',
                             seqAppend: snap && snap.seqAppend ? snap.seqAppend : '',
+                            progChanged: progChanged ? 1 : 0,
+                            progRaw: snap && snap.progRaw != null ? snap.progRaw : null,
                             status: snap && snap.status ? snap.status : ''
                         }, 2200, 'tick-send|' + (snap && snap.seqVersion != null ? snap.seqVersion : '') + '|' + (snap && snap.seqEvent ? snap.seqEvent : '') + '|' + (changed ? '1' : '0') + '|' + (_forcePushOnce ? '1' : '0'));
                         safePost(snap);
+                        if (progPushKey)
+                            _lastPushProgKey = progPushKey;
                         _lastPushSeqVersion = curVer;
                         try { window.__cw_last_push_seq_version = curVer; } catch (_) {}
                         _forcePushOnce = false;

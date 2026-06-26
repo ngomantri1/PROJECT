@@ -23,6 +23,7 @@ namespace BaccaratZoWin
     {
         public string abx { get; set; }
         public double? prog { get; set; }
+        public int? progSec { get; set; }
         public int? progValid { get; set; }
         public string? progMode { get; set; }
         public double? progRaw { get; set; }

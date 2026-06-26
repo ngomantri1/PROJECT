@@ -52,7 +52,7 @@ namespace BaccaratZoWin.Tasks
         private static readonly object _betLock = new object();
         private static string _lastBetSeq = "";
         private static long _lastBetMs = 0;
-        // Reset UI 1 lần ngay khi vào cửa sổ đặt (p >= DecisionPercent)
+        // Reset UI 1 lần ngay khi vào cửa sổ đặt
         private static bool _uiRoundResetDone = false;
         public static string SeqToParityString(string digitSeq)
         {
@@ -110,11 +110,11 @@ namespace BaccaratZoWin.Tasks
 
 
 
-        // Gọi khi đã có p (percent) để reset đúng 1 lần
-        public static void UiRoundMaybeReset(double p, double decisionPercent)
+        // Gọi khi đã có số giây còn lại để reset đúng 1 lần
+        public static void UiRoundMaybeReset(int secLeft, int decisionSeconds)
         {
             if (_uiRoundResetDone) return;
-            if (p >= decisionPercent)
+            if (secLeft <= decisionSeconds)
             {
                 _uiRoundResetDone = true;
                 UiResetRoundControls();
@@ -126,35 +126,56 @@ namespace BaccaratZoWin.Tasks
 
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
         {
-            // Quy ước: prog = % thời gian còn lại (0..100).
-            // Vào tiền khi về ngưỡng “<= DecisionPercent” (ví dụ 15% cuối).
+            var decisionSeconds = Math.Clamp(ctx.DecisionSeconds, 1, 45);
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 100.0;
-                //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
-                if (p <= ctx.DecisionPercent && p > 0) break;
-                await Task.Delay(80, ct);
+                var secLeft = GetRemainingSeconds(s);
+                //TaskUtil.UiRoundMaybeReset(secLeft ?? 45, decisionSeconds);
+                if (secLeft.HasValue && secLeft.Value <= decisionSeconds && secLeft.Value > 0) break;
+                await Task.Delay(120, ct);
             }
         }
 
-        // Chờ sang phiên mới rồi đặt NGAY khi mở cửa (đặt sớm, KHÔNG phụ thuộc DecisionPercent)
+        // Chờ tới ngưỡng giây còn lại rồi đặt. Tên hàm giữ để tương thích strategy cũ.
         public static async Task WaitUntilNewRoundStart(GameContext ctx, CancellationToken ct)
         {
-            double lowerBound = Math.Max(0, ctx.DecisionPercent);
-            double upperBound = Math.Clamp(ctx.BetWhenRemainingPercent, 5, 100);
-            if (lowerBound >= upperBound)
-                lowerBound = 0;
-
+            var decisionSeconds = Math.Clamp(
+                ctx.BetWhenRemainingSeconds > 0 ? ctx.BetWhenRemainingSeconds : ctx.DecisionSeconds,
+                1, 45);
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
-                double p = s?.prog ?? 100.0;
-                if (p > lowerBound && p <= upperBound) break;
-                await Task.Delay(80, ct);
+                var secLeft = GetRemainingSeconds(s);
+                if (secLeft.HasValue && secLeft.Value <= decisionSeconds && secLeft.Value > 0)
+                    break;
+                await Task.Delay(120, ct);
             }
+        }
+
+        private static int? GetRemainingSeconds(CwSnapshot? snap)
+        {
+            if (snap == null) return null;
+
+            if (snap.progSec.HasValue)
+                return Math.Clamp(snap.progSec.Value, 0, 45);
+
+            if (string.Equals(snap.progMode, "seconds", StringComparison.OrdinalIgnoreCase))
+            {
+                var rawSec = snap.progRaw ?? snap.prog;
+                if (rawSec.HasValue && double.IsFinite(rawSec.Value))
+                    return Math.Clamp((int)Math.Round(rawSec.Value, MidpointRounding.AwayFromZero), 0, 45);
+            }
+
+            if (snap.prog.HasValue && double.IsFinite(snap.prog.Value))
+            {
+                var ratio = Math.Clamp(snap.prog.Value, 0.0, 1.0);
+                return (int)Math.Round(ratio * 45.0, MidpointRounding.AwayFromZero);
+            }
+
+            return null;
         }
 
 

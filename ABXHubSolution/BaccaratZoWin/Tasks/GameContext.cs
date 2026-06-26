@@ -47,9 +47,9 @@ namespace BaccaratZoWin.Tasks
         // tiền thắng đã tích lũy được trong chuỗi hiện tại
         public double MoneyChainProfit { get; set; } = 0;
 
-        // Ngưỡng % còn lại để ra quyết định
-        public double DecisionPercent { get; init; }
-        public double BetWhenRemainingPercent { get; init; }
+        // Ngưỡng giây còn lại để ra quyết định / vào tiền
+        public int DecisionSeconds { get; init; }
+        public int BetWhenRemainingSeconds { get; init; }
         public bool AutoResetStakeOnNonNegativeWin { get; init; } = false;
         public Func<bool>? ConsumeAutoResetStakeRequest { get; init; }
 

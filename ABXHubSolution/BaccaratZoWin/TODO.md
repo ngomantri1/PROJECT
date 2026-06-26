@@ -1,80 +1,130 @@
 # TODO
 
-> Danh sách cô đọng theo trạng thái code hiện tại.
+> Danh sách việc theo trạng thái hiện tại của code và cuộc chat này.
 
 ## Task đang làm
 
-- Ổn định same-page game detection trên `zowin` và shell host mới
-- Giữ `TextMap/MoneyMap/BetMap` bám đúng game frame thật
-- Giữ settle authoritative giữa JS tick và network/CDP
-- Ổn định lại luồng `chuỗi kết quả` theo scan mới, không quay về nghiệp vụ road cũ
-- Sửa dứt điểm việc canvas có sequence đúng nhưng panel C# vẫn hiển thị sai
+- Ổn định exact live frame cho ZoWin Baccarat.
+- Ổn định luồng `rawSeq -> C# display`.
+- Sửa bug hiện tại: `await __cw_showRoadSeqDebug(8)` đọc ra chuỗi đúng nhưng panel C# không đồng bộ, hiện có lúc không hiển thị chuỗi kết quả.
+- Xác nhận patch mới nhất đã thật sự được build/restart vào app, vì lần gần nhất `BaccaratZoWin.dll` bị khóa bởi `BaccaratZoWin` và Visual Studio nên runtime chưa thể nhận source JS mới.
+- Giảm lag/freeze của panel C#.
+- Giữ countdown đồng bộ và không đứng.
+- Giữ click bet 3 cửa đúng 1 lần.
 
 ## Task chưa hoàn thành
 
-- Chuẩn hóa một nguồn nhận diện game context giữa C# và JS
-- Tách `MainWindow.xaml.cs` thành service nhỏ hơn
-- Làm rõ vai trò `WebView2LiveBridge.cs`
-- Khóa lại contract `PULL_POPUP_TICK_NOW` để không trả snapshot rỗng khi canvas vẫn có dữ liệu
+- Debug tiếp luồng visual road sync sau patch gần nhất:
+  - xác nhận `push-visual-sync` có chạy thật trong live frame không
+  - xác nhận log `buildSnapshotNow-empty-pull-kick-visual-sync` xuất hiện khi `[PULLRAW]` đang rỗng
+  - xác nhận log `visual-road-publish-state` xuất hiện sau khi probe chọn được ROI/seq hợp lệ
+  - xác nhận log `readSeqStateSafe-published-fallback` xuất hiện khi `readTKSeq()` trả rỗng nhưng published seq có dữ liệu
+  - xác nhận `brCommitProbeRoadPack(...)` không còn lỗi `_forcePushOnce is not defined`
+  - xác nhận C# nhận tick có `rawSeq` khác rỗng
+  - xác nhận `UpdateSeqUI(...)` render đúng cùng chuỗi với `await __cw_showRoadSeqDebug(8)`
+- Xác nhận sau khi tắt CDP websocket thì freeze giảm rõ trên máy thực tế.
+- Xác nhận `PULL_POPUP_TICK_NOW` luôn chọn live frame thay vì `top`.
+- Xác nhận countdown vẫn chạy ổn sau vài phút, không chỉ vài giây đầu.
+- Xác nhận pending row luôn update/settle đúng ở round đầu tiên khi có kết quả.
+- Xác nhận nút `Bắt đầu cược` / `Dừng đặt cược` không còn rơi vào trạng thái click được nhưng state không đổi.
 
 ## Task cần refactor
 
-- Tách:
+- Tách `MainWindow.xaml.cs` thành các khối nhỏ hơn:
   - `BridgeService`
-  - `GameLaunchService`
-  - `SeqSyncService`
-  - `PendingBetService`
-- Giảm duplication giữa main/popup/frame inject path
-- Tách Canvas Watch/debug config khỏi business flow
+  - `FrameSelectionService`
+  - `TickPipelineService`
+  - `PendingHistoryService`
+  - `RuntimeProfileService`
+- Tách phần log runtime/perf khỏi nghiệp vụ chính.
+- Tách logic `PULL_POPUP_TICK_NOW` khỏi chuỗi string lớn trong C# nếu còn tiếp tục mở rộng.
 
 ## Task ưu tiên cao
 
-- Test lại nhánh authority `stale-authority-resync`
-- Xác nhận `__cw_probeRoadSeqFrames(8).rawSeq` và panel `CHUỖI KẾT QUẢ` luôn cùng nội dung
-- Rà lại `header-prune` trong `cw_probe_seq_roi.js` / `v4_js_xoc_dia_live.js` trên nhiều layout
-- Giữ popup fallback chỉ cho host legacy, không lấn flow same-page
+- Ưu tiên số 1 hiện tại: khôi phục hiển thị chuỗi kết quả ở panel C# và bắt nó đồng bộ theo `await __cw_showRoadSeqDebug(8)`.
+- Trước khi test runtime, phải đảm bảo build output mới được copy thành công:
+  - đóng app `BaccaratZoWin`
+  - stop debug/đóng Visual Studio nếu đang khóa `BaccaratZoWin.dll`
+  - build `AutoBetHub` Debug nếu thiếu `ABX.Core.dll`
+  - build lại `BaccaratZoWin`
+  - mở app lại và kiểm tra `Loaded JS from embedded | len=...` đã đổi theo source mới
+- Kiểm tra log mới phải có hoặc phải giải thích vì sao không có:
+  - `[JSSEQ][probe-canvas-visual-authority]`
+  - `[JSSEQ][buildSnapshotNow-empty-pull-kick-visual-sync]`
+  - `[JSSEQ][visual-road-publish-state]`
+  - `[JSSEQ][readSeqStateSafe-published-fallback]`
+  - `reason=push-visual-sync`
+  - `[PULLRAW]` payload có `rawSeq` đúng
+  - `[SEQ][RX] seqLen > 0`
+  - `[SEQ][UI][RENDER] len > 0`
+- Test lại runtime sau khi:
+  - off hẳn CDP websocket
+  - tăng điểm exact live frame trong JS pull
+  - marshal `SaveConfigAsync` về UI thread
+- Kiểm tra log mới phải có:
+  - `tap=0`
+  - `tapDbg=0`
+  - `tapCtx=0`
+- Kiểm tra tick/pull trả từ frame game thật, không còn `contextSource=top` trong case live frame đã sẵn sàng.
+- Kiểm tra click 3 cửa:
+  - `PLAYER`
+  - `BANKER`
+  - `TIE`
+  vẫn hoạt động ở nhiều độ phân giải.
 
 ## Task cần test lại
 
-- `zowin` same-page launch flow
-- `Canvas Watch`:
-  - hiện panel
-  - hiện đủ info
-  - không chặn click web
-- rebuild embedded JS và binary copy path
-- đổi table/shoe khi có pending bet
-- chuỗi kết quả:
-  - probe đúng
-  - snapshot đúng
-  - authority đúng
-  - panel hiển thị đúng toàn bộ chuỗi
+- `Bắt đầu cược`:
+  - click vào có đổi sang `Dừng đặt cược`
+  - countdown vẫn chạy tiếp
+  - panel không đơ sau 2-5 giây
+- `Dừng đặt cược`:
+  - dừng strategy thật
+  - không để pending state lơ lửng
+- Chuỗi kết quả:
+  - `(await __cw_probeRoadSeqFrames(8)).rawSeq`
+  - `await __cw_showRoadSeqDebug(8)`
+  - panel C#
+  - history settle
+  phải nhất quán
+- Test riêng visual road sync:
+  - lúc mới vào bàn
+  - sau khi đổi bàn/frame live reload
+  - sau khi chuỗi tăng thêm 1 kết quả
+  - khi road có `T`
+  - khi road dài nhiều hàng
+- Countdown:
+  - progress bar mượt
+  - màu không giật
+  - số giây giảm đều
+- History/pending:
+  - round đầu tiên có kết quả phải cập nhật pending row đúng
+  - không giữ `Đang chờ` sai lâu
 
-## Cập nhật từ chat 2026-06-23
+## Task cần theo dõi thêm
 
-### Task gấp
+- `main-pull` có còn spam log `JSSEQ` quá nhiều hay không.
+- `buildSnapshotNow-empty-pull` không được ghi đè chuỗi visual authority.
+- ROI auto như `auto-road-b` không được thắng `left-road-a` nếu dẫn đến chuỗi panel khác visual debug.
+- Nếu panel C# trống chuỗi:
+  - kiểm tra `rawSeqFreshLen`
+  - kiểm tra `window.__cw_bead_raw_seq`
+  - kiểm tra `window.__cw_seq_pub`
+  - kiểm tra trong log có `buildSnapshotNow-empty-pull-kick-visual-sync` không
+  - kiểm tra `visual-road-publish-state` có seq/len đúng không
+  - kiểm tra `readSeqStateSafe-published-fallback` có được gọi không
+  - kiểm tra source tick là `main-pull`, `main-frame`, hay live frame
+- Nếu source đã sửa nhưng app không thay đổi:
+  - kiểm tra build có fail vì `BaccaratZoWin.exe`/`BaccaratZoWin.dll` bị lock không
+  - kiểm tra lock bởi `BaccaratZoWin` hoặc `Microsoft Visual Studio 2022`
+  - kiểm tra `Loaded JS from embedded` trong log để biết app đang chạy bản JS nào
+- Nếu vẫn còn đơ:
+  - giảm tiếp tần suất pull fallback
+  - throttle thêm log `JSSEQ`, `HUDBAL`, `SEQ UI`
+- Kiểm tra các branch `raw-direct`, `board-fallback`, `version-regress`, `table-switch-wait-bead` có còn gây rewrite chuỗi bất thường không.
 
-- Tắt app, rebuild binary mới, chạy lại để chắc XAML/embedded JS mới đã được nạp.
-- Test log `reason=stale-authority-resync` trên host thực.
-- Xác nhận panel `CHUỖI KẾT QUẢ` không còn chỉ hiện phần đuôi.
+## Task đã chốt về nghiệp vụ
 
-### Chưa xong
-
-- Xác nhận `stale-authority-resync` không cướp authority nhầm khi:
-  - changing shoe
-  - no-board
-  - table-switch transient
-- Rà lại `cw_probe_seq_roi.js` trên các bàn có cùng UI nhưng khác tỉ lệ.
-
-### Checklist debug sequence
-
-1. Probe:
-   - `(await __cw_probeRoadSeqFrames(8)).rawSeq`
-2. Snapshot:
-   - `readDomBeadSeq()`
-   - `buildSnapshotNow()`
-3. Authority:
-   - `[NETSEQ][RAW-AUTHORITY]`
-   - `[NETSEQ][COUNT-ONLY-HOLD]`
-4. UI:
-   - `[SEQ][UI][QUEUE]`
-   - `[SEQ][UI][APPLY]`
+- Không quay lại dùng `%` cho điều kiện đặt cược.
+- Không khôi phục CDP websocket cho ZoWin runtime hiện tại nếu chưa có chứng cứ nó thật sự hữu ích.
+- Không quay lại phụ thuộc `snap.seq` cho display khi `rawSeq` đã đủ tốt.
