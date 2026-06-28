@@ -4404,7 +4404,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260628-r68-visual-sync-context-retry';
+    var _cwSeqScriptRev = 'SEQFIX-20260628-r72-independent-visual-watch';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -8055,17 +8055,19 @@
         } catch (_) {}
         return out;
     }
-    function brGuessCanvasRoadRois(canvas) {
+    function brGuessCanvasRoadRois(canvas, preferPresetOnly) {
         var out = [];
         try {
             if (!canvas)
                 return out;
             var rect = canvas.getBoundingClientRect();
-            var auto = brAutoDetectCanvasRoadRois(canvas);
-            for (var ai = 0; ai < auto.length; ai++)
-                out.push(auto[ai]);
-            if (auto.length)
-                return out;
+            if (!preferPresetOnly) {
+                var auto = brAutoDetectCanvasRoadRois(canvas);
+                for (var ai = 0; ai < auto.length; ai++)
+                    out.push(auto[ai]);
+                if (auto.length)
+                    return out;
+            }
             var presets = [
                 { name: 'left-road-a', x: 0.055, y: 0.315, w: 0.195, h: 0.245 },
                 { name: 'left-road-b', x: 0.05, y: 0.305, w: 0.22, h: 0.275 },
@@ -8133,7 +8135,7 @@
             var rois = [];
             if (!ignoreCache && _domSeqCanvasRoi && _domSeqCanvasRoiKey === canvasKey)
                 rois.push(Object.assign({ name: 'cached-roi' }, _domSeqCanvasRoi));
-            var guessed = brGuessCanvasRoadRois(canvas);
+            var guessed = brGuessCanvasRoadRois(canvas, preferVisualRoadPreset);
             for (var gi = 0; gi < guessed.length; gi++)
                 rois.push(guessed[gi]);
             var seen = Object.create(null);
@@ -8326,7 +8328,7 @@
     var _cwProbeRoadSeqLastKickAt = 0;
     var _cwProbeRoadSeqPromise = null;
     var _cwVisualSeqSyncLastAt = 0;
-    var _cwVisualSeqSyncMinMs = 900;
+    var _cwVisualSeqSyncMinMs = 300;
     var _cwVisualRoadContextRetryAt = 0;
     function brShouldPreferProbeRoadVisualPack(probePack, currentPack) {
         try {
@@ -8500,7 +8502,7 @@
             if (!rawSeq || rawSeq.length < 8 || !brIsStrongVisualRoadPack(pack))
                 return false;
             var now = Date.now();
-            if ((now - Number(_cwVisualRoadContextRetryAt || 0)) < 1200)
+            if ((now - Number(_cwVisualRoadContextRetryAt || 0)) < 450)
                 return false;
             _cwVisualRoadContextRetryAt = now;
             _cwVisualSeqSyncLastAt = 0;
@@ -8513,9 +8515,9 @@
             setTimeout(function () {
                 try {
                     _cwVisualSeqSyncLastAt = 0;
-                    brMaybeSyncVisualRoadSeq(reasonTag || 'push-visual-sync', 900);
+                    brMaybeSyncVisualRoadSeq(reasonTag || 'push-visual-sync', _cwVisualSeqSyncMinMs);
                 } catch (_) {}
-            }, 750);
+            }, 300);
             return true;
         } catch (_) {
             return false;
@@ -8864,7 +8866,7 @@
     function brMaybeSyncVisualRoadSeq(reasonTag, minMs) {
         try {
             var now = Date.now();
-            var gap = Math.max(900, Number(minMs || _cwVisualSeqSyncMinMs || 1800));
+            var gap = Math.max(300, Number(minMs || _cwVisualSeqSyncMinMs || 1800));
             var sinceLast = now - Number(_cwVisualSeqSyncLastAt || 0);
             if (sinceLast < gap) {
                 brSeqAuditLog('visual-road-sync-skip-gap', {
@@ -8934,8 +8936,19 @@
                             seqVersion: Number(applied.seqVersion || 0) || 0,
                             seqEvent: String(applied.seqEvent || '')
                         }, 1200, 'debug-road-source-unchanged|' + String(reasonTag || 'push-visual-sync') + '|' + String(applied.rawSeq || ''));
+                        brSeqAuditLog('visual-watch-unchanged', {
+                            reason: String(reasonTag || 'push-visual-sync'),
+                            rawLen: String(applied.rawSeq || '').length,
+                            tail: String(applied.rawSeq || '').slice(-8)
+                        }, 3000, 'visual-watch-unchanged|' + String(reasonTag || 'push-visual-sync'));
                     }
                     if (applied && !applied.unchanged && typeof S !== 'undefined' && S) {
+                        brSeqAuditLog('visual-watch-changed', {
+                            reason: String(reasonTag || 'push-visual-sync'),
+                            rawSeq: String(applied.rawSeq || ''),
+                            rawLen: String(applied.rawSeq || '').length,
+                            seqVersion: Number(applied.seqVersion || 0) || 0
+                        }, 300, 'visual-watch-changed|' + String(reasonTag || 'push-visual-sync') + '|' + String(applied.rawSeq || ''));
                         S.seq = applied.seq;
                         S.rawSeq = applied.rawSeq;
                         S.seqVersion = applied.seqVersion;
@@ -16488,9 +16501,6 @@
                 directProgKey !== _lastDirectProgPostKey &&
                 typeof window.__cw_postPanelSnapNow === 'function') {
                 _lastDirectProgPostKey = directProgKey;
-                try {
-                    brMaybeSyncVisualRoadSeq('push-visual-sync', _cwVisualSeqSyncMinMs);
-                } catch (_) {}
                 window.__cw_postPanelSnapNow(S._lastSnap, 'prog-change');
             }
         } catch (_) {}
@@ -17227,22 +17237,22 @@
 
         function startAutoVisualRoadSeqSync(intervalMs) {
             try {
-                intervalMs = Math.max(900, Math.min(5000, Number(intervalMs || 1200)));
+                intervalMs = Math.max(300, Math.min(2000, Number(intervalMs || 300)));
                 if (_autoVisualRoadTimer)
                     clearInterval(_autoVisualRoadTimer);
                 _lastAutoVisualRoadKey = '';
-                brSeqAuditLog('auto-visual-road-timer-start', {
+                brSeqAuditLog('visual-watch-start', {
                     intervalMs: intervalMs,
                     hasPushTimer: _pushTimer ? 1 : 0
-                }, 1000, 'auto-visual-road-timer-start');
+                }, 1000, 'visual-watch-start');
                 _autoVisualRoadTimer = setInterval(function () {
                     try {
-                        brSeqAuditLog('auto-visual-road-timer-tick', {
+                        brSeqAuditLog('visual-watch-tick', {
                             intervalMs: intervalMs,
                             busy: _cwProbeRoadSeqBusy ? 1 : 0,
                             lastSyncAgeMs: Date.now() - Number(_cwVisualSeqSyncLastAt || 0)
-                        }, 5000, 'auto-visual-road-timer-tick');
-                        brMaybeSyncVisualRoadSeq('auto-visual-road-sync', intervalMs);
+                        }, 3000, 'visual-watch-tick');
+                        brMaybeSyncVisualRoadSeq('push-visual-sync', intervalMs);
                     } catch (_) {}
                 }, intervalMs);
                 return 'started';
@@ -17262,6 +17272,55 @@
                 return 'fail';
             }
         }
+
+        function brIsVisualRoadWatchContextReady() {
+            try {
+                if (brIsExactLiveBaccaratHref(String(location && location.href || '')))
+                    return true;
+            } catch (_) {}
+            try {
+                if (brHasExactLiveBaccaratFrameContext())
+                    return true;
+            } catch (_) {}
+            try {
+                if (typeof isLikelyGameContext === 'function' && isLikelyGameContext())
+                    return true;
+            } catch (_) {}
+            return false;
+        }
+
+        function ensureVisualRoadSeqWatch(reason) {
+            try {
+                if (_autoVisualRoadTimer)
+                    return 'already';
+                if (!brIsVisualRoadWatchContextReady()) {
+                    brSeqAuditLog('visual-watch-wait-context', {
+                        reason: String(reason || ''),
+                        href: String(location && location.href || '')
+                    }, 3000, 'visual-watch-wait-context');
+                    return 'wait-context';
+                }
+                return startAutoVisualRoadSeqSync(_cwVisualSeqSyncMinMs);
+            } catch (_) {
+                return 'fail';
+            }
+        }
+
+        try {
+            window.__cw_startVisualRoadWatch = function () {
+                return ensureVisualRoadSeqWatch('manual');
+            };
+            window.__cw_stopVisualRoadWatch = function () {
+                return stopAutoVisualRoadSeqSync();
+            };
+        } catch (_) {}
+
+        try {
+            ensureVisualRoadSeqWatch('boot');
+            setInterval(function () {
+                try { ensureVisualRoadSeqWatch('watchdog'); } catch (_) {}
+            }, 1000);
+        } catch (_) {}
 
         function buildTickSnapFromCached(cached) {
             if (!cached)
@@ -18182,7 +18241,7 @@
                             probeCacheAge: Number(probeCacheAge || 0),
                             probeCacheLen: String(probeCache && probeCache.rawSeq || '').length
                         }, 900, 'buildSnapshotNow-empty-pull-kick-visual-sync|' + buildId);
-                        brMaybeSyncVisualRoadSeq('push-visual-sync', 900);
+                        brMaybeSyncVisualRoadSeq('push-visual-sync', _cwVisualSeqSyncMinMs);
                     } catch (_) {}
                 }
             }
@@ -18758,7 +18817,7 @@
                 _lastImportantPushKey = '';
                 _lastImportantPushAt = 0;
                 _lastPushProgKey = '';
-                startAutoVisualRoadSeqSync(Math.max(1200, tickMs * 10));
+                startAutoVisualRoadSeqSync(_cwVisualSeqSyncMinMs);
                 try { window.__cw_last_push_seq_version = Number(_lastPushSeqVersion || 0) || 0; } catch (_) {}
                 cwDbg('PUSH', 'startPush', { tickMs: tickMs }, 0, 'startPush|' + tickMs);
                 _pushTimer = setInterval(function () {
