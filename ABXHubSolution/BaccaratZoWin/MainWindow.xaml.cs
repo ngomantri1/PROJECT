@@ -602,6 +602,7 @@ namespace BaccaratZoWin
         private string _lastTickUiStatus = "";
         private string _lastTickUiSeqSig = "";
         private string _lastHudUserNameUi = "";
+        private double? _lastHudAmountUi = null;
         private string _lastSeqUiQueueLogKey = "";
         private string _lastSeqUiApplyLogKey = "";
         private string _lastSeqUiRenderLogKey = "";
@@ -3023,8 +3024,13 @@ try{
                         if (LblAmount != null)
                         {
                             if (payload.Amount.HasValue)
+                            {
+                                _lastHudAmountUi = payload.Amount.Value;
                                 LblAmount.Text = payload.Amount.Value.ToString("#,0.##", CultureInfo.InvariantCulture);
-                            else
+                            }
+                            else if (_lastHudAmountUi.HasValue)
+                                LblAmount.Text = _lastHudAmountUi.Value.ToString("#,0.##", CultureInfo.InvariantCulture);
+                            else if (string.IsNullOrWhiteSpace(LblAmount.Text))
                                 LblAmount.Text = "-";
                         }
                         if (LblUserName != null)
