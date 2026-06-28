@@ -7,12 +7,15 @@
 ### 0. Chuỗi kết quả visual road không đồng bộ lên panel C#
 
 - Triệu chứng:
-  - `await __cw_showRoadSeqDebug(8)` trong DevTools đọc được chuỗi đúng từ visual road.
-  - Panel C# `CHUỖI KẾT QUẢ` hiển thị chuỗi khác, chuỗi bị sai vùng, hoặc hiện tại không hiển thị chuỗi kết quả nữa.
+  - `await __cw_showRoadSeqDebug(8)` trong DevTools hiện vẫn có thể đọc sai vì overlay ROI lấy cả phần thống kê `CON/HÒA/CÁI`.
+  - Panel C# `CHUỖI KẾT QUẢ` hiển thị chuỗi khác hoặc sai theo cùng nguồn visual road sai.
+  - Ví dụ mới nhất: overlay có row đầu `n=3` là thống kê, nhưng vẫn bị đưa vào rawSeq.
   - Countdown đã được xác nhận đang đồng bộ OK và không phải trọng tâm bug này.
 - Yêu cầu đúng:
-  - panel C# phải đồng bộ với `rawSeq` của `await __cw_showRoadSeqDebug(8)`.
+  - `__cw_showRoadSeqDebug(8)` trước hết phải chỉ lấy road kết quả, không lấy thống kê.
+  - panel C# phải đồng bộ với `rawSeq` visual road đã đúng.
   - sau lần đồng bộ đầu, JS chỉ kiểm tra thưa và chỉ đẩy lên C# khi visual rawSeq thay đổi để tránh cao tải.
+  - nếu visual road reset về rỗng, chuỗi rỗng vẫn phải được đẩy để clear panel.
 - Nguyên nhân đã thấy trong log:
   - `brCommitProbeRoadPack(...)` từng lỗi `ReferenceError: _forcePushOnce is not defined`.
   - probe nền `buildSnapshotNow-empty-pull` có lúc chọn ROI sai như `auto-road-b`.
@@ -20,19 +23,22 @@
   - C# nhận `main-pull` nhưng payload có thể `rawSeq` rỗng hoặc khác visual debug.
   - Log runtime mới cho thấy app chạy embedded JS `len=792314`, probe có `probe-canvas-frames-hit`, nhưng `[PULLRAW]` vẫn `seq=""`, `rawSeq=""`.
   - Lý do cụ thể: reason `buildSnapshotNow-empty-pull` không thuộc visual authority, nên dù probe/cache có rawSeq, state `window.__cw_seq*` không được publish vào tick.
+  - Log/ảnh mới hơn cho thấy `debug-road-source-pack` có thể chọn ROI bắt cả vùng thống kê, hoặc overlay `__cw_showRoadSeqDebug(8)` có row thống kê đầu tiên.
+  - ROI/filter hiện tại chưa loại chắc hàng thống kê khi row thống kê có 3 ô trải rộng ngang tương đương road.
 - Trạng thái:
   - chưa fix dứt điểm.
-  - đã thử thêm `push-visual-sync`, visual authority và ưu tiên `left-road-a/b/c/d`, nhưng người dùng báo bản hiện tại không còn hiển thị chuỗi.
-  - đã vá tiếp để `buildSnapshotNow('pull')` khi rỗng kick `push-visual-sync` và thêm log `buildSnapshotNow-empty-pull-kick-visual-sync`, `visual-road-publish-state`, `readSeqStateSafe-published-fallback`.
-  - bản vá mới nhất chưa được kiểm chứng runtime vì build output bị khóa bởi `BaccaratZoWin` và `Microsoft Visual Studio 2022`.
+  - đã thử thêm `push-visual-sync`, `auto-visual-road-sync`, visual authority, bỏ validate, và chỉ send khi chuỗi thay đổi.
+  - đã đổi để chuỗi rỗng là state hợp lệ, dùng để clear panel khi road reset.
+  - đã bỏ ROI `left-road-live-*` và chỉnh scoring ở `r57-roi-score`.
+  - đã thêm rule bỏ row thống kê đầu ở `r58-drop-stat-row`, nhưng người dùng báo vẫn bị lấy phần thống kê, nên rule này chưa đủ.
 - Cần kiểm tra tiếp:
   - JS embedded đã rebuild chưa, vì app đang chạy sẽ khóa exe và build copy fail.
   - `Loaded JS from embedded | len=...` trong log đã đổi sau build chưa.
-  - `push-visual-sync` có chạy trong live frame thật không.
-  - `window.__cw_force_push_once` có được bridge đọc và reset không.
-  - `visual-road-publish-state` có publish `seq/len` đúng không.
-  - `readSeqStateSafe-published-fallback` có trả seq khi `readTKSeq()` rỗng không.
-  - `[PULLRAW]` payload có `rawSeq` không.
+  - log revision có phải `SEQFIX-20260627-r58-drop-stat-row` hoặc bản mới hơn không.
+  - `await __cw_showRoadSeqDebug(8)` còn row thống kê đầu `n=3`/`n=4` không.
+  - `debug-road-source-pack.rawSeq`, `rows`, `cellsLen`, `roi` có khớp road thật không.
+  - `canvas-road-candidates.selected` có ROI phủ lên thống kê không.
+  - `[PULLRAW]` payload có `rawSeq` đúng không.
   - `[SEQ][UI][RENDER]` có chạy không.
 
 ### 1. Panel C# vẫn có thể chậm/đơ sau một thời gian ngắn
@@ -122,7 +128,8 @@
 
 ## Bug chưa fix dứt điểm
 
-- Chuỗi visual road từ `await __cw_showRoadSeqDebug(8)` chưa đồng bộ ổn định lên panel C#.
+- Chuỗi visual road từ `await __cw_showRoadSeqDebug(8)` vẫn có thể lấy cả hàng thống kê, nên chưa thể coi là nguồn đúng.
+- Panel C# chưa thể ổn định chuỗi kết quả cho đến khi ROI/filter visual road loại được thống kê.
 - Freeze/lag tổng thể của panel C#
 - Tick vẫn có lúc không bám live frame tuyệt đối
 - Pending settle lần đầu chưa được xác nhận ổn định hoàn toàn
@@ -164,14 +171,24 @@
   - cached/published state
   - panel text fallback
   Nếu không khóa source authority, chuỗi đúng có thể bị ghi đè.
+- Road scanner hiện có rủi ro nhầm hàng thống kê với road:
+  - hàng thống kê có màu xanh/tím/đỏ giống kết quả.
+  - row thống kê thường có 3 item và nằm ngay trên road.
+  - nếu ROI auto bắt quá cao hoặc filter không bỏ row đầu, rawSeq sẽ bị chèn ký tự sai ở đầu.
 
 ## Workaround tạm thời
 
 - Khi nghi panel C# sai chuỗi:
   - chạy `await __cw_showRoadSeqDebug(8)` để xem visual rawSeq, ROI, cell count, row count
+  - quan sát overlay: nếu thấy row đầu là thống kê `CON/HÒA/CÁI` thì kết quả debug đang sai, chưa dùng để so panel.
+  - kiểm tra object trả về:
+    - `rawSeq`
+    - `rows.map(x => x.seq)`
+    - `roi`
+    - `cells.length`
   - kiểm tra `(await __cw_probeRoadSeqFrames(8)).rawSeq`
   - so với panel `CHUỖI KẾT QUẢ`
-  - kiểm tra log `[JSSEQ][probe-canvas-visual-authority]`, `[JSSEQ][buildSnapshotNow-empty-pull-kick-visual-sync]`, `[JSSEQ][visual-road-publish-state]`, `[JSSEQ][readSeqStateSafe-published-fallback]`, `[PULLRAW]`, `[SEQ][RX]`, `[SEQ][UI][RENDER]`
+  - kiểm tra log `[JSSEQ][debug-road-source-pack]`, `[JSSEQ][canvas-road-candidates]`, `[JSSEQ][visual-road-apply-candidate]`, `[JSSEQ][visual-road-apply-state]`, `[JSSEQ][visual-road-apply-unchanged]`, `[PULLRAW]`, `[SEQ][RX]`, `[SEQ][UI][RENDER]`
 - Khi nghi freeze:
   - kiểm tra log runtime đầu phiên xem `tap=0` chưa
   - kiểm tra xem tick còn đến không
@@ -194,6 +211,10 @@
 - `v4_js_xoc_dia_live.js`
   - `__cw_readSnapshot`
   - `__cw_showRoadSeqDebug`
+  - `brFilterCanvasRoadBodyItems`
+  - `brAutoDetectCanvasRoadRois`
+  - `brShouldPreferCanvasRoadPack`
+  - `brSelectBestProbeRoadFrame`
   - `brReadCanvasRoadSeq`
   - `brKickProbeRoadSeqFrames`
   - `brCommitProbeRoadPack`

@@ -169,12 +169,16 @@
   - đọc UI control từ background thread
 - Trạng thái mới nhất của chuỗi kết quả:
   - Countdown đã được người dùng xác nhận đồng bộ OK, không được sửa phá phần này.
-  - JS debug `await __cw_showRoadSeqDebug(8)` đọc được visual road đúng hơn panel C#.
-  - Panel C# từng hiển thị sai do probe nền/ROI auto ghi đè chuỗi đúng và do lỗi scope `_forcePushOnce`.
-  - Đã thử hướng `push-visual-sync` chạy thưa để đồng bộ visual road lên C#, nhưng người dùng báo hiện tại panel C# không còn hiển thị chuỗi kết quả; cần tiếp tục debug log/code trước khi coi là fix xong.
-  - Log mới đã xác nhận app có chạy embedded JS mới hơn (`len=792314`) nhưng payload `[PULLRAW]` vẫn có `seq=""`, `rawSeq=""` vì luồng `buildSnapshotNow-empty-pull` chỉ kick probe/cache, không publish visual authority lên `window.__cw_seq*`.
-  - Đã vá tiếp để khi `pull` trống thì kick `brKickProbeRoadSeqFrames('push-visual-sync', 8)` thay vì reason `buildSnapshotNow-empty-pull`, đồng thời thêm log `buildSnapshotNow-empty-pull-kick-visual-sync`, `visual-road-publish-state`, `readSeqStateSafe-published-fallback`.
-  - Bản vá mới nhất chưa được xác nhận runtime vì `BaccaratZoWin.dll` bị khóa bởi app đang chạy và Visual Studio; phải đóng app/debugger rồi build lại để embedded JS mới thật sự vào app.
+  - Luồng đồng bộ C# hiện đã đổi sang kiểu: đọc chuỗi visual road, sanitize ký tự, so với chuỗi hiện tại; nếu khác thì cập nhật state/update canvas/đẩy C#, nếu giống thì log `visual-road-apply-unchanged` và không đẩy.
+  - Chuỗi rỗng hiện được coi là state hợp lệ để clear panel khi bàn/reset road trống; không được reject chuỗi rỗng trong luồng apply/publish/send nếu vẫn có pack đọc được.
+  - Đã thêm `startAutoVisualRoadSeqSync(...)` chạy định kỳ theo cơ chế giống debug để gọi `brReadRoadSeqLikeDebug(8, 'auto-visual-road-sync')` và chỉ gửi khi chuỗi thay đổi.
+  - Các revision JS gần nhất:
+    - `SEQFIX-20260627-r56-no-seq-validate`: bỏ validate reliability/debugLike/authority khỏi luồng visual road apply/send.
+    - `SEQFIX-20260627-r57-roi-score`: bỏ ROI `left-road-live-*`, giảm ảnh hưởng `classifiedSamples`, ưu tiên rawSeq/cells dài hơn.
+    - `SEQFIX-20260627-r58-drop-stat-row`: thêm rule thử loại hàng thống kê đầu nếu row đầu có 1-4 item và hai row sau là road dày hơn.
+  - Bug hiện tại chưa fix: `await __cw_showRoadSeqDebug(8)` vẫn có thể lấy cả hàng thống kê `CON/HÒA/CÁI` phía trên road, ví dụ overlay có `row 4 n=3` là thống kê nhưng vẫn bị đưa vào `rawSeq`.
+  - Ảnh/log mới cho thấy rawSeq bị sai do ROI/filter chưa cắt bỏ vùng thống kê; đây là lỗi đọc visual road, không phải lỗi C# display/countdown.
+  - Khi sửa tiếp phải tập trung vào `brFilterCanvasRoadBodyItems(...)`, `brAutoDetectCanvasRoadRois(...)`, `brShouldPreferCanvasRoadPack(...)`, `brSelectBestProbeRoadFrame(...)` và overlay của `__cw_showRoadSeqDebug(8)`.
   - Khi sửa tiếp, ưu tiên tối thiểu: giữ countdown, không bật CDP websocket, không đổi contract tick/result/bet.
 
 ## Ghi chú build/runtime mới nhất

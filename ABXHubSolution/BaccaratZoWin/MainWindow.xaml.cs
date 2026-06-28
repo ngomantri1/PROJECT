@@ -7481,6 +7481,26 @@ try{
             var finalSource = rawDisplay.Length > 0 ? "raw-direct" : "board-fallback";
             var finalVersion = finalDisplay.Length == 0 ? 0 : Math.Max(boardSeqVersion, finalDisplay.Length);
 
+            bool isPullSource = (source ?? "").IndexOf("pull", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool isEmptyBoardFallback =
+                finalDisplay.Length == 0 &&
+                prevDisplay.Length > 0 &&
+                string.Equals(finalEvent, "board-fallback", StringComparison.OrdinalIgnoreCase);
+            bool canKeepPreviousVisualAuthority = prevDisplay.Length > 2;
+            bool hasExplicitBoardReset =
+                IsChangingShoeStatus(statusRaw) ||
+                IsNoBoardSeqEvent(boardSeqEvent) ||
+                (boardSeqEvent ?? "").IndexOf("table-switch", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                (boardSeqEvent ?? "").IndexOf("shoe-reset", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (isPullSource && isEmptyBoardFallback && canKeepPreviousVisualAuthority && !hasExplicitBoardReset)
+            {
+                var keepVersion = Math.Max(_boardSeqVersion, prevDisplay.Length);
+                var keepEvent = string.IsNullOrWhiteSpace(prevEvent) ? "keep-visual-authority" : prevEvent;
+                Log($"[SEQ][IGNORE] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | reason=empty-pull-board-fallback | keepLen={prevDisplay.Length} | keepVer={keepVersion} | keepEvt={(string.IsNullOrWhiteSpace(keepEvent) ? "-" : keepEvent)} | status={(string.IsNullOrWhiteSpace(statusRaw) ? "-" : Shrink(statusRaw, 48))}");
+                SetSnapshotRawSeqLocked(snap, prevDisplay, keepVersion, keepEvent, "keep-authority");
+                return;
+            }
+
             if (rawDisplay.Length > 0 &&
                 !string.Equals(rawDisplay, boardDisplayFiltered, StringComparison.Ordinal))
             {

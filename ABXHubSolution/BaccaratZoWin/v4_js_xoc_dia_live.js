@@ -4404,7 +4404,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260612-r43-canvas-roi';
+    var _cwSeqScriptRev = 'SEQFIX-20260628-r68-visual-sync-context-retry';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -5226,7 +5226,7 @@
                 managed.indexOf(raw) !== 0;
             if (!pollutedByRejectedLower && !countLooksPolluted)
                 return false;
-            if (!brIsReliableRoadSeq(raw))
+            if (!raw)
                 return false;
             var beforeManaged = managed;
             brResetBoardDeltaQueue('repair-short-raw');
@@ -5421,8 +5421,7 @@
         if (_domShoeResetPending && raw.length <= 8) {
             var emptyManagedShortBootstrap = !brSanitizeSeq(_domBeadSeqManaged || '') &&
                 !brSanitizeSeq(prev || '') &&
-                raw.length <= 12 &&
-                brIsReliableRoadSeq(raw);
+                raw.length <= 12;
             if (emptyManagedShortBootstrap) {
                 _domBeadSeqManaged = normalizeSeqNoLimit(raw);
                 _domBeadSeqPrevRaw = raw;
@@ -6339,7 +6338,7 @@
             var prof = String(_domLastBeadProfileName || '').toLowerCase();
             if (!/^(left|right)-(mid|tight)$/.test(prof))
                 return false;
-            if (!brIsReliableRoadSeq(raw))
+            if (!raw)
                 return false;
             var rawStat = brSeqStats(raw);
             var managedStat = brSeqStats(managedNow);
@@ -6651,45 +6650,122 @@
     }
     function brListVisibleCanvasesForSeq() {
         var out = [];
+        var diag = {
+            contexts: [],
+            seen: 0,
+            accepted: 0,
+            rejected: []
+        };
         try {
-            var rootWin = domGetSameOriginRoot(window);
-            var contexts = [];
-            domWalkContexts(rootWin, 'top', 0, 0, contexts, []);
             var seen = [];
-            for (var ci = 0; ci < contexts.length; ci++) {
-                var ctx = contexts[ci];
-                var doc = ctx && ctx.doc ? ctx.doc : null;
-                var ownerWin = ctx && ctx.win ? ctx.win : null;
-                if (!doc || !doc.querySelectorAll)
-                    continue;
-                var all = doc.querySelectorAll('canvas');
-                for (var i = 0; i < all.length; i++) {
-                    var el = all[i];
-                    if (!el || seen.indexOf(el) >= 0)
+            function addFromContexts(contexts) {
+                for (var ci = 0; ci < contexts.length; ci++) {
+                    var ctx = contexts[ci];
+                    var doc = ctx && ctx.doc ? ctx.doc : null;
+                    var ownerWin = ctx && ctx.win ? ctx.win : null;
+                    if (!doc || !doc.querySelectorAll)
                         continue;
-                    var r = null;
                     try {
-                        r = el.getBoundingClientRect();
-                    } catch (_) {
-                        r = null;
-                    }
-                    if (!r || r.width < 80 || r.height < 80)
-                        continue;
-                    seen.push(el);
-                    try {
-                        el.__cw_seq_owner_win = ownerWin || window;
-                        el.__cw_seq_owner_source = String(ctx && ctx.source || '');
-                        el.__cw_seq_owner_href = String(ctx && ctx.href || '');
+                        diag.contexts.push({
+                            source: String(ctx && ctx.source || ''),
+                            href: String(ctx && ctx.href || ''),
+                            hasCocos: (ownerWin && ownerWin.cc && ownerWin.cc.game) ? 1 : 0
+                        });
                     } catch (_) {}
-                    out.push({
-                        canvas: el,
-                        rect: r,
-                        win: ownerWin || window,
-                        source: String(ctx && ctx.source || ''),
-                        href: String(ctx && ctx.href || '')
-                    });
+                    var all = doc.querySelectorAll('canvas');
+                    for (var i = 0; i < all.length; i++) {
+                        var el = all[i];
+                        if (!el || seen.indexOf(el) >= 0)
+                            continue;
+                        diag.seen++;
+                        var r = null;
+                        try {
+                            r = el.getBoundingClientRect();
+                        } catch (_) {
+                            r = null;
+                        }
+                        if (!r || r.width < 80 || r.height < 80) {
+                            if (diag.rejected.length < 12) {
+                                try {
+                                    diag.rejected.push({
+                                        reason: !r ? 'no-rect' : 'small-rect',
+                                        source: String(ctx && ctx.source || ''),
+                                        href: String(ctx && ctx.href || ''),
+                                        cssW: r ? Math.round(Number(r.width || 0)) : 0,
+                                        cssH: r ? Math.round(Number(r.height || 0)) : 0,
+                                        bufW: Number(el.width || 0),
+                                        bufH: Number(el.height || 0),
+                                        id: String(el.id || ''),
+                                        cls: String(el.className || '')
+                                    });
+                                } catch (_) {}
+                            }
+                            continue;
+                        }
+                        seen.push(el);
+                        try {
+                            el.__cw_seq_owner_win = ownerWin || window;
+                            el.__cw_seq_owner_source = String(ctx && ctx.source || '');
+                            el.__cw_seq_owner_href = String(ctx && ctx.href || '');
+                        } catch (_) {}
+                        out.push({
+                            canvas: el,
+                            rect: r,
+                            win: ownerWin || window,
+                            source: String(ctx && ctx.source || ''),
+                            href: String(ctx && ctx.href || '')
+                        });
+                        diag.accepted++;
+                    }
                 }
             }
+            var selfContexts = [];
+            domWalkContexts(window, 'self', 0, 0, selfContexts, []);
+            addFromContexts(selfContexts);
+            if (!out.length) {
+                try {
+                    var direct = document && document.querySelectorAll ? document.querySelectorAll('canvas') : [];
+                    var directCtx = [{
+                        source: 'self-direct',
+                        href: String(location && location.href || ''),
+                        win: window,
+                        doc: document
+                    }];
+                    if (direct && direct.length)
+                        addFromContexts(directCtx);
+                } catch (_) {}
+            }
+            var rootWin = domGetSameOriginRoot(window);
+            if (rootWin && rootWin !== window) {
+                var rootContexts = [];
+                domWalkContexts(rootWin, 'top', 0, 0, rootContexts, []);
+                addFromContexts(rootContexts);
+            }
+        } catch (_) {}
+        try {
+            function isExactLiveHref(href) {
+                href = String(href || '');
+                return /\/internal\/livestream_page\//i.test(href) && /bcrlive/i.test(href);
+            }
+            function isTopZowinShell(href, source) {
+                href = String(href || '');
+                source = String(source || '');
+                return source === 'top' &&
+                    /\/\/(?:[^\/]+\.)?web\.zowin\.(?:ph|tw|nu|vu)\/?$/i.test(href.replace(/[?#].*$/, ''));
+            }
+            var liveOnly = out.filter(function (entry) {
+                return isExactLiveHref(entry && entry.href);
+            });
+            if (liveOnly.length) {
+                out = liveOnly;
+            } else {
+                out = out.filter(function (entry) {
+                    return !isTopZowinShell(entry && entry.href, entry && entry.source);
+                });
+            }
+        } catch (_) {}
+        try {
+            window.__cw_seq_canvas_diag = diag;
         } catch (_) {}
         out.sort(function (a, b) {
             var ar = a && a.rect ? a.rect : null;
@@ -6702,6 +6778,10 @@
             var bWin = b && b.win ? b.win : null;
             var aScore = aArea;
             var bScore = bArea;
+            if (/\/internal\/livestream_page\//i.test(aHref) && /bcrlive/i.test(aHref))
+                aScore += 20000000;
+            if (/\/internal\/livestream_page\//i.test(bHref) && /bcrlive/i.test(bHref))
+                bScore += 20000000;
             try {
                 if (aWin && aWin.cc && aWin.cc.game && aWin.cc.game._renderContext)
                     aScore += 10000000;
@@ -7270,11 +7350,48 @@
             })) || 18;
             if (statHeadCount > 0 &&
                 statHeadCount <= 4 &&
+                roadACount >= Math.max(5, statHeadCount + 3) &&
+                roadBCount >= Math.max(5, statHeadCount + 3)) {
+                rows = rows.slice(1);
+            } else
+            if (statHeadCount > 0 &&
+                statHeadCount <= 4 &&
                 roadACount >= 7 &&
                 roadBCount >= 7 &&
                 roadASpan >= Math.max(80, statHeadSpan * 1.45) &&
                 gapToRoad >= Math.max(20, Math.round(sizeMedStats * 1.35)) &&
                 (roadGap <= 0 || gapToRoad >= roadGap * 1.45)) {
+                rows = rows.slice(1);
+            }
+        }
+        if (rows.length >= 3) {
+            var topStat = rows[0];
+            var topStatCount = Number(topStat && topStat.items && topStat.items.length || 0);
+            var topStatSpan = rowSpan(topStat);
+            var lowerStrongRows = 0;
+            var lowerRicherRows = 0;
+            var lowerMaxSpan = 0;
+            var lowerCounts = [];
+            for (var li = 1; li < rows.length && li <= 5; li++) {
+                var lowerRow = rows[li];
+                var lowerCount = Number(lowerRow && lowerRow.items && lowerRow.items.length || 0);
+                var lowerSpan = rowSpan(lowerRow);
+                lowerCounts.push(lowerCount);
+                if (lowerCount >= Math.max(3, topStatCount))
+                    lowerStrongRows++;
+                if (lowerCount >= topStatCount + 1)
+                    lowerRicherRows++;
+                if (lowerSpan > lowerMaxSpan)
+                    lowerMaxSpan = lowerSpan;
+            }
+            var topGap = Math.abs(Number(rows[1] && rows[1].cy || 0) - Number(topStat && topStat.cy || 0));
+            var nextGap = Math.abs(Number(rows[2] && rows[2].cy || 0) - Number(rows[1] && rows[1].cy || 0));
+            if (topStatCount > 0 &&
+                topStatCount <= 4 &&
+                lowerStrongRows >= 2 &&
+                (lowerRicherRows >= 1 ||
+                    lowerMaxSpan >= Math.max(40, topStatSpan * 1.18) ||
+                    (nextGap > 0 && topGap >= nextGap * 1.25))) {
                 rows = rows.slice(1);
             }
         }
@@ -7456,8 +7573,6 @@
     function brPublishVisualRoadSeqState(rawSeq, reasonTag) {
         try {
             var seq = brSanitizeSeq(rawSeq || '');
-            if (!brIsReliableRoadSeq(seq))
-                return false;
             var ver = Number(_domSeqVersion || 0) || seq.length;
             var evt = String(_domSeqEvent || 'visual-road-authority');
             window.__cw_seq = seq;
@@ -7498,6 +7613,44 @@
         } catch (_) {
             return false;
         }
+    }
+    function brReadPublishedVisualRoadSeqState() {
+        try {
+            var pub = window.__cw_seq_pub || null;
+            var seq = brSanitizeSeq((pub && (pub.rawSeq || pub.seq)) || window.__cw_seq_raw || window.__cw_bead_raw_seq || '');
+            var visual = pub && Number(pub.visualAuthority || 0) === 1;
+            if (!visual || !seq) {
+                return {
+                    seq: '',
+                    rawSeq: '',
+                    seqVersion: Number(window.__cw_seq_version || 0) || 0,
+                    seqEvent: String(window.__cw_seq_event || ''),
+                    which: 'visual-road-empty'
+                };
+            }
+            return {
+                seq: seq,
+                rawSeq: seq,
+                seqVersion: Number((pub && pub.ver) || window.__cw_seq_version || seq.length) || seq.length,
+                seqEvent: String((pub && pub.evt) || window.__cw_seq_event || 'visual-road-authority'),
+                which: 'visual-road-authority-published'
+            };
+        } catch (_) {
+            return {
+                seq: '',
+                rawSeq: '',
+                seqVersion: 0,
+                seqEvent: '',
+                which: 'visual-road-error'
+            };
+        }
+    }
+    function brReadSeqForDisplaySingleSource() {
+        try {
+            if (__cw_hasCocos())
+                return brReadPublishedVisualRoadSeqState();
+        } catch (_) {}
+        return readTKSeq();
     }
     function brTryTrimCanvasRoadPackByBoardCounts(pack, boardTarget) {
         try {
@@ -7636,7 +7789,7 @@
             if (name === 'left-road-d')
                 return 4;
             if (/^auto-road/i.test(name))
-                return 20;
+                return 0;
             return 30;
         } catch (_) {
             return 30;
@@ -7678,6 +7831,46 @@
             };
         }
     }
+    function brSummarizeCanvasRoadPack(pack, boardTarget) {
+        try {
+            var meta = pack && pack.meta ? pack.meta : {};
+            var diag = meta && meta.diag ? meta.diag : {};
+            var rows = pack && pack.rows ? pack.rows : [];
+            var rowSeqs = [];
+            for (var i = 0; i < rows.length && i < 12; i++) {
+                rowSeqs.push({
+                    idx: Number(rows[i] && rows[i].seqRowIndexFromBottom || i + 1) || (i + 1),
+                    dir: String(rows[i] && rows[i].dir || ''),
+                    count: Number(rows[i] && rows[i].count || 0) || 0,
+                    seq: String(rows[i] && rows[i].seq || '')
+                });
+            }
+            var rawSeq = String(pack && (pack.rawSeq || pack.seq) || '');
+            return {
+                rawSeq: rawSeq,
+                rawLen: rawSeq.length,
+                roi: pack && pack.roi ? pack.roi : null,
+                rowFilter: meta && meta.rowFilter ? meta.rowFilter : null,
+                boardCountTrim: meta && meta.boardCountTrim ? meta.boardCountTrim : null,
+                boardFit: brCanvasRoadPackBoardFit(pack, boardTarget),
+                cellsLen: Number((pack && pack.cells && pack.cells.length) || 0) || 0,
+                rowsLen: Number((pack && pack.rows && pack.rows.length) || 0) || 0,
+                colsLen: Number((pack && pack.cols && pack.cols.length) || 0) || 0,
+                rowSeqs: rowSeqs,
+                contextHref: String(meta && meta.contextHref || ''),
+                contextSource: String(meta && meta.contextSource || ''),
+                classB: Number(diag && diag.classB || 0) || 0,
+                classP: Number(diag && diag.classP || 0) || 0,
+                classT: Number(diag && diag.classT || 0) || 0,
+                classifiedSamples: Number(diag && diag.classifiedSamples || 0) || 0
+            };
+        } catch (_) {
+            return {
+                rawSeq: String(pack && (pack.rawSeq || pack.seq) || ''),
+                rawLen: String(pack && (pack.rawSeq || pack.seq) || '').length
+            };
+        }
+    }
     function brShouldPreferCanvasRoadPack(candidate, incumbent, boardTarget) {
         if (!candidate)
             return false;
@@ -7702,6 +7895,16 @@
                 return candFit.lenDiff < bestFit.lenDiff;
             if (candFit.overshoot !== bestFit.overshoot)
                 return candFit.overshoot < bestFit.overshoot;
+        }
+        if (candSeq.length !== bestSeq.length) {
+            if (candSeq.length >= bestSeq.length + 2)
+                return true;
+            if (bestSeq.length >= candSeq.length + 2)
+                return false;
+            if (bestSeq.length >= 4 && candSeq.length <= 1)
+                return false;
+            if (candSeq.length >= 4 && bestSeq.length <= 1)
+                return true;
         }
         if (candSeq && bestSeq) {
             if (bestSeq.indexOf(candSeq) === 0 &&
@@ -7728,16 +7931,16 @@
         var candDiag = candidate && candidate.meta && candidate.meta.diag ? candidate.meta.diag : {};
         var bestDiag = incumbent && incumbent.meta && incumbent.meta.diag ? incumbent.meta.diag : {};
         var candScore =
-            candSeq.length * 40 +
-            Number(candidate && candidate.cells && candidate.cells.length || 0) * 6 +
-            Number(candDiag.classifiedSamples || 0) -
+            candSeq.length * 120 +
+            Number(candidate && candidate.cells && candidate.cells.length || 0) * 30 +
+            Math.min(500, Number(candDiag.classifiedSamples || 0)) -
             Math.max(0, candKeep - 3) * 90 -
             Math.max(0, candRows - candKeep) * 120 -
             Math.round(candArea / 1800);
         var bestScore =
-            bestSeq.length * 40 +
-            Number(incumbent && incumbent.cells && incumbent.cells.length || 0) * 6 +
-            Number(bestDiag.classifiedSamples || 0) -
+            bestSeq.length * 120 +
+            Number(incumbent && incumbent.cells && incumbent.cells.length || 0) * 30 +
+            Math.min(500, Number(bestDiag.classifiedSamples || 0)) -
             Math.max(0, bestKeep - 3) * 90 -
             Math.max(0, bestRows - bestKeep) * 120 -
             Math.round(bestArea / 1800);
@@ -7784,9 +7987,9 @@
                     continue;
                 if (boxLeftRel > 0.12 || boxRightRel > 0.30)
                     continue;
-                if (boxTopRel < 0.20 || boxTopRel > 0.55)
+                if (boxTopRel < 0.20 || boxTopRel > 0.56)
                     continue;
-                if (boxBottomRel < 0.30 || boxBottomRel > 0.82)
+                if (boxBottomRel < 0.30 || boxBottomRel > 0.68)
                     continue;
                 var sizeMed = median(items.map(function (x) {
                     return Math.max(Number(x.w || 0), Number(x.h || 0));
@@ -7861,11 +8064,13 @@
             var auto = brAutoDetectCanvasRoadRois(canvas);
             for (var ai = 0; ai < auto.length; ai++)
                 out.push(auto[ai]);
+            if (auto.length)
+                return out;
             var presets = [
-                { name: 'left-road-a', x: 0.055, y: 0.285, w: 0.195, h: 0.245 },
-                { name: 'left-road-b', x: 0.05, y: 0.255, w: 0.22, h: 0.285 },
-                { name: 'left-road-c', x: 0.07, y: 0.305, w: 0.18, h: 0.215 },
-                { name: 'left-road-d', x: 0.045, y: 0.235, w: 0.235, h: 0.33 }
+                { name: 'left-road-a', x: 0.055, y: 0.315, w: 0.195, h: 0.245 },
+                { name: 'left-road-b', x: 0.05, y: 0.305, w: 0.22, h: 0.275 },
+                { name: 'left-road-c', x: 0.07, y: 0.335, w: 0.18, h: 0.215 },
+                { name: 'left-road-d', x: 0.045, y: 0.295, w: 0.235, h: 0.31 }
             ];
             for (var i = 0; i < presets.length; i++) {
                 var p = presets[i];
@@ -7885,9 +8090,18 @@
         var ignoreCache = !!options.ignoreCache;
         var skipBoardCountTrim = !!options.skipBoardCountTrim;
         var preferVisualRoadPreset = !!options.preferVisualRoadPreset;
-        var boardTarget = brGetCanvasRoadBoardCountTarget();
+        var boardTarget = null;
         var canvasEntries = brListVisibleCanvasesForSeq();
+        var candidateSummaries = [];
         if (!canvasEntries.length) {
+            try {
+                brSeqAuditLog('canvas-road-no-canvas', {
+                    href: String(location && location.href || ''),
+                    top: __cw_isTopDocument() ? 1 : 0,
+                    hasCocos: (typeof __cw_hasCocos === 'function' && __cw_hasCocos()) ? 1 : 0,
+                    diag: window.__cw_seq_canvas_diag || null
+                }, 1200, 'canvas-road-no-canvas|' + String(location && location.href || ''));
+            } catch (_) {}
             return {
                 ok: false,
                 reason: 'no-canvas',
@@ -7969,15 +8183,23 @@
                         h: Math.round(rect.height)
                     } : null
                 };
-                if (!skipBoardCountTrim)
-                    pack = brTryTrimCanvasRoadPackByBoardCounts(pack, boardTarget);
+                if (candidateSummaries.length < 18) {
+                    try {
+                        candidateSummaries.push(brSummarizeCanvasRoadPack(pack, boardTarget));
+                    } catch (_) {}
+                }
                 if (preferVisualRoadPreset && best && brIsStrongVisualRoadPack(pack) && brIsStrongVisualRoadPack(best)) {
                     var candRank = brVisualRoadPresetRank(pack);
                     var bestRank = brVisualRoadPresetRank(best);
                     if (candRank !== bestRank) {
-                        if (candRank < bestRank)
+                        var candLenForRank = String(pack && pack.rawSeq || pack && pack.seq || '').length;
+                        var bestLenForRank = String(best && best.rawSeq || best && best.seq || '').length;
+                        if (candRank < bestRank && candLenForRank >= Math.max(1, bestLenForRank - 1)) {
                             best = pack;
-                        continue;
+                            continue;
+                        }
+                        if (bestRank < candRank && bestLenForRank >= Math.max(1, candLenForRank - 1))
+                            continue;
                     }
                 }
                 if (brShouldPreferCanvasRoadPack(pack, best, boardTarget))
@@ -7985,6 +8207,18 @@
             }
         }
         if (best && best.ok && best.roi) {
+            try {
+                brSeqAuditLog('canvas-road-candidates', {
+                    reason: String(options && options.reason || ''),
+                    href: String(location && location.href || ''),
+                    top: __cw_isTopDocument() ? 1 : 0,
+                    hasCocos: (typeof __cw_hasCocos === 'function' && __cw_hasCocos()) ? 1 : 0,
+                    boardTarget: boardTarget,
+                    canvasCount: canvasEntries.length,
+                    selected: brSummarizeCanvasRoadPack(best, boardTarget),
+                    candidates: candidateSummaries
+                }, 1400, 'canvas-road-candidates|' + String(options && options.reason || '') + '|' + String(location && location.href || '') + '|' + String(best && best.rawSeq || ''));
+            } catch (_) {}
             _domSeqCanvasRoi = {
                 x: best.roi.x,
                 y: best.roi.y,
@@ -7995,6 +8229,22 @@
             _domSeqCanvasRoiAt = Date.now();
             return best;
         }
+        try {
+            brSeqAuditLog('canvas-road-no-seq', {
+                reason: best && best.reason ? String(best.reason || '') : 'no-roi',
+                href: String(location && location.href || ''),
+                top: __cw_isTopDocument() ? 1 : 0,
+                hasCocos: (typeof __cw_hasCocos === 'function' && __cw_hasCocos()) ? 1 : 0,
+                canvasCount: canvasEntries.length,
+                best: best ? {
+                    rawSeq: String(best.rawSeq || ''),
+                    roi: best.roi || null,
+                    canvasRect: best.canvasRect || null,
+                    meta: best.meta || null
+                } : null,
+                canvasDiag: window.__cw_seq_canvas_diag || null
+            }, 1200, 'canvas-road-no-seq|' + String(location && location.href || '') + '|' + String(best && best.reason || ''));
+        } catch (_) {}
         return best || {
             ok: false,
             reason: 'no-roi',
@@ -8010,7 +8260,7 @@
             var picked = brReadCanvasRoadSeq({ ignoreCache: true });
             var rawSeq = String(picked && picked.rawSeq || '');
             var rawStat = brSeqStats(rawSeq);
-            if (!rawSeq || !brIsReliableRoadSeq(rawSeq)) {
+            if (!rawSeq) {
                 brSeqAuditLog('probe-canvas-rescue-miss', {
                     reason: String(reasonTag || ''),
                     rawSeq: rawSeq,
@@ -8072,17 +8322,19 @@
     var _cwProbeRoadSeqCache = null;
     var _cwProbeRoadSeqCacheAt = 0;
     var _cwProbeRoadSeqBusy = false;
+    var _cwProbeRoadSeqBusyAt = 0;
     var _cwProbeRoadSeqLastKickAt = 0;
     var _cwProbeRoadSeqPromise = null;
     var _cwVisualSeqSyncLastAt = 0;
-    var _cwVisualSeqSyncMinMs = 1800;
+    var _cwVisualSeqSyncMinMs = 900;
+    var _cwVisualRoadContextRetryAt = 0;
     function brShouldPreferProbeRoadVisualPack(probePack, currentPack) {
         try {
             var probeRaw = String(probePack && (probePack.rawSeq || probePack.probeSeq || probePack.seq) || '');
             var currentRaw = String(currentPack && (currentPack.rawSeq || currentPack.probeSeq || currentPack.seq) || '');
-            if (!brIsReliableRoadSeq(probeRaw))
+            if (!probeRaw)
                 return false;
-            if (!brIsReliableRoadSeq(currentRaw))
+            if (!currentRaw)
                 return true;
             if (probeRaw === currentRaw)
                 return false;
@@ -8098,7 +8350,7 @@
     function brIsStrongVisualRoadPack(pack) {
         try {
             var rawSeq = String(pack && pack.rawSeq || '');
-            if (!brIsReliableRoadSeq(rawSeq))
+            if (!rawSeq)
                 return false;
             var cells = pack && pack.cells ? pack.cells : [];
             var rows = pack && pack.rows ? pack.rows : [];
@@ -8115,22 +8367,233 @@
             return false;
         }
     }
+    function brIsSuspiciousShortSingleClassRoadPack(pack) {
+        try {
+            var rawSeq = String(pack && pack.rawSeq || '');
+            if (!rawSeq || rawSeq.length >= 8)
+                return false;
+            var diag = pack && pack.meta && pack.meta.diag ? pack.meta.diag : {};
+            var classKinds = 0;
+            if (Number(diag.classB || 0) > 0) classKinds++;
+            if (Number(diag.classP || 0) > 0) classKinds++;
+            if (Number(diag.classT || 0) > 0) classKinds++;
+            return classKinds <= 1 && Number(diag.classifiedSamples || 0) >= 200;
+        } catch (_) {
+            return false;
+        }
+    }
+    function brIsExactLiveBaccaratHref(href) {
+        try {
+            href = String(href || '');
+            return /\/internal\/livestream_page\//i.test(href) && /bcrlive/i.test(href);
+        } catch (_) {
+            return false;
+        }
+    }
+    function brIsTopZowinShellHref(href) {
+        try {
+            href = String(href || '').replace(/[?#].*$/, '');
+            return /\/\/(?:[^\/]+\.)?web\.zowin\.(?:ph|tw|nu|vu)\/?$/i.test(href);
+        } catch (_) {
+            return false;
+        }
+    }
+    function brHasExactLiveBaccaratFrameContext() {
+        try {
+            if (brIsExactLiveBaccaratHref(String(location && location.href || '')))
+                return true;
+        } catch (_) {}
+        try {
+            var frames = document && document.querySelectorAll ? document.querySelectorAll('iframe,frame') : [];
+            for (var i = 0; i < frames.length; i++) {
+                var href = '';
+                try { href = String(frames[i].src || ''); } catch (_) { href = ''; }
+                if (brIsExactLiveBaccaratHref(href))
+                    return true;
+                try {
+                    var cw = frames[i].contentWindow;
+                    href = String(cw && cw.location && cw.location.href || '');
+                    if (brIsExactLiveBaccaratHref(href))
+                        return true;
+                } catch (_) {}
+            }
+        } catch (_) {}
+        return false;
+    }
+    function brIsVisualRoadAuthorityCandidate(pack) {
+        try {
+            if (!brIsStrongVisualRoadPack(pack))
+                return false;
+            var rawSeq = String(pack && pack.rawSeq || '');
+            var meta = pack && pack.meta ? pack.meta : {};
+            var href = String(meta.contextHref || '');
+            var locHref = '';
+            try { locHref = String(location && location.href || ''); } catch (_) {}
+            if (brIsTopZowinShellHref(href) || brIsTopZowinShellHref(locHref))
+                return false;
+            return brIsExactLiveBaccaratHref(href) || brIsExactLiveBaccaratHref(locHref);
+        } catch (_) {
+            return false;
+        }
+    }
+    function brIsAutoVisualRoadGameContext(pack) {
+        try {
+            var meta = pack && pack.meta ? pack.meta : {};
+            var href = String(meta.contextHref || '');
+            var locHref = '';
+            try { locHref = String(location && location.href || ''); } catch (_) {}
+            if (brIsExactLiveBaccaratHref(href) || brIsExactLiveBaccaratHref(locHref))
+                return true;
+            if (brHasExactLiveBaccaratFrameContext())
+                return true;
+            if (brIsTopZowinShellHref(href) || brIsTopZowinShellHref(locHref))
+                return false;
+            try {
+                if (typeof isLikelyGameContext === 'function' && isLikelyGameContext())
+                    return true;
+            } catch (_) {}
+            return false;
+        } catch (_) {
+            return false;
+        }
+    }
+    function brBuildVisualRoadApplyAudit(pack, reasonTag, rawSeq) {
+        try {
+            var meta = pack && pack.meta ? pack.meta : {};
+            var diag = meta && meta.diag ? meta.diag : {};
+            var boardTarget = null;
+            var summary = brSummarizeCanvasRoadPack(pack, boardTarget);
+            return Object.assign(summary, {
+                reason: String(reasonTag || ''),
+                rawSeq: String(rawSeq || ''),
+                rawLen: String(rawSeq || '').length,
+                reliable: rawSeq ? 1 : 0,
+                suspiciousShort: 0,
+                authority: rawSeq ? 1 : 0,
+                boardTarget: boardTarget,
+                classB: Number(diag && diag.classB || 0) || 0,
+                classP: Number(diag && diag.classP || 0) || 0,
+                classT: Number(diag && diag.classT || 0) || 0,
+                classifiedSamples: Number(diag && diag.classifiedSamples || 0) || 0
+            });
+        } catch (_) {
+            return {
+                reason: String(reasonTag || ''),
+                rawSeq: String(rawSeq || ''),
+                rawLen: String(rawSeq || '').length
+            };
+        }
+    }
+    function brCanAutoApplyVisualRoadPack(pack, reasonTag, rawSeq) {
+        try {
+            var reason = String(reasonTag || '');
+            if (!/push-visual-sync|auto-visual-road-sync/i.test(reason))
+                return true;
+            return brIsAutoVisualRoadGameContext(pack);
+        } catch (_) {
+            return false;
+        }
+    }
+    function brScheduleVisualRoadContextRetry(pack, reasonTag, rawSeq) {
+        try {
+            rawSeq = brSanitizeSeq(String(rawSeq || (pack && (pack.rawSeq || pack.probeSeq || pack.seq)) || ''));
+            if (!rawSeq || rawSeq.length < 8 || !brIsStrongVisualRoadPack(pack))
+                return false;
+            var now = Date.now();
+            if ((now - Number(_cwVisualRoadContextRetryAt || 0)) < 1200)
+                return false;
+            _cwVisualRoadContextRetryAt = now;
+            _cwVisualSeqSyncLastAt = 0;
+            brSeqAuditLog('visual-road-context-retry-arm', {
+                reason: String(reasonTag || ''),
+                rawSeq: rawSeq,
+                rawLen: rawSeq.length,
+                roi: pack && pack.roi ? pack.roi : null
+            }, 1200, 'visual-road-context-retry-arm|' + String(reasonTag || '') + '|' + rawSeq);
+            setTimeout(function () {
+                try {
+                    _cwVisualSeqSyncLastAt = 0;
+                    brMaybeSyncVisualRoadSeq(reasonTag || 'push-visual-sync', 900);
+                } catch (_) {}
+            }, 750);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function brApplyVisualRoadPackToState(pack, reasonTag) {
+        try {
+            if (!pack)
+                return null;
+            var rawSeq = brSanitizeSeq(String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || ''));
+            brSeqAuditLog('visual-road-apply-candidate', brBuildVisualRoadApplyAudit(pack, reasonTag, rawSeq), 700,
+                'visual-road-apply-candidate|' + String(reasonTag || '') + '|' + rawSeq);
+            if (!brCanAutoApplyVisualRoadPack(pack, reasonTag, rawSeq)) {
+                brSeqAuditLog('visual-road-apply-reject-context-auto', brBuildVisualRoadApplyAudit(pack, reasonTag, rawSeq), 700,
+                    'visual-road-apply-reject-context-auto|' + String(reasonTag || '') + '|' + rawSeq);
+                brScheduleVisualRoadContextRetry(pack, reasonTag, rawSeq);
+                return null;
+            }
+            var before = String(_domBeadSeqManaged || '');
+            if (rawSeq === before && brSanitizeSeq(String(window.__cw_seq_raw || window.__cw_bead_raw_seq || '')) === rawSeq) {
+                brSeqAuditLog('visual-road-apply-unchanged', Object.assign(brBuildVisualRoadApplyAudit(pack, reasonTag, rawSeq), {
+                    seqVersion: Number(window.__cw_seq_version || _domSeqVersion || rawSeq.length) || rawSeq.length,
+                    seqEvent: String(window.__cw_seq_event || _domSeqEvent || 'visual-road-authority')
+                }), 700, 'visual-road-apply-unchanged|' + String(reasonTag || '') + '|' + rawSeq);
+                return {
+                    seq: rawSeq,
+                    rawSeq: rawSeq,
+                    seqVersion: Number(window.__cw_seq_version || _domSeqVersion || rawSeq.length) || rawSeq.length,
+                    seqEvent: String(window.__cw_seq_event || _domSeqEvent || 'visual-road-authority'),
+                    unchanged: 1
+                };
+            }
+            _domBeadSeqManaged = normalizeSeqNoLimit(rawSeq);
+            _domSeqVersion = Math.max(Number(window.__cw_seq_version || _domSeqVersion || 0) + 1, rawSeq.length);
+            _domSeqEvent = 'visual-road-authority';
+            _domSeqAppend = (before && rawSeq.indexOf(before) === 0) ? rawSeq.slice(before.length) : rawSeq;
+            window.__cw_bead_raw_seq = rawSeq;
+            window.__cw_bead_managed_seq = rawSeq;
+            brClearSeqSnapshotCache(reasonTag || 'visual-road-sync');
+            brPublishVisualRoadSeqState(rawSeq, reasonTag || 'visual-road-sync');
+            brSeqAuditLog('visual-road-apply-state', Object.assign(brBuildVisualRoadApplyAudit(pack, reasonTag, rawSeq), {
+                beforeLen: before.length,
+                appendLen: String(_domSeqAppend || '').length,
+                seqVersion: Number(window.__cw_seq_version || _domSeqVersion || rawSeq.length) || rawSeq.length,
+                seqEvent: 'visual-road-authority'
+            }), 700, 'visual-road-apply-state|' + String(reasonTag || '') + '|' + rawSeq + '|' + Number(window.__cw_seq_version || _domSeqVersion || rawSeq.length));
+            return {
+                seq: rawSeq,
+                rawSeq: rawSeq,
+                seqVersion: Number(window.__cw_seq_version || _domSeqVersion || rawSeq.length) || rawSeq.length,
+                seqEvent: 'visual-road-authority',
+                unchanged: 0
+            };
+        } catch (_) {
+            try {
+                brSeqAuditLog('visual-road-apply-error', {
+                    reason: String(reasonTag || '')
+                }, 1000, 'visual-road-apply-error|' + String(reasonTag || ''));
+            } catch (__) {}
+            return null;
+        }
+    }
     function brShouldForceVisualRoadAuthority(pack, reasonTag, managedBefore) {
         try {
             var reason = String(reasonTag || '');
-            if (!/manual-debug-overlay|push-visual-sync/i.test(reason))
+            if (!/manual-debug-overlay|push-visual-sync|auto-visual-road-sync/i.test(reason))
                 return false;
             var rawSeq = String(pack && pack.rawSeq || '');
             if (!rawSeq || rawSeq === String(managedBefore || ''))
                 return false;
-            return brIsStrongVisualRoadPack(pack);
+            return !!rawSeq;
         } catch (_) {
             return false;
         }
     }
     function brSelectBestProbeRoadFrame(results) {
         var arr = (results || []).slice();
-        var boardTarget = brGetCanvasRoadBoardCountTarget();
+        var boardTarget = null;
         arr.sort(function (a, b) {
             var af = brCanvasRoadPackBoardFit(a, boardTarget);
             var bf = brCanvasRoadPackBoardFit(b, boardTarget);
@@ -8144,21 +8607,26 @@
                 return Number(af.overshoot || 0) - Number(bf.overshoot || 0);
             var ad = a && a.meta && a.meta.diag ? a.meta.diag : {};
             var bd = b && b.meta && b.meta.diag ? b.meta.diag : {};
-            return (Number(bd.classifiedSamples || 0) - Number(ad.classifiedSamples || 0)) ||
-                   (Number(bd.brightSamples || 0) - Number(ad.brightSamples || 0)) ||
-                   (Number((b && b.cells && b.cells.length) || 0) - Number((a && a.cells && a.cells.length) || 0));
+            var aSeqLen = String(a && (a.rawSeq || a.seq) || '').length;
+            var bSeqLen = String(b && (b.rawSeq || b.seq) || '').length;
+            return (bSeqLen - aSeqLen) ||
+                   (Number((b && b.cells && b.cells.length) || 0) - Number((a && a.cells && a.cells.length) || 0)) ||
+                   (Number((b && b.rows && b.rows.length) || 0) - Number((a && a.rows && a.rows.length) || 0)) ||
+                   (Number(bd.classifiedSamples || 0) - Number(ad.classifiedSamples || 0)) ||
+                   (Number(bd.brightSamples || 0) - Number(ad.brightSamples || 0));
         });
         return arr[0] || null;
     }
     function brCommitProbeRoadPack(pack, reasonTag) {
         try {
-            var rawSeq = String(pack && pack.rawSeq || '');
-            if (!rawSeq || !brIsReliableRoadSeq(rawSeq))
+            if (!pack)
                 return null;
+            var rawSeq = String(pack && pack.rawSeq || '');
             var managedBefore = String(_domBeadSeqManaged || '');
             var rawBefore = String(window.__cw_bead_raw_seq || '');
             var managed = managedBefore;
-            var visualSyncReason = /manual-debug-overlay|push-visual-sync/i.test(String(reasonTag || ''));
+            var visualSyncReason = /manual-debug-overlay|push-visual-sync|auto-visual-road-sync/i.test(String(reasonTag || ''));
+            var suspiciousShort = false;
             var visualRawAuthority =
                 visualSyncReason &&
                 (
@@ -8242,8 +8710,10 @@
             return null;
         }
     }
-    function brKickProbeRoadSeqFrames(reasonTag, frameCount) {
+    function brProbeRoadSeqFrames(reasonTag, frameCount, options) {
         try {
+            options = options || {};
+            var commit = options.commit !== false;
             frameCount = Math.max(1, Number(frameCount || 8));
             var now = Date.now();
             if (_cwProbeRoadSeqBusy)
@@ -8252,16 +8722,40 @@
                 return _cwProbeRoadSeqPromise || Promise.resolve(_cwProbeRoadSeqCache);
             _cwProbeRoadSeqLastKickAt = now;
             _cwProbeRoadSeqBusy = true;
+            _cwProbeRoadSeqBusyAt = now;
             _cwProbeRoadSeqPromise = new Promise(function (resolve) {
                 var frames = [];
                 function finish() {
                     _cwProbeRoadSeqBusy = false;
+                    _cwProbeRoadSeqBusyAt = 0;
                     var best = brSelectBestProbeRoadFrame(frames);
-                    var committed = brCommitProbeRoadPack(best, reasonTag);
+                    var committed = commit ? brCommitProbeRoadPack(best, reasonTag) : null;
+                    var appliedFromReadonly = null;
+                    if (!commit && /push-visual-sync|auto-visual-road-sync/i.test(String(reasonTag || ''))) {
+                        try {
+                            appliedFromReadonly = brApplyVisualRoadPackToState(best, reasonTag);
+                            if (appliedFromReadonly && !appliedFromReadonly.unchanged) {
+                                try {
+                                    if (S) {
+                                        S.seq = appliedFromReadonly.seq;
+                                        S.rawSeq = appliedFromReadonly.rawSeq;
+                                        S.seqVersion = appliedFromReadonly.seqVersion;
+                                        S.seqEvent = appliedFromReadonly.seqEvent;
+                                    }
+                                } catch (_) {}
+                                try {
+                                    if (typeof window.__cw_sendVisualRoadApplied === 'function')
+                                        window.__cw_sendVisualRoadApplied(appliedFromReadonly, reasonTag);
+                                } catch (_) {}
+                            }
+                        } catch (_) {}
+                    }
                     if (!committed) {
-                        brSeqAuditLog('probe-canvas-frames-miss', {
+                        brSeqAuditLog(commit ? 'probe-canvas-frames-miss' : 'probe-canvas-frames-readonly', {
                             reason: String(reasonTag || ''),
                             frameCount: frames.length,
+                            commit: commit ? 1 : 0,
+                            applied: appliedFromReadonly ? 1 : 0,
                             best: best ? {
                                 rawSeq: String(best.rawSeq || ''),
                                 seq: String(best.seq || ''),
@@ -8269,7 +8763,7 @@
                                 canvasRect: best.canvasRect || null,
                                 meta: best.meta || null
                             } : null
-                        }, 900, 'probe-canvas-frames-miss|' + String(reasonTag || '') + '|' + frames.length);
+                        }, 900, (commit ? 'probe-canvas-frames-miss|' : 'probe-canvas-frames-readonly|') + String(reasonTag || '') + '|' + frames.length);
                     }
                     if (best) {
                         try {
@@ -8277,17 +8771,18 @@
                             best.seqWhich = 'probe-canvas-frames-raw';
                         } catch (_) {}
                     }
-                    resolve(best || committed || _cwProbeRoadSeqCache);
+                    resolve(appliedFromReadonly || best || committed || _cwProbeRoadSeqCache);
                 }
                 function step(left) {
                     try {
                         (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(function () {
                             try {
-                                var preferPreset = /manual-debug-overlay|push-visual-sync|buildSnapshotNow-empty-pull/i.test(String(reasonTag || ''));
+                                var preferPreset = /manual-debug-overlay|push-visual-sync|auto-visual-road-sync|buildSnapshotNow-empty-pull/i.test(String(reasonTag || ''));
                                 var r = brReadCanvasRoadSeq({
                                     ignoreCache: true,
                                     skipBoardCountTrim: true,
-                                    preferVisualRoadPreset: preferPreset
+                                    preferVisualRoadPreset: preferPreset,
+                                    reason: String(reasonTag || '')
                                 });
                                 if (r)
                                     frames.push(r);
@@ -8308,26 +8803,169 @@
                 return r;
             }, function () {
                 _cwProbeRoadSeqBusy = false;
+                _cwProbeRoadSeqBusyAt = 0;
                 _cwProbeRoadSeqPromise = null;
                 return _cwProbeRoadSeqCache;
             });
             return _cwProbeRoadSeqPromise;
         } catch (_) {
             _cwProbeRoadSeqBusy = false;
+            _cwProbeRoadSeqBusyAt = 0;
             _cwProbeRoadSeqPromise = null;
             return Promise.resolve(_cwProbeRoadSeqCache);
+        }
+    }
+    function brKickProbeRoadSeqFrames(reasonTag, frameCount) {
+        return brProbeRoadSeqFrames(reasonTag, frameCount, { commit: true });
+    }
+    function brReadProbeRoadSeqFrames(reasonTag, frameCount) {
+        return brProbeRoadSeqFrames(reasonTag, frameCount, { commit: false });
+    }
+    function brIsDebugLikeRoadPack(pack) {
+        try {
+            var rawSeq = brSanitizeSeq(String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || ''));
+            var cellsLen = Number((pack && pack.cells && pack.cells.length) || 0) || 0;
+            var rowsLen = Number((pack && pack.rows && pack.rows.length) || 0) || 0;
+            var roiName = String(pack && pack.roi && pack.roi.name || '');
+            if (!rawSeq)
+                return false;
+            if (cellsLen < Math.max(8, rawSeq.length - 1))
+                return false;
+            if (rowsLen < 2)
+                return false;
+            return /^auto-road/i.test(roiName) || brIsStrongVisualRoadPack(pack);
+        } catch (_) {
+            return false;
+        }
+    }
+    function brReadRoadSeqLikeDebug(frameCount, reasonTag) {
+        try {
+            frameCount = Math.max(1, Math.min(30, Number(frameCount || 8) || 8));
+            return brReadProbeRoadSeqFrames('manual-debug-overlay', frameCount).then(function (pack) {
+                try {
+                    brSeqAuditLog('debug-road-source-pack', {
+                        reason: String(reasonTag || ''),
+                        rawSeq: String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || ''),
+                        rawLen: String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || '').length,
+                        roi: pack && pack.roi ? pack.roi : null,
+                        cellsLen: Number((pack && pack.cells && pack.cells.length) || 0) || 0,
+                        rowsLen: Number((pack && pack.rows && pack.rows.length) || 0) || 0,
+                        debugLike: brIsDebugLikeRoadPack(pack) ? 1 : 0
+                    }, 700, 'debug-road-source-pack|' + String(reasonTag || '') + '|' + String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || ''));
+                } catch (_) {}
+                return pack || null;
+            }, function () {
+                return null;
+            });
+        } catch (_) {
+            return Promise.resolve(null);
         }
     }
     function brMaybeSyncVisualRoadSeq(reasonTag, minMs) {
         try {
             var now = Date.now();
             var gap = Math.max(900, Number(minMs || _cwVisualSeqSyncMinMs || 1800));
-            if ((now - Number(_cwVisualSeqSyncLastAt || 0)) < gap)
+            var sinceLast = now - Number(_cwVisualSeqSyncLastAt || 0);
+            if (sinceLast < gap) {
+                brSeqAuditLog('visual-road-sync-skip-gap', {
+                    reason: String(reasonTag || 'push-visual-sync'),
+                    sinceLast: sinceLast,
+                    gap: gap
+                }, 5000, 'visual-road-sync-skip-gap|' + String(reasonTag || ''));
                 return false;
-            if (_cwProbeRoadSeqBusy)
-                return false;
+            }
+            if (_cwProbeRoadSeqBusy) {
+                var busyMs = now - Number(_cwProbeRoadSeqBusyAt || 0);
+                if (busyMs <= 4000) {
+                    brSeqAuditLog('visual-road-sync-skip-busy', {
+                        reason: String(reasonTag || 'push-visual-sync'),
+                        busyMs: busyMs
+                    }, 3000, 'visual-road-sync-skip-busy|' + String(reasonTag || ''));
+                    return false;
+                }
+                _cwProbeRoadSeqBusy = false;
+                _cwProbeRoadSeqPromise = null;
+                brSeqAuditLog('visual-road-sync-busy-reset', {
+                    reason: String(reasonTag || ''),
+                    busyMs: busyMs
+                }, 1200, 'visual-road-sync-busy-reset|' + String(reasonTag || ''));
+            }
             _cwVisualSeqSyncLastAt = now;
-            brKickProbeRoadSeqFrames(reasonTag || 'push-visual-sync', 8);
+            brSeqAuditLog('visual-road-sync-kick', {
+                reason: String(reasonTag || 'push-visual-sync'),
+                gap: gap,
+                prevAgeMs: sinceLast,
+                busy: _cwProbeRoadSeqBusy ? 1 : 0
+            }, 1000, 'visual-road-sync-kick|' + String(reasonTag || ''));
+            brReadRoadSeqLikeDebug(8, reasonTag || 'push-visual-sync').then(function (pack) {
+                try {
+                    var currentRawBeforeApply = brSanitizeSeq(String(
+                        (typeof S !== 'undefined' && S && (S.rawSeq || S.seq)) ||
+                        window.__cw_seq_raw ||
+                        window.__cw_bead_raw_seq ||
+                        ''
+                    ));
+                    brSeqAuditLog('debug-road-source-before-apply', {
+                        reason: String(reasonTag || 'push-visual-sync'),
+                        rawSeq: String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || ''),
+                        rawLen: String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || '').length,
+                        currentRaw: currentRawBeforeApply,
+                        currentLen: currentRawBeforeApply.length,
+                        sameAsCurrent: brSanitizeSeq(String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || '')) === currentRawBeforeApply ? 1 : 0,
+                        roi: pack && pack.roi ? pack.roi : null,
+                        cellsLen: Number((pack && pack.cells && pack.cells.length) || 0) || 0,
+                        rowsLen: Number((pack && pack.rows && pack.rows.length) || 0) || 0
+                    }, 700, 'debug-road-source-before-apply|' + String(reasonTag || 'push-visual-sync') + '|' + String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || ''));
+                    var applied = brApplyVisualRoadPackToState(pack, reasonTag || 'push-visual-sync');
+                    if (!applied) {
+                        brSeqAuditLog('debug-road-source-apply-null', {
+                            reason: String(reasonTag || 'push-visual-sync'),
+                            rawSeq: String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || ''),
+                            rawLen: String(pack && (pack.rawSeq || pack.probeSeq || pack.seq) || '').length,
+                            roi: pack && pack.roi ? pack.roi : null
+                        }, 900, 'debug-road-source-apply-null|' + String(reasonTag || 'push-visual-sync'));
+                        return;
+                    }
+                    if (applied.unchanged) {
+                        brSeqAuditLog('debug-road-source-unchanged', {
+                            reason: String(reasonTag || 'push-visual-sync'),
+                            rawSeq: String(applied.rawSeq || ''),
+                            rawLen: String(applied.rawSeq || '').length,
+                            seqVersion: Number(applied.seqVersion || 0) || 0,
+                            seqEvent: String(applied.seqEvent || '')
+                        }, 1200, 'debug-road-source-unchanged|' + String(reasonTag || 'push-visual-sync') + '|' + String(applied.rawSeq || ''));
+                    }
+                    if (applied && !applied.unchanged && typeof S !== 'undefined' && S) {
+                        S.seq = applied.seq;
+                        S.rawSeq = applied.rawSeq;
+                        S.seqVersion = applied.seqVersion;
+                        S.seqEvent = applied.seqEvent;
+                        try { updatePanel(); } catch (_) {}
+                    }
+                    if (applied && !applied.unchanged && typeof window.__cw_sendVisualRoadApplied === 'function') {
+                        try {
+                            var sent = window.__cw_sendVisualRoadApplied(applied, reasonTag || 'push-visual-sync');
+                            brSeqAuditLog('debug-road-source-send-result', {
+                                reason: String(reasonTag || 'push-visual-sync'),
+                                rawSeq: String(applied.rawSeq || ''),
+                                rawLen: String(applied.rawSeq || '').length,
+                                sent: sent ? 1 : 0
+                            }, 1000, 'debug-road-source-send-result|' + String(reasonTag || 'push-visual-sync') + '|' + String(applied.rawSeq || ''));
+                        } catch (sendErr) {
+                            brSeqAuditLog('debug-road-source-send-error', {
+                                reason: String(reasonTag || 'push-visual-sync'),
+                                error: String(sendErr && sendErr.message || sendErr)
+                            }, 1000, 'debug-road-source-send-error|' + String(reasonTag || 'push-visual-sync') + '|' + String(sendErr && sendErr.message || sendErr));
+                        }
+                    }
+                } catch (err) {
+                    brSeqAuditLog('debug-road-source-apply-error', {
+                        reason: String(reasonTag || 'push-visual-sync'),
+                        error: String(err && err.message || err),
+                        stack: cwShort(String(err && err.stack || ''), 500)
+                    }, 1000, 'debug-road-source-apply-error|' + String(reasonTag || 'push-visual-sync') + '|' + String(err && err.message || err));
+                }
+            });
             return true;
         } catch (_) {
             return false;
@@ -8348,10 +8986,10 @@
                 var pickedRawForPrime = String(picked && picked.rawSeq || '');
                 if (__cw_hasCocos() &&
                     (
-                        !brIsReliableRoadSeq(pickedRawForPrime) ||
+                        !pickedRawForPrime ||
                         String(_domBeadSeqManaged || '').length >= (pickedRawForPrime.length + 4)
                     )) {
-                    brKickProbeRoadSeqFrames('readDomBeadSeq-prime', 8);
+                    brReadProbeRoadSeqFrames('readDomBeadSeq-prime', 8);
                 }
             } catch (_) {}
             try {
@@ -8476,83 +9114,6 @@
                 seqVersion: Number(_domSeqVersion || 0),
                 seqEvent: String(_domSeqEvent || '')
             }, 250, 'dom-bead-candidate|' + rawSeq + '|canvas|' + Number(_domSeqVersion || 0));
-            if (!brIsReliableRoadSeq(rawSeq)) {
-                var rejectReason = 'bead-raw-unreliable';
-                _cwSeqDiagState.lastNoBoard = {
-                    at: Date.now(),
-                    failReason: rejectReason,
-                    profileName: pickedProfileName,
-                    rawSeq: String(rawSeq || ''),
-                    rawLen: Number(rawStat.len || 0),
-                    rawBP: Number(rawStat.bp || 0),
-                    rawT: Number(rawStat.t || 0),
-                    boardItems: boardItems,
-                    boardRows: boardRows,
-                    boardCols: boardCols,
-                    roi: picked && picked.roi ? picked.roi : null,
-                    canvasRect: picked && picked.canvasRect ? picked.canvasRect : null
-                };
-                cwDbg('SEQ', 'dom-bead-reject', {
-                    reason: rejectReason,
-                    rawSeq: rawSeq,
-                    rawLen: Number(rawStat.len || 0),
-                    rawBP: Number(rawStat.bp || 0),
-                    rawT: Number(rawStat.t || 0),
-                    boardMeta: {
-                        profileName: pickedProfileName,
-                        items: boardItems,
-                        rowCount: boardRows,
-                        colCount: boardCols,
-                        roi: picked && picked.roi ? picked.roi : null,
-                        canvasRect: picked && picked.canvasRect ? picked.canvasRect : null
-                    },
-                    managedLen: String(_domBeadSeqManaged || '').length,
-                    seqVersion: Number(_domSeqVersion || 0),
-                    seqEvent: String(_domSeqEvent || '')
-                }, 900, 'dom-bead-reject|' + rejectReason + '|' + String(rawSeq || ''));
-                brSeqAuditLog('readDomBeadSeq-reject', {
-                    reason: rejectReason,
-                    rawSeq: String(rawSeq || ''),
-                    rawLen: Number(rawStat.len || 0),
-                    rawBP: Number(rawStat.bp || 0),
-                    rawT: Number(rawStat.t || 0),
-                    managedSeq: String(_domBeadSeqManaged || ''),
-                    managedLen: String(_domBeadSeqManaged || '').length,
-                    seqVersion: Number(_domSeqVersion || 0),
-                    seqEvent: String(_domSeqEvent || ''),
-                    profileName: pickedProfileName,
-                    boardItems: boardItems,
-                    boardRows: boardRows,
-                    boardCols: boardCols,
-                    roi: picked && picked.roi ? picked.roi : null,
-                    canvasRect: picked && picked.canvasRect ? picked.canvasRect : null
-                }, 1000, 'readDomBeadSeq-reject|' + rejectReason + '|' + String(rawSeq || '') + '|' + Number(_domSeqVersion || 0));
-                brArmShoeResetByNoBoard(rejectReason);
-                try {
-                    window.__cw_bead_raw_seq = '';
-                    window.__cw_bead_managed_seq = String(_domBeadSeqManaged || '');
-                } catch (_) {}
-                brClearSeqSnapshotCache(rejectReason);
-                brSeqFuncLog('return', 'readDomBeadSeq', {
-                    branch: 'reject',
-                    reason: rejectReason,
-                    seq: String(_domBeadSeqManaged || ''),
-                    rawSeq: '',
-                    seqLen: String(_domBeadSeqManaged || '').length,
-                    rawLen: 0,
-                    seqVersion: Number(_domSeqVersion || 0),
-                    seqEvent: String(_domSeqEvent || '')
-                });
-                return {
-                    seq: _domBeadSeqManaged || '',
-                    rawSeq: '',
-                    which: 'dom-bead-canvas',
-                    seqVersion: _domSeqVersion,
-                    seqEvent: _domSeqEvent,
-                    cols: [],
-                    cells: []
-                };
-            }
             if (sparseShortRaw) {
                 cwDbg('SEQ', 'dom-bead-short-allow', {
                     rawSeq: rawSeq,
@@ -8902,10 +9463,8 @@
             return { len: s.length, bp: 0, t: 0 };
         }
         function isReliableRoadSeq(seqVal) {
-            if (typeof brIsReliableRoadSeq === 'function')
-                return brIsReliableRoadSeq(seqVal);
             var st = seqStatsLocal(seqVal);
-            return st.len >= 1 && st.bp >= 1;
+            return st.len >= 1;
         }
         if (!_cwSeqRevLogged) {
             _cwSeqRevLogged = true;
@@ -9585,7 +10144,7 @@
         try {
             var pub = window.__cw_seq_pub || null;
             var pubSeq = brSanitizeSeq((pub && (pub.rawSeq || pub.seq)) || window.__cw_seq_raw || window.__cw_seq || window.__cw_bead_raw_seq || '');
-            if (brIsReliableRoadSeq(pubSeq)) {
+            if (pubSeq) {
                 return {
                     seq: pubSeq,
                     rawSeq: pubSeq,
@@ -11010,7 +11569,7 @@
             base += '\n• Baccarat DOM cards:\n' + lines.join('\n');
         }
 
-        var tk = readTKSeq();
+        var tk = brReadSeqForDisplaySingleSource();
         S.seq = tk.seq || '';
         S.rawSeq = tk.rawSeq || S.seq || '';
         S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
@@ -15832,7 +16391,7 @@
         S._lastTotals = T;
 
         // TK sequence
-        var tk = readTKSeq();
+        var tk = brReadSeqForDisplaySingleSource();
         S.seq = tk.seq || '';
         S.rawSeq = tk.rawSeq || S.seq || '';
         S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
@@ -15929,6 +16488,9 @@
                 directProgKey !== _lastDirectProgPostKey &&
                 typeof window.__cw_postPanelSnapNow === 'function') {
                 _lastDirectProgPostKey = directProgKey;
+                try {
+                    brMaybeSyncVisualRoadSeq('push-visual-sync', _cwVisualSeqSyncMinMs);
+                } catch (_) {}
                 window.__cw_postPanelSnapNow(S._lastSnap, 'prog-change');
             }
         } catch (_) {}
@@ -16402,6 +16964,8 @@
         var _lastImportantPushKey = '';
         var _lastImportantPushAt = 0;
         var _lastPushProgKey = '';
+        var _autoVisualRoadTimer = null;
+        var _lastAutoVisualRoadKey = '';
         var _lastPullSeqVersion = 0;
         var _lastPushSeqVersion = 0;
         var _abxSnapCache = {
@@ -16592,6 +17156,113 @@
             }
         }
 
+        function buildPanelTickSnapForBridge(origin, reason) {
+            try {
+                var T = (S && S._lastTotals) ? S._lastTotals : (typeof totals === 'function' ? totals(S) : null);
+                return {
+                    abx: 'tick',
+                    prog: S ? S.prog : null,
+                    progValid: S && S.progValid ? 1 : 0,
+                    progMode: String(S && S.progMode || ''),
+                    progRaw: S ? S.progRaw : null,
+                    progSource: String(S && S.progSource || ''),
+                    progTail: String(S && S.progTail || ''),
+                    totals: T,
+                    seq: String(S && S.seq || ''),
+                    rawSeq: String(S && (S.rawSeq || S.seq) || ''),
+                    seqVersion: Number(S && S.seqVersion || window.__cw_seq_version || 0) || 0,
+                    seqEvent: String(S && S.seqEvent || window.__cw_seq_event || ''),
+                    status: String(S && S.status || ''),
+                    statusSource: String(S && S.statusSource || ''),
+                    statusTail: String(S && S.statusTail || ''),
+                    username: String((T && T.N) || ''),
+                    ts: Date.now(),
+                    origin: String(origin || ''),
+                    reason: String(reason || '')
+                };
+            } catch (_) {
+                return null;
+            }
+        }
+
+        window.__cw_sendVisualRoadApplied = function (applied, reason) {
+            try {
+                var rawSeq = brSanitizeSeq(String(applied && (applied.rawSeq || applied.seq) || ''));
+                if (S) {
+                    S.seq = rawSeq;
+                    S.rawSeq = rawSeq;
+                    S.seqVersion = Number(applied && applied.seqVersion || window.__cw_seq_version || rawSeq.length) || rawSeq.length;
+                    S.seqEvent = String(applied && applied.seqEvent || window.__cw_seq_event || 'visual-road-authority');
+                    try { updatePanel(); } catch (_) {}
+                }
+                var snap = buildPanelTickSnapForBridge('canvas-road-visual-sync', reason || 'push-visual-sync');
+                if (!snap)
+                    return false;
+                snap.seq = rawSeq;
+                snap.rawSeq = rawSeq;
+                snap.seqVersion = Number(applied && applied.seqVersion || snap.seqVersion || rawSeq.length) || rawSeq.length;
+                snap.seqEvent = String(applied && applied.seqEvent || snap.seqEvent || 'visual-road-authority');
+                if (S)
+                    S._lastSnap = snap;
+                brSeqAuditLog('visual-road-apply-send', {
+                    reason: String(reason || ''),
+                    rawSeq: rawSeq,
+                    rawLen: rawSeq.length,
+                    seqVersion: Number(snap.seqVersion || 0) || 0,
+                    seqEvent: String(snap.seqEvent || ''),
+                    origin: String(snap.origin || '')
+                }, 700, 'visual-road-apply-send|' + String(reason || '') + '|' + rawSeq + '|' + Number(snap.seqVersion || 0));
+                safePost(snap);
+                return true;
+            } catch (err) {
+                try {
+                    brSeqAuditLog('visual-road-apply-send-error', {
+                        reason: String(reason || ''),
+                        error: String(err && err.message || err)
+                    }, 1000, 'visual-road-apply-send-error|' + String(reason || '') + '|' + String(err && err.message || err));
+                } catch (_) {}
+                return false;
+            }
+        };
+
+        function startAutoVisualRoadSeqSync(intervalMs) {
+            try {
+                intervalMs = Math.max(900, Math.min(5000, Number(intervalMs || 1200)));
+                if (_autoVisualRoadTimer)
+                    clearInterval(_autoVisualRoadTimer);
+                _lastAutoVisualRoadKey = '';
+                brSeqAuditLog('auto-visual-road-timer-start', {
+                    intervalMs: intervalMs,
+                    hasPushTimer: _pushTimer ? 1 : 0
+                }, 1000, 'auto-visual-road-timer-start');
+                _autoVisualRoadTimer = setInterval(function () {
+                    try {
+                        brSeqAuditLog('auto-visual-road-timer-tick', {
+                            intervalMs: intervalMs,
+                            busy: _cwProbeRoadSeqBusy ? 1 : 0,
+                            lastSyncAgeMs: Date.now() - Number(_cwVisualSeqSyncLastAt || 0)
+                        }, 5000, 'auto-visual-road-timer-tick');
+                        brMaybeSyncVisualRoadSeq('auto-visual-road-sync', intervalMs);
+                    } catch (_) {}
+                }, intervalMs);
+                return 'started';
+            } catch (_) {
+                return 'fail';
+            }
+        }
+
+        function stopAutoVisualRoadSeqSync() {
+            try {
+                if (_autoVisualRoadTimer) {
+                    clearInterval(_autoVisualRoadTimer);
+                    _autoVisualRoadTimer = null;
+                }
+                return 'stopped';
+            } catch (_) {
+                return 'fail';
+            }
+        }
+
         function buildTickSnapFromCached(cached) {
             if (!cached)
                 return null;
@@ -16711,6 +17382,10 @@
 
         function readSeqStateSafe() {
             try {
+                try {
+                    if (__cw_hasCocos())
+                        return brReadPublishedVisualRoadSeqState();
+                } catch (_) {}
                 if (typeof readTKSeq === 'function') {
                     var r = readTKSeq();
                     var rSeq = (r && r.seq) ? String(r.seq || '') : '';
@@ -16718,7 +17393,7 @@
                     if (!rSeq) {
                         var pub = window.__cw_seq_pub || null;
                         var pubSeq = brSanitizeSeq((pub && (pub.rawSeq || pub.seq)) || window.__cw_seq_raw || window.__cw_seq || rRaw || '');
-                        if (brIsReliableRoadSeq(pubSeq)) {
+                        if (pubSeq) {
                             rSeq = pubSeq;
                             rRaw = pubSeq;
                             if (r && !r.which)
@@ -17456,7 +18131,7 @@
                 if (probeCache &&
                     probeCacheAge <= 5000 &&
                     Number(probeCache.visualAuthority || 0) === 1 &&
-                    brIsReliableRoadSeq(String(probeCache.rawSeq || ''))) {
+                    String(probeCache.rawSeq || '')) {
                     seqFresh = String(probeCache.probeSeq || probeCache.rawSeq || probeCache.seq || '');
                     rawSeqFresh = String(probeCache.rawSeq || '');
                     seqVersion = Number(probeCache.seqVersion || 0) || 0;
@@ -17507,7 +18182,7 @@
                             probeCacheAge: Number(probeCacheAge || 0),
                             probeCacheLen: String(probeCache && probeCache.rawSeq || '').length
                         }, 900, 'buildSnapshotNow-empty-pull-kick-visual-sync|' + buildId);
-                        brKickProbeRoadSeqFrames('push-visual-sync', 8);
+                        brMaybeSyncVisualRoadSeq('push-visual-sync', 900);
                     } catch (_) {}
                 }
             }
@@ -17562,7 +18237,7 @@
                 rawSeq = seq;
             if (__cw_hasCocos() &&
                 !noBoardLikeEvent &&
-                brIsReliableRoadSeq(String(rawSeq || '')) &&
+                String(rawSeq || '') &&
                 String(rawSeq || '') !== String(seq || '')) {
                 brSeqAuditLog('buildSnapshotNow-use-raw-primary', {
                     buildId: buildId,
@@ -17581,7 +18256,7 @@
             }
             if (__cw_hasCocos() &&
                 !noBoardLikeEvent &&
-                brIsReliableRoadSeq(String(rawSeq || ''))) {
+                String(rawSeq || '')) {
                 var seqGapForDisplay = String(rawSeq || '').length - String(seq || '').length;
                 var seqEventForDisplay = String(seqEvent || '').toLowerCase();
                 var useRawDisplayFallback =
@@ -17890,7 +18565,7 @@
             }
         };
         window.__cw_probeRoadSeqFrames = function (count) {
-            return brKickProbeRoadSeqFrames('manual-window-frames', count || 8);
+            return brReadProbeRoadSeqFrames('manual-window-frames', count || 8);
         };
         window.__cw_clearRoadSeqDebug = function () {
             try {
@@ -17949,7 +18624,7 @@
                 var pack = null;
                 if (frames > 1) {
                     try {
-                        pack = await brKickProbeRoadSeqFrames('manual-debug-overlay', frames);
+                        pack = await brReadRoadSeqLikeDebug(frames, 'manual-debug-overlay');
                     } catch (_) {}
                 }
                 if (!pack)
@@ -17964,6 +18639,11 @@
                 var rawSeq = String(pack && (pack.rawSeq || pack.seq) || '');
                 var roi = pack && pack.roi ? pack.roi : null;
                 var canvasRect = pack && pack.canvasRect ? pack.canvasRect : null;
+                try {
+                    var appliedDebug = brApplyVisualRoadPackToState(pack, 'manual-debug-overlay');
+                    if (appliedDebug && !appliedDebug.unchanged && typeof window.__cw_sendVisualRoadApplied === 'function')
+                        window.__cw_sendVisualRoadApplied(appliedDebug, 'manual-debug-overlay');
+                } catch (_) {}
                 if (canvasRect)
                     addBox(host, canvasRect, '1px dashed rgba(255,255,255,.75)', 'rgba(255,255,255,.03)', 'canvas', '');
                 if (roi) {
@@ -18057,6 +18737,7 @@
                     _lastImportantPushKey = '';
                     _lastImportantPushAt = 0;
                     _lastPushProgKey = '';
+                    stopAutoVisualRoadSeqSync();
                     cwDbg('PUSH', 'startPush skipped (non-game context)', {
                         href: (function () {
                             try {
@@ -18077,6 +18758,7 @@
                 _lastImportantPushKey = '';
                 _lastImportantPushAt = 0;
                 _lastPushProgKey = '';
+                startAutoVisualRoadSeqSync(Math.max(1200, tickMs * 10));
                 try { window.__cw_last_push_seq_version = Number(_lastPushSeqVersion || 0) || 0; } catch (_) {}
                 cwDbg('PUSH', 'startPush', { tickMs: tickMs }, 0, 'startPush|' + tickMs);
                 _pushTimer = setInterval(function () {
@@ -18222,6 +18904,7 @@
                 clearInterval(_pushTimer);
                 _pushTimer = null;
             }
+            stopAutoVisualRoadSeqSync();
             cwDbg('PUSH', 'stopPush', null, 0, 'stopPush');
             return 'stopped';
         };

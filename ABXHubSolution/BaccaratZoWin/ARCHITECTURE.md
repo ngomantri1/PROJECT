@@ -193,16 +193,17 @@
 
 ### Mục tiêu hiện tại
 
-- Chuỗi kết quả ở panel C# phải khớp với `rawSeq` từ `await __cw_showRoadSeqDebug(8)`.
+- Chuỗi kết quả ở panel C# phải khớp với `rawSeq` visual road đã đọc đúng từ canvas.
 - Visual debug overlay là nguồn thực tế để xác định ROI/cell đang đúng hay sai.
 - Không dùng phần thống kê `CON/HÒA/CÁI` làm chuỗi kết quả; scanner phải chỉ lấy road kết quả.
+- Trạng thái mới nhất: chính `await __cw_showRoadSeqDebug(8)` vẫn còn có thể sai vì ROI/filter lấy cả hàng thống kê phía trên road, nên phải sửa phần đọc ROI trước khi coi sync C# là đúng.
 
 ### Luồng JS mong muốn
 
 1. `brReadCanvasRoadSeq(...)` scan ROI/cell từ canvas.
-2. `brKickProbeRoadSeqFrames('manual-debug-overlay' hoặc 'push-visual-sync', 8)` lấy nhiều frame.
+2. `brReadRoadSeqLikeDebug(8, reason)` hoặc `brReadProbeRoadSeqFrames(...)` lấy nhiều frame theo cơ chế giống debug.
 3. `brSelectBestProbeRoadFrame(...)` chọn pack visual tốt nhất.
-4. `brCommitProbeRoadPack(...)` chỉ được publish khi pack đến từ nguồn visual authority hợp lệ.
+4. `brApplyVisualRoadPackToState(...)` nhận cả chuỗi rỗng nếu có pack đọc được.
 5. JS cập nhật:
   - `_domBeadSeqManaged`
   - `window.__cw_bead_raw_seq`
@@ -211,16 +212,39 @@
 7. `safePost(tick)` đẩy về C#.
 8. C# parse `rawSeq`, qua `QueueTickUiUpdate(...)`, rồi `UpdateSeqUI(...)`.
 
+### Rule apply/send mới nhất
+
+- Không validate reliability/debugLike/authority sau khi đã đọc được pack visual.
+- Không reject `rawSeq=""`; chuỗi rỗng là state hợp lệ để clear panel khi bàn/reset road trống.
+- Chỉ so sánh chuỗi mới với chuỗi hiện tại:
+  - giống: log `visual-road-apply-unchanged`, không gửi C#.
+  - khác: cập nhật state, update panel canvas, gửi tick/snap sang C#.
+- Chỉ bỏ qua khi không có pack đọc được (`pack == null`), vì đó là lỗi quét chứ không phải road rỗng.
+
 ### Nguồn được phép làm visual authority
 
 - `manual-debug-overlay`
 - `push-visual-sync`
+- `auto-visual-road-sync`
 
 ### Nguồn không được tự ý ghi đè visual authority
 
 - `buildSnapshotNow-empty-pull`
 - các probe nền tự động
 - ROI auto sai vùng như `auto-road-b` khi không được kiểm chứng bằng visual debug
+
+### Bug ROI/stat row hiện tại
+
+- `__cw_showRoadSeqDebug(8)` có thể vẽ overlay ROI quá cao và lấy cả hàng thống kê `CON/HÒA/CÁI`.
+- Dấu hiệu trong overlay/log:
+  - hàng đầu có khoảng `n=3` hoặc `n=4`, nằm trên cụm road thật.
+  - rawSeq bắt đầu bằng ký tự từ thống kê, không khớp các bóng road.
+  - log `debug-road-source-pack` hoặc `visual-road-apply-candidate` có `roi` phủ lên vùng thống kê.
+- Vùng cần sửa:
+  - `brFilterCanvasRoadBodyItems(...)`: loại row thống kê đầu chắc hơn.
+  - `brAutoDetectCanvasRoadRois(...)`: ROI không được bắt quá cao.
+  - `brShouldPreferCanvasRoadPack(...)`: không để ROI chứa thống kê thắng ROI road thật.
+  - `brSelectBestProbeRoadFrame(...)`: chọn pack theo rawSeq/cells/rows road thật, không theo vùng thống kê.
 
 ### Log cần đối chiếu khi lệch
 
@@ -229,6 +253,11 @@
 - `[JSSEQ][buildSnapshotNow-empty-pull-kick-visual-sync]`
 - `[JSSEQ][visual-road-publish-state]`
 - `[JSSEQ][readSeqStateSafe-published-fallback]`
+- `[JSSEQ][debug-road-source-pack]`
+- `[JSSEQ][visual-road-apply-candidate]`
+- `[JSSEQ][visual-road-apply-state]`
+- `[JSSEQ][visual-road-apply-unchanged]`
+- `[JSSEQ][canvas-road-candidates]`
 - `[PULLRAW]`
 - `[SEQ][RX]`
 - `[SEQ][UI][RAW-DIRECT]`

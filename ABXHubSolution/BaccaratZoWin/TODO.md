@@ -6,22 +6,27 @@
 
 - Ổn định exact live frame cho ZoWin Baccarat.
 - Ổn định luồng `rawSeq -> C# display`.
-- Sửa bug hiện tại: `await __cw_showRoadSeqDebug(8)` đọc ra chuỗi đúng nhưng panel C# không đồng bộ, hiện có lúc không hiển thị chuỗi kết quả.
-- Xác nhận patch mới nhất đã thật sự được build/restart vào app, vì lần gần nhất `BaccaratZoWin.dll` bị khóa bởi `BaccaratZoWin` và Visual Studio nên runtime chưa thể nhận source JS mới.
+- Sửa bug hiện tại: `await __cw_showRoadSeqDebug(8)` vẫn đang lấy cả phần thống kê `CON/HÒA/CÁI` phía trên road, làm `rawSeq` sai ngay từ nguồn visual debug.
+- Giữ rule mới của visual road sync: đọc được pack thì sanitize, so sánh với chuỗi hiện tại, chỉ đẩy C# khi khác; chuỗi rỗng vẫn là state hợp lệ để clear panel.
 - Giảm lag/freeze của panel C#.
 - Giữ countdown đồng bộ và không đứng.
 - Giữ click bet 3 cửa đúng 1 lần.
 
 ## Task chưa hoàn thành
 
-- Debug tiếp luồng visual road sync sau patch gần nhất:
-  - xác nhận `push-visual-sync` có chạy thật trong live frame không
-  - xác nhận log `buildSnapshotNow-empty-pull-kick-visual-sync` xuất hiện khi `[PULLRAW]` đang rỗng
-  - xác nhận log `visual-road-publish-state` xuất hiện sau khi probe chọn được ROI/seq hợp lệ
-  - xác nhận log `readSeqStateSafe-published-fallback` xuất hiện khi `readTKSeq()` trả rỗng nhưng published seq có dữ liệu
-  - xác nhận `brCommitProbeRoadPack(...)` không còn lỗi `_forcePushOnce is not defined`
-  - xác nhận C# nhận tick có `rawSeq` khác rỗng
-  - xác nhận `UpdateSeqUI(...)` render đúng cùng chuỗi với `await __cw_showRoadSeqDebug(8)`
+- Debug/sửa tiếp phần đọc visual road:
+  - chạy `await __cw_showRoadSeqDebug(8)` và xác nhận overlay không còn row thống kê ở trên cùng.
+  - nếu overlay vẫn có row thống kê `n=3`/`n=4`, sửa tiếp `brFilterCanvasRoadBodyItems(...)`.
+  - kiểm tra `brAutoDetectCanvasRoadRois(...)` có tạo ROI quá cao không.
+  - kiểm tra `brShouldPreferCanvasRoadPack(...)` có để pack chứa thống kê thắng pack road thật không.
+  - kiểm tra `brSelectBestProbeRoadFrame(...)` có ưu tiên frame theo `rawSeq/cells/rows` road thật không.
+  - xác nhận `debug-road-source-pack.rawSeq` khớp các bóng road, không khớp phần thống kê.
+  - sau khi debug source đúng, xác nhận C# nhận tick có `rawSeq` đúng và `UpdateSeqUI(...)` render đúng.
+- Debug tiếp luồng visual road sync sau khi source visual road đã đúng:
+  - xác nhận `auto-visual-road-sync`/`push-visual-sync` chỉ gửi khi chuỗi khác hiện tại.
+  - xác nhận `visual-road-apply-unchanged` xuất hiện khi chuỗi không đổi và không spam C#.
+  - xác nhận chuỗi rỗng được gửi khi road reset từ có dữ liệu về rỗng.
+  - xác nhận `visual-road-apply-state` và `visual-road-apply-send` có `rawSeq` đúng khi chuỗi thay đổi.
 - Xác nhận sau khi tắt CDP websocket thì freeze giảm rõ trên máy thực tế.
 - Xác nhận `PULL_POPUP_TICK_NOW` luôn chọn live frame thay vì `top`.
 - Xác nhận countdown vẫn chạy ổn sau vài phút, không chỉ vài giây đầu.
@@ -41,19 +46,21 @@
 
 ## Task ưu tiên cao
 
-- Ưu tiên số 1 hiện tại: khôi phục hiển thị chuỗi kết quả ở panel C# và bắt nó đồng bộ theo `await __cw_showRoadSeqDebug(8)`.
+- Ưu tiên số 1 hiện tại: sửa `__cw_showRoadSeqDebug(8)`/ROI/filter để không lấy phần thống kê; nguồn visual debug phải đúng trước khi đồng bộ C#.
+- Sau khi source visual debug đúng, ưu tiên số 2 là panel C# đồng bộ đúng theo `rawSeq` đó.
 - Trước khi test runtime, phải đảm bảo build output mới được copy thành công:
   - đóng app `BaccaratZoWin`
   - stop debug/đóng Visual Studio nếu đang khóa `BaccaratZoWin.dll`
   - build `AutoBetHub` Debug nếu thiếu `ABX.Core.dll`
   - build lại `BaccaratZoWin`
-  - mở app lại và kiểm tra `Loaded JS from embedded | len=...` đã đổi theo source mới
+  - mở app lại và kiểm tra log có revision JS mới nhất, ví dụ `SEQFIX-20260627-r58-drop-stat-row` hoặc bản mới hơn
 - Kiểm tra log mới phải có hoặc phải giải thích vì sao không có:
-  - `[JSSEQ][probe-canvas-visual-authority]`
-  - `[JSSEQ][buildSnapshotNow-empty-pull-kick-visual-sync]`
-  - `[JSSEQ][visual-road-publish-state]`
-  - `[JSSEQ][readSeqStateSafe-published-fallback]`
-  - `reason=push-visual-sync`
+  - `[JSSEQ][debug-road-source-pack]`
+  - `[JSSEQ][canvas-road-candidates]`
+  - `[JSSEQ][visual-road-apply-candidate]`
+  - `[JSSEQ][visual-road-apply-state]` khi chuỗi đổi
+  - `[JSSEQ][visual-road-apply-unchanged]` khi chuỗi không đổi
+  - `reason=push-visual-sync` hoặc `reason=auto-visual-road-sync`
   - `[PULLRAW]` payload có `rawSeq` đúng
   - `[SEQ][RX] seqLen > 0`
   - `[SEQ][UI][RENDER] len > 0`
@@ -87,10 +94,15 @@
   - panel C#
   - history settle
   phải nhất quán
+- Test riêng trường hợp overlay không được lấy thống kê:
+  - hàng thống kê `CON/HÒA/CÁI` không xuất hiện trong `rows.map(x => x.seq)`.
+  - `rawSeq` không bắt đầu bằng ký tự lấy từ số thống kê.
+  - ROI vàng chỉ phủ vùng road kết quả, không phủ hàng count phía trên.
 - Test riêng visual road sync:
   - lúc mới vào bàn
   - sau khi đổi bàn/frame live reload
   - sau khi chuỗi tăng thêm 1 kết quả
+  - khi bàn reset road về rỗng
   - khi road có `T`
   - khi road dài nhiều hàng
 - Countdown:
