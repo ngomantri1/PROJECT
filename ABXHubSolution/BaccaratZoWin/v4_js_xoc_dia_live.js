@@ -63,7 +63,7 @@
         if (!root)
             return;
         // Bỏ comment dòng dưới để ẩn Canvas Watch, comment lại để hiện bảng.
-        // root.style.display = 'none';
+         root.style.display = 'none';
     }
 
     function __cw_ensureFallbackPanel(stateText, infoText) {
@@ -10278,6 +10278,7 @@
         /* ---------------- helpers for totals by (y, tail) ---------------- */
 
         var TAIL_TOTAL_BET = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/lbl_total_bet';
+        var TAIL_BACCARAT_TOTAL_BET = 'c5_baccarat_livestream/Canvas/bacc_live/root/node_text/font_money_2/lbl_totalBet';
 
         var TAIL_TUDO = 'dual/Canvas/node_dual/root/node_game(need_to_put_games_in_here)/prefab_game_14/root/node_general(use_in_both_mode)/table/bet_entries/bet_normal/ig_xocdia_4th/lbl_total_bet';
 
@@ -10615,6 +10616,28 @@
 
         }
 
+        function pickBaccaratTotalBetsByX(list) {
+            var arr = [];
+            for (var i = 0; i < list.length; i++) {
+                var it = list[i];
+                if (tailEquals(tailOfMoney(it), TAIL_BACCARAT_TOTAL_BET))
+                    arr.push(it);
+            }
+            if (!arr.length)
+                return null;
+            arr.sort(function (a, b) {
+                return xOf(a) - xOf(b) || yOf(a) - yOf(b);
+            });
+            var out = {
+                P: arr[0] || null,
+                T: null,
+                B: arr.length >= 2 ? arr[arr.length - 1] : null
+            };
+            if (arr.length >= 3)
+                out.T = arr[Math.floor(arr.length / 2)] || null;
+            return out;
+        }
+
         function pickBalanceNearAccount(list, accountText) {
             if (!list || !list.length || !accountText)
                 return null;
@@ -10895,6 +10918,10 @@
         // Reuse one TextMap snapshot per tick để tránh quét scene/DOM lặp lại.
         var listTextAll = buildTextRects();
         var listTextMoney = buildMoneyFromTextRects(listTextAll);
+        var baccaratTotals = pickBaccaratTotalBetsByX(listTextMoney);
+        var mBacP = baccaratTotals ? baccaratTotals.P : null;
+        var mBacB = baccaratTotals ? baccaratTotals.B : null;
+        var mBacT = baccaratTotals ? baccaratTotals.T : null;
         var mC = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'min');
         var mL = pickByXOrderTail(listTextMoney, TAIL_TOTAL_BET, 'max');
         if (mC && mL && mC === mL)
@@ -10924,8 +10951,11 @@
             }, 4000, 'user-candidates|' + JSON.stringify(userCandidates || []));
 
         return {
-            C: mC ? mC.val : null,
-            L: mL ? mL.val : null,
+            B: mBacB ? mBacB.val : null,
+            P: mBacP ? mBacP.val : null,
+            T: mBacT ? mBacT.val : null,
+            C: mBacB ? mBacB.val : (mC ? mC.val : null),
+            L: mBacP ? mBacP.val : (mL ? mL.val : null),
             A: mA ? mA.val : null,
             N: mN ? String(mN.text != null ? mN.text : '') : null,
             SD: mSD ? mSD.val : null,
@@ -10933,8 +10963,11 @@
             T3T: m3T ? m3T.val : null,
             T3D: m3D ? m3D.val : null,
             TD: mTD ? mTD.val : null,
-            rawC: mC ? mC.txt : null,
-            rawL: mL ? mL.txt : null,
+            rawB: mBacB ? mBacB.txt : null,
+            rawP: mBacP ? mBacP.txt : null,
+            rawT: mBacT ? mBacT.txt : null,
+            rawC: mBacB ? mBacB.txt : (mC ? mC.txt : null),
+            rawL: mBacP ? mBacP.txt : (mL ? mL.txt : null),
             rawA: mA ? mA.txt : null,
             rawN: mN ? String(mN.text != null ? mN.text : '') : null,
             rawSD: mSD ? mSD.txt : null,
