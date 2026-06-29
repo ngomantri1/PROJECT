@@ -1,5 +1,26 @@
 # TODO
 
+## Cap nhat TODO 2026-06-29
+
+### Task dang lam / can test ngay
+
+- Test trusted pending finalize sau khi restart app/build moi.
+- Khi co ket qua moi, pending row phai co `[BET][HIST][TRUSTED-FINAL]` som nhat co the.
+- Neu van cham, kiem tra co log nao xuat hien truoc: `[NETSEQ][WINNER][TRUSTED-FINALIZE]`, `[BET][AUTH][TRUSTED-FINALIZE]`, `[BET][HIST][UI-WL]`.
+- Xac nhan `UiFinalizeBetResult` duoc goi truoc `UiWinLoss` trong log/task.
+
+### Task can test lai
+
+- Dat cuoc 30/10/10... phai click du tien, khong dung sau click dau vi verify tien chua thay.
+- Tai khoan khong nhay ve `-`; giu balance cuoi hop le.
+- `await __cw_showRoadSeqDebug(8)` khong lay thong ke, max/cup/dealer.
+- Thay doi do phan giai: road seq van dung.
+
+### Refactor sau
+
+- Tach pending/history settle ra `PendingHistoryService`.
+- Tach road scanner/ROI rules ra module rieng trong JS de giam rui ro sua lech ROI.
+
 > Danh sách việc theo trạng thái hiện tại của code và cuộc chat này.
 
 ## Task đang làm

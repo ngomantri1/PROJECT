@@ -4404,7 +4404,7 @@
     var _cwSnapshotBuildSource = '';
     var _cwSeqInstanceId = 'inst-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     var _cwSeqLastPubSyncAt = 0;
-    var _cwSeqScriptRev = 'SEQFIX-20260628-r72-independent-visual-watch';
+    var _cwSeqScriptRev = 'SEQFIX-20260629-r78-road-grid-filter';
     var _cwSeqRevLogged = false;
     var _domLastActiveTitle = '';
     var _domManagedTableTitle = '';
@@ -7287,7 +7287,52 @@
             }
         };
     }
+    function brFilterCanvasRoadCellLikeItems(items, roi) {
+        items = items || [];
+        if (!items.length) {
+            return {
+                items: [],
+                rejected: []
+            };
+        }
+        var sizes = items.map(function (x) {
+            return Math.min(Number(x.w || 0), Number(x.h || 0));
+        }).filter(function (x) {
+            return isFinite(x) && x > 0;
+        });
+        var sizeMed = median(sizes) || 14;
+        var minSize = Math.max(5, sizeMed * 0.45);
+        var maxSize = Math.max(18, sizeMed * 2.35);
+        var kept = [];
+        var rejected = [];
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            var w = Number(it && it.w || 0);
+            var h = Number(it && it.h || 0);
+            var mn = Math.min(w, h);
+            var mx = Math.max(w, h);
+            var ratio = mn > 0 ? (mx / mn) : 99;
+            var relBottom = roi && roi.h ? ((Number(it.y || 0) + h - Number(roi.y || 0)) / Math.max(1, Number(roi.h || 1))) : 0;
+            var ok =
+                mn >= minSize &&
+                mx <= maxSize &&
+                ratio <= 2.45 &&
+                !(relBottom > 0.86 && mn < sizeMed * 0.72);
+            if (ok)
+                kept.push(it);
+            else
+                rejected.push(Object.assign({}, it, { rejectReason: 'shape' }));
+        }
+        return {
+            items: kept.length ? kept : items.slice(),
+            rejected: rejected,
+            sizeMed: sizeMed
+        };
+    }
     function brFilterCanvasRoadBodyItems(items, roi) {
+        var shapeFiltered = brFilterCanvasRoadCellLikeItems(items, roi);
+        var shapeRejected = shapeFiltered.rejected || [];
+        items = shapeFiltered.items || items;
         var rows = brClusterCanvasSeqRows(items);
         function rowSpan(row) {
             var arr = row && row.items ? row.items : [];
@@ -7311,7 +7356,10 @@
                 items: items.slice(),
                 rows: rows,
                 keepFrom: 0,
-                keepTo: rows.length ? rows.length - 1 : -1
+                keepTo: rows.length ? rows.length - 1 : -1,
+                rejectedRows: [],
+                rejectedCells: shapeRejected,
+                shapeSizeMed: shapeFiltered.sizeMed || 0
             };
         }
         if (rows.length >= 2) {
@@ -7411,14 +7459,21 @@
                 items: items.slice(),
                 rows: rows,
                 keepFrom: 0,
-                keepTo: rows.length - 1
+                keepTo: rows.length - 1,
+                rejectedRows: [],
+                rejectedCells: shapeRejected,
+                shapeSizeMed: shapeFiltered.sizeMed || 0
             };
         }
         var gaps = [];
         for (var g = 1; g < denseRows.length; g++)
             gaps.push(Number(denseRows[g].cy || 0) - Number(denseRows[g - 1].cy || 0));
         var gapMed = median(gaps) || 28;
+        var sizeMedBlock = median(items.map(function (x) {
+            return Math.min(Number(x.w || 0), Number(x.h || 0));
+        })) || 18;
         var blockGap = Math.max(22, Math.round(gapMed * 1.9));
+        blockGap = Math.min(blockGap, Math.max(48, Math.round(sizeMedBlock * 2.65)));
         var blocks = [];
         var block = null;
         for (var d = 0; d < denseRows.length; d++) {
@@ -7441,8 +7496,12 @@
         if (block)
             blocks.push(block);
         blocks.sort(function (a, b) {
-            return Number(b.count || 0) - Number(a.count || 0) ||
-                Number((a.rows && a.rows[0] && a.rows[0].cy) || 0) - Number((b.rows && b.rows[0] && b.rows[0].cy) || 0);
+            var aTop = Number((a.rows && a.rows[0] && a.rows[0].cy) || 0);
+            var bTop = Number((b.rows && b.rows[0] && b.rows[0].cy) || 0);
+            var countDiff = Number(b.count || 0) - Number(a.count || 0);
+            if (Math.abs(countDiff) <= 3)
+                return aTop - bTop;
+            return countDiff || (aTop - bTop);
         });
         var best = blocks[0];
         var firstDense = Number(best && best.from != null ? best.from : denseRows[0].idx);
@@ -7458,11 +7517,28 @@
         kept = kept.filter(function (x) {
             return Number(x.y || 0) >= topSoftCut;
         });
+        var rejectedRows = [];
+        var keptRowMap = Object.create(null);
+        for (var kr = firstDense; kr <= lastDense; kr++)
+            keptRowMap[kr] = 1;
+        for (var rr = 0; rr < rows.length; rr++) {
+            if (keptRowMap[rr])
+                continue;
+            rejectedRows.push({
+                idx: rr,
+                cy: Math.round(Number(rows[rr] && rows[rr].cy || 0)),
+                count: Number(rows[rr] && rows[rr].items && rows[rr].items.length || 0),
+                reason: 'outside-main-grid'
+            });
+        }
         return {
             items: kept,
             rows: rows,
             keepFrom: firstDense,
-            keepTo: lastDense
+            keepTo: lastDense,
+            rejectedRows: rejectedRows,
+            rejectedCells: shapeRejected,
+            shapeSizeMed: shapeFiltered.sizeMed || 0
         };
     }
     function brBuildCanvasRoadSeq(items) {
@@ -7749,7 +7825,10 @@
                         (filtered.keepFrom != null && filtered.keepTo != null && filtered.keepTo >= filtered.keepFrom)
                             ? (Number(filtered.keepTo || 0) - Number(filtered.keepFrom || 0) + 1)
                             : (filtered.rows ? filtered.rows.length : 0)
-                }
+                },
+                rejectedRows: filtered.rejectedRows || [],
+                rejectedCells: filtered.rejectedCells || [],
+                shapeSizeMed: Number(filtered.shapeSizeMed || 0) || 0
             })
         };
     }
@@ -7851,6 +7930,9 @@
                 rawLen: rawSeq.length,
                 roi: pack && pack.roi ? pack.roi : null,
                 rowFilter: meta && meta.rowFilter ? meta.rowFilter : null,
+                rejectedRows: meta && meta.rejectedRows ? meta.rejectedRows.slice(0, 8) : [],
+                rejectedCellsLen: Number((meta && meta.rejectedCells && meta.rejectedCells.length) || 0) || 0,
+                shapeSizeMed: Number(meta && meta.shapeSizeMed || 0) || 0,
                 boardCountTrim: meta && meta.boardCountTrim ? meta.boardCountTrim : null,
                 boardFit: brCanvasRoadPackBoardFit(pack, boardTarget),
                 cellsLen: Number((pack && pack.cells && pack.cells.length) || 0) || 0,
@@ -7930,12 +8012,18 @@
         }
         var candDiag = candidate && candidate.meta && candidate.meta.diag ? candidate.meta.diag : {};
         var bestDiag = incumbent && incumbent.meta && incumbent.meta.diag ? incumbent.meta.diag : {};
+        var candRejectedRows = Number((candidate && candidate.meta && candidate.meta.rejectedRows && candidate.meta.rejectedRows.length) || 0) || 0;
+        var bestRejectedRows = Number((incumbent && incumbent.meta && incumbent.meta.rejectedRows && incumbent.meta.rejectedRows.length) || 0) || 0;
+        var candRejectedCells = Number((candidate && candidate.meta && candidate.meta.rejectedCells && candidate.meta.rejectedCells.length) || 0) || 0;
+        var bestRejectedCells = Number((incumbent && incumbent.meta && incumbent.meta.rejectedCells && incumbent.meta.rejectedCells.length) || 0) || 0;
         var candScore =
             candSeq.length * 120 +
             Number(candidate && candidate.cells && candidate.cells.length || 0) * 30 +
             Math.min(500, Number(candDiag.classifiedSamples || 0)) -
             Math.max(0, candKeep - 3) * 90 -
             Math.max(0, candRows - candKeep) * 120 -
+            candRejectedRows * 110 -
+            Math.min(260, candRejectedCells * 18) -
             Math.round(candArea / 1800);
         var bestScore =
             bestSeq.length * 120 +
@@ -7943,6 +8031,8 @@
             Math.min(500, Number(bestDiag.classifiedSamples || 0)) -
             Math.max(0, bestKeep - 3) * 90 -
             Math.max(0, bestRows - bestKeep) * 120 -
+            bestRejectedRows * 110 -
+            Math.min(260, bestRejectedCells * 18) -
             Math.round(bestArea / 1800);
         return candScore > bestScore;
     }
@@ -8092,7 +8182,7 @@
         var ignoreCache = !!options.ignoreCache;
         var skipBoardCountTrim = !!options.skipBoardCountTrim;
         var preferVisualRoadPreset = !!options.preferVisualRoadPreset;
-        var boardTarget = null;
+        var boardTarget = skipBoardCountTrim ? null : brGetCanvasRoadBoardCountTarget();
         var canvasEntries = brListVisibleCanvasesForSeq();
         var candidateSummaries = [];
         if (!canvasEntries.length) {
@@ -8185,6 +8275,8 @@
                         h: Math.round(rect.height)
                     } : null
                 };
+                if (!skipBoardCountTrim && boardTarget && boardTarget.len)
+                    pack = brTryTrimCanvasRoadPackByBoardCounts(pack, boardTarget);
                 if (candidateSummaries.length < 18) {
                     try {
                         candidateSummaries.push(brSummarizeCanvasRoadPack(pack, boardTarget));
@@ -8196,11 +8288,11 @@
                     if (candRank !== bestRank) {
                         var candLenForRank = String(pack && pack.rawSeq || pack && pack.seq || '').length;
                         var bestLenForRank = String(best && best.rawSeq || best && best.seq || '').length;
-                        if (candRank < bestRank && candLenForRank >= Math.max(1, bestLenForRank - 1)) {
+                        if (candRank < bestRank && candLenForRank >= Math.max(1, bestLenForRank - 3)) {
                             best = pack;
                             continue;
                         }
-                        if (bestRank < candRank && bestLenForRank >= Math.max(1, candLenForRank - 1))
+                        if (bestRank < candRank && bestLenForRank >= Math.max(1, candLenForRank - 3))
                             continue;
                     }
                 }
@@ -8780,9 +8872,10 @@
                         (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(function () {
                             try {
                                 var preferPreset = /manual-debug-overlay|push-visual-sync|auto-visual-road-sync|buildSnapshotNow-empty-pull/i.test(String(reasonTag || ''));
+                                var allowBoardCountTrim = /manual-debug-overlay|push-visual-sync|auto-visual-road-sync/i.test(String(reasonTag || ''));
                                 var r = brReadCanvasRoadSeq({
                                     ignoreCache: true,
-                                    skipBoardCountTrim: true,
+                                    skipBoardCountTrim: !allowBoardCountTrim,
                                     preferVisualRoadPreset: preferPreset,
                                     reason: String(reasonTag || '')
                                 });
@@ -15744,24 +15837,14 @@
                 reflected: false
             };
         }
-        var before = sampleTotalsNow();
         var clicked = clickBetTarget(tgt);
-        var reflected = await waitForTotalsChange(before, side, waitMs || 160).catch(function () {
-            return false;
-        });
-        var stakeHit = null;
-        if (!reflected && isDomMode) {
-            stakeHit = await domWaitTargetStakeUnits(tgt, expectedUnits, 140).catch(function () {
-                return null;
-            });
-            reflected = !!(stakeHit && (expectedUnits == null || stakeHit.val === expectedUnits));
-        }
         return {
-            ok: !!(clicked && reflected),
+            ok: !!clicked,
             target: tgt,
             clicked: !!clicked,
-            reflected: !!reflected,
-            stakeHit: stakeHit
+            reflected: !!clicked,
+            stakeHit: null,
+            verifySkipped: true
         };
     }
     async function ensureChipFocusedForBet(isDomMode, map, amount) {
@@ -16056,16 +16139,17 @@
                     console.warn('[cwBet++] không focus được chip exact-hit', X);
                     return failBet('focus exact chip failed', { side: side, amount: raw, chipUnits: X });
                 }
-                var tapOne = await executeBetTapAndVerify(side, tgt, isDomMode, X, 170);
+                var tapOne = await executeBetTapAndVerify(side, tgt, isDomMode, X);
                 cwBetFlowLog('bet-target-clicked', {
                     side: side,
                     amount: raw,
                     chipUnits: X,
                     clicked: tapOne.clicked ? 1 : 0,
                     reflected: tapOne.reflected ? 1 : 0,
+                    verifySkipped: tapOne.verifySkipped ? 1 : 0,
                     target: betTargetMeta(tapOne.target)
                 }, 0, 'bet-target-clicked|' + side + '|' + X);
-                if (!tapOne.reflected) {
+                if (!tapOne.reflected && (isDomMode || !tapOne.clicked)) {
                     console.warn('[cwBet++] click cửa không ghi nhận tiền exact-hit', {
                         side: side,
                         amount: X,
@@ -16134,13 +16218,14 @@
                     return failBet('focus chip failed', { side: side, amount: raw, chipUnits: step.val });
                 }
                 for (var i2 = 0; i2 < step.count; i2++) {
-                    var tapStep = await executeBetTapAndVerify(side, tgt, isDomMode, step.val, 120);
+                    var tapStep = await executeBetTapAndVerify(side, tgt, isDomMode, step.val);
                     cwBetFlowLog('bet-plan-click', {
                         side: side,
                         denom: step.val,
                         turn: i2 + 1,
                         clicked: tapStep.clicked ? 1 : 0,
                         reflected: tapStep.reflected ? 1 : 0,
+                        verifySkipped: tapStep.verifySkipped ? 1 : 0,
                         target: betTargetMeta(tapStep.target)
                     }, 0, 'bet-plan-click|' + side + '|' + step.val + '|' + (i2 + 1));
                     if (!tapStep.clicked)
@@ -16149,7 +16234,7 @@
                             denom: step.val,
                             turn: i2 + 1
                         });
-                    if (!tapStep.reflected) {
+                    if (!tapStep.reflected && (isDomMode || !tapStep.clicked)) {
                         console.warn('[cwBet++] click cửa không ghi nhận tiền', {
                             side: side,
                             denom: step.val,
@@ -18598,7 +18683,7 @@
         };
         window.__cw_probeRoadSeqNow = function () {
             try {
-                var r = brReadCanvasRoadSeq({ ignoreCache: true, skipBoardCountTrim: true });
+                var r = brReadCanvasRoadSeq({ ignoreCache: true, skipBoardCountTrim: false });
                 if (r) {
                     try {
                         r.probeSeq = String(r.seq || '');
@@ -18687,7 +18772,7 @@
                     } catch (_) {}
                 }
                 if (!pack)
-                    pack = brReadCanvasRoadSeq({ ignoreCache: true, skipBoardCountTrim: true });
+                    pack = brReadCanvasRoadSeq({ ignoreCache: true, skipBoardCountTrim: false });
                 var host = document.createElement('div');
                 host.id = '__cw_road_seq_debug_overlay';
                 host.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none;';
@@ -19024,14 +19109,8 @@
                     }
                     if (typeof cwBet !== "function") throw new Error("cwBet not found");
 
-                    var before = readTotalsSafe() || {};
                     var rawResult = await cwBet(job.side, job.amt);
                     var ok = rawResult === true || rawResult === "ok" || (rawResult && rawResult.ok === true);
-                    try {
-                        if (ok && typeof waitForTotalsChange === "function") {
-                            await waitForTotalsChange(before, job.side, 200);
-                        }
-                    } catch (_) {}
                     try { window.__cw_last_bet_touch_at = Date.now(); } catch (_) {}
                     if (ok) {
                         safePost({

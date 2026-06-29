@@ -1,5 +1,28 @@
 # ARCHITECTURE
 
+## Cap nhat kien truc 2026-06-29
+
+### Pending settle architecture moi
+
+- Co hai duong settle:
+  - Seq/tick settle: dung `FinalizeLastBet(...)`, van co gating context/seq.
+  - Trusted result settle: dung `FinalizeOldestPendingBetTrusted(...)`, bo qua gating seq/table/shoe va dong pending cu nhat.
+- Trusted result settle chi dung khi result da duoc coi la authority: `net-gp-winner`, `UiFinalizeBetResult`, UI win/loss fallback, multi winners callback.
+- `TaskUtil.WaitRoundFinishAndJudge(...)` goi `UiFinalizeBetResult` truoc khi update UI thang/thua de history duoc dong truoc UI.
+
+### Data flow pending moi
+
+1. `TaskUtil.PlaceBet()` click bet va record pending.
+2. Khi co result tin cay, network winner packet hoac authority settle hoac UI win/loss fallback goi trusted finalize.
+3. Trusted finalize update `Result`, `WinLose`, `Account`, append CSV, remove pending, refresh grid.
+4. Neu khong co trusted result, luong seq/tick van co the settle bang `FinalizeLastBet(...)`.
+
+### Road sequence architecture note
+
+- `__cw_showRoadSeqDebug(8)` la cong cu doi chieu ROI/cell, nhung khong duoc sua ROI tuy tien.
+- Scanner can bam road grid/cell shape, khong bam toa do tuyet doi neu muon chiu duoc thay doi do phan giai.
+- ROI/filter phai loai thong ke `CON/HOA/CAI`, nut max/cup, dealer/video.
+
 > Kiến trúc thực tế của project sau các thay đổi gần nhất. Tài liệu này phản ánh flow Baccarat ZoWin hiện tại, không mô tả theo nhánh cũ đã bỏ.
 
 ## Cấu trúc project

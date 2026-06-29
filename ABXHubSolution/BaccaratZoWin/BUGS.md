@@ -1,5 +1,33 @@
 # BUGS
 
+## Cap nhat bug 2026-06-29
+
+### Bug pending update cham
+
+- Trieu chung: bang dieu khien da co thang/thua nhung pending history van `Dang cho`, chi update khi seq/tick advance hoac sang van sau.
+- Nguyen nhan da thay: UI win/loss co luc den sau khi seq da settle; `FinalizeLastBet(...)` phu thuoc gating seq/context voi mot so nguon; `WaitAuthoritySettleAsync` nhieu luc duoc publish tu seq gate nen khong som hon seq.
+- Fix moi: them `FinalizeOldestPendingBetTrusted(...)` de dong pending cu nhat khi co result tin cay, khong doi seq advanced.
+- Nguon da noi vao fix: `net-gp-winner`, `UiFinalizeBetResult`, UI win/loss fallback, `FinalizePendingBetsWithWinners`.
+- Log xac minh: `[BET][HIST][TRUSTED-FINAL]`.
+- Neu van loi: xem `[BET][HIST][TRUSTED-SKIP]`, `pending=0`, hoac khong co log trusted nao.
+
+### Bug dat tien chua du
+
+- Trieu chung: dat 30 banker nhung chi vao 10.
+- Nguyen nhan nghiep vu: verify tien tren ban cham/sai nhip lam code dung sau click dau.
+- Huong fix da chot: khong verify tien da phan anh sau moi click; click dung so luong can thiet la xong.
+
+### Bug balance nhay ve `-`
+
+- Trieu chung: tai khoan nhay ve `-` roi ve so dung.
+- Huong fix da chot: khong ghi de UI bang `-` khi snapshot thieu balance; giu balance cuoi hop le.
+
+### Bug road ROI unstable
+
+- Trieu chung: `__cw_showRoadSeqDebug(8)` co luc lay thong ke phia tren hoac max/cup phia duoi.
+- Nguyen nhan: ROI/filter qua rong, bam toa do/layout tuyet doi va scoring chua loai du vung khong phai road.
+- Workaround: khong sua ROI neu da dung; khi can sua thi dung overlay va log `rejectedRows`, `rejectedCellsLen`, `shapeSizeMed` de xac minh.
+
 > Danh sách bug/rủi ro đang biết tới theo trạng thái hiện tại của app Baccarat ZoWin.
 
 ## Bug hiện tại

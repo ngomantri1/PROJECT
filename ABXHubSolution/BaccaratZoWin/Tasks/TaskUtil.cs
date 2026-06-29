@@ -438,6 +438,15 @@ namespace BaccaratZoWin.Tasks
 
                 await ctx.UiDispatcher.InvokeAsync(() =>
                 {
+                    ctx.UiFinalizeBetResult?.Invoke(settleResult, new CwSnapshot
+                    {
+                        rawSeq = settle.SeqDisplay ?? "",
+                        seq = settle.SeqDisplay ?? "",
+                        seqVersion = settle.SeqVersion,
+                        seqEvent = settle.SeqEvent ?? "",
+                        totals = new CwTotals()
+                    }, string.IsNullOrWhiteSpace(settle.Reason) ? "authority-settle" : settle.Reason);
+
                     if (win.HasValue)
                     {
                         ctx.UiWinLoss?.Invoke(win.Value);

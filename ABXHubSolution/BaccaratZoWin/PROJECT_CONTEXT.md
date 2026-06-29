@@ -1,5 +1,43 @@
 # PROJECT_CONTEXT
 
+## Cap nhat 2026-06-29 tu chat hien tai
+
+### Road sequence / ROI
+
+- Nguoi dung da nhieu lan xac nhan vung `await __cw_showRoadSeqDebug(8)` co luc dung, nhung rat de bi lech khi sua code.
+- Tuyet doi khong tu y doi ROI/vung doc road neu task hien tai khong yeu cau.
+- Neu can sua road sequence, phai uu tien giu vung da duoc xac nhan dung va chi sua filter/score o muc toi thieu.
+- Cac loi da gap: lay thua 1 dong thong ke phia tren; thieu 3 dong phia duoi; cat xuong qua sau lay `MAX 500M`/cup; thay doi do phan giai co the lam ROI tuyet doi sai neu khong bam layout/cell shape.
+- Huong da chot: loc theo cell-like/row-like, loai row/cell khong giong bead road, khong dua thong ke `CON/HOA/CAI`, nut max/cup, dealer/video vao `rawSeq`.
+- JS revision gan day: `SEQFIX-20260629-r78-road-grid-filter`, co log `rejectedRows`, `rejectedCellsLen`, `shapeSizeMed`.
+
+### Pending/history settle
+
+- Yeu cau nghiep vu moi: khi da co ket qua thang/thua xac dinh cho lenh cuoc vua dat thi dong pending ngay, khong doi den lan dat cuoc sau.
+- Khong con coi `seq advanced` la dieu kien bat buoc cho moi nguon settle.
+- `FinalizeLastBet(...)` van giu cho luong seq/tick co gating.
+- Da them duong trusted settle rieng: `FinalizeOldestPendingBetTrusted(...)`.
+- Trusted finalize dong pending cu nhat, khong check seq advanced, khong check table/shoe.
+- Cac nguon tin cay da chuyen sang trusted finalize: `UiFinalizeBetResult`, network winner `net-gp-winner`, fallback UI `THANG/THUA/HOA`, `FinalizePendingBetsWithWinners`.
+- Trong `Tasks/TaskUtil.cs`, thu tu moi: `UiFinalizeBetResult` truoc, sau do moi `UiWinLoss` / `UiSetWinLossText`.
+- Log can xem: `[BET][AUTH][TRUSTED-FINALIZE]`, `[NETSEQ][WINNER][TRUSTED-FINALIZE]`, `[BET][HIST][TRUSTED-FINAL]`, `[BET][HIST][TRUSTED-SKIP]`, `[BET][HIST][UI-WL]`.
+
+### Betting/click money
+
+- Nguoi dung da chot: sau moi click khong can verify tien da phan anh tren ban.
+- Neu dat 30 thi code phai click du so luong/chip de dat du 30, khong dung sau click dau vi verify chua kip thay tien.
+- Luong click bet theo huong send-only/optimistic.
+
+### Account balance UI
+
+- Tai khoan tren bang dieu khien khong duoc nhay ve `-` khi snapshot tam thoi khong co balance.
+- Can giu so du cuoi cung hop le, chi cap nhat khi co balance hop le moi.
+
+### Build/test
+
+- `Release` build da pass sau thay doi trusted finalize.
+- `Debug` build co the fail copy exe neu app dang chay va khoa `BaccaratZoWin.exe`.
+
 > Tài liệu ngữ cảnh thực tế cho AI/coding agent. Ưu tiên trạng thái code đang chạy thật và các quyết định đã chốt trong chat, không ưu tiên spec lý tưởng cũ.
 
 ## Mô tả tổng quan project

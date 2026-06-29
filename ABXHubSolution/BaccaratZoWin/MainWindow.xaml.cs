@@ -5272,7 +5272,8 @@ try{
                                                         seqDisplay,
                                                         settleSeqVersion,
                                                         settleSeqEvent,
-                                                        "tick-tail-change");
+                                                        "tick-tail-change",
+                                                        forceSeqAdvanced: true);
                                                 }
                                                 PublishAuthorityBetSettleLocked(
                                                     'T',
@@ -5310,7 +5311,8 @@ try{
                                                         seqDisplay,
                                                         settleSeqVersion,
                                                         settleSeqEvent,
-                                                        "tick-tail-change");
+                                                        "tick-tail-change",
+                                                        forceSeqAdvanced: true);
                                                 }
                                                 PublishAuthorityBetSettleLocked(
                                                     winIsBanker ? 'B' : 'P',
@@ -6965,18 +6967,12 @@ try{
                     var settleResult = MapWinnerCharToResultText(winnerChar.Value);
                     if (_pendingRows.Count > 0 && !HasJackpotMultiSideRunning())
                     {
-                        FinalizeLastBet(
+                        Log($"[NETSEQ][WINNER][TRUSTED-FINALIZE] src={packet.OwnerTag} | result={settleResult} | table={packet.TableId} | shoe={packet.GameShoe} | round={packet.GameRound} | pending={_pendingRows.Count}");
+                        FinalizeOldestPendingBetTrusted(
                             settleResult,
                             ResolveHistoryBalance(balanceAfter),
                             null,
-                            settleResult,
-                            settleDisplay,
-                            settleVersion,
-                            "net-gp-winner",
-                            "net-gp-winner",
-                            packet.TableId,
-                            packet.GameShoe,
-                            packet.GameRound);
+                            "net-gp-winner");
                     }
 
                     PublishAuthorityBetSettleLocked(
@@ -10803,6 +10799,21 @@ try{
                 {
                     try { FinalizePendingBetsWithWinners(winners, resultDisplay); } catch { }
                 }),
+                UiFinalizeBetResult = (result, settleSnap, reason) => PostToUi(() =>
+                {
+                    try
+                    {
+                        var display = string.IsNullOrWhiteSpace(result) ? null : result.Trim().ToUpperInvariant();
+                        if (string.IsNullOrWhiteSpace(display)) return;
+                        Log($"[BET][AUTH][TRUSTED-FINALIZE] result={display} | reason={(string.IsNullOrWhiteSpace(reason) ? "authority-settle" : reason)} | pending={_pendingRows.Count}");
+                        FinalizeOldestPendingBetTrusted(
+                            display,
+                            ResolveHistoryBalance(settleSnap?.totals?.A),
+                            null,
+                            string.IsNullOrWhiteSpace(reason) ? "authority-settle" : reason);
+                    }
+                    catch { }
+                }),
                 UiSetChainLevel = (chain, level) => PostToUi(() =>
                 {
                     try { SetLevelForMultiChain(tab, chain, level); } catch { }
@@ -10846,6 +10857,85 @@ try{
                     UpdateTabWinLossText(tab, text);
                 }),
             };
+        }
+
+        private void TryFinalizePendingBetFromWinLoss(bool? win)
+        {
+            if (!win.HasValue)
+            {
+                TryFinalizePendingBetFromResolvedResult("TIE", "ui-winloss-bool");
+                return;
+            }
+
+            var jackpot = HasJackpotMultiSideRunning();
+            Log($"[BET][HIST][UI-WL] kind=bool | value={(win.Value ? "THANG" : "THUA")} | pending={_pendingRows.Count} | jackpot={(jackpot ? 1 : 0)}");
+            if (_pendingRows.Count == 0 || jackpot)
+                return;
+
+            var side = NormalizeSide(_pendingRows[0].Side);
+            var result = win.Value
+                ? side
+                : (string.Equals(side, "BANKER", StringComparison.OrdinalIgnoreCase) ? "PLAYER" :
+                   string.Equals(side, "PLAYER", StringComparison.OrdinalIgnoreCase) ? "BANKER" : "");
+
+            TryFinalizePendingBetFromResolvedResult(result, "ui-winloss-bool");
+        }
+
+        private void TryFinalizePendingBetFromWinLossText(string? text)
+        {
+            var jackpot = HasJackpotMultiSideRunning();
+            Log($"[BET][HIST][UI-WL] kind=text | text={(text ?? "-")} | pending={_pendingRows.Count} | jackpot={(jackpot ? 1 : 0)}");
+            if (_pendingRows.Count == 0 || jackpot)
+                return;
+
+            var token = TextNorm.U(text ?? "");
+            if (string.IsNullOrWhiteSpace(token) || token == "DANG CHO" || token == "DANGCHO")
+                return;
+
+            var row = _pendingRows[0];
+            var side = NormalizeSide(row.Side);
+            string? result = null;
+            HashSet<string>? winners = null;
+
+            if (token.StartsWith("THANG", StringComparison.OrdinalIgnoreCase))
+            {
+                result = side;
+            }
+            else if (token.StartsWith("THUA", StringComparison.OrdinalIgnoreCase))
+            {
+                result = string.Equals(side, "BANKER", StringComparison.OrdinalIgnoreCase) ? "PLAYER" :
+                         string.Equals(side, "PLAYER", StringComparison.OrdinalIgnoreCase) ? "BANKER" : null;
+            }
+            else if (token.StartsWith("HOA", StringComparison.OrdinalIgnoreCase) || token == "TIE" || token == "T")
+            {
+                result = "TIE";
+                winners = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            if (string.IsNullOrWhiteSpace(result))
+                return;
+
+            TryFinalizePendingBetFromResolvedResult(result, "ui-winloss-text", winners, text);
+        }
+
+        private void TryFinalizePendingBetFromResolvedResult(string? result, string reason, HashSet<string>? winners = null, string? sourceText = null)
+        {
+            if (_pendingRows.Count == 0 || HasJackpotMultiSideRunning() || string.IsNullOrWhiteSpace(result))
+                return;
+
+            var display = NormalizeSide(result);
+            if (string.Equals(display, "T", StringComparison.OrdinalIgnoreCase))
+                display = "TIE";
+            if (string.IsNullOrWhiteSpace(display))
+                return;
+
+            Log($"[BET][HIST][FAST-FINALIZE] reason={reason} | text={(sourceText ?? "-")} | side={_pendingRows[0].Side} | result={display} | pending={_pendingRows.Count}");
+            FinalizeOldestPendingBetTrusted(
+                display,
+                ResolveHistoryBalance(),
+                winners,
+                reason,
+                sourceText);
         }
 
         private bool TryRegisterBetIssued(
@@ -11884,6 +11974,8 @@ try{
             if (ReferenceEquals(_activeTab, tab))
                 SetWinLossUI(result);
             UpdateStatsUi(tab);
+            if (result.HasValue)
+                TryFinalizePendingBetFromWinLoss(result);
         }
 
         private void UpdateTabWinLossText(StrategyTabState tab, string? text)
@@ -11901,6 +11993,8 @@ try{
                 else SetWinLossUI(tab.LastWinLoss);
             }
             UpdateStatsUi(tab);
+            if (u == "THANG" || u == "THUA" || u == "HOA" || u == "TIE" || u == "T")
+                TryFinalizePendingBetFromWinLossText(text);
         }
 
         private void ResetTabMiniState(StrategyTabState tab)
@@ -13696,6 +13790,51 @@ try{
             return _pendingRows.Count > 0 ? _pendingRows[0].Account : 0;
         }
 
+        private void FinalizeOldestPendingBetTrusted(
+            string? result,
+            double balanceAfter,
+            HashSet<string>? winners,
+            string reason,
+            string? sourceText = null)
+        {
+            if (_pendingRows.Count == 0)
+            {
+                Log($"[BET][HIST][TRUSTED-SKIP] reason=no-pending | src={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | result={(result ?? "-")} | text={(sourceText ?? "-")}");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(result))
+            {
+                Log($"[BET][HIST][TRUSTED-SKIP] reason=result-empty | src={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | pending={_pendingRows.Count} | text={(sourceText ?? "-")}");
+                return;
+            }
+
+            var resultText = result.Trim().ToUpperInvariant();
+            if (string.Equals(resultText, "T", StringComparison.OrdinalIgnoreCase))
+                resultText = "TIE";
+            if (string.Equals(TextNorm.U(resultText), "HOA", StringComparison.Ordinal))
+                resultText = "TIE";
+
+            var row = _pendingRows[0];
+            bool isTieResult = string.Equals(TextNorm.U(resultText), "TIE", StringComparison.Ordinal);
+            var winSet = winners ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase) { resultText };
+
+            row.Result = resultText;
+            bool win = !isTieResult && winSet.Contains(row.Side);
+            row.WinLose = isTieResult ? "Hòa" : (win ? "Thắng" : "Thua");
+            row.Account = balanceAfter;
+
+            Log($"[BET][HIST][TRUSTED-FINAL] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | result={row.Result} | wl={row.WinLose} | acc={row.Account:#,0.##} | src={(string.IsNullOrWhiteSpace(reason) ? "-" : reason)} | text={(sourceText ?? "-")} | pendingBefore={_pendingRows.Count}");
+
+            try { AppendBetCsv(row); } catch { }
+            _pendingRows.RemoveAt(0);
+
+            if (_autoFollowNewest)
+                ShowFirstPage();
+            else
+                RefreshCurrentPage();
+        }
+
         private void FinalizeLastBet(
             string? result,
             double balanceAfter,
@@ -13707,7 +13846,8 @@ try{
             string settleReason = "",
             long settleTableId = 0,
             long settleGameShoe = 0,
-            long settleGameRound = 0)
+            long settleGameRound = 0,
+            bool forceSeqAdvanced = false)
         {
             if (_pendingRows.Count == 0 || string.IsNullOrWhiteSpace(result)) return;
 
@@ -13819,7 +13959,7 @@ try{
                 }
             }
             int contextSkipCount = pendingSnapshot.Count(row => !IsRowContextMatch(row));
-            var rowsToFinalize = hasSettleContext
+            var rowsToFinalize = (hasSettleContext && !forceSeqAdvanced)
                 ? pendingSnapshot.Where(row => IsRowContextMatch(row) && IsRowSeqAdvanced(row)).ToList()
                 : pendingSnapshot.Where(IsRowContextMatch).ToList();
 
@@ -13847,11 +13987,11 @@ try{
 
             int holdCount = pendingSnapshot.Count(row => IsRowContextMatch(row)) - rowsToFinalize.Count;
 
-            Log($"[BET][HIST][CHECK] reason={(string.IsNullOrWhiteSpace(settleReason) ? "-" : settleReason)} | result={resultText} | pending={pendingSnapshot.Count} | matched={rowsToFinalize.Count} | hold={holdCount} | ctxSkip={contextSkipCount} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | settleLen={settleDisplay.Length} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")} | settleTail={settleTail}");
+            Log($"[BET][HIST][CHECK] reason={(string.IsNullOrWhiteSpace(settleReason) ? "-" : settleReason)} | result={resultText} | pending={pendingSnapshot.Count} | matched={rowsToFinalize.Count} | hold={holdCount} | ctxSkip={contextSkipCount} | forceAdv={(forceSeqAdvanced ? 1 : 0)} | settleTable={(hasSettleTable ? settleTableId.ToString() : "-")} | settleShoe={(hasSettleShoe ? settleGameShoe.ToString() : "-")} | settleRound={(settleGameRound > 0 ? settleGameRound.ToString() : "-")} | settleLen={settleDisplay.Length} | settleVer={(hasSettleVersion ? settleSeqVersion!.Value.ToString() : "-")} | settleEvt={(settleSeqEvent ?? "-")} | settleTail={settleTail}");
             foreach (var row in pendingSnapshot)
             {
                 bool contextMatch = IsRowContextMatch(row);
-                bool advanced = IsRowSeqAdvanced(row);
+                bool advanced = forceSeqAdvanced || IsRowSeqAdvanced(row);
                 char issueTail = row.IssuedSeqDisplay.Length > 0 ? row.IssuedSeqDisplay[^1] : '-';
                 Log($"[BET][HIST][CHECK][ROW] at={row.At:HH:mm:ss} | side={row.Side} | stake={row.Stake:N0} | round={row.IssuedRoundId} | issueTable={row.IssuedTableId} | issueShoe={row.IssuedGameShoe} | issueObsRound={row.IssuedObservedRound} | issueLen={row.IssuedSeqDisplay.Length} | issueVer={(row.IssuedSeqVersion?.ToString() ?? "-")} | issueEvt={row.IssuedSeqEvent} | issueSrc={(string.IsNullOrWhiteSpace(row.IssuedSeqSource) ? "-" : row.IssuedSeqSource)} | issueTail={issueTail} | ctxMatch={contextMatch} | advanced={advanced}");
             }
@@ -13904,7 +14044,7 @@ try{
             var resText = !string.IsNullOrWhiteSpace(displayResult)
                 ? displayResult
                 : (winners != null && winners.Count > 0 ? string.Join("/", winners) : "-");
-            FinalizeLastBet(resText, balance, winners, resText);
+            FinalizeOldestPendingBetTrusted(resText, balance, winners, "multi-bet-winners");
         }
         private void SetLevelForMultiChain(StrategyTabState tab, int chainIndex, int levelIndex)
         {
