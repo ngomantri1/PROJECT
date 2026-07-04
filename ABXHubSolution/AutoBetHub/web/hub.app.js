@@ -20,6 +20,12 @@ const GAMES = [{
   gradient: "from-rose-500 to-fuchsia-500",
   img: "Assets/TaiXiuLiveHit.png"
 }, {
+  title: "Xóc Đĩa Tứ Linh Phụng HIT, GO88",
+  slug: "xoc-dia-tu-linh-hit",
+  tag: "Xóc đĩa",
+  gradient: "from-rose-500 to-fuchsia-500",
+  img: "Assets/XocDiaTuLinhHit.png"
+}, {
   title: "Aviator HIT, GO88, NET88, TX88",
   slug: "aviator-hit",
   tag: "aviator",

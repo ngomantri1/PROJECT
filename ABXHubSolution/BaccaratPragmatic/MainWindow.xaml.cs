@@ -521,6 +521,8 @@ namespace BaccaratPragmatic
         // Cache & cờ để không inject lặp lại
         private string? _appJs;
         private bool _webMsgHooked; // để gắn WebMessageReceived đúng 1 lần
+        private bool _mainCertBypassHooked;
+        private bool _popupCertBypassHooked;
 
 
 
@@ -534,10 +536,16 @@ namespace BaccaratPragmatic
         private bool _domHooked;             // đã gắn DOMContentLoaded cho top chưa
         private readonly ConcurrentDictionary<ulong, byte> _mainFrameBridgeArmed = new();
         private readonly ConcurrentDictionary<ulong, CoreWebView2Frame> _mainFrameRefs = new();
+        private readonly ConcurrentDictionary<int, byte> _popupFrameBridgeArmed = new();
         private readonly ConcurrentDictionary<int, CoreWebView2Frame> _popupFrameRefs = new();
         private readonly ConcurrentDictionary<int, string> _frameInjectedDocKeys = new();
         private readonly ConcurrentDictionary<string, string> _frameNavStartUrlByKey = new();
         private readonly ConcurrentDictionary<int, string> _frameLastNavStartUrlByRef = new();
+        private readonly ConcurrentDictionary<string, int> _pragmaticTlsRetryCounts = new();
+        private readonly ConcurrentDictionary<string, int> _pragmaticTlsFallbackCounts = new();
+        private int _pragmaticLauncherFileNotFoundRecoverCount = 0;
+        private string _lastPragmaticTlsAllowedUrl = "";
+        private DateTime _lastPragmaticTlsAllowedUtc = DateTime.MinValue;
         private DateTime _lastPopupErrorUiGuardUtc = DateTime.MinValue;
         private int _popupErrorUiGuardCount = 0;
         private DateTime _statusOverrideUntilUtc = DateTime.MinValue;
@@ -783,7 +791,7 @@ namespace BaccaratPragmatic
 
 
 
-        private const string DEFAULT_URL = "https://new.wencheng.cc/"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "https://net88.fund/livecasino?provider=pragmatic"; // URL mặc định bạn muốn
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn
@@ -1205,7 +1213,8 @@ Ví dụ không hợp lệ:
     function __abxCwIsWebMain(h){ return /\/player\/webMain\.jsp/i.test(String(h || '')); }
     var __abxCwVisibleKey = 'abx.canvasWatch.visible';
     var __abxCwVisibleDefaultKey = 'abx.canvasWatch.visible.default';
-    var __abxCwVisibleDefaultFallback = false;
+    var __abxCwVisibleDefaultFallback = true;
+    var __abxCwVisibleDefaultRevFallback = '20260630-show-default';
     function __abxCwFlagToBool(v, fallback){
       try{
         if (typeof v === 'boolean') return v;
@@ -1227,7 +1236,7 @@ Ví dụ không hợp lệ:
     function __abxCwDefaultToken(defaultVisible){
       try{
         var rev = '';
-        try{ rev = String(window.__abx_canvas_watch_default_rev || ''); }catch(_){ rev = ''; }
+        try{ rev = String(window.__abx_canvas_watch_default_rev || __abxCwVisibleDefaultRevFallback || ''); }catch(_){ rev = String(__abxCwVisibleDefaultRevFallback || ''); }
         return (defaultVisible ? '1' : '0') + '|' + rev;
       }catch(_){}
       return defaultVisible ? '1|' : '0|';
@@ -1594,6 +1603,7 @@ Ví dụ không hợp lệ:
         if (/\/player\/webMain\.jsp/i.test(href)) return true;
         if (/\/player\/gamehall\.jsp/i.test(href)) return true;
         if (/\/player\/login\/apiLogin/i.test(href)) return true;
+        if (/pragmaticplaylive\.net/i.test(href) && /\/desktop\/baccarat/i.test(href)) return true;
         if (typeof w.__cw_isGamePopupPage === 'function'){
           try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
         }
@@ -1640,6 +1650,7 @@ Ví dụ không hợp lệ:
         if (/\/player\/webMain\.jsp/i.test(href)) return true;
         if (/\/player\/gamehall\.jsp/i.test(href)) return true;
         if (/\/player\/login\/apiLogin/i.test(href)) return true;
+        if (/pragmaticplaylive\.net/i.test(href) && /\/desktop\/baccarat/i.test(href)) return true;
         if (typeof w.__cw_isGamePopupPage === 'function'){
           try{ if (w.__cw_isGamePopupPage()) return true; }catch(_){}
         }
@@ -1699,7 +1710,8 @@ Ví dụ không hợp lệ:
             if ((/singleBacTable\.jsp/i.test(href) ||
                  /\/player\/webMain\.jsp/i.test(href) ||
                  /\/player\/gamehall\.jsp/i.test(href) ||
-                 /\/player\/login\/apiLogin/i.test(href)) &&
+                 /\/player\/login\/apiLogin/i.test(href) ||
+                 (/pragmaticplaylive\.net/i.test(href) && /\/desktop\/baccarat/i.test(href))) &&
                 w.__cw_startPush){
               try{ w.__cw_startPush(__abxPushMs()); }catch(_){}
               return;
@@ -1738,7 +1750,8 @@ try{
         if ((/singleBacTable\.jsp/i.test(href) ||
              /\/player\/webMain\.jsp/i.test(href) ||
              /\/player\/gamehall\.jsp/i.test(href) ||
-             /\/player\/login\/apiLogin/i.test(href)) &&
+             /\/player\/login\/apiLogin/i.test(href) ||
+             (/pragmaticplaylive\.net/i.test(href) && /\/desktop\/baccarat/i.test(href))) &&
             w && w.__cw_startPush){
           w.__cw_startPush(__abxPushMs());
         }
@@ -3849,6 +3862,16 @@ try{
         }
 
         // ====== WebView2 ======
+        private CoreWebView2EnvironmentOptions BuildWebView2EnvironmentOptions()
+        {
+            var args = "--host-resolver-rules=\"MAP client.pragmaticplaylive.net 13.227.227.64,EXCLUDE localhost\"";
+            Log("[WV2][HOST-MAP] client.pragmaticplaylive.net -> 13.227.227.64");
+            return new CoreWebView2EnvironmentOptions
+            {
+                AdditionalBrowserArguments = args
+            };
+        }
+
         private async Task EnsureWebReadyAsync()
         {
             if (Web == null || _ensuringWeb) return;
@@ -3868,7 +3891,7 @@ try{
                             _webEnv = await CoreWebView2Environment.CreateAsync(
                                 browserExecutableFolder: fixedDir,
                                 userDataFolder: Wv2UserDataDir,
-                                options: null
+                                options: BuildWebView2EnvironmentOptions()
                             );
                         }
                         catch (Exception ex)
@@ -3879,7 +3902,7 @@ try{
                             _webEnv = await CoreWebView2Environment.CreateAsync(
                                 browserExecutableFolder: null,
                                 userDataFolder: Wv2UserDataDir,
-                                options: null
+                                options: BuildWebView2EnvironmentOptions()
                             );
                         }
                     }
@@ -4069,7 +4092,7 @@ try{
                 _webEnv = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: fixedDir,
                     userDataFolder: Wv2UserDataDir,
-                    options: null /* giữ environment sạch, browser args được cấu hình ở XAML nếu cần */
+                    options: BuildWebView2EnvironmentOptions()
                 );
 
                 // Dùng overload có _webEnv để chắc chắn dùng fixed runtime
@@ -4089,7 +4112,7 @@ try{
                 _webEnv = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: null,
                     userDataFolder: Wv2UserDataDir,
-                    options: null
+                    options: BuildWebView2EnvironmentOptions()
                 );
                 await Web!.EnsureCoreWebView2Async(_webEnv);
             }
@@ -4121,6 +4144,12 @@ try{
                 }
 
                 // Khong tu mo DevTools cua Web chinh de tranh nham voi PopupWeb game.
+                if (!_mainCertBypassHooked)
+                {
+                    Web.CoreWebView2.ServerCertificateErrorDetected += PragmaticServerCertificateErrorDetected;
+                    _mainCertBypassHooked = true;
+                    Log("[TLS-BYPASS] main WebView certificate handler hooked.");
+                }
 
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Giữ nguyên hành vi popup/new window như trình duyệt thật để không làm hỏng flow mở game/provider
@@ -4798,6 +4827,7 @@ try{
                 var deferBlankPopupForHost = IsCurrentHostB8Pro07() &&
                     string.Equals(target, "about:blank", StringComparison.OrdinalIgnoreCase);
                 Log("[NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
+                LogRouteUrlParts("NewWindowRequested", target);
                 if (!string.IsNullOrWhiteSpace(target))
                 {
                     StartPopupRouteSession("new-window-requested", target);
@@ -4871,6 +4901,13 @@ try{
                 settings.UserAgent = BuildDesktopEdgeUserAgent();
             }
 
+            if (!_popupCertBypassHooked)
+            {
+                popupWeb.CoreWebView2.ServerCertificateErrorDetected += PragmaticServerCertificateErrorDetected;
+                _popupCertBypassHooked = true;
+                Log("[TLS-BYPASS] popup WebView certificate handler hooked.");
+            }
+
             _appJs ??= await LoadAppJsAsyncFallback();
             if (!_popupBridgeRegistered)
             {
@@ -4882,6 +4919,7 @@ try{
                 popupWeb.CoreWebView2.DOMContentLoaded += PopupCore_DOMContentLoaded_Bridge;
                 _popupBridgeRegistered = true;
                 Log("[PopupWeb] bridge registered");
+                ReArmExistingPopupFrames("popup-bridge-registered");
             }
 
             if (!_popupWebMsgHooked)
@@ -4919,7 +4957,17 @@ try{
 
         private async Task InjectOnPopupDocAsync()
         {
-            if (_popupWeb?.CoreWebView2 == null) return;
+            var popupWeb = _popupWeb;
+            CoreWebView2? core = null;
+            try
+            {
+                core = popupWeb?.CoreWebView2;
+            }
+            catch
+            {
+                return;
+            }
+            if (core == null) return;
             if (Interlocked.Exchange(ref _popupInjectBusy, 1) == 1) return;
 
             try
@@ -4927,25 +4975,49 @@ try{
                 string key = "";
                 try
                 {
-                    var json = await _popupWeb.CoreWebView2.ExecuteScriptAsync(
+                    var json = await core.ExecuteScriptAsync(
                         "(function(){try{return String(performance.timeOrigin)}catch(_){return String(Date.now())}})()");
                     key = JsonSerializer.Deserialize<string>(json) ?? "";
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    if (ReferenceEquals(_popupWeb, popupWeb))
+                        Log("[PopupWeb] inject key probe skipped: " + Shrink(ex.Message, 140));
+                    return;
+                }
 
                 if (!string.IsNullOrEmpty(key) && key != _popupLastDocKey)
                 {
-                    await _popupWeb.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
+                    if (!ReferenceEquals(_popupWeb, popupWeb))
+                        return;
+
+                    await core.ExecuteScriptAsync(TOP_FORWARD);
+                    if (!ReferenceEquals(_popupWeb, popupWeb))
+                        return;
                     if (!string.IsNullOrEmpty(_appJs))
-                        await _popupWeb.CoreWebView2.ExecuteScriptAsync(_appJs);
-                    await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_AUTOSTART_SINGLE_BAC);
-                    await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_START_PUSH_SINGLE_BAC);
+                        await core.ExecuteScriptAsync(_appJs);
+                    if (!ReferenceEquals(_popupWeb, popupWeb))
+                        return;
+                    await core.ExecuteScriptAsync(POPUP_TOP_AUTOSTART_SINGLE_BAC);
+                    if (!ReferenceEquals(_popupWeb, popupWeb))
+                        return;
+                    await core.ExecuteScriptAsync(POPUP_TOP_START_PUSH_SINGLE_BAC);
                     _popupLastDocKey = key;
                     await ApplyRuntimePerfToBetWebAsync();
                     Log("[PopupWeb] bridge injected, key=" + key);
                     Log($"[PopupWeb] ensure push {_cwPushMs}ms (singleBac only)");
-                    await LogBridgeProbeOnWebViewAsync(_popupWeb, "popup-doc-injected", "PopupWeb");
+                    if (ReferenceEquals(_popupWeb, popupWeb))
+                        await LogBridgeProbeOnWebViewAsync(popupWeb, "popup-doc-injected", "PopupWeb");
+                    ReArmExistingPopupFrames("popup-doc-injected");
                 }
+            }
+            catch (ObjectDisposedException ex)
+            {
+                Log("[PopupWeb] inject skipped: disposed " + Shrink(ex.Message, 140));
+            }
+            catch (InvalidOperationException ex)
+            {
+                Log("[PopupWeb] inject skipped: " + Shrink(ex.Message, 140));
             }
             finally
             {
@@ -5031,6 +5103,12 @@ try{
                 if (abxStr == "js_console")
                 {
                     IngestJsConsole(root, source);
+                    return;
+                }
+
+                if (abxStr == "click_target")
+                {
+                    LogClickTargetMessage(root, source);
                     return;
                 }
 
@@ -5171,10 +5249,25 @@ try{
                                 RegisterPopupPullOutcome(hasUsefulPopupData, isPullSource ? "tick-popup-pull" : "tick-popup-msg");
                         }
 
+                        var incomingStatusText = snap.status ?? "";
+                        var incomingStatusSource = snap.statusSource ?? "";
+                        var incomingStatusTail = snap.statusTail ?? "";
+                        if (StatusTextImpliesClosed(incomingStatusText))
+                        {
+                            progUi = 0;
+                            statusUiDisplay = incomingStatusText;
+                            statusSourceForSnap = string.IsNullOrWhiteSpace(incomingStatusSource)
+                                ? "dom-status-closed"
+                                : incomingStatusSource;
+                            statusTailForSnap = incomingStatusTail;
+                        }
+                        else
+                        {
+                            statusUiDisplay = BuildStatusFromProg(progUi);
+                            statusSourceForSnap = "prog-derived";
+                            statusTailForSnap = "";
+                        }
                         snap.prog = progUi;
-                        statusUiDisplay = BuildStatusFromProg(progUi);
-                        statusSourceForSnap = "prog-derived";
-                        statusTailForSnap = "";
                         string statusRawForLogic = statusUiDisplay;
                         snap.status = statusRawForLogic;
                         snap.statusSource = statusSourceForSnap;
@@ -5201,7 +5294,7 @@ try{
                         if ((DateTime.UtcNow - _lastStatusApplyLogUtc) > TimeSpan.FromSeconds(2))
                         {
                             _lastStatusApplyLogUtc = DateTime.UtcNow;
-                            Log($"[STATUS][PROG] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | prog={(progUi.HasValue ? progUi.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | status={statusUiDisplay}");
+                            Log($"[STATUS][PROG] src={(string.IsNullOrWhiteSpace(source) ? "-" : source)} | prog={(progUi.HasValue ? progUi.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-")} | status={statusUiDisplay} | statusSrc={(string.IsNullOrWhiteSpace(statusSourceForSnap) ? "-" : statusSourceForSnap)} | statusTail={(string.IsNullOrWhiteSpace(statusTailForSnap) ? "-" : Shrink(statusTailForSnap, 220))}");
                         }
                         var seqDisplayRaw = snap.seq ?? "";
                         var totalsNow = snap.totals;
@@ -5733,9 +5826,6 @@ try{
         {
             try
             {
-                if (!_enableJsFileLog)
-                    return;
-
                 static string OneLine(string? s, int maxLen)
                 {
                     if (string.IsNullOrWhiteSpace(s))
@@ -5775,9 +5865,11 @@ try{
                 {
                     foreach (var item in itemsEl.EnumerateArray())
                     {
-                        count++;
                         long tsMs = GetJsonLongLoose(item, "ts") ?? 0;
                         string tag = item.TryGetProperty("tag", out var tagEl) ? (tagEl.GetString() ?? "") : "";
+                        if (!_enableJsFileLog && !string.Equals(tag, "COUNTDOWN", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        count++;
                         string msg = item.TryGetProperty("msg", out var msgEl) ? (msgEl.GetString() ?? "") : "";
                         string dataText = "";
                         if (item.TryGetProperty("data", out var dataEl) &&
@@ -6096,6 +6188,18 @@ try{
             return path.IndexOf("/baccarat", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool IsPragmaticBaccaratGameUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var u))
+                return false;
+            if (u.Host.IndexOf("pragmaticplaylive.net", StringComparison.OrdinalIgnoreCase) < 0)
+                return false;
+            var path = u.AbsolutePath ?? "";
+            return path.IndexOf("/desktop/baccarat", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static long ReadLivetablesTableIdFromUrl(string? rawUrl)
         {
             if (!IsLivetablesBaccaratUrl(rawUrl))
@@ -6173,17 +6277,19 @@ try{
             if (string.IsNullOrWhiteSpace(key))
                 return;
 
-            // Pragmatic gs2c wrapper page can have very weak DOM signals (score=0),
-            // but it is still the real game-ready context and should outrank host lobby frames.
-            if (scout.isTop &&
-                IsLikelyBetGameReadyUrl(scout.href) &&
+            // Pragmatic pages can have very weak DOM signals (score=0), but the
+            // game route itself is still the real authority context.
+            if (((scout.isTop && IsLikelyBetGameReadyUrl(scout.href)) ||
+                 IsPragmaticBaccaratGameUrl(scout.href)) &&
                 scout.score < 1200)
             {
                 scout.score = 1200;
                 if (string.IsNullOrWhiteSpace(scout.confidence))
                     scout.confidence = "weak";
                 if (string.IsNullOrWhiteSpace(scout.signals))
-                    scout.signals = "url:game-ready";
+                    scout.signals = IsPragmaticBaccaratGameUrl(scout.href)
+                        ? "url:pragmatic-baccarat"
+                        : "url:game-ready";
             }
 
             if (IsIgnoredAuthorityFrameUrl(scout.href))
@@ -6252,7 +6358,7 @@ try{
             {
                 var fresh = _frameAuthorityCandidates.Values
                     .Where(c => (now - c.LastSeenUtc) <= TimeSpan.FromSeconds(10))
-                    .OrderByDescending(c => (IsSingleBacTableUrl(c.Href) || IsLivetablesBaccaratUrl(c.Href)) ? 3 : (HasSingleBacProxy(c) ? 2 : (IsWebMainUrl(c.Href) ? 1 : 0)))
+                    .OrderByDescending(c => (IsSingleBacTableUrl(c.Href) || IsLivetablesBaccaratUrl(c.Href) || IsPragmaticBaccaratGameUrl(c.Href)) ? 3 : (HasSingleBacProxy(c) ? 2 : (IsWebMainUrl(c.Href) ? 1 : 0)))
                     .ThenByDescending(c => c.Score)
                     .ThenByDescending(c => c.SeenCount)
                     .ToList();
@@ -6279,6 +6385,7 @@ try{
                 bool strongEnough = best.Score >= 2500;
                 bool stableProbable = best.Score >= 1200 && _lastAuthorityBestStable >= 2;
                 bool livetablesFast = IsLivetablesBaccaratUrl(best.Href) && best.IsTop && best.Score >= 100;
+                bool pragmaticFast = IsPragmaticBaccaratGameUrl(best.Href) && best.Score >= 1000;
                 bool topGameFast = best.IsTop && (best.Score >= 1000 || livetablesFast);
                 long lockedTableId = ReadLivetablesTableIdFromUrl(_authorityHref);
                 long bestTableId = ReadLivetablesTableIdFromUrl(best.Href);
@@ -6306,7 +6413,7 @@ try{
                                     best.Score >= _authorityScore + 900 &&
                                     _lastAuthorityBestStable >= 2;
                 bool shouldLock = (noAuthority || authorityLost || betterSwitch || tableChangedSwitch) &&
-                                  (strongEnough || stableProbable || topGameFast || tableChangedSwitch);
+                                  (strongEnough || stableProbable || topGameFast || pragmaticFast || tableChangedSwitch);
 
                 if (!shouldLock)
                 {
@@ -6752,15 +6859,7 @@ try{
         {
             try
             {
-                var f = e.Frame;
-                TrackPopupFrameRef(f);
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
-                f.WebMessageReceived += PopupFrame_WebMessageReceived;
-                f.NavigationStarting += Frame_NavigationStarting_Bridge;
-                f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
-                _ = InjectGameBridgeOnFrameIfNeededAsync(f, "frame-created-probe");
-                Log("[PopupWeb] frame bridge armed.");
-                ProbeFrameBridgeAsync(f, "PopupWeb", "frame-created");
+                ArmPopupFrameBridge(e.Frame, "frame-created");
             }
             catch (Exception ex)
             {
@@ -6773,6 +6872,7 @@ try{
             try
             {
                 await InjectOnPopupDocAsync();
+                ReArmExistingPopupFrames("popup-dom-content-loaded");
             }
             catch (Exception ex)
             {
@@ -6786,6 +6886,7 @@ try{
             {
                 var target = (e.Uri ?? "").Trim();
                 Log("[PopupWeb.NewWindowRequested] " + (string.IsNullOrWhiteSpace(target) ? "<empty>" : target));
+                LogRouteUrlParts("PopupWeb.NewWindowRequested", target);
                 if (!string.IsNullOrWhiteSpace(target))
                 {
                     SetPopupRouteStage("popup-new-window", "popup-new-window-requested", target: target);
@@ -6805,8 +6906,9 @@ try{
             {
                 _betWebNavigatingSinceUtc = DateTime.UtcNow;
                 var src = (e.Uri ?? "").Trim();
+                LogRouteUrlParts("PopupWeb.NavStarting", src);
                 var isAboutBlank = string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
-                if (!isAboutBlank && (IsLikelyBetGameUrl(src) || IsLikelyBetGatewayUrl(src)))
+                if (!isAboutBlank && (IsLikelyBetGameUrl(src) || IsLikelyBetGatewayUrl(src) || IsPragmaticLauncherUrl(src)))
                     StartPopupRouteSession("popup-nav-start", src);
                 else if (_popupRouteSessionId == 0)
                     StartPopupRouteSession("popup-nav-init", src);
@@ -6831,6 +6933,9 @@ try{
                     !string.IsNullOrWhiteSpace(src) &&
                     !string.Equals(src, "about:blank", StringComparison.OrdinalIgnoreCase);
                 Log("[PopupWeb] NavigationCompleted: " + (e.IsSuccess ? "OK" : ("Err " + e.WebErrorStatus)) + " | " + src);
+                LogRouteUrlParts("PopupWeb.NavCompleted", src);
+                if (e.IsSuccess && await TryRecoverPragmaticLauncherFileNotFoundAsync(src))
+                    return;
                 if (e.IsSuccess)
                 {
                     if (IsLikelyBetGameReadyUrl(src))
@@ -6842,7 +6947,19 @@ try{
                 }
                 else
                 {
-                    SetPopupRouteStage("popup-nav-error", "popup-nav-done-err", src: src, target: src, status: e.WebErrorStatus);
+                    if (IsPragmaticLauncherUrl(src))
+                    {
+                        SetPopupRouteStage("popup-launcher-nav-error", "launcher-nav-error", src: src, target: src, status: e.WebErrorStatus);
+                        LogPopupDiag("NAV-DONE", "launcher-nav-error", src: src, target: src, status: e.WebErrorStatus);
+                        _betWebNavigatingSinceUtc = DateTime.MinValue;
+                        _betWebLastNavDoneUtc = DateTime.UtcNow;
+                        await HandlePragmaticLauncherNavigationErrorAsync(src, e.WebErrorStatus);
+                        return;
+                    }
+                    if (IsRecentPragmaticTlsAllowedUrl(src))
+                        SetPopupRouteStage("popup-tls-retry-pending", "popup-nav-done-err-after-tls-allow", src: src, target: src, status: e.WebErrorStatus);
+                    else
+                        SetPopupRouteStage("popup-nav-error", "popup-nav-done-err", src: src, target: src, status: e.WebErrorStatus);
                 }
                 LogPopupDiag("NAV-DONE", e.IsSuccess ? "popup-nav-done-ok" : "popup-nav-done-err", src: src, target: src, status: e.IsSuccess ? null : e.WebErrorStatus);
                 _betWebNavigatingSinceUtc = DateTime.MinValue;
@@ -6972,6 +7089,7 @@ try{
             _popupBridgeRegistered = false;
             _popupDevToolsOpened = false;
             _popupLastDocKey = null;
+            _popupFrameBridgeArmed.Clear();
             _popupFrameRefs.Clear();
             _betWebNavigatingSinceUtc = DateTime.MinValue;
             _betWebLastNavDoneUtc = DateTime.MinValue;
@@ -9221,10 +9339,12 @@ try{
                 };
                 _canvasDisplayTargetStates[target] = state;
                 bool livetablesRoot = state.HasRoot && IsLivetablesBaccaratUrl(state.Href);
+                bool pragmaticRoot = state.HasRoot && IsPragmaticBaccaratGameUrl(state.Href);
                 bool popupTarget = target.StartsWith("popup-", StringComparison.OrdinalIgnoreCase);
                 if (state.VisiblePool ||
                     (state.HasRoot && TextContainsIgnoreCase(state.Href, "singleBacTable.jsp")) ||
                     livetablesRoot ||
+                    pragmaticRoot ||
                     (state.HasRoot && popupTarget))
                     _lastCanvasPrimaryTarget = target;
             }
@@ -13298,14 +13418,14 @@ try{
         }
 
 
-        // Bấm vào "Xóc Đĩa Live" theo tiêu đề/trang HOME.
+        // Bấm vào Baccarat/Pragmatic theo tiêu đề/trang HOME.
         // Trả về: "clicked" nếu đã bấm/mở được, hoặc chuỗi lỗi/trạng thái khác.
         private async Task<string> ClickXocDiaTitleAsync(int timeoutMs = 20000)
         {
             if (Web == null) return "web-null";
             await EnsureWebReadyAsync();
 
-            // 1) Thử bấm trực tiếp anchor/button có text "xóc đĩa" (khử dấu)
+            // 1) Thử bấm trực tiếp anchor/button có text Baccarat/Pragmatic (khử dấu)
     const string clickTitleJs = @"
 (function(){
   try{
@@ -13320,6 +13440,20 @@ try{
     function fire(el){
       try{
         el.scrollIntoView({block:'center', inline:'center'});
+      }catch(_){}
+      try{
+        const anc = (el.closest && el.closest('a[href]')) || (String(el.tagName||'').toUpperCase()==='A' ? el : null);
+        const form = (el.closest && el.closest('form[action]')) || null;
+        const info = {
+          href: anc ? String(anc.href || anc.getAttribute('href') || '') : '',
+          rawHref: anc ? String(anc.getAttribute('href') || '') : '',
+          action: form ? String(form.action || form.getAttribute('action') || '') : '',
+          tag: String(el.tagName || ''),
+          cls: String(el.className || '').slice(0,120),
+          text: String(el.textContent || el.innerText || '').trim().slice(0,120)
+        };
+        try { console.log('[ABX-CLICK-TARGET] ' + JSON.stringify(info)); } catch(_){}
+        try { window.chrome && chrome.webview && chrome.webview.postMessage(JSON.stringify({abx:'click_target', info:info})); } catch(_){}
       }catch(_){}
       const r=el.getBoundingClientRect();
       const cx=Math.max(0, Math.floor(r.left+r.width/2));
@@ -13337,12 +13471,37 @@ try{
       const txt = low(el.textContent || el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '');
       if (!txt || !vis(el)) continue;
       const hasXocDia = (txt.includes('xoc') && txt.includes('dia'));
-      const hasBaccarat = txt.includes('baccarat') || txt.includes('single bac') || txt.includes('singlebac');
-      if (!hasXocDia && !hasBaccarat) continue;
+      const hasBaccarat = txt.includes('baccarat') || txt.includes('single bac') || txt.includes('singlebac') || txt.includes('pragmatic');
+      if (!hasBaccarat) continue;
       const cls = low(el.className || '');
+      const anc = (el.closest && el.closest('a[href]')) || (String(el.tagName||'').toUpperCase()==='A' ? el : null);
+      const form = (el.closest && el.closest('form[action]')) || null;
+      const href = low((anc && (anc.href || anc.getAttribute('href'))) || '');
+      const action = low((form && (form.action || form.getAttribute('action'))) || '');
+      const attrs = low([
+        el.id || '',
+        el.getAttribute('data-game-id') || '',
+        el.getAttribute('data-gameid') || '',
+        el.getAttribute('data-symbol') || '',
+        el.getAttribute('data-provider') || '',
+        el.getAttribute('data-href') || '',
+        el.getAttribute('onclick') || '',
+        (el.outerHTML || '').slice(0, 1800)
+      ].join('|'));
+      const marker = href + '|' + action + '|' + attrs;
+      const hasGame401 = marker.includes('symbol%3d401') || marker.includes('symbol=401') ||
+                         marker.includes('gameid%3d401') || marker.includes('gameid=401') ||
+                         marker.includes('ppgame%3d401') || marker.includes('ppgame=401') ||
+                         marker.includes('data-game-id=""401""') || marker.includes('data-gameid=""401""') ||
+                         marker.includes('data-symbol=""401""');
+      const looksLikeCategoryTab = txt === 'baccarat' &&
+        !href && !action &&
+        (cls.includes('tab') || cls.includes('nav') || cls.includes('menu') || cls.includes('category'));
+      if (looksLikeCategoryTab && !hasGame401) continue;
       let score = 0;
-      if (/xoc\s*dia/.test(txt)) score += 90;
-      if (hasBaccarat) score += 70;
+      if (hasGame401) score += 260;
+      if (hasBaccarat) score += 110;
+      if (hasXocDia) score -= 180;
       if (txt.includes('live')) score += 15;
       if (txt.length <= 24) score += 35;
       else if (txt.length <= 60) score += 10;
@@ -13358,7 +13517,7 @@ try{
     picks.sort((a,b)=>b.score-a.score);
     const best = picks[0];
     if (best.score < 45){
-      const weakOk = best.score >= -35 && (best.txt.includes('baccarat') || (best.txt.includes('xoc') && best.txt.includes('dia')));
+      const weakOk = best.score >= -35 && (best.txt.includes('baccarat') || best.txt.includes('single bac') || best.txt.includes('singlebac') || best.txt.includes('pragmatic'));
       if (weakOk){
         fire(best.el);
         return 'clicked-weak|score=' + best.score + '|txt=' + best.txt.slice(0,80) + '|cls=' + best.cls.slice(0,80);
@@ -13397,7 +13556,7 @@ try{
       if (title) txt = title.textContent || title.innerText || '';
       else txt = it.textContent || '';
       txt = low(txt);
-      if (txt.includes('xoc') && txt.includes('dia')) return String(i);
+      if (txt.includes('baccarat') || txt.includes('single bac') || txt.includes('singlebac') || txt.includes('pragmatic')) return String(i);
     }
     return '-1';
   }catch(e){ return '-1'; }
@@ -13451,8 +13610,8 @@ try{
       const anc = (el.closest && el.closest('a[href]')) || (el.tagName==='A' ? el : null);
       const href = low((anc && anc.getAttribute('href')) || '');
       let score = 0;
-      if (txt.includes('xoc') && txt.includes('dia')) score += 95;
-      if (txt.includes('baccarat') || txt.includes('single bac') || txt.includes('sexyco')) score += 75;
+      if (txt.includes('baccarat') || txt.includes('single bac') || txt.includes('singlebac') || txt.includes('pragmatic') || txt.includes('sexyco')) score += 110;
+      if (txt.includes('xoc') && txt.includes('dia')) score -= 180;
       if (txt.includes('rong ho') || txt.includes('ngau ham')) score += 35;
       if (txt.includes('live')) score += 12;
       if (href.includes('baccarat') || href.includes('casino') || href.includes('live')) score += 20;
@@ -13482,9 +13641,11 @@ try{
                 }
             }
 
-            // 4) Fallback cuối: mở item index 1 (giống VaoXocDia_Click đang dùng)
+            // 4) Fallback cuối: mở item index 1 cho host cũ. Net88 Pragmatic không dùng vì dễ bấm nhầm Xóc đĩa.
             try
             {
+                if (IsCurrentHostNet88Pragmatic())
+                    return "no-baccarat-title-net88-skip-xocdia-fallback";
                 var res2 = await OpenLiveItemImmediatelyAsync(1, timeoutMs);
                 Log("[ClickXocDiaTitle/fallback idx=1] " + res2);
                 if (res2 == "opened" || res2.StartsWith("clicked", StringComparison.OrdinalIgnoreCase))
@@ -13521,6 +13682,21 @@ try{
                 if (string.IsNullOrWhiteSpace(src))
                     src = Web?.CoreWebView2?.Source ?? "";
                 return src.IndexOf("b8pro07.com", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsCurrentHostNet88Pragmatic()
+        {
+            try
+            {
+                var src = GetBetWebViewSource(Web);
+                if (string.IsNullOrWhiteSpace(src))
+                    src = Web?.CoreWebView2?.Source ?? "";
+                return IsPragmaticLobbyUrl(src);
             }
             catch
             {
@@ -13602,12 +13778,12 @@ try{
       const txt = low(el.textContent || el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '');
       if (!txt) continue;
       const hasXocDia = txt.includes('xoc') && txt.includes('dia');
-      const hasBaccarat = txt.includes('baccarat') || txt.includes('single bac') || txt.includes('singlebac');
-      if (!hasXocDia && !hasBaccarat) continue;
+      const hasBaccarat = txt.includes('baccarat') || txt.includes('single bac') || txt.includes('singlebac') || txt.includes('pragmatic');
+      if (!hasBaccarat) continue;
       const cls = low(el.className || '');
       let score = 0;
-      if (hasXocDia) score += 90;
-      if (hasBaccarat) score += 70;
+      if (hasBaccarat) score += 110;
+      if (hasXocDia) score -= 180;
       if (txt.includes('live')) score += 20;
       if (cls.includes('item-live')) score += 40;
       if (el.closest && el.closest('.livestream-section__live,.item-live')) score += 35;
@@ -14261,6 +14437,7 @@ try{
                 _navModeHooked = false;
                 _mainFrameBridgeArmed.Clear();
                 _mainFrameRefs.Clear();
+                _popupFrameBridgeArmed.Clear();
                 _popupFrameRefs.Clear();
                 _frameInjectedDocKeys.Clear();
 
@@ -14694,6 +14871,12 @@ try{
             {
                 var p = u.AbsolutePath ?? "";
                 if (p.IndexOf("/baccarat", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            if (host.IndexOf("pragmaticplaylive.net", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                var p = u.AbsolutePath ?? "";
+                if (p.IndexOf("/desktop/baccarat", StringComparison.OrdinalIgnoreCase) >= 0)
                     return true;
             }
             if (IsLikelyGame8bPopupUrl(rawUrl))
@@ -15744,6 +15927,108 @@ try{
             }
             catch { }
             return frames;
+        }
+
+        private List<CoreWebView2Frame> GetPopupExistingFramesSnapshot()
+        {
+            var frames = new List<CoreWebView2Frame>();
+            try
+            {
+                var core = _popupWeb?.CoreWebView2;
+                if (core == null)
+                    return frames;
+
+                var seen = new HashSet<int>();
+                void AddFrame(CoreWebView2Frame? frame)
+                {
+                    if (frame == null) return;
+                    var key = GetFrameRefKey(frame);
+                    if (key != 0)
+                    {
+                        if (!seen.Add(key)) return;
+                        _popupFrameRefs[key] = frame;
+                    }
+                    else if (frames.Contains(frame))
+                    {
+                        return;
+                    }
+                    frames.Add(frame);
+                }
+
+                var t = core.GetType();
+                var pFrames = t.GetProperty("Frames", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                if (pFrames?.GetValue(core) is System.Collections.IEnumerable ieFrames)
+                {
+                    foreach (var obj in ieFrames)
+                        AddFrame(obj as CoreWebView2Frame);
+                }
+
+                var mGetFrames = t.GetMethod("GetFrames", BindingFlags.Public | BindingFlags.Instance, binder: null, types: Type.EmptyTypes, modifiers: null);
+                if (mGetFrames?.Invoke(core, null) is System.Collections.IEnumerable ieFramesByMethod)
+                {
+                    foreach (var obj in ieFramesByMethod)
+                        AddFrame(obj as CoreWebView2Frame);
+                }
+
+                foreach (var kv in _popupFrameRefs.ToArray())
+                    AddFrame(kv.Value);
+            }
+            catch { }
+
+            return frames;
+        }
+
+        private void ArmPopupFrameBridge(CoreWebView2Frame? frame, string stage)
+        {
+            if (frame == null) return;
+            try
+            {
+                TrackPopupFrameRef(frame);
+                var key = GetFrameRefKey(frame);
+                var shouldAttachHandlers = key == 0 || _popupFrameBridgeArmed.TryAdd(key, 1);
+                if (shouldAttachHandlers)
+                {
+                    _ = frame.ExecuteScriptAsync(FRAME_SHIM);
+                    frame.WebMessageReceived += PopupFrame_WebMessageReceived;
+                    frame.NavigationStarting += Frame_NavigationStarting_Bridge;
+                    frame.NavigationCompleted += Frame_NavigationCompleted_Bridge;
+                    Log("[PopupWeb] frame bridge armed. | key=" + key.ToString(CultureInfo.InvariantCulture) + " | stage=" + stage);
+                }
+
+                ProbeFrameBridgeAsync(frame, "PopupWeb", stage);
+                _ = InjectGameBridgeOnFrameIfNeededAsync(frame, stage + "-probe");
+            }
+            catch (Exception ex)
+            {
+                if (IsDisposedFrameException(ex))
+                {
+                    DropPopupFrameRef(frame);
+                    return;
+                }
+                Log("[PopupWeb.ArmFrame] stage=" + stage + " | " + ex.Message);
+            }
+        }
+
+        private int ReArmExistingPopupFrames(string stage)
+        {
+            int armed = 0;
+            try
+            {
+                var frames = GetPopupExistingFramesSnapshot();
+                foreach (var frame in frames)
+                {
+                    ArmPopupFrameBridge(frame, stage);
+                    armed++;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("[PopupWeb.ReArmExisting] stage=" + stage + " | " + ex.Message);
+            }
+
+            if (armed > 0)
+                Log("[PopupWeb] re-armed existing frames (" + stage + ") | count=" + armed.ToString(CultureInfo.InvariantCulture));
+            return armed;
         }
 
         private static bool IsBridgeCommandScript(string js)
@@ -18072,6 +18357,82 @@ try{
             return href.Substring(0, 140) + "...";
         }
 
+        private static void SplitUrlForLog(string? rawUrl, out string baseUrl, out string query, out string fragment)
+        {
+            baseUrl = "";
+            query = "";
+            fragment = "";
+            try
+            {
+                var url = (rawUrl ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(url))
+                    return;
+                var hashIdx = url.IndexOf('#');
+                if (hashIdx >= 0)
+                {
+                    fragment = url.Substring(hashIdx + 1);
+                    url = url.Substring(0, hashIdx);
+                }
+                var qIdx = url.IndexOf('?');
+                if (qIdx >= 0)
+                {
+                    baseUrl = url.Substring(0, qIdx);
+                    query = qIdx + 1 < url.Length ? url.Substring(qIdx + 1) : "";
+                }
+                else
+                {
+                    baseUrl = url;
+                }
+            }
+            catch
+            {
+                baseUrl = rawUrl ?? "";
+                query = "";
+                fragment = "";
+            }
+        }
+
+        private void LogRouteUrlParts(string tag, string? rawUrl)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(rawUrl))
+                    return;
+                SplitUrlForLog(rawUrl, out var baseUrl, out var query, out var fragment);
+                var marker = "-";
+                if (IsPragmaticLauncherUrl(rawUrl)) marker = "pragmatic-launcher";
+                else if ((rawUrl ?? "").IndexOf("/api/secure/GameLaunch", StringComparison.OrdinalIgnoreCase) >= 0) marker = "pragmatic-gamelaunch";
+                else if ((rawUrl ?? "").IndexOf("/gs2c/playGame.do", StringComparison.OrdinalIgnoreCase) >= 0) marker = "pragmatic-playgame";
+                Log($"[ROUTE-URL] tag={tag} | marker={marker} | base={TrimHrefForLog(baseUrl)} | query={Shrink(query, 900)} | fragment={Shrink(fragment, 240)}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[ROUTE-URL][ERR] tag={tag} | {ex.GetType().Name}: {Shrink(ex.Message, 120)}");
+            }
+        }
+
+        private void LogClickTargetMessage(JsonElement root, string source)
+        {
+            try
+            {
+                if (!root.TryGetProperty("info", out var info) || info.ValueKind != JsonValueKind.Object)
+                    return;
+                var href = GetJsonStringLoose(info, "href") ?? "";
+                var rawHref = GetJsonStringLoose(info, "rawHref") ?? "";
+                var action = GetJsonStringLoose(info, "action") ?? "";
+                var tag = GetJsonStringLoose(info, "tag") ?? "";
+                var cls = GetJsonStringLoose(info, "cls") ?? "";
+                var text = GetJsonStringLoose(info, "text") ?? "";
+                Log($"[CLICK-TARGET] src={source} | tag={tag} | text={Shrink(text, 120)} | cls={Shrink(cls, 120)} | href={TrimHrefForLog(href)} | rawHref={Shrink(rawHref, 260)} | action={TrimHrefForLog(action)}");
+                LogRouteUrlParts("click-target.href", href);
+                LogRouteUrlParts("click-target.action", action);
+            }
+            catch (Exception ex)
+            {
+                Log($"[CLICK-TARGET][ERR] {ex.GetType().Name}: {Shrink(ex.Message, 120)}");
+            }
+        }
+
         private void ObserveTableSwitchFromFrameHref(string? hrefRaw, string stage)
         {
             if (!TryGetBaccaratFrameKey(hrefRaw, out var key))
@@ -18295,6 +18656,7 @@ try{
             _popupPullEmptySinceUtc = DateTime.MinValue;
             _popupPullNextAllowedUtc = DateTime.MinValue;
             _popupSoftRecoverCount = 0;
+            _pragmaticLauncherFileNotFoundRecoverCount = 0;
             _popupLastFrameErrorStatus = "";
             _popupLastFrameErrorUtc = DateTime.MinValue;
             SetPopupRouteStage("session-start", reason, src: src, forceLog: true);
@@ -18498,6 +18860,427 @@ try{
             return s.IndexOf("Certificate", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool IsPragmaticTlsBypassHost(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl))
+                return false;
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+                return false;
+            var host = (uri.Host ?? "").Trim().ToLowerInvariant();
+            return string.Equals(host, "pragmaticplaylive.net", StringComparison.OrdinalIgnoreCase) ||
+                   host.EndsWith(".pragmaticplaylive.net", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsAllowedPragmaticCertificateError(CoreWebView2WebErrorStatus status)
+        {
+            var s = status.ToString();
+            return s.IndexOf("CommonName", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   s.IndexOf("CertificateCommonName", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   string.Equals(s, "CertificateCommonNameIsIncorrect", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsRecentPragmaticTlsAllowedUrl(string? rawUrl)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(rawUrl) || string.IsNullOrWhiteSpace(_lastPragmaticTlsAllowedUrl))
+                    return false;
+                if ((DateTime.UtcNow - _lastPragmaticTlsAllowedUtc) > TimeSpan.FromSeconds(12))
+                    return false;
+                return string.Equals(rawUrl.Trim(), _lastPragmaticTlsAllowedUrl, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void SchedulePragmaticTlsRetry(CoreWebView2? core, string target, string source)
+        {
+            try
+            {
+                if (core == null || string.IsNullOrWhiteSpace(target))
+                    return;
+
+                var retryNo = _pragmaticTlsRetryCounts.AddOrUpdate(target, 1, (_, old) => old + 1);
+                if (retryNo > 2)
+                {
+                    Log($"[TLS-BYPASS][RETRY-SKIP] reason=max-retry | count={retryNo} | source={source} | target={TrimHrefForLog(target)}");
+                    return;
+                }
+
+                Log($"[TLS-BYPASS][RETRY-SCHEDULE] count={retryNo} | delayMs=650 | source={source} | target={TrimHrefForLog(target)}");
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(650);
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            try
+                            {
+                                if (ReferenceEquals(core, _popupWeb?.CoreWebView2))
+                                    SetPopupRouteStage("popup-tls-retry-pending", "tls-bypass-retry", target: target, forceLog: true);
+                                core.Navigate(target);
+                                Log($"[TLS-BYPASS][RETRY] count={retryNo} | source={source} | target={TrimHrefForLog(target)}");
+                            }
+                            catch (Exception navEx)
+                            {
+                                Log($"[TLS-BYPASS][RETRY-ERR] {navEx.GetType().Name}: {Shrink(navEx.Message, 140)} | target={TrimHrefForLog(target)}");
+                            }
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[TLS-BYPASS][RETRY-ERR] {ex.GetType().Name}: {Shrink(ex.Message, 140)} | target={TrimHrefForLog(target)}");
+                    }
+                });
+                SchedulePragmaticTlsFallback(target, source);
+            }
+            catch (Exception ex)
+            {
+                Log("[TLS-BYPASS][RETRY-SCHEDULE-ERR] " + ex.Message);
+            }
+        }
+
+        private void SchedulePragmaticTlsFallback(string target, string source)
+        {
+            try
+            {
+                var fallbackNo = _pragmaticTlsFallbackCounts.AddOrUpdate(target, 1, (_, old) => old + 1);
+                if (fallbackNo > 1)
+                    return;
+
+                Log($"[TLS-BYPASS][FALLBACK-SCHEDULE] delayMs=8500 | source={source} | target={TrimHrefForLog(target)}");
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(8500);
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            try
+                            {
+                                var popupSrc = "";
+                                try { popupSrc = _popupWeb?.CoreWebView2?.Source ?? ""; } catch { popupSrc = ""; }
+                                var stillPending = string.Equals(_popupRouteStage, "popup-tls-retry-pending", StringComparison.OrdinalIgnoreCase);
+                                var stillSameUrl = string.Equals(popupSrc, target, StringComparison.OrdinalIgnoreCase);
+                                var hasFreshData = _lastGameTickUtc != DateTime.MinValue &&
+                                                   (DateTime.UtcNow - _lastGameTickUtc) <= TimeSpan.FromSeconds(6);
+                                if (!stillPending || !stillSameUrl || hasFreshData)
+                                {
+                                    Log($"[TLS-BYPASS][FALLBACK-SKIP] pending={(stillPending ? 1 : 0)} | sameUrl={(stillSameUrl ? 1 : 0)} | freshData={(hasFreshData ? 1 : 0)} | popupSrc={TrimHrefForLog(popupSrc)}");
+                                    return;
+                                }
+
+                                Log($"[TLS-BYPASS][FALLBACK] action=reset-host-and-reclick | target={TrimHrefForLog(target)}");
+                                _ = RecoverPragmaticLauncherByResettingHostAsync("tls-bypass-fallback", target, clearProviderCookies: false);
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"[TLS-BYPASS][FALLBACK-ERR] {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+                            }
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[TLS-BYPASS][FALLBACK-ERR] {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Log("[TLS-BYPASS][FALLBACK-SCHEDULE-ERR] " + ex.Message);
+            }
+        }
+
+        private async Task<bool> TryRecoverPragmaticLauncherFileNotFoundAsync(string src)
+        {
+            try
+            {
+                if (!IsPragmaticLauncherUrl(src) || _popupWeb?.CoreWebView2 == null)
+                    return false;
+
+                var raw = await _popupWeb.CoreWebView2.ExecuteScriptAsync(
+                    "(function(){try{var t=String(document.title||'');var b=String(document.body&&(document.body.innerText||document.body.textContent)||'');return (t+'\\n'+b).slice(0,4096);}catch(e){return '';}})()");
+                var text = JsonSerializer.Deserialize<string>(raw) ?? "";
+                if (text.IndexOf("File Not Found", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    text.IndexOf("File not found", StringComparison.OrdinalIgnoreCase) < 0)
+                    return false;
+
+                await HandlePragmaticLauncherFileNotFoundAsync(src, "popup-top");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log($"[TLS-BYPASS][FALLBACK-ERR] file-not-found-detect {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+                return false;
+            }
+        }
+
+        private async Task<bool> TryRecoverPragmaticLauncherFrameFileNotFoundAsync(CoreWebView2Frame frame, string target)
+        {
+            try
+            {
+                if (frame == null || !IsPragmaticLauncherUrl(target))
+                    return false;
+
+                var raw = await frame.ExecuteScriptAsync(
+                    "(function(){try{var t=String(document.title||'');var b=String(document.body&&(document.body.innerText||document.body.textContent)||'');return (t+'\\n'+b).slice(0,4096);}catch(e){return '';}})()");
+                var text = JsonSerializer.Deserialize<string>(raw) ?? "";
+                if (text.IndexOf("File Not Found", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    text.IndexOf("File not found", StringComparison.OrdinalIgnoreCase) < 0)
+                    return false;
+
+                await HandlePragmaticLauncherFileNotFoundAsync(target, "popup-frame");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (IsDisposedFrameException(ex))
+                    DropPopupFrameRef(frame);
+                Log($"[TLS-BYPASS][FALLBACK-ERR] frame-file-not-found-detect {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+                return false;
+            }
+        }
+
+        private async Task HandlePragmaticLauncherFileNotFoundAsync(string src, string source)
+        {
+            try
+            {
+                var recoverNo = Interlocked.Increment(ref _pragmaticLauncherFileNotFoundRecoverCount);
+                if (recoverNo > 2)
+                {
+                    Log($"[TLS-BYPASS][FALLBACK-SKIP] reason=file-not-found-session-limit | source={source} | count={recoverNo} | popupSrc={TrimHrefForLog(src)}");
+                    SetPopupRouteStage("popup-provider-file-not-found", "launcher-file-not-found-skip", src: src, target: src, forceLog: true);
+                    return;
+                }
+
+                Log($"[TLS-BYPASS][FALLBACK] action=reset-host-and-reclick | reason=file-not-found | source={source} | count={recoverNo} | target={TrimHrefForLog(src)}");
+                SetPopupRouteStage("popup-provider-file-not-found", "launcher-file-not-found", src: src, target: src, forceLog: true);
+                await RecoverPragmaticLauncherByResettingHostAsync("launcher-file-not-found", src, clearProviderCookies: true);
+            }
+            catch (Exception ex)
+            {
+                Log($"[TLS-BYPASS][FALLBACK-ERR] file-not-found-recover {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+            }
+        }
+
+        private async Task HandlePragmaticLauncherNavigationErrorAsync(string src, CoreWebView2WebErrorStatus status)
+        {
+            try
+            {
+                var recoverNo = Interlocked.Increment(ref _pragmaticLauncherFileNotFoundRecoverCount);
+                if (recoverNo > 2)
+                {
+                    Log($"[TLS-BYPASS][FALLBACK-SKIP] reason=launcher-nav-error-session-limit | status={status} | count={recoverNo} | popupSrc={TrimHrefForLog(src)}");
+                    return;
+                }
+
+                Log($"[TLS-BYPASS][FALLBACK] action=reset-host-and-reclick | reason=launcher-nav-error | status={status} | count={recoverNo} | target={TrimHrefForLog(src)}");
+                await RecoverPragmaticLauncherByResettingHostAsync("launcher-nav-error", src, clearProviderCookies: true);
+            }
+            catch (Exception ex)
+            {
+                Log($"[TLS-BYPASS][FALLBACK-ERR] launcher-nav-error-recover {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+            }
+        }
+
+        private async Task RecoverPragmaticLauncherByResettingHostAsync(string reason, string target, bool clearProviderCookies)
+        {
+            try
+            {
+                AutoStopTasksOnBetPipelineReset(reason, target);
+                ResetAuthorityForPopupFrameError(reason, target);
+                ResetPlayerFlowGameCache(reason);
+                if (clearProviderCookies)
+                    await ClearPragmaticProviderCookiesAsync(reason);
+
+                ClosePopupHost();
+                var lobby = await ResetMainToPragmaticLobbyAsync(reason);
+                await Task.Delay(700);
+                Log($"[TLS-BYPASS][RECOVER-RECLICK] reason={reason} | lobby={TrimHrefForLog(lobby)}");
+                VaoXocDia_Click(this, new RoutedEventArgs());
+            }
+            catch (Exception ex)
+            {
+                Log($"[TLS-BYPASS][RECOVER-ERR] {ex.GetType().Name}: {Shrink(ex.Message, 140)} | reason={reason} | target={TrimHrefForLog(target)}");
+            }
+        }
+
+        private async Task<string> ResetMainToPragmaticLobbyAsync(string reason)
+        {
+            try
+            {
+                if (Web?.CoreWebView2 == null)
+                    return "web-null";
+
+                var current = Web.CoreWebView2.Source ?? Web.Source?.ToString() ?? "";
+                var target = BuildPragmaticLobbyUrl(current);
+
+                var tcs = new TaskCompletionSource<bool>();
+                void Handler(object? s, CoreWebView2NavigationCompletedEventArgs e)
+                {
+                    try { Web.NavigationCompleted -= Handler; } catch { }
+                    tcs.TrySetResult(true);
+                }
+
+                Web.NavigationCompleted += Handler;
+                Log($"[TLS-BYPASS][HOST-RESET] reason={reason} | from={TrimHrefForLog(current)} | to={TrimHrefForLog(target)}");
+                Web.CoreWebView2.Navigate(target);
+                var done = await Task.WhenAny(tcs.Task, Task.Delay(8000));
+                if (!ReferenceEquals(done, tcs.Task))
+                {
+                    try { Web.NavigationCompleted -= Handler; } catch { }
+                    Log($"[TLS-BYPASS][HOST-RESET-TIMEOUT] reason={reason} | to={TrimHrefForLog(target)}");
+                }
+                await Task.Delay(500);
+                return target;
+            }
+            catch (Exception ex)
+            {
+                Log($"[TLS-BYPASS][HOST-RESET-ERR] {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+                return "";
+            }
+        }
+
+        private string BuildPragmaticLobbyUrl(string? current)
+        {
+            var candidates = new[]
+            {
+                current,
+                TxtUrl?.Text,
+                _cfg?.Url,
+                DEFAULT_URL
+            };
+
+            foreach (var candidate in candidates)
+            {
+                var target = TryBuildPragmaticLobbyUrl(candidate);
+                if (!string.IsNullOrWhiteSpace(target))
+                    return target;
+            }
+
+            return DEFAULT_URL;
+        }
+
+        private static string TryBuildPragmaticLobbyUrl(string? rawUrl)
+        {
+            try
+            {
+                var url = (rawUrl ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(url))
+                    return "";
+
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                    return "";
+
+                var builder = new UriBuilder(uri)
+                {
+                    Path = "/livecasino",
+                    Query = "provider=pragmatic",
+                    Fragment = ""
+                };
+                return builder.Uri.ToString();
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static bool IsPragmaticLobbyUrl(string? rawUrl)
+        {
+            try
+            {
+                var url = (rawUrl ?? "").Trim();
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                    return false;
+                return uri.AbsolutePath.IndexOf("/livecasino", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                       uri.Query.IndexOf("provider=pragmatic", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task ClearPragmaticProviderCookiesAsync(string reason)
+        {
+            try
+            {
+                var cores = new List<CoreWebView2>();
+                if (Web?.CoreWebView2 != null)
+                    cores.Add(Web.CoreWebView2);
+                if (_popupWeb?.CoreWebView2 != null && !ReferenceEquals(_popupWeb.CoreWebView2, Web?.CoreWebView2))
+                    cores.Add(_popupWeb.CoreWebView2);
+
+                var urls = new[]
+                {
+                    "https://pragmaticplaylive.net/",
+                    "https://client.pragmaticplaylive.net/",
+                    "https://games.pragmaticplaylive.net/"
+                };
+
+                var deleted = 0;
+                foreach (var core in cores)
+                {
+                    foreach (var url in urls)
+                    {
+                        IReadOnlyList<CoreWebView2Cookie>? cookies = null;
+                        try { cookies = await core.CookieManager.GetCookiesAsync(url); }
+                        catch { cookies = null; }
+                        if (cookies == null) continue;
+
+                        foreach (var cookie in cookies)
+                        {
+                            var domain = cookie?.Domain ?? "";
+                            if (domain.IndexOf("pragmaticplaylive.net", StringComparison.OrdinalIgnoreCase) < 0)
+                                continue;
+                            try
+                            {
+                                core.CookieManager.DeleteCookie(cookie);
+                                deleted++;
+                            }
+                            catch { }
+                        }
+                    }
+                }
+
+                Log($"[TLS-BYPASS][COOKIE-CLEAR] reason={reason} | deleted={deleted}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[TLS-BYPASS][COOKIE-CLEAR-ERR] {ex.GetType().Name}: {Shrink(ex.Message, 140)}");
+            }
+        }
+
+        private void PragmaticServerCertificateErrorDetected(object? sender, CoreWebView2ServerCertificateErrorDetectedEventArgs e)
+        {
+            try
+            {
+                var target = e.RequestUri ?? "";
+                var status = e.ErrorStatus;
+                if (IsPragmaticTlsBypassHost(target) && IsAllowedPragmaticCertificateError(status))
+                {
+                    e.Action = CoreWebView2ServerCertificateErrorAction.AlwaysAllow;
+                    _lastPragmaticTlsAllowedUrl = target;
+                    _lastPragmaticTlsAllowedUtc = DateTime.UtcNow;
+                    SetProviderTlsMismatchStatusHint(target);
+                    Log($"[TLS-BYPASS][ALLOW] host=pragmaticplaylive.net | status={status} | target={TrimHrefForLog(target)}");
+                    SchedulePragmaticTlsRetry(sender as CoreWebView2, target, ReferenceEquals(sender, _popupWeb?.CoreWebView2) ? "popup" : "main");
+                    return;
+                }
+
+                e.Action = CoreWebView2ServerCertificateErrorAction.Default;
+                Log($"[TLS-BYPASS][DENY] status={status} | target={TrimHrefForLog(target)}");
+            }
+            catch (Exception ex)
+            {
+                Log("[TLS-BYPASS][ERR] " + ex.Message);
+            }
+        }
+
         private static bool IsTransientFrameNavigationError(CoreWebView2WebErrorStatus status)
         {
             var s = status.ToString();
@@ -18652,6 +19435,7 @@ try{
                 var navId = TryGetNavigationIdSafe(e);
                 var target = ResolveFrameNavigationTarget(f, e);
                 var frameKey = GetFrameRefKey(f);
+                LogRouteUrlParts("Frame.NavCompleted", target);
                 if (!e.IsSuccess)
                 {
                     Log($"[FrameNav][ERR] frameId={frameId} | navId={navId} | status={e.WebErrorStatus} | target={TrimHrefForLog(target)}");
@@ -18674,6 +19458,8 @@ try{
                 }
                 else if (IsPragmaticLauncherUrl(target))
                 {
+                    if (await TryRecoverPragmaticLauncherFrameFileNotFoundAsync(f, target))
+                        return;
                     SetPopupRouteStage("popup-frame-launcher-ready", "frame-nav-launcher-ready", target: target, frameKey: frameKey, frameId: frameId, navId: navId);
                 }
                 await InjectGameBridgeOnFrameIfNeededAsync(f, "nav-completed");
@@ -19267,6 +20053,25 @@ try{
         private static bool IsWaitingResultStatus(string status)
             => string.Equals(status, "Đợi kết quả", StringComparison.Ordinal)
             || string.Equals(status, "Doi ket qua", StringComparison.OrdinalIgnoreCase);
+
+        private static bool StatusTextImpliesClosed(string? status)
+        {
+            var s = TextNorm.RemoveDiacritics(status ?? "")
+                .ToLowerInvariant()
+                .Replace('\r', ' ')
+                .Replace('\n', ' ');
+            while (s.Contains("  ", StringComparison.Ordinal))
+                s = s.Replace("  ", " ", StringComparison.Ordinal);
+            s = s.Trim();
+            if (string.IsNullOrWhiteSpace(s))
+                return false;
+            return s.Contains("doi van bai tiep theo", StringComparison.Ordinal)
+                || s.Contains("cho van sau", StringComparison.Ordinal)
+                || s.Contains("doi ket qua", StringComparison.Ordinal)
+                || s.Contains("ket qua", StringComparison.Ordinal)
+                || s.Contains("tam dung nhan cuoc", StringComparison.Ordinal)
+                || s.Contains("da dong cua dat cuoc", StringComparison.Ordinal);
+        }
 
         private static string BuildStatusFromProg(double? prog)
         {

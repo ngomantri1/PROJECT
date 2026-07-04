@@ -14,7 +14,7 @@
     var CW_PANEL_VISIBLE_KEY = 'abx.canvasWatch.visible';
     var CW_PANEL_VISIBLE_DEFAULT_KEY = 'abx.canvasWatch.visible.default';
     var CW_PANEL_VISIBLE_DEFAULT = true; // false = hidden by default; set true to show Canvas Watch by default.
-    var CW_PANEL_VISIBLE_DEFAULT_REV = '20260509-show-default';
+    var CW_PANEL_VISIBLE_DEFAULT_REV = '20260630-show-default';
     try {
         window.__abx_canvas_watch_default = CW_PANEL_VISIBLE_DEFAULT ? 1 : 0;
         window.__abx_canvas_watch_default_rev = CW_PANEL_VISIBLE_DEFAULT_REV;
@@ -322,6 +322,9 @@
                 (path.indexOf('/baccarat') === 0 ||
                  href.indexOf('/baccarat/') >= 0 ||
                  href.indexOf('/baccarat?') >= 0);
+            var isPragmaticBaccarat =
+                host.indexOf('pragmaticplaylive.net') >= 0 &&
+                path.indexOf('/desktop/baccarat') >= 0;
 
             // Cho phép webMain cả top document và iframe (vipbet389 thường chạy trong iframe).
             if (isWebMain)
@@ -334,6 +337,10 @@
             // Provider này render trực tiếp trên top document và không có
             // /player/webMain.jsp hay singleBacTable.jsp để lọc như flow cũ.
             if (isLiveTablesBaccarat)
+                return true;
+
+            // Pragmatic Baccarat render trực tiếp trong /desktop/baccarat, không dùng route Ezugi cũ.
+            if (isPragmaticBaccarat)
                 return true;
 
             // Một số site bọc game qua gameHall frame cùng provider.
@@ -498,12 +505,17 @@
         }
         try {
             var h = String(href || '');
+            var hl = h.toLowerCase();
             if (/about:blank/i.test(h))
                 score -= 2000;
             if (/singleBacTable\.jsp/i.test(h))
                 score += 300;
             if (/gamehall\.jsp/i.test(h))
                 score += 80;
+            if (hl.indexOf('pragmaticplaylive.net') >= 0 && hl.indexOf('/desktop/baccarat') >= 0) {
+                score += 1500;
+                sig.push('pragmatic-baccarat-url');
+            }
         } catch (_) {}
         out.score = score;
         out.signals = sig.join(',');
@@ -963,11 +975,12 @@
     }
     function cwQueueHostLog(rec, isPushTag) {
         try {
-            var fileOn = (window.__cw_file_log_enable === 1 || window.__cw_file_log_enable === true);
+            var isCountdownTag = String(rec && rec.tag || '').toUpperCase() === 'COUNTDOWN';
+            var fileOn = (window.__cw_file_log_enable === 1 || window.__cw_file_log_enable === true || isCountdownTag);
             if (!fileOn)
                 return;
             var pushOnly = (window.__cw_file_log_push_only === 1 || window.__cw_file_log_push_only === true);
-            if (pushOnly && !isPushTag)
+            if (pushOnly && !isPushTag && !isCountdownTag)
                 return;
 
             var maxQ = Number(window.__cw_file_log_max_queue || 1600);
@@ -1034,15 +1047,16 @@
             var fileOn = (window.__cw_file_log_enable === 1 || window.__cw_file_log_enable === true);
             var t = String(tag || '').toUpperCase();
             var isPushTag = (t === 'SEQPUSH' || t === 'PUSH' || t === 'POST');
-            var fileDiagOn = fileOn && (
+            var fileDiagOn = t === 'COUNTDOWN' || (fileOn && (
                 isPushTag ||
                 t === 'CANVAS' ||
                 t === 'BETPOOL' ||
                 t === 'POOL' ||
+                t === 'COUNTDOWN' ||
                 t === 'TOTALS' ||
                 t === 'STATUS' ||
                 t === 'SNAPSHOT'
-            );
+            ));
             if (!seqOn && !(pushOn && isPushTag) && !fileDiagOn)
                 return;
             var now = Date.now();
@@ -2216,6 +2230,19 @@
                 S._progIsSec = true;
                 S._progTail = domCountdown.tail || 'body/div#themeZone.game.scenes_default.baccarat_normal/div#countdown.icon_progress.progress_countdown/dl.progress_no/dd#countdownTime/p';
                 try { window.__cw_prog_tail = S._progTail; } catch (_) {}
+                try {
+                    window.__cw_prog_source = domCountdown.source || window.__cw_prog_source || 'dom-countdown';
+                    cwDbg('COUNTDOWN', 'collect-hit', {
+                        value: domCountdown.value,
+                        text: domCountdown.text || '',
+                        source: domCountdown.source || '',
+                        tail: S._progTail,
+                        x: domCountdown.x,
+                        y: domCountdown.y,
+                        w: domCountdown.w,
+                        h: domCountdown.h
+                    }, 1000, 'countdown-collect-hit|' + String(domCountdown.source || '') + '|' + String(Math.ceil(Number(domCountdown.value || 0))));
+                } catch (_) {}
                 return domCountdown.value;
             }
             var domCards = domScanBaccaratCards();
@@ -2224,10 +2251,20 @@
                 S._progIsSec = true;
                 S._progTail = 'dom/baccarat/countdown';
                 try { window.__cw_prog_tail = S._progTail; } catch (_) {}
+                try { cwDbg('COUNTDOWN', 'collect-card-hit', { value: domActive.countdown, source: 'dom/baccarat/card' }, 1000, 'countdown-card-hit|' + String(domActive.countdown)); } catch (_) {}
                 return domActive.countdown;
             }
             S._progTail = 'dom/baccarat';
             try { window.__cw_prog_tail = S._progTail; } catch (_) {}
+            try {
+                cwDbg('COUNTDOWN', 'collect-miss', {
+                    reason: 'domReadBetCountdown-null',
+                    href: String(location.href || ''),
+                    hasCocos: __cw_hasCocos() ? 1 : 0,
+                    lastSource: String(window.__cw_prog_source || ''),
+                    lastTail: String(window.__cw_prog_tail || '')
+                }, 1500, 'countdown-collect-miss|' + String(location.pathname || ''));
+            } catch (_) {}
             return null;
         }
         var cd = readCountdownSec();
@@ -2784,6 +2821,309 @@
         installed: false,
         lastKey: ''
     };
+    var _abxCountdownProvider = {
+        at: 0,
+        sec: null,
+        source: '',
+        path: '',
+        lastKey: ''
+    };
+    function countdownProviderNumberOf(v) {
+        try {
+            var n = null;
+            if (typeof v === 'number') n = v;
+            else if (typeof v === 'string') {
+                var s = v.trim();
+                if (/^\d{1,3}(?:\.\d+)?$/.test(s)) n = Number(s);
+            }
+            if (n == null || !isFinite(n)) return null;
+            if (n > 1000 && n < 120000) n = n / 1000;
+            if (n < 0 || n > 90) return null;
+            return n;
+        } catch (_) {
+            return null;
+        }
+    }
+    function countdownProviderNameLooksGood(name, parentName) {
+        var n = String(name || '').toLowerCase();
+        var p = String(parentName || '').toLowerCase();
+        var joined = n + ' ' + p;
+        if (!/(countdown|count_down|count-down|timer|timeleft|time_left|remaining|remain|bettime|bet_time|seconds|sec)/i.test(joined))
+            return false;
+        if (/(table|shoe|round|id|width|height|showx|showy|position|offset|history|road|countwin|count_win|countplayer|countbanker|counttie|resultcount|playercount|bankercount|tiecount)/i.test(joined))
+            return false;
+        return true;
+    }
+    function countdownProviderAccept(sec, source, path) {
+        try {
+            var n = countdownProviderNumberOf(sec);
+            if (n == null)
+                return false;
+            var now = Date.now();
+            var src = String(source || 'network');
+            var p = String(path || '');
+            var key = Math.round(n * 10) + '|' + src + '|' + p;
+            _abxCountdownProvider.at = now;
+            _abxCountdownProvider.sec = n;
+            _abxCountdownProvider.source = src;
+            _abxCountdownProvider.path = p;
+            try {
+                window.__abx_network_countdown_sec = n;
+                window.__abx_network_countdown_at = now;
+                window.__abx_network_countdown_source = src;
+                window.__abx_network_countdown_path = p;
+            } catch (_) {}
+            if (key !== _abxCountdownProvider.lastKey) {
+                _abxCountdownProvider.lastKey = key;
+                cwDbg('COUNTDOWN', 'js-network-countdown', {
+                    sec: n,
+                    source: src,
+                    path: p
+                }, 0, 'network-countdown|' + key);
+            }
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+    function countdownProviderWalkJson(el, source, path, parentName, depth) {
+        try {
+            if (depth > 10 || el == null || typeof el !== 'object')
+                return false;
+            var hit = false;
+            for (var k in el) {
+                if (!Object.prototype.hasOwnProperty.call(el, k))
+                    continue;
+                var v = el[k];
+                var childPath = path ? (path + '.' + k) : k;
+                if (countdownProviderNameLooksGood(k, parentName)) {
+                    var n = countdownProviderNumberOf(v);
+                    if (n != null && countdownProviderAccept(n, source, childPath))
+                        hit = true;
+                }
+                if (v && typeof v === 'object') {
+                    if (Object.prototype.toString.call(v) === '[object Array]') {
+                        for (var i = 0; i < v.length && i < 80; i++) {
+                            if (countdownProviderWalkJson(v[i], source, childPath + '[' + i + ']', k, depth + 1))
+                                hit = true;
+                        }
+                    } else if (countdownProviderWalkJson(v, source, childPath, k, depth + 1)) {
+                        hit = true;
+                    }
+                }
+            }
+            return hit;
+        } catch (_) {
+            return false;
+        }
+    }
+    function countdownProviderObserveText(text, source) {
+        try {
+            if (!text || typeof text !== 'string')
+                return false;
+            if (!/(countdown|count_down|timer|timeleft|time_left|remaining|remain|bettime|bet_time|seconds|GameInfo|eventType|messageType)/i.test(text))
+                return false;
+            var raw = text.trim();
+            var candidates = [raw];
+            var idxObj = raw.indexOf('{');
+            var idxArr = raw.indexOf('[');
+            var idx = idxObj >= 0 && idxArr >= 0 ? Math.min(idxObj, idxArr) : Math.max(idxObj, idxArr);
+            if (idx > 0)
+                candidates.push(raw.slice(idx));
+            for (var i = 0; i < candidates.length; i++) {
+                try {
+                    var json = JSON.parse(candidates[i]);
+                    if (countdownProviderWalkJson(json, source, '', '', 0))
+                        return true;
+                } catch (_) {}
+            }
+        } catch (_) {}
+        return false;
+    }
+    function countdownProviderReadFresh(maxAgeMs) {
+        try {
+            var sec = Number(window.__abx_network_countdown_sec != null ? window.__abx_network_countdown_sec : _abxCountdownProvider.sec);
+            var at = Number(window.__abx_network_countdown_at || _abxCountdownProvider.at || 0) || 0;
+            if (!isFinite(sec) || sec < 0 || at <= 0)
+                return null;
+            var ageMs = Date.now() - at;
+            var holdMs = maxAgeMs || 12000;
+            if (ageMs < 0 || ageMs > holdMs)
+                return null;
+            var current = Math.max(0, sec - (ageMs / 1000));
+            return {
+                value: current,
+                text: String(Math.ceil(current)),
+                tail: 'network/countdown/' + String(window.__abx_network_countdown_path || _abxCountdownProvider.path || ''),
+                source: String(window.__abx_network_countdown_source || _abxCountdownProvider.source || 'network')
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+    function domReadPragmaticVisualCountdown(contexts) {
+        try {
+            var best = null;
+            var diag = {
+                contexts: 0,
+                pointHits: 0,
+                pointRoots: 0,
+                scanned: 0,
+                numeric: 0,
+                rejectedBad: 0,
+                rejectedRect: 0,
+                rejectedRegion: 0
+            };
+            contexts = contexts || [];
+            function classTextOf(el) {
+                try {
+                    var c = el && el.className;
+                    if (c && typeof c === 'object' && c.baseVal != null)
+                        return String(c.baseVal || '');
+                    return String(c || '');
+                } catch (_) {
+                    return '';
+                }
+            }
+            function isBadCountdownCandidate(el, tail) {
+                var cls = classTextOf(el);
+                var hay = String((tail || '') + ' ' + cls).toLowerCase();
+                return /(leftbettextroot|rightbettextroot|centertopbet|j[pq]_|s[zx]_|sl_|tr_|uz_|jl_|qc_|r[zx]_|hj_|qz_|nl_|road|bead|history|card)/i.test(hay);
+            }
+            function considerCountdownElement(ctx, el, boost, source) {
+                try {
+                    if (!el || !domVisible(el))
+                        return;
+                    diag.scanned++;
+                    var txt = domCollapse(el.innerText || el.textContent || '');
+                    if (!/^\d{1,2}$/.test(txt))
+                        return;
+                    diag.numeric++;
+                    var val = parseInt(txt, 10);
+                    if (!(val >= 0 && val <= 20))
+                        return;
+                    var win = ctx && ctx.win ? ctx.win : window;
+                    var vw = (win && win.innerWidth) || domTopInnerWidth() || 1300;
+                    var vh = (win && win.innerHeight) || domTopInnerHeight() || 900;
+                    var r = el.getBoundingClientRect();
+                    if (!r || r.width < 6 || r.height < 6 || r.width > 140 || r.height > 140) {
+                        diag.rejectedRect++;
+                        return;
+                    }
+                    var cx = r.left + r.width / 2;
+                    var cy = r.top + r.height / 2;
+                    var pointMode = /point/i.test(String(source || ''));
+                    if (!(cx >= vw * 0.42 && cx <= vw * 0.59 && cy >= vh * 0.70 && cy <= vh * 0.93)) {
+                        diag.rejectedRegion++;
+                        return;
+                    }
+                    var ratio = r.width / Math.max(1, r.height);
+                    if (!pointMode && (r.width < 24 || r.height < 24 || ratio < 0.58 || ratio > 1.72)) {
+                        diag.rejectedRect++;
+                        return;
+                    }
+                    var tail = fullPath(el, 80) || domTailOfEl(el) || '';
+                    if (isBadCountdownCandidate(el, tail)) {
+                        diag.rejectedBad++;
+                        return;
+                    }
+                    var cls = classTextOf(el);
+                    var score = Number(boost || 0);
+                    score += Math.round((1 - Math.min(1, Math.abs(cx - vw * 0.515) / (vw * 0.13))) * 480);
+                    score += Math.round((1 - Math.min(1, Math.abs(cy - vh * 0.835) / (vh * 0.14))) * 580);
+                    score += Math.round(Math.min(80, Math.min(r.width, r.height)) * 2);
+                    if (ratio >= 0.45 && ratio <= 2.1)
+                        score += 180;
+                    if (/count|timer|time|clock|progress/i.test(String(tail || '') + ' ' + cls))
+                        score += 900;
+                    var cand = {
+                        value: val,
+                        text: txt,
+                        tail: tail || 'pragmatic/visual-countdown',
+                        score: score,
+                        source: source || 'dom/pragmatic-visual-countdown',
+                        x: Math.round(r.left),
+                        y: Math.round(r.top),
+                        w: Math.round(r.width),
+                        h: Math.round(r.height)
+                    };
+                    if (!best || Number(cand.score || 0) > Number(best.score || 0))
+                        best = cand;
+                } catch (_) {}
+            }
+            function scanCountdownSubtree(ctx, root, boost, source) {
+                try {
+                    if (!root)
+                        return;
+                    considerCountdownElement(ctx, root, boost, source);
+                    if (!root.querySelectorAll)
+                        return;
+                    var nodes = root.querySelectorAll('div,span,p,text,tspan');
+                    for (var i = 0; i < nodes.length && i < 160; i++)
+                        considerCountdownElement(ctx, nodes[i], boost - Math.min(180, i), source);
+                } catch (_) {}
+            }
+            for (var ci = 0; ci < contexts.length; ci++) {
+                var ctx = contexts[ci];
+                var doc = ctx && ctx.doc ? ctx.doc : null;
+                var win = ctx && ctx.win ? ctx.win : window;
+                if (!doc || String(ctx.href || '').toLowerCase().indexOf('/desktop/baccarat') < 0)
+                    continue;
+                diag.contexts++;
+                var vw = (win && win.innerWidth) || domTopInnerWidth() || 1300;
+                var vh = (win && win.innerHeight) || domTopInnerHeight() || 900;
+                var points = [
+                    [0.500, 0.780], [0.515, 0.780], [0.530, 0.780],
+                    [0.500, 0.815], [0.515, 0.815], [0.530, 0.815],
+                    [0.500, 0.835], [0.515, 0.835], [0.530, 0.835],
+                    [0.500, 0.860], [0.515, 0.860], [0.530, 0.860],
+                    [0.500, 0.885], [0.515, 0.885], [0.530, 0.885]
+                ];
+                for (var pi = 0; pi < points.length; pi++) {
+                    var hit = null;
+                    try { hit = doc.elementFromPoint(vw * points[pi][0], vh * points[pi][1]); } catch (_) { hit = null; }
+                    if (hit)
+                        diag.pointHits++;
+                    var cur = hit;
+                    for (var depth = 0; cur && depth < 8; depth++, cur = cur.parentElement) {
+                        diag.pointRoots++;
+                        scanCountdownSubtree(ctx, cur, 4300 - depth * 90, 'dom/pragmatic-point-countdown');
+                    }
+                }
+                var nodes = [];
+                try { nodes = doc.querySelectorAll('div,span,p,text,tspan'); } catch (_) { nodes = []; }
+                for (var i = 0; i < nodes.length && i < 9000; i++) {
+                    considerCountdownElement(ctx, nodes[i], 2600, 'dom/pragmatic-visual-countdown');
+                }
+            }
+            if (best) {
+                try { window.__cw_prog_source = best.source; } catch (_) {}
+                try { window.__cw_prog_tail = best.tail || ''; } catch (_) {}
+                try {
+                    cwDbg('COUNTDOWN', 'pragmatic-visual-hit', {
+                        value: best.value,
+                        text: best.text,
+                        source: best.source,
+                        tail: best.tail,
+                        x: best.x,
+                        y: best.y,
+                        w: best.w,
+                        h: best.h,
+                        score: best.score,
+                        diag: diag
+                    }, 1000, 'countdown-pragmatic-hit|' + String(best.source || '') + '|' + String(best.text || ''));
+                } catch (_) {}
+                return best;
+            }
+            try {
+                cwDbg('COUNTDOWN', 'pragmatic-visual-miss', {
+                    href: String(location.href || ''),
+                    diag: diag
+                }, 1500, 'countdown-pragmatic-miss|' + String(location.pathname || ''));
+            } catch (_) {}
+        } catch (_) {}
+        return null;
+    }
     function poolProviderSideFromName(name) {
         var n = String(name || '').toLowerCase();
         if (!n)
@@ -3016,6 +3356,7 @@
         try {
             if (!text || typeof text !== 'string')
                 return;
+            countdownProviderObserveText(text, source);
             if (!/(currentBet|current_bet|betPool|banker|player|tie|betAmount|totalBet|stake|pool)/i.test(text))
                 return;
             var raw = text.trim();
@@ -3486,84 +3827,23 @@
     }
     function domReadBetCountdown() {
         try {
+            var networkCountdown = countdownProviderReadFresh(12000);
+            if (networkCountdown && networkCountdown.value != null) {
+                try { window.__cw_prog_source = networkCountdown.source || 'network-countdown'; } catch (_) {}
+                return {
+                    value: networkCountdown.value,
+                    text: networkCountdown.text,
+                    tail: networkCountdown.tail || 'network/countdown',
+                    score: 5000,
+                    source: networkCountdown.source || 'network-countdown'
+                };
+            }
             var contexts = [];
             domWalkContexts(window, 'top', 0, 0, contexts, []);
-            var best = null;
-            for (var i = 0; i < contexts.length; i++) {
-                var ctx = contexts[i];
-                var doc = ctx && ctx.doc ? ctx.doc : null;
-                if (!doc)
-                    continue;
-                var nodes = [];
-                try {
-                    nodes = doc.querySelectorAll('#countdownTime > p, dd#countdownTime > p, #countdownTime p');
-                } catch (_) {
-                    nodes = [];
-                }
-                if (!nodes || !nodes.length) {
-                    try {
-                        if (domIsLiveTablesBaccaratHref(ctx.href)) {
-                            nodes = doc.querySelectorAll('span.seconds, [class*=seconds], div.dpzr9oa span');
-                        }
-                    } catch (_) {
-                        nodes = [];
-                    }
-                }
-                for (var j = 0; j < nodes.length; j++) {
-                    var el = nodes[j];
-                    if (!el || !domVisible(el))
-                        continue;
-                    var txt = domCollapse(el.innerText || el.textContent || '');
-                    if (!/^\d{1,2}$/.test(txt))
-                        continue;
-                    var val = parseInt(txt, 10);
-                    if (!(val >= 0 && val <= 99))
-                        continue;
-                    var tail = fullPath(el, 80) || domTailOfEl(el) || '';
-                    var tailL = String(tail || '').toLowerCase();
-                    var r = el.getBoundingClientRect();
-                    var score = 0;
-                    if (tailL.indexOf('div#countdown.icon_progress.progress_countdown') !== -1)
-                        score += 1000;
-                    if (tailL.indexOf('dd#countdowntime/p') !== -1)
-                        score += 800;
-                    if (tailL.indexOf('span.seconds') !== -1)
-                        score += 1800;
-                    if (tailL.indexOf('div.dpzr9oa') !== -1)
-                        score += 1200;
-                    if (String(ctx.href || '').toLowerCase().indexOf('singlebactable.jsp') !== -1)
-                        score += 300;
-                    if (domIsLiveTablesBaccaratHref(ctx.href))
-                        score += 600;
-                    if (ctx.source === 'top/frame[1]')
-                        score += 120;
-                    if (r.top < ((ctx.win && ctx.win.innerHeight) || 900) * 0.35)
-                        score += 60;
-                    if (r.left > ((ctx.win && ctx.win.innerWidth) || 1600) * 0.72)
-                        score += 60;
-                    if (domIsLiveTablesBaccaratHref(ctx.href)) {
-                        var vw = ((ctx.win && ctx.win.innerWidth) || 1600);
-                        var vh = ((ctx.win && ctx.win.innerHeight) || 900);
-                        var cx = r.left + (r.width / 2);
-                        var cy = r.top + (r.height / 2);
-                        if (cx >= vw * 0.40 && cx <= vw * 0.62)
-                            score += 180;
-                        if (cy >= vh * 0.48 && cy <= vh * 0.82)
-                            score += 180;
-                    }
-                    if (!best || score > best.score) {
-                        best = {
-                            value: val,
-                            text: txt,
-                            tail: tail,
-                            source: ctx.source || 'top',
-                            href: ctx.href || '',
-                            score: score
-                        };
-                    }
-                }
-            }
-            return best;
+            var pragmaticVisualCountdown = domReadPragmaticVisualCountdown(contexts);
+            if (pragmaticVisualCountdown && pragmaticVisualCountdown.value != null)
+                return pragmaticVisualCountdown;
+            return null;
         } catch (_) {
             return null;
         }
@@ -9127,6 +9407,125 @@
             cwLogEl.textContent = t;
         window.__cw_lastLog = t;
     }
+    function __cw_isPragmaticBaccaratPanelHref() {
+        try {
+            var host = String(location.hostname || '').toLowerCase();
+            var path = String(location.pathname || '').toLowerCase();
+            return host.indexOf('pragmaticplaylive.net') >= 0 && path.indexOf('/desktop/baccarat') >= 0;
+        } catch (_) {
+            return false;
+        }
+    }
+    function __cw_readSeqStateSafeForUi() {
+        try {
+            if (typeof readSeqStateSafe === 'function')
+                return readSeqStateSafe();
+        } catch (_) {}
+        try {
+            if (typeof abxScanResultBoardFull === 'function') {
+                var domFull = abxScanResultBoardFull({ maxAgeMs: 0, force: true });
+                if (domFull && domFull.ok && domFull.seq) {
+                    return {
+                        seq: String(domFull.seq || ''),
+                        rawSeq: String(domFull.rawSeq || ''),
+                        which: String(domFull.which || 'dom-board-full-scan'),
+                        seqVersion: Number(domFull.seqVersion != null ? domFull.seqVersion : (window.__cw_seq_version || 0)) || 0,
+                        seqEvent: String(domFull.seqEvent || window.__cw_seq_event || ''),
+                        seqMode: 'full-board-dom',
+                        seqAppend: String(domFull.changed ? 'full-board-changed' : 'full-board-nochange')
+                    };
+                }
+                return {
+                    seq: '',
+                    rawSeq: '',
+                    which: String(domFull && domFull.which ? domFull.which : 'dom-board-full-scan'),
+                    seqVersion: Number(domFull && domFull.seqVersion != null ? domFull.seqVersion : (window.__cw_seq_version || 0)) || 0,
+                    seqEvent: String(domFull && domFull.seqEvent ? domFull.seqEvent : (window.__cw_seq_event || 'board-scan-no-board')),
+                    seqMode: 'hold',
+                    seqAppend: ''
+                };
+            }
+        } catch (_) {}
+        try {
+            if (typeof readTKSeq === 'function') {
+                var r = readTKSeq();
+                return {
+                    seq: (r && r.seq) ? String(r.seq || '') : '',
+                    rawSeq: (r && r.rawSeq) ? String(r.rawSeq || '') : '',
+                    which: String(r && r.which ? r.which : ''),
+                    seqVersion: Number(r && r.seqVersion != null ? r.seqVersion : (window.__cw_seq_version || 0)) || 0,
+                    seqEvent: String(r && r.seqEvent ? r.seqEvent : (window.__cw_seq_event || '')),
+                    seqMode: String(r && r.seqMode ? r.seqMode : ''),
+                    seqAppend: String(r && r.seqAppend ? r.seqAppend : '')
+                };
+            }
+        } catch (_) {}
+        return {
+            seq: '',
+            rawSeq: '',
+            which: '',
+            seqVersion: Number(window.__cw_seq_version || 0) || 0,
+            seqEvent: String(window.__cw_seq_event || ''),
+            seqMode: '',
+            seqAppend: ''
+        };
+    }
+    function __cw_renderPanelFallback(reason, force) {
+        try {
+            var info = panel && panel.querySelector ? panel.querySelector('#cwInfo') : null;
+            if (!info)
+                return false;
+            var existing = String(info.innerText || info.textContent || '').trim();
+            if (existing && !force)
+                return false;
+            var t = null;
+            try { t = normalizeTotalsSnapshot(S && S._lastTotals); } catch (_) { t = null; }
+            if (!t) {
+                try { t = normalizeTotalsSnapshot(totals(S)); } catch (_) { t = null; }
+            }
+            t = t || {};
+            try {
+                if (S && !S._lastTotals && (t.B != null || t.P != null || t.T != null || t.A != null))
+                    S._lastTotals = t;
+            } catch (_) {}
+            var seqState = null;
+            try { seqState = __cw_readSeqStateSafeForUi(); } catch (_) { seqState = null; }
+            if (!seqState || !seqState.seq) {
+                try { seqState = readTKSeq(); } catch (_) { seqState = seqState || null; }
+            }
+            var st = '';
+            try { st = readStatusTextByTail(); } catch (_) { st = ''; }
+            var prog = null;
+            try { prog = collectProgress(); } catch (_) { prog = S ? S.prog : null; }
+            var seq = String((seqState && seqState.seq) || (S && S.seq) || '');
+            var rawSeq = String((seqState && seqState.rawSeq) || (S && S.rawSeq) || '');
+            var seqEvt = String((seqState && seqState.seqEvent) || (S && S.seqEvent) || '');
+            var tableName = (t.TB != null && String(t.TB).trim()) ? String(t.TB).trim() : '--';
+            var bankerVal = (t.B != null ? t.B : t.C);
+            var playerVal = (t.P != null ? t.P : t.L);
+            var lineSeq = 'Chuỗi kết quả : --';
+            if (seq) lineSeq = 'Chuỗi kết quả : ' + seq;
+            else if (rawSeq) lineSeq = 'Chuỗi kết quả raw : ' + rawSeq;
+            info.innerHTML = esc(
+                '• Trạng thái: ' + (st || (S && S.status) || '--') + ' | Prog: ' + (prog == null ? '--' : String(prog)) + '\n' +
+                '• PANEL : pragmatic-dom-fallback | ' + String(location.pathname || '') + '\n' +
+                '• MODE : fallback-after-empty-info | reason=' + String(reason || '') + '\n' +
+                '• BÀN : ' + tableName + ' | BANKER: ' + fmt(bankerVal) + ' | PLAYER: ' + fmt(playerVal) + ' | TIE: ' + fmt(t.T) + '\n' +
+                '• TÀI KHOẢN : ' + ((t.N != null && String(t.N).trim()) ? String(t.N).trim() : '--') + ' | SỐ DƯ : ' + fmt(t.A) + '\n' +
+                '• BET POOL DOM : B=' + fmt(t.B) + ' | P=' + fmt(t.P) + ' | T=' + fmt(t.T) + ' | SRC=' + (t.BS || t.source || '--') + '\n' +
+                '• TK event: ' + (seqEvt || '--') + '\n' +
+                lineSeq
+            );
+            return true;
+        } catch (e) {
+            try {
+                var info2 = panel && panel.querySelector ? panel.querySelector('#cwInfo') : null;
+                if (info2)
+                    info2.textContent = 'Canvas Watch render fallback error: ' + String(e && e.message || e);
+            } catch (_) {}
+            return false;
+        }
+    }
     function clearCwLog() {
         setCwLog('');
         setLogHint('cleared');
@@ -9809,14 +10208,14 @@
             S.seqVersion = Number(window.__cw_seq_version || 0) || 0;
             S.seqEvent = 'waiting-csharp-display';
         } else {
-            var tkSafe = readSeqStateSafe();
+            var tkSafe = __cw_readSeqStateSafeForUi();
             S.seq = tkSafe && tkSafe.seq ? String(tkSafe.seq || '') : '';
             selectedRawSeq = tkSafe && tkSafe.rawSeq ? String(tkSafe.rawSeq || '') : '';
             S.seqVersion = Number(tkSafe && tkSafe.seqVersion != null ? tkSafe.seqVersion : (window.__cw_seq_version || 0)) || 0;
             S.seqEvent = String(tkSafe && tkSafe.seqEvent ? tkSafe.seqEvent : (window.__cw_seq_event || ''));
         }
         var localBoardSeqState = null;
-        try { localBoardSeqState = readSeqStateSafe(); } catch (_) { localBoardSeqState = null; }
+        try { localBoardSeqState = __cw_readSeqStateSafeForUi(); } catch (_) { localBoardSeqState = null; }
         if (localBoardSeqState && localBoardSeqState.seq) {
             S.seq = String(localBoardSeqState.seq || '');
             selectedRawSeq = String(localBoardSeqState.rawSeq || '');
@@ -12842,6 +13241,120 @@
         try { window.__cw_status_tail = String(tail || ''); } catch (_) {}
         try { window.__cw_status_text = String(text || ''); } catch (_) {}
     }
+    function brFoldStatusText(s) {
+        try {
+            return String(s || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        } catch (_) {
+            return String(s || '').toLowerCase().trim();
+        }
+    }
+    function brLooksPragmaticStatusText(text) {
+        var s = brFoldStatusText(text);
+        if (!s)
+            return false;
+        if (s.indexOf('doi van bai tiep theo') !== -1)
+            return true;
+        if (s.indexOf('tam dung nhan cuoc') !== -1)
+            return true;
+        if (s.indexOf('da dong cua dat cuoc') !== -1)
+            return true;
+        if (s.indexOf('cho phep dat cuoc') !== -1)
+            return true;
+        if (s.indexOf('dang nhan cuoc') !== -1)
+            return true;
+        return false;
+    }
+    function domReadPragmaticStatusText(contexts) {
+        try {
+            var best = null;
+            var candidates = [];
+            for (var i = 0; i < contexts.length; i++) {
+                var ctx = contexts[i];
+                var doc = ctx && ctx.doc ? ctx.doc : null;
+                if (!doc)
+                    continue;
+                var href = '';
+                try { href = String((ctx.win && ctx.win.location && ctx.win.location.href) || doc.location.href || ''); } catch (_) { href = ''; }
+                if (href && href.toLowerCase().indexOf('/desktop/baccarat') === -1 && href.toLowerCase().indexOf('pragmaticplaylive.net') === -1)
+                    continue;
+                var list = [];
+                try {
+                    list = doc.querySelectorAll('div,span,p,text,tspan');
+                } catch (_) {
+                    list = [];
+                }
+                for (var k = 0; k < list.length; k++) {
+                    var el = list[k];
+                    if (!el || !domVisible(el))
+                        continue;
+                    var raw = '';
+                    try { raw = el.innerText || el.textContent || ''; } catch (_) { raw = ''; }
+                    var txt = domCleanStatusText(raw);
+                    if (!txt || txt.length > 80)
+                        continue;
+                    if (/Canvas Watch|MoneyMap|BetMap|TextMap|Scan200|CopyLog|ClearLog|Prog:/i.test(txt))
+                        continue;
+                    if (!brLooksPragmaticStatusText(txt))
+                        continue;
+                    var rect = null;
+                    try { rect = el.getBoundingClientRect(); } catch (_) { rect = null; }
+                    var x = rect ? Number(rect.left || 0) + Number(ctx.offX || 0) : 0;
+                    var y = rect ? Number(rect.top || 0) + Number(ctx.offY || 0) : 0;
+                    var w = rect ? Number(rect.width || 0) : 0;
+                    var h = rect ? Number(rect.height || 0) : 0;
+                    var tail = fullPath(el, 80) || domTailOfEl(el) || '';
+                    var folded = brFoldStatusText(txt);
+                    var score = 1000;
+                    if (folded.indexOf('doi van bai tiep theo') !== -1)
+                        score += 5000;
+                    if (folded.indexOf('tam dung nhan cuoc') !== -1 || folded.indexOf('da dong cua dat cuoc') !== -1)
+                        score += 3000;
+                    if (ctx.source === 'top/frame[0]')
+                        score += 200;
+                    if (ctx.source === 'top')
+                        score += 50;
+                    score += Math.max(0, 900 - Math.abs(y - 560));
+                    score += Math.max(0, 120 - Math.round(Math.max(w, 0)));
+                    var cand = {
+                        text: txt,
+                        tail: tail,
+                        source: ctx.source || 'top',
+                        href: href,
+                        x: Math.round(x),
+                        y: Math.round(y),
+                        w: Math.round(w),
+                        h: Math.round(h),
+                        score: score
+                    };
+                    if (candidates.length < 8)
+                        candidates.push(cand);
+                    if (!best || score > best.score)
+                        best = cand;
+                }
+            }
+            if (best) {
+                brSetStatusDiag('pragmatic-status|' + String(best.source || 'top'), best.tail, best.text);
+                cwDbg('STATUS', 'pragmatic-status', {
+                    status: best.text,
+                    source: best.source || 'top',
+                    tail: best.tail,
+                    x: best.x,
+                    y: best.y,
+                    w: best.w,
+                    h: best.h,
+                    href: best.href,
+                    candidates: candidates
+                }, 1000, 'status-pragmatic|' + best.text + '|' + best.tail);
+                return best.text;
+            }
+        } catch (_) {}
+        return '';
+    }
     function domPickStatusFromSelector(selectors, preferredTailPart) {
         try {
             var contexts = [];
@@ -12896,6 +13409,9 @@
         try {
             var contexts = [];
             domWalkContexts(window, 'top', 0, 0, contexts, []);
+            var pragmaticStatus = domReadPragmaticStatusText(contexts);
+            if (pragmaticStatus)
+                return pragmaticStatus;
             var best = null;
             var candidates = [];
             for (var i = 0; i < contexts.length; i++) {
@@ -13003,16 +13519,7 @@
         }
     }
     function foldStatusText(s) {
-        try {
-            return String(s || '')
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .replace(/\s+/g, ' ')
-                .trim();
-        } catch (_) {
-            return String(s || '').toLowerCase().trim();
-        }
+        return brFoldStatusText(s);
     }
     function domStatusImpliesClosed(statusText) {
         var s = foldStatusText(statusText);
@@ -13021,6 +13528,8 @@
         if (s.indexOf('mo bai') !== -1)
             return true;
         if (s.indexOf('ket qua') !== -1)
+            return true;
+        if (s.indexOf('doi van bai tiep theo') !== -1)
             return true;
         if (s.indexOf('cho van sau') !== -1)
             return true;
@@ -13058,7 +13567,7 @@
         S._lastTotals = T;
 
         // TK sequence (full board scan authority when available)
-        var tk = readSeqStateSafe();
+        var tk = __cw_readSeqStateSafeForUi();
         S.seq = tk && tk.seq ? String(tk.seq || '') : '';
         S.rawSeq = tk && tk.rawSeq ? String(tk.rawSeq || '') : '';
         S.seqVersion = Number(tk && tk.seqVersion != null ? tk.seqVersion : (window.__cw_seq_version || 0)) || 0;
@@ -13267,7 +13776,8 @@
         if (S.panelTimer)
             return;
         S.panelTimer = setInterval(function () {
-            try { updatePanel(); } catch (_) {}
+            try { updatePanel(); } catch (e) { __cw_renderPanelFallback('updatePanel-error:' + String(e && e.message || e), true); }
+            try { __cw_renderPanelFallback('panel-timer-empty', false); } catch (_) {}
         }, 120);
     }
     function stopPanelRenderTimer() {
@@ -13284,7 +13794,7 @@
         S.running = true;
         S.timer = setInterval(tick, S.tickMs);
         startPanelRenderTimer();
-        tick();
+        try { tick(); } catch (e) { __cw_renderPanelFallback('start-tick-error:' + String(e && e.message || e), true); }
         brInstallSeqMutationObserver();
         setStateUI();
     }
@@ -13411,13 +13921,15 @@
     try {
         tick();
         setStateUI();
+        __cw_renderPanelFallback('boot-after-tick-empty', false);
     } catch (_) {
         try {
             updatePanel();
             setStateUI();
+            __cw_renderPanelFallback('boot-catch-empty', false);
         } catch (_) {}
     }
-    if (window.__cw_panel_autostart === 1 || window.__cw_panel_autostart === true)
+    if (window.__cw_panel_autostart === 1 || window.__cw_panel_autostart === true || __cw_isPragmaticBaccaratPanelHref())
         start();
 
     function teardown() {
@@ -14247,6 +14759,14 @@
                 st = (typeof readStatusTextByTail === 'function') ? String(readStatusTextByTail() || '') : '';
             } catch (_) {
                 st = '';
+            }
+            if (!__cw_hasCocos() && domStatusImpliesClosed(st)) {
+                p = 0;
+                try {
+                    window.__cw_prog_source = 'status-closed';
+                    window.__cw_prog_tail = String(window.__cw_status_tail || '');
+                    window.__cw_prog_value = 0;
+                } catch (_) {}
             }
             var progNum = (typeof p === 'number' && isFinite(p)) ? p : null;
             var totalsCacheMs = 1400;

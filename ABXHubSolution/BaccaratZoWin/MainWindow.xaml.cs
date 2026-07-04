@@ -671,7 +671,7 @@ namespace BaccaratZoWin
 
 
 
-        private const string DEFAULT_URL = "https://web.zowin.nu/"; // URL mặc định bạn muốn
+        private const string DEFAULT_URL = "https://web.zowin.vu/"; // URL mặc định bạn muốn
         // === License repo/worker settings (CHỈNH LẠI CHO PHÙ HỢP) ===
         const string LicenseOwner = "ngomantri1";    // <- đổi theo repo của bạn
         const string LicenseRepo = "licenses";  // <- đổi theo repo của bạn

@@ -46,6 +46,31 @@
 - Top `gs2c` score DOM yeu:
   - Da bo sung boost score toi thieu khi URL da la game-ready de tranh lock nham host frame.
 
+## Trang thai cap nhat (2026-06-30)
+
+- Bug hien tai: sau khi click game, cua so/popup mo duoc nhung noi dung hien `File Not Found`.
+- Log truoc do cho thay:
+  - TLS handler da hook thanh cong.
+  - app da allow `CertificateCommonNameIsIncorrect` cho `client.pragmaticplaylive.net`.
+  - `PopupWeb NavigationCompleted: Err Unknown` tren URL launcher.
+  - stage bi giu o `popup-tls-retry-pending`.
+- Nguyen nhan kha nang cao:
+  - bypass TLS chi giai quyet chan cert cua WebView2.
+  - URL launcher Pragmatic sau loi co the da thanh URL/token/JSESSIONID loi hoac stale.
+  - reload/retry cung launcher URL khong du, nen van ra `File Not Found`.
+- Patch da co:
+  - TLS allow whitelist hep.
+  - retry sau TLS allow.
+  - fallback sau 8.5s: close popup + reset authority/pipeline + click lai game de lay launcher moi.
+- User bao sau patch van khong thay thay doi va van `File Not Found`.
+  - can doc log moi de biet fallback co duoc build/load/chay khong.
+  - neu log khong co `[TLS-BYPASS][FALLBACK-*]`, kha nang cao app dang chay DLL cu hoac route khong di qua SchedulePragmaticTlsFallback.
+  - neu co `[TLS-BYPASS][FALLBACK]` ma van loi, can doi sang flow lay launcher moi chu dong hon thay vi retry URL cu.
+- Luu y build/deploy:
+  - build truc tiep `.csproj` phai truyen `SolutionDir`.
+  - neu khong, guard `ABX.Core.dll` co the check sai path.
+  - JS la embedded resource, can rebuild + restart host moi thay Canvas Watch/default JS thay doi.
+
 ## Da fix / da giam ro
 
 - Da bo fallback cu cua tong cuoc B/P/T tranh scan nham (nhat la dinh chip `10M`).
@@ -61,6 +86,8 @@
 
 ## Risk con lai
 
+- TLS bypass la rui ro bao mat da duoc user chap nhan cho provider Pragmatic.
+- Whitelist hien tai phai giu hep, khong mo rong sang host/domain khac.
 - Neu cert/tls cua provider loi theo thoi diem, app van co the that bai vao game du logic trong app dung.
 - Selector class cua provider co the doi bat ky luc nao, gay null B/P/T hoac sai target dat cuoc.
 - Khi selector doi, vi da bo fallback cu, pool se ve `--` ngay (dung theo thiet ke moi).
@@ -80,6 +107,72 @@
   - C#: `[COUNTDOWN][UI][RAW]`, `[COUNTDOWN][UI][DISPLAY]`, `[COUNTDOWN][TRACE]`.
   - JS: `CWDBG COUNTDOWN raw/display`.
 
+## Bug hiện tại - Prog countdown Pragmatic vẫn `--` (2026-07-03)
+
+### Triệu chứng
+
+- Canvas Watch đã hiển thị được trên game Pragmatic route `/desktop/baccarat/`.
+- Panel đã hiện chi tiết như trạng thái, bàn, Banker/Player/Tie, bet pool, chuỗi kết quả.
+- Riêng dòng `Prog` trên Canvas Watch vẫn là `--`.
+- Bảng điều khiển C# bên phải cũng chưa đồng bộ countdown từ game cho case này.
+- User xác nhận sau nhiều patch: `Vẫn chưa được`, `Prog vẫn -- chưa lấy được`.
+
+### Những gì đã kiểm tra
+
+- DevTools cho thấy frame đang dùng:
+  - launcher: `/desktop/launcher/`
+  - baccarat: `/desktop/baccarat/`
+  - video: `/apps/video/2.0.19/index.html`
+- Các scan trước đó từng bắt được số `9/8` nhưng xác định là giá trị bài Player/Banker, không phải countdown.
+- Các tail/candidate như `nl_*`, `jP_*`, `centerTopBet`, `PG_PR` không được coi là countdown chính xác.
+- Countdown vòng tròn nằm trực quan ở vùng giữa-dưới màn hình, nhưng chưa chứng minh được nó expose dưới dạng DOM text.
+
+### Patch đã áp dụng
+
+- Thêm `/desktop/baccarat/` vào nhận diện game page cho Canvas Watch.
+- Thêm fallback render panel để không bị trống nội dung.
+- Thêm `__cw_readSeqStateSafeForUi()` để tránh crash khi render panel.
+- Thêm `countdownProviderObserveText()` để thử bắt countdown từ network/json text.
+- Thêm `domReadPragmaticVisualCountdown()` để quét DOM text theo vùng countdown.
+- Thêm fallback `elementFromPoint()` quanh vị trí vòng countdown.
+- Thêm log bắt buộc cho tag `COUNTDOWN`:
+  - JS vẫn gửi log dù `__cw_file_log_enable` tắt.
+  - C# vẫn ghi log tag `COUNTDOWN` dù `_enableJsFileLog=false`.
+
+### Giả thuyết hiện tại
+
+- JS có thể chưa được rebuild/restart đúng bản embedded mới trong app đang chạy.
+- Hoặc countdown không nằm trong DOM text thường mà được render qua canvas/video/SVG nội bộ không expose text.
+- Hoặc `elementFromPoint` đang chạy sai context/coordinate so với frame thật.
+- Hoặc bộ lọc rect/region/bad-tail đang loại nhầm candidate thật.
+- Hoặc countdown chỉ có trong message network/WebSocket, không có trong DOM.
+
+### Cần log để xử lý tiếp
+
+- Bắt buộc lấy đoạn log chương trình có:
+  - `[CWDBG][COUNTDOWN] pragmatic-visual-miss`
+  - `[CWDBG][COUNTDOWN] pragmatic-visual-hit`
+  - `[CWDBG][COUNTDOWN] collect-miss`
+  - `[CWDBG][COUNTDOWN] collect-hit`
+- Nếu không có bất kỳ dòng `[CWDBG][COUNTDOWN]` nào:
+  - app có thể chưa chạy bản JS/C# mới,
+  - bridge log chưa inject vào đúng frame,
+  - hoặc chưa rebuild/restart host.
+- Nếu có `pragmatic-visual-miss`, đọc `diag`:
+  - `contexts=0`: không thấy đúng frame game.
+  - `pointHits=0`: `elementFromPoint` không chạm vùng countdown.
+  - `numeric=0`: DOM không có text số countdown.
+  - `rejectedRect/rejectedRegion/rejectedBad`: candidate bị filter loại.
+
+### Hướng fix tiếp theo
+
+- Ưu tiên đọc log `COUNTDOWN` trước, không đoán thêm tail.
+- Nếu `diag` chứng minh DOM không có countdown, chuyển sang CDP network:
+  - bật network/WebSocket tap cho Pragmatic,
+  - tìm field countdown/timeLeft/betTime/remaining,
+  - map giá trị đó về `Prog`.
+- Nếu CDP network vẫn không có countdown rõ, cân nhắc fallback OCR/canvas crop vùng countdown.
+
 ## Workaround van dung
 
 - Neu thay thay doi JS khong co hieu luc:
@@ -92,3 +185,53 @@
 - Neu Canvas Watch van hien trai y du da set default hidden:
   - bump `CW_PANEL_VISIBLE_DEFAULT_REV`,
   - rebuild + restart host.
+- Neu sau TLS bypass van `File Not Found`:
+  - khong ket luan cert handler hong ngay.
+  - kiem tra log `[TLS-BYPASS][ALLOW]`, `[RETRY-*]`, `[FALLBACK-*]`.
+  - neu retry/fallback chay nhung van loi, can lay launcher token moi tu host thay vi reload URL cu.
+
+## Trạng thái lỗi vào Pragmatic (2026-07-01)
+
+### Bug
+
+- Vào game Pragmatic không ổn định: lúc vào được, lúc màn hình đen và báo `File Not Found`.
+- Log có thể thấy `PopupWeb NavigationCompleted: Err Unknown` ở URL `client.pragmaticplaylive.net/desktop/launcher/...`.
+- Khi debug Visual Studio từng gặp `System.NullReferenceException` vì `_popupWeb was null` trong `InjectOnPopupDocAsync`.
+
+### Nguyên nhân đã xác định
+
+- DNS/cert mismatch: `client.pragmaticplaylive.net` có lúc resolve về IP trả certificate `CN=*.greennet.net.vn`, làm WebView2 báo `CertificateCommonNameIsIncorrect`/`Err Unknown`.
+- Retry launcher URL cũ không đủ ổn định vì launcher URL/token/session có thể đã fail hoặc hết hiệu lực sau lỗi TLS.
+- Popup flow cũ từng override `window.open` hoặc đẩy popup route về main WebView, khác cách vào game ổn định của project `BaccaratEzugiCasino`.
+- Fallback click có rủi ro bấm nhầm tab/category `Baccarat` hoặc mục Xóc Đĩa thay vì game Baccarat Pragmatic thật.
+- Event popup cũ có thể bắn sau khi popup đã bị đóng, gây `_popupWeb` null nếu dùng field trực tiếp sau `await`.
+
+### Fix đã áp dụng
+
+- Build lobby Pragmatic theo host hiện tại/người dùng nhập, giữ path/query `/livecasino?provider=pragmatic`.
+- Giữ popup WebView riêng theo flow Ezugi: `e.NewWindow = popupWeb.CoreWebView2`.
+- Bỏ hướng ép popup URL về main WebView cho Pragmatic.
+- Sửa click heuristic: ưu tiên marker `401`, tránh Xóc Đĩa và tránh category tab không có action.
+- Thêm TLS handler scoped cho domain Pragmatic và lỗi common-name mismatch.
+- Thêm WebView2 host-map: `client.pragmaticplaylive.net -> 13.227.227.64`.
+- Recovery khi launcher lỗi: đóng popup stale, quay lại lobby Pragmatic, click lại để lấy launcher mới.
+- Fix race `_popupWeb null` bằng local reference cho popup/core trong `InjectOnPopupDocAsync`.
+
+### Workaround/khi lỗi lại
+
+- Rebuild và restart hẳn app/host. WebView2 host-map chỉ có hiệu lực khi tạo environment mới.
+- Gửi log có các dòng:
+  - `[WV2][HOST-MAP]`
+  - `[TLS-BYPASS][ALLOW]`
+  - `[ROUTE-URL]`
+  - `[CLICK-TARGET]`
+  - `PopupWeb NavigationCompleted`
+  - `launcher-nav-error`
+  - `[RECOVER-RECLICK]`
+- Nếu vẫn lỗi sau host-map, kiểm tra lại DNS/IP/CDN của `client.pragmaticplaylive.net`; IP CloudFront có thể thay đổi theo thời gian.
+
+### Rủi ro còn lại
+
+- Host-map dùng IP cụ thể nên có thể stale nếu provider/CDN đổi route.
+- TLS bypass phải giữ hẹp cho Pragmatic, không mở rộng sang domain khác.
+- Provider có thể đổi DOM/game marker, làm click heuristic cần cập nhật lại.
