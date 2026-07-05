@@ -64,12 +64,13 @@
   - JS push vao `BET_QUEUE`, `processBetQueue()` goi `cwBet` lan luot.
   - JS post `bet` hoac `bet_error` ve C#.
 - Countdown/progress:
-  - `readCountdownSec()` quet node label theo tail `xdtl_jackpot_anim_right/left/lbl_countdown`, fallback `lbl_countdown`.
-  - `collectProgress()` uu tien countdown, quy doi giay ve ratio `0..1`; neu khong co countdown thi fallback `cc.ProgressBar`.
-  - JS ghi debug `window.__cw_prog_sec`, `window.__cw_prog_tail`, panel hien `Countdown`/`ProgTail`.
+  - `collectProgress()` chi doc `cc.ProgressBar.progress` tu `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/HUD/countDownProgress`.
+  - Khong fallback sang label countdown/text tail cu; `prog` van la ratio `0..1`.
+  - `statusByProg()` tinh status tu progress: `prog > 0` la `Chờ đặt cược`, con lai la `Chờ kết quả`.
 
 ## UI update flow
 - `tick` update progress bar, label %, last result, account header, seq UI, status text.
+- Status tren bang dieu khien C# doi mau theo text: `Chờ đặt cược` mau xanh la cay, `Chờ kết quả` mau do.
 - `MainWindow` hien `PrgBet/LblProg` tu `snap.prog` theo ratio; neu muon hien giay can doc them `progSec` vao model/C#.
 - Task update mini panel qua callbacks:
   - `UiSetSide` -> `UpdateTabSide`.
@@ -85,6 +86,13 @@
   - map total bet, money/account, text/status, side buttons, chip buttons.
   - `Scan200Text`, `BetMap`, `MoneyMap`, `CanvasWatch` trong `v4_js_xoc_dia_live.js`.
   - Ket qua seq/totals/status duoc day ve C# qua tick.
+- Tong cuoc 7 cua HIT:
+  - Tail tien tong cuoc: `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/ListLabel/TotalMoney`.
+  - JS gom cac label theo dong `y`, sort theo `x`, roi map layout: top[1]=CHAN, top[0]=LE, bottom[0]=SAP_DOI, bottom[1]=DO3_TRANG1, bottom[2]=TRANG3_DO1, bottom[3]=TU_TRANG, bottom[4]=TU_DO.
+  - Khong fallback ve tail `XDLive/Canvas/Bg/footer/listLabel/totalBet`.
+- Ten nhan vat/tai khoan HIT:
+  - Ten nhan vat doc tu `RoomScenebinhThuongXocDia/FootterRoomUi/Left/buttonName/NameUser`.
+  - Tai khoan doc bang cach tim `PlayerViewXocDia/PlayerName/name` khop ten nhan vat, sau do lay `PlayerName/Mn/mn` trong subtree cua player do.
 - Phinh/chip:
   - `cwScanChips()`/`wideScan()` tim phinh qua Label/RichText/SpriteFrame/node/path.
   - Log da xac nhan tail phinh: `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_2..Entry_9`.

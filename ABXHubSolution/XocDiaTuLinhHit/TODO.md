@@ -5,7 +5,10 @@
   - URL game `https://v.hitclub.yoga/`.
   - Canvas Watch visibility guard.
   - Scan phinh/chip bang `cwScanChips`.
-  - Countdown tail/prog moi.
+  - Countdown/prog HIT lay tu `HUD/countDownProgress`.
+  - Status tinh tu `prog` va C# doi mau xanh/do.
+  - Ten nhan vat/tai khoan lay theo tail HIT moi va on dinh theo player khop username.
+  - Tong cuoc 7 cua lay tu `ld_bg/ListLabel/TotalMoney` voi mapping layout da chot.
 
 ## Task chua hoan thanh / can kiem chung
 - Kiem thu day du cac strategy index 0..16 sau cac thay doi gan day trong `MainWindow.xaml.cs`.
@@ -16,7 +19,9 @@
 - Kiem thu `WinUpLoseKeep` S7 reset flag voi win tax va cut profit/loss.
 - Kiem thu URL `https://v.hitclub.yoga/` tren app moi build: canvas load dung, bridge inject dung, khong can `?a=hitclub`.
 - Kiem thu `Canvas Watch` sau reload/inject/navigation: panel khong bi an; `window.__cw_show_panel()` phai hien lai panel.
-- Kiem thu countdown: panel phai hien `Countdown: <s>` va `ProgTail: .../lbl_countdown`; `Prog` phai chay theo ratio de task vao cuoc dung.
+- Kiem thu countdown/prog: `Prog` phai chay theo `HUD/countDownProgress`, mac dinh 0 khi khong dong bo, va ve 0 o trang thai cho ket qua.
+- Kiem thu status: `prog > 0` hien `Chờ đặt cược` mau xanh la cay, `prog = 0` hien `Chờ kết quả` mau do.
+- Kiem thu tong cuoc 7 cua: CHAN/LE/SAP_DOI/TRANG3_DO1/DO3_TRANG1/TU_TRANG/TU_DO phai khop so tien tren canvas, dac biet mapping top[1]=CHAN, top[0]=LE, bottom[0]=SAP_DOI, bottom[1]=DO3_TRANG1, bottom[2]=TRANG3_DO1, bottom[3]=TU_TRANG, bottom[4]=TU_DO.
 - Kiem thu phinh: `Scan200Text` phai in `(Chip scan from Scan200Text)` voi `Entry_2..Entry_9` va amount `1000..5000000`.
 
 ## Task can refactor
@@ -41,8 +46,8 @@
 - Kiem tra finalization pending khi seq doi nhung account balance chua cap nhat kip.
 - Kiem tra lifecycle cleanup de khong giu WebView frame event/CTS sau khi plugin dong.
 - Kiem tra `_activeTask` vs `tab.ActiveTask` trong tick finalize Task 17; dung sai reference co the finalize nham.
-- Kiem tra `collectProgress()` moi: countdown ratio `sec/COUNTDOWN_MAX_SEC` co phu hop voi `DecisionPercent` trong tat ca strategy.
-- Kiem tra `COUNTDOWN_TAILS`; neu panel van `Countdown: -`, can chay `TextMap/Scan200Text` luc thanh countdown hien de lay tail that.
+- Kiem tra `collectProgress()` moi: `cc.ProgressBar.progress` tu `HUD/countDownProgress` co phu hop voi `DecisionPercent` trong tat ca strategy.
+- Kiem tra totals 7 cua sau moi lan game doi layout; neu sai khong fallback tail cu, chay MoneyMap/Scan probe de xac nhan lai layout `TotalMoney`.
 - Kiem tra `_panelWatchdog` khong gay leak/nhan timer khi inject lai nhieu lan; `teardown()` da clear nhung can verify.
 
 ## Task can test lai
@@ -53,11 +58,12 @@
 - Bet history pagination: pending row update tai cho, khong add duplicate.
 - License/trial expire khi task dang chay: task dung, lease release, UI khong crash.
 - Bấm `Scan200Text` sau khi mo panel chip: phinh van scan duoc, WebView khong lag, Canvas Watch khong bien mat.
-- Reload game/frame: `__cw_prog_tail`, `__cw_prog_sec`, `__cw_show_panel` van duoc re-register.
+- Reload game/frame: `__cw_show_panel`, push tick, progress/status/totals/username/account van duoc re-register.
 
 ## Ghi chu cho AI coding tiep theo
 - Truoc khi sua logic bet, doc `TaskUtil.cs`, `GameContext.cs`, `MoneyHelper.cs`, vung `BuildContext` va `PlayXocDia_Click`.
 - Neu sua JS bet flow, doc vung `__cw_bet`, `BET_QUEUE`, `cwBet` trong `v4_js_xoc_dia_live.js`.
 - Neu sua pending/history, doc `WebMessageReceived` va `FinalizeLastBet`.
-- Neu sua countdown/progress, doc `readCountdownSec`, `COUNTDOWN_TAILS`, `collectProgress`, `TaskUtil.WaitUntil*`.
+- Neu sua countdown/progress/status, doc `HIT_COUNTDOWN_PROGRESS_TAIL`, `collectProgress`, `statusByProg`, `TaskUtil.WaitUntil*`.
+- Neu sua totals/account, doc `TAIL_TOTAL_EXACT`, `pickHitTotalsByLayout`, `TAIL_USERNAME_EXACT`, `TAIL_PLAYER_NAME_EXACT`, `TAIL_ACC_EXACT`.
 - Neu Canvas Watch bi an trong runtime, dung DevTools console: `window.__cw_show_panel && window.__cw_show_panel()`.

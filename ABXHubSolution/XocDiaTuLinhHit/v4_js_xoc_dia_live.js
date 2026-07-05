@@ -596,15 +596,7 @@
         return cands[0];
     }
     /* ---------------- helpers for totals by (x, tail) ---------------- */
-    var TAIL_TOTAL_EXACT = 'XDLive/Canvas/Bg/footer/listLabel/totalBet';
-    var X_CHAN = 591; // CHẴN
-    var X_LE = 973; // LẺ
-    // --- NEW extra totals (by x under same tail) ---
-    var X_SAPDOI = 783; // SẤP ĐÔI
-    var X_TUTRANG = 561; // TỨ TRẮNG
-    var X_TUDO = 1004; // TỨ ĐỎ
-    var X_3DO = 856; // 3 ĐỎ
-    var X_3TRANG = 709; // 3 TRẮNG
+    var TAIL_TOTAL_EXACT = 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/ListLabel/TotalMoney';
     var TAIL_ACC_EXACT = 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/PlayerViewXocDia/PlayerName/Mn/mn';
     var TAIL_USERNAME_EXACT = 'MainXocDia/Canvas/MainUIParent/RoomScenebinhThuongXocDia/FootterRoomUi/Left/buttonName/NameUser';
     var TAIL_PLAYER_NAME_EXACT = 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/PlayerViewXocDia/PlayerName/name';
@@ -653,6 +645,72 @@
             }
         }
         return best;
+    }
+    function groupRowsByY(list, tolY) {
+        tolY = tolY == null ? 30 : tolY;
+        var rows = [];
+        var sorted = (list || []).slice().sort(function (a, b) {
+            return a.y - b.y || a.x - b.x;
+        });
+        for (var i = 0; i < sorted.length; i++) {
+            var it = sorted[i];
+            var row = null;
+            for (var r = 0; r < rows.length; r++) {
+                if (Math.abs(rows[r].y - it.y) <= tolY) {
+                    row = rows[r];
+                    break;
+                }
+            }
+            if (!row) {
+                row = {
+                    y: it.y,
+                    items: []
+                };
+                rows.push(row);
+            }
+            row.items.push(it);
+            row.y = (row.y * (row.items.length - 1) + it.y) / row.items.length;
+        }
+        for (var j = 0; j < rows.length; j++) {
+            rows[j].items.sort(function (a, b) {
+                return a.x - b.x;
+            });
+        }
+        return rows.sort(function (a, b) {
+            return a.y - b.y;
+        });
+    }
+    function pickHitTotalsByLayout(list) {
+        var rows = groupRowsByY(list, 35);
+        var top = null,
+        bottom = null;
+        for (var i = 0; i < rows.length; i++) {
+            var cnt = rows[i].items.length;
+            if (!top && cnt === 2)
+                top = rows[i].items;
+            if (!bottom && cnt >= 5)
+                bottom = rows[i].items;
+        }
+        if (!top || !bottom) {
+            var usable = (list || []).slice().sort(function (a, b) {
+                return a.y - b.y || a.x - b.x;
+            });
+            bottom = bottom || usable.slice(0, 5).sort(function (a, b) {
+                return a.x - b.x;
+            });
+            top = top || usable.slice(-2).sort(function (a, b) {
+                return a.x - b.x;
+            });
+        }
+        return {
+            C: top && top[1] || null,
+            L: top && top[0] || null,
+            TD: bottom && bottom[4] || null,
+            T3T: bottom && bottom[2] || null,
+            SD: bottom && bottom[0] || null,
+            T3D: bottom && bottom[1] || null,
+            TT: bottom && bottom[3] || null
+        };
     }
     function pickTextByFullTail(tailExact) {
         var best = null;
@@ -762,24 +820,24 @@
     window.moneyTailList = moneyTailList;
     window.pickByXTail = pickByXTail;
     window.cwPickChan = function () {
-        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_CHAN, TAIL_TOTAL_EXACT);
+        return pickHitTotalsByLayout(moneyTailList(TAIL_TOTAL_EXACT)).C;
     };
     window.cwPickLe = function () {
-        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_LE, TAIL_TOTAL_EXACT);
+        return pickHitTotalsByLayout(moneyTailList(TAIL_TOTAL_EXACT)).L;
     };
 
     /* ---------------- totals (using x & tail) ---------------- */
     function totals(S) {
         S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
 
-        var list = moneyTailList(TAIL_TOTAL_EXACT);
-        var mC = pickByXTail(list, X_CHAN, TAIL_TOTAL_EXACT); // CHẴN
-        var mL = pickByXTail(list, X_LE, TAIL_TOTAL_EXACT); // LẺ
-        var mSD = pickByXTail(list, X_SAPDOI, TAIL_TOTAL_EXACT); // SẤP ĐÔI
-        var mTT = pickByXTail(list, X_TUTRANG, TAIL_TOTAL_EXACT); // TỨ TRẮNG
-        var m3T = pickByXTail(list, X_3TRANG, TAIL_TOTAL_EXACT); // 3 TRẮNG
-        var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
-        var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
+        var hitTotals = pickHitTotalsByLayout(moneyTailList(TAIL_TOTAL_EXACT));
+        var mC = hitTotals.C; // CHẴN
+        var mL = hitTotals.L; // LẺ
+        var mSD = hitTotals.SD; // SẤP ĐÔI
+        var mTT = hitTotals.TT; // TỨ TRẮNG
+        var m3T = hitTotals.T3T; // 3 TRẮNG
+        var m3D = hitTotals.T3D; // 3 ĐỎ
+        var mTD = hitTotals.TD; // TỨ ĐỎ
 
         var rA = readOwnAccountMoney();
 
