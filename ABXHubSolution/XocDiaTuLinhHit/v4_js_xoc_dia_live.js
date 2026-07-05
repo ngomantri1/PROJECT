@@ -595,35 +595,6 @@
         });
         return cands[0];
     }
-    function autoBindAcc(S) {
-        if (S.selAcc)
-            return;
-        var list = S.money && S.money.length ? S.money : buildMoneyRects();
-        var cand = list.filter(function (m) {
-            var t = m.tl;
-            return (t.indexOf('/footer/khungmoney/moneylb') !== -1);
-        });
-        cand = cand.filter(function (m) {
-            var t = m.tl;
-            return (t.indexOf('jackpot') === -1 && t.indexOf('/footer/totalbetlb') !== t.length - ('/footer/totalbetlb'.length));
-        });
-        if (!cand.length)
-            return;
-        cand.sort(function (a, b) {
-            return (a.n.y - b.n.y) || (area(b) - area(a));
-        });
-        var acc = cand[cand.length - 1];
-        S.selAcc = {
-            tail: acc.tail,
-            anchorN: {
-                x: acc.n.x,
-                y: acc.n.y,
-                w: acc.n.w,
-                h: acc.n.h
-            }
-        };
-    }
-
     /* ---------------- helpers for totals by (x, tail) ---------------- */
     var TAIL_TOTAL_EXACT = 'XDLive/Canvas/Bg/footer/listLabel/totalBet';
     var X_CHAN = 591; // CHẴN
@@ -634,6 +605,9 @@
     var X_TUDO = 1004; // TỨ ĐỎ
     var X_3DO = 856; // 3 ĐỎ
     var X_3TRANG = 709; // 3 TRẮNG
+    var TAIL_ACC_EXACT = 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/PlayerViewXocDia/PlayerName/Mn/mn';
+    var TAIL_USERNAME_EXACT = 'MainXocDia/Canvas/MainUIParent/RoomScenebinhThuongXocDia/FootterRoomUi/Left/buttonName/NameUser';
+    var TAIL_PLAYER_NAME_EXACT = 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/PlayerViewXocDia/PlayerName/name';
 
     function tailEquals(t, exact) {
         if (t == null)
@@ -680,6 +654,110 @@
         }
         return best;
     }
+    function pickTextByFullTail(tailExact) {
+        var best = null;
+        walkNodes(function (n) {
+            if (best)
+                return;
+            var path = fullPath(n, 120);
+            if (!tailEquals(path, tailExact))
+                return;
+            var comps = (n._components || []);
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                if (!c || typeof c.string === 'undefined')
+                    continue;
+                var text = String(c.string == null ? '' : c.string).trim();
+                if (!text || isMoneyText(text))
+                    continue;
+                var r = wRect(n);
+                best = {
+                    text: text,
+                    node: n,
+                    tail: path,
+                    x: r.x,
+                    y: r.y,
+                    w: r.w,
+                    h: r.h
+                };
+                return;
+            }
+        });
+        return best;
+    }
+    function findPlayerNameNodeByUser(username) {
+        username = String(username || '').trim();
+        if (!username)
+            return null;
+        var hit = null;
+        walkNodes(function (n) {
+            if (hit)
+                return;
+            var path = fullPath(n, 120);
+            if (!tailEquals(path, TAIL_PLAYER_NAME_EXACT))
+                return;
+            var comps = (n._components || []);
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                if (!c || typeof c.string === 'undefined')
+                    continue;
+                var text = String(c.string == null ? '' : c.string).trim();
+                if (text === username) {
+                    hit = n;
+                    return;
+                }
+            }
+        });
+        return hit;
+    }
+    function findMoneyUnderPlayerNameNode(nameNode) {
+        if (!nameNode)
+            return null;
+        var parent = nameNode.parent || nameNode._parent || null;
+        var hit = null;
+        function walkLocal(n) {
+            if (!n || hit)
+                return;
+            var path = fullPath(n, 120);
+            if (tailEquals(path, TAIL_ACC_EXACT)) {
+                var comps = (n._components || []);
+                for (var i = 0; i < comps.length; i++) {
+                    var c = comps[i];
+                    if (!c || typeof c.string === 'undefined')
+                        continue;
+                    var text = String(c.string == null ? '' : c.string).trim();
+                    var val = moneyOf(text);
+                    if (val != null) {
+                        var r = wRect(n);
+                        hit = {
+                            txt: text,
+                            val: val,
+                            tail: path,
+                            x: r.x,
+                            y: r.y,
+                            w: r.w,
+                            h: r.h
+                        };
+                        return;
+                    }
+                }
+            }
+            var kids = (n.children || n._children) || [];
+            for (var k = 0; k < kids.length; k++)
+                walkLocal(kids[k]);
+        }
+        walkLocal(parent);
+        return hit;
+    }
+    function readOwnUsername() {
+        var user = pickTextByFullTail(TAIL_USERNAME_EXACT);
+        return user ? String(user.text || '').trim() : '';
+    }
+    function readOwnAccountMoney() {
+        var username = readOwnUsername();
+        var nameNode = findPlayerNameNodeByUser(username);
+        return findMoneyUnderPlayerNameNode(nameNode);
+    }
     // Export standardized helpers
     window.moneyTailList = moneyTailList;
     window.pickByXTail = pickByXTail;
@@ -703,10 +781,7 @@
         var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
         var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
 
-        // Account (A) keeps old robust resolver
-        if (!S.selAcc)
-            autoBindAcc(S);
-        var rA = resolve(S.money, S.selAcc);
+        var rA = readOwnAccountMoney();
 
         return {
             C: mC ? mC.val : null,
@@ -764,7 +839,7 @@
     }
     function readUsernameSafe() {
         try {
-            return readLabelTextByTailEnd('XDLive/Canvas/Bg/footer/usernameLB') || '';
+            return readOwnUsername();
         } catch (_) {
             return '';
         }
@@ -789,7 +864,7 @@
         timer: null,
         tickMs: 240,
         prog: null,
-        status: 'ĐỢI MỞ BÁT',
+        status: 'Chờ kết quả',
         money: [],
         text: [],
         selC: null,
@@ -2069,49 +2144,10 @@
 
     /* ---------------- tick & controls ---------------- */
     function statusByProg(p) {
-        // Ngưỡng chống rung cho số thực gần 0
-        var EPS = 0.001;
-
-        // Quy tắc ông chủ yêu cầu:
-        // - p > 0      → lấy text tail 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage'
-        // - p = 0      → lấy text tail 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting'
-        var TAIL_MSG = 'XDLive/Canvas/PopUpMessageUtil/ig_bg_thong_bao/textMessage';
-        var TAIL_WAIT = 'XDLive/Canvas/Bg/showKetQua/ig_bg_thong_bao/textWaiting';
-
-        // Chọn text theo tail, so khớp theo kiểu "đuôi" để chống thay đổi prefix
-        function pickTextByTailEnd(tailEnd) {
-            try {
-                var texts = buildTextRects(); // [{text,x,y,w,h,tail}, ...]
-                var best = null,
-                bestArea = -1;
-                var tailEndL = String(tailEnd || '').toLowerCase();
-
-                for (var i = 0; i < texts.length; i++) {
-                    var t = texts[i];
-                    var tl = String(t.tail || '').toLowerCase();
-                    if (!tl.endsWith(tailEndL))
-                        continue;
-
-                    var ar = (t.w || 0) * (t.h || 0);
-                    if (ar > bestArea) {
-                        best = t;
-                        bestArea = ar;
-                    }
-                }
-                return best ? String(best.text || '').trim() : '';
-            } catch (e) {
-                return '';
-            }
-        }
-
-        p = +p || 0;
-        var tail = (p > EPS) ? TAIL_MSG : TAIL_WAIT;
-        var txt = pickTextByTailEnd(tail);
-
-        // Fallback nhẹ khi không tìm thấy text
-        if (txt)
-            return txt;
-        return "";
+        p = Number(p);
+        if (!isFinite(p))
+            return 'Chờ kết quả';
+        return p > 0 ? 'Chờ đặt cược' : 'Chờ kết quả';
     }
 
     function tick() {

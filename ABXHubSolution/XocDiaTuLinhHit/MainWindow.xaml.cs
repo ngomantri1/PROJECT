@@ -2413,6 +2413,7 @@ Ví dụ không hợp lệ:
                                                     if (!string.IsNullOrWhiteSpace(statusUi))
                                                     {
                                                         LblStatusText.Text = statusUi;
+                                                        LblStatusText.Foreground = GetStatusBrush(statusUi);
                                                         LblStatusText.Visibility = Visibility.Visible;
                                                     }
                                                     else
@@ -6852,10 +6853,21 @@ Ví dụ không hợp lệ:
                 else
                 {
                     LblStatusText.Text = status;
+                    LblStatusText.Foreground = GetStatusBrush(status);
                     LblStatusText.Visibility = Visibility.Visible;
                 }
             }
             catch { /* ignore */ }
+        }
+
+        private static Brush GetStatusBrush(string? status)
+        {
+            status = (status ?? "").Trim();
+            if (string.Equals(status, "Chờ đặt cược", StringComparison.OrdinalIgnoreCase))
+                return Brushes.Green;
+            if (string.Equals(status, "Chờ kết quả", StringComparison.OrdinalIgnoreCase))
+                return Brushes.Red;
+            return Brushes.Black;
         }
 
 
