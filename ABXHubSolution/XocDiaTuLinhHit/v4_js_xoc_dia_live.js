@@ -220,70 +220,42 @@
         a.reverse();
         return a.join('/');
     }
-    var COUNTDOWN_MAX_SEC = 20;
-    var COUNTDOWN_TAILS = [
-        'node_in_multimode/top/right/xdtl_jackpot_anim_right/lbl_countdown',
-        'node_in_multimode/top/left/xdtl_jackpot_anim_left/lbl_countdown',
-        'xdtl_jackpot_anim_right/lbl_countdown',
-        'xdtl_jackpot_anim_left/lbl_countdown',
-        'lbl_countdown'
-    ];
-    function readCountdownSec() {
-        var best = null;
+    var HIT_COUNTDOWN_PROGRESS_TAIL = 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/HUD/countDownProgress';
+    var HIT_COUNTDOWN_ZERO_EPS = 0.02;
+    function readHitCountdownProgress() {
+        var hit = null;
+        var tailL = HIT_COUNTDOWN_PROGRESS_TAIL.toLowerCase();
         walkNodes(function (n) {
-            if (best && best.sec > 0)
+            if (hit)
                 return;
-            var comps = (n._components || []);
-            if (!comps || !comps.length)
-                return;
-            var path = fullPath(n, 100);
+            var path = fullPath(n, 120);
             var pathL = String(path || '').toLowerCase();
-            var matched = false;
-            for (var ti = 0; ti < COUNTDOWN_TAILS.length; ti++) {
-                if (pathL.indexOf(COUNTDOWN_TAILS[ti]) !== -1) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched)
+            if (pathL !== tailL)
                 return;
-            for (var i = 0; i < comps.length; i++) {
-                var c = comps[i];
-                if (!c || typeof c.string === 'undefined')
-                    continue;
-                var text = String(c.string == null ? '' : c.string).trim();
-                var m = text.match(/(\d{1,2})/);
-                if (!m)
-                    continue;
-                var sec = parseInt(m[1], 10);
-                if (!isFinite(sec) || sec < 0 || sec > 90)
-                    continue;
-                best = {
-                    sec: sec,
-                    text: text,
+            var comps = getComps(n, cc.ProgressBar);
+            if (comps && comps.length && typeof comps[0].progress === 'number') {
+                hit = {
+                    val: clamp01(comps[0].progress),
                     tail: path
                 };
-                if (sec > 0)
-                    return;
             }
         });
-        if (!best)
-            return null;
-
-        COUNTDOWN_MAX_SEC = Math.max(COUNTDOWN_MAX_SEC || 20, best.sec || 0, 20);
-        var ratio = clamp01((best.sec || 0) / COUNTDOWN_MAX_SEC);
+        if (!hit)
+            return 0;
+        if (hit.val <= HIT_COUNTDOWN_ZERO_EPS)
+            hit.val = 0;
         try {
             if (typeof S !== 'undefined') {
-                S._progSec = best.sec;
-                S._progTail = best.tail || '';
-                S._progText = best.text || '';
-                S._progIsCountdown = true;
+                S._progTail = hit.tail || '';
+                S._progSec = null;
+                S._progText = '';
+                S._progIsCountdown = false;
             }
-            window.__cw_prog_sec = best.sec;
-            window.__cw_prog_tail = best.tail || '';
-            window.__cw_prog_text = best.text || '';
+            window.__cw_prog_tail = hit.tail || '';
+            window.__cw_prog_sec = null;
+            window.__cw_prog_text = '';
         } catch (e) {}
-        return ratio;
+        return hit.val;
     }
     function walkNodes(cb) {
         if (!cwCocosReady())
@@ -367,46 +339,7 @@
         return out;
     }
     function collectProgress() {
-        var cd = readCountdownSec();
-        if (cd != null)
-            return cd;
-        try {
-            if (typeof S !== 'undefined') {
-                S._progSec = null;
-                S._progText = '';
-                S._progIsCountdown = false;
-            }
-        } catch (e) {}
-        var bars = [];
-        walkNodes(function (n) {
-            var comps = getComps(n, cc.ProgressBar);
-            if (comps && comps.length) {
-                var r = wRect(n);
-                for (var i = 0; i < comps.length; i++) {
-                    bars.push({
-                        comp: comps[i],
-                        rect: r,
-                        tail: tailOf(n, 12)
-                    });
-                }
-            }
-        });
-        if (!bars.length)
-            return null;
-        var H = innerHeight,
-        cs = bars.filter(function (b) {
-            var r = b.rect;
-            return r.w > 300 && r.h >= 6 && r.h <= 60 && r.y < H * 0.75;
-        });
-        var bar = (cs[0] || bars[0]).comp;
-        try {
-            if (typeof S !== 'undefined') {
-                S._progTail = (cs[0] || bars[0]).tail || '';
-                window.__cw_prog_tail = S._progTail;
-            }
-        } catch (e) {}
-        var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
-        return clamp01(Number(pr));
+        return readHitCountdownProgress();
     }
 
     /* ---------------- MoneyMap ---------------- */
