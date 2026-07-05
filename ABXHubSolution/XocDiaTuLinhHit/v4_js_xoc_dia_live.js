@@ -425,52 +425,6 @@
     }
 
     /* ------------------- TK sequence (RESTORED) ------------------- */
-    function tkCellsPrefer(prefer) {
-        prefer = prefer || 'thongke2';
-        var labs = collectLabels();
-        function pick(L, kind) {
-            var t = (L.tail || '').toLowerCase();
-            var ok2 = (t.indexOf('thong ke/thongke2') !== -1 || t.indexOf('thongke2') !== -1) && /label\/num/.test(t);
-            var ok1 = (t.indexOf('thong ke/thongke1') !== -1 || t.indexOf('thongke1') !== -1) && /label\/num/.test(t);
-            return kind === 'thongke2' ? ok2 : ok1;
-        }
-        var cells = [],
-        i;
-        for (i = 0; i < labs.length; i++) {
-            var L = labs[i];
-            var s = String(L.text || '').trim();
-            if (!/^\d$/.test(s))
-                continue; // một chữ số
-            if (pick(L, prefer))
-                cells.push({
-                    v: +s,
-                    x: L.x + L.w / 2,
-                    y: L.y + L.h / 2
-                });
-        }
-        if (cells.length >= 20)
-            return {
-                cells: cells,
-                which: prefer
-            };
-        var alt = prefer === 'thongke2' ? 'thongke1' : 'thongke2';
-        for (i = 0; i < labs.length; i++) {
-            var L2 = labs[i];
-            var s2 = String(L2.text || '').trim();
-            if (!/^\d$/.test(s2))
-                continue;
-            if (pick(L2, alt))
-                cells.push({
-                    v: +s2,
-                    x: L2.x + L2.w / 2,
-                    y: L2.y + L2.h / 2
-                });
-        }
-        return {
-            cells: cells,
-            which: alt
-        };
-    }
     function median(arr) {
         var b = arr.slice().sort(function (x, y) {
             return x - y;
@@ -528,10 +482,76 @@
             }); // TRÊN → DƯỚI
         return cols;
     }
-    function readTKSeq() {
-        var res = tkCellsPrefer('thongke2');
-        var cells = res.cells,
-        which = res.which;
+    function spriteFrameName(node) {
+        try {
+            var comps = (node && node._components) || [];
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                var sf = c && (c.spriteFrame || c._spriteFrame);
+                if (sf && sf.name != null)
+                    return String(sf.name);
+            }
+        } catch (e) {}
+        return '';
+    }
+    function boxKetQuaPoint(node) {
+        try {
+            var p = node.convertToWorldSpaceAR(cc.v2(0, 0));
+            var cs = node.getContentSize ? node.getContentSize() : (node._contentSize || {
+                width: 0,
+                height: 0
+            });
+            return {
+                x: Math.round((p.x || 0) + (cs.width || 0) / 2),
+                y: Math.round((p.y || 0) + (cs.height || 0) / 2)
+            };
+        } catch (e) {
+            try {
+                return {
+                    x: Math.round(node.x || 0),
+                    y: Math.round(node.y || 0)
+                };
+            } catch (_) {
+                return {
+                    x: 0,
+                    y: 0
+                };
+            }
+        }
+    }
+    function readBoxKetQuaSeq() {
+        var raw = [];
+        walkNodes(function (n) {
+            var path = fullPath(n, 120);
+            if (!/\/ld_bg\/box_ketqua\//i.test(path))
+                return;
+            var sprite = spriteFrameName(n).toLowerCase();
+            if (sprite !== 'red@2x' && sprite !== 'white@2x')
+                return;
+            var p = boxKetQuaPoint(n);
+            raw.push({
+                v: sprite === 'red@2x' ? 2 : 1,
+                sprite: sprite,
+                x: p.x,
+                y: p.y,
+                tail: path
+            });
+        });
+
+        var seen = {},
+        cells = [];
+        for (var i = 0; i < raw.length; i++) {
+            var it = raw[i];
+            var key = '';
+            if (it.x !== 0 || it.y !== 0) {
+                key = (Math.round(it.x / 3) * 3) + ',' + (Math.round(it.y / 3) * 3);
+                if (seen[key])
+                    continue;
+                seen[key] = true;
+            }
+            cells.push(it);
+        }
+
         if (!cells.length)
             return {
                 seq: '',
@@ -539,28 +559,28 @@
                 cols: [],
                 cells: []
             };
-        var cols = clusterByX(cells); // TRÁI→PHẢI
-        var parts = [],
-        i;
+
+        var cols = clusterByX(cells);
+        var parts = [];
         for (i = 0; i < cols.length; i++) {
-            var c = cols[i];
-            var topDown = (i % 2 === 0); // cột 1 T↓, cột 2 B↑, ...
-            var arr = c.items.slice();
-            if (!topDown) {
-                arr.reverse();
-            }
-            var s = '',
-            k;
-            for (k = 0; k < arr.length; k++)
+            var topDown = (i % 2 === 0);
+            var arr = cols[i].items.slice().sort(function (a, b) {
+                return topDown ? (b.y - a.y) : (a.y - b.y);
+            });
+            var s = '';
+            for (var k = 0; k < arr.length; k++)
                 s += String(arr[k].v);
             parts.push(s);
         }
         return {
             seq: parts.join(''),
-            which: which,
+            which: 'box_ketqua',
             cols: cols,
             cells: cells
         };
+    }
+    function readTKSeq() {
+        return readBoxKetQuaSeq();
     }
 
     /* ---------------- resolver/auto ---------------- */
