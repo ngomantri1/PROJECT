@@ -11,6 +11,9 @@
     //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
+    if (!document.body) {
+        return;
+    }
     try {
         if (window[NS] && window[NS].teardown) {
             window[NS].teardown();
@@ -58,12 +61,14 @@
         } catch (_) {}
     })();
 
-    if (!(window.cc && cc.director && cc.director.getScene)) {
-        return;
+    function cwCocosReady() {
+        return !!(window.cc && cc.director && cc.director.getScene);
     }
 
     /* ---------------- utils ---------------- */
-    var V2 = (cc.v2 || cc.Vec2);
+    var V2 = (window.cc && (cc.v2 || cc.Vec2)) || function (x, y) {
+        return { x: x || 0, y: y || 0 };
+    };
     var sleep = function (ms) {
         return new Promise(function (r) {
             setTimeout(r, ms);
@@ -199,7 +204,90 @@
         a.reverse();
         return a.slice(-limit).join('/');
     }
+    function fullPath(n, limit) {
+        limit = limit || 80;
+        var a = [];
+        try {
+            var t = n,
+            c = 0;
+            while (t && c < limit) {
+                if (t.name)
+                    a.push(t.name);
+                t = t.parent || t._parent || null;
+                c++;
+            }
+        } catch (e) {}
+        a.reverse();
+        return a.join('/');
+    }
+    var COUNTDOWN_MAX_SEC = 20;
+    var COUNTDOWN_TAILS = [
+        'node_in_multimode/top/right/xdtl_jackpot_anim_right/lbl_countdown',
+        'node_in_multimode/top/left/xdtl_jackpot_anim_left/lbl_countdown',
+        'xdtl_jackpot_anim_right/lbl_countdown',
+        'xdtl_jackpot_anim_left/lbl_countdown',
+        'lbl_countdown'
+    ];
+    function readCountdownSec() {
+        var best = null;
+        walkNodes(function (n) {
+            if (best && best.sec > 0)
+                return;
+            var comps = (n._components || []);
+            if (!comps || !comps.length)
+                return;
+            var path = fullPath(n, 100);
+            var pathL = String(path || '').toLowerCase();
+            var matched = false;
+            for (var ti = 0; ti < COUNTDOWN_TAILS.length; ti++) {
+                if (pathL.indexOf(COUNTDOWN_TAILS[ti]) !== -1) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched)
+                return;
+            for (var i = 0; i < comps.length; i++) {
+                var c = comps[i];
+                if (!c || typeof c.string === 'undefined')
+                    continue;
+                var text = String(c.string == null ? '' : c.string).trim();
+                var m = text.match(/(\d{1,2})/);
+                if (!m)
+                    continue;
+                var sec = parseInt(m[1], 10);
+                if (!isFinite(sec) || sec < 0 || sec > 90)
+                    continue;
+                best = {
+                    sec: sec,
+                    text: text,
+                    tail: path
+                };
+                if (sec > 0)
+                    return;
+            }
+        });
+        if (!best)
+            return null;
+
+        COUNTDOWN_MAX_SEC = Math.max(COUNTDOWN_MAX_SEC || 20, best.sec || 0, 20);
+        var ratio = clamp01((best.sec || 0) / COUNTDOWN_MAX_SEC);
+        try {
+            if (typeof S !== 'undefined') {
+                S._progSec = best.sec;
+                S._progTail = best.tail || '';
+                S._progText = best.text || '';
+                S._progIsCountdown = true;
+            }
+            window.__cw_prog_sec = best.sec;
+            window.__cw_prog_tail = best.tail || '';
+            window.__cw_prog_text = best.text || '';
+        } catch (e) {}
+        return ratio;
+    }
     function walkNodes(cb) {
+        if (!cwCocosReady())
+            return;
         var scene = cc.director.getScene();
         if (!scene)
             return;
@@ -279,6 +367,16 @@
         return out;
     }
     function collectProgress() {
+        var cd = readCountdownSec();
+        if (cd != null)
+            return cd;
+        try {
+            if (typeof S !== 'undefined') {
+                S._progSec = null;
+                S._progText = '';
+                S._progIsCountdown = false;
+            }
+        } catch (e) {}
         var bars = [];
         walkNodes(function (n) {
             var comps = getComps(n, cc.ProgressBar);
@@ -287,7 +385,8 @@
                 for (var i = 0; i < comps.length; i++) {
                     bars.push({
                         comp: comps[i],
-                        rect: r
+                        rect: r,
+                        tail: tailOf(n, 12)
                     });
                 }
             }
@@ -300,6 +399,12 @@
             return r.w > 300 && r.h >= 6 && r.h <= 60 && r.y < H * 0.75;
         });
         var bar = (cs[0] || bars[0]).comp;
+        try {
+            if (typeof S !== 'undefined') {
+                S._progTail = (cs[0] || bars[0]).tail || '';
+                window.__cw_prog_tail = S._progTail;
+            }
+        } catch (e) {}
         var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
         return clamp01(Number(pr));
     }
@@ -813,12 +918,22 @@
             panel.style.opacity = '1';
             panel.style.pointerEvents = 'auto';
             panel.style.zIndex = '2147483647';
+            var r = panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
+            var offscreen = r && (r.right < 20 || r.bottom < 20 || r.left > innerWidth - 20 || r.top > innerHeight - 20);
+            if (offscreen) {
+                panel.style.left = 'auto';
+                panel.style.right = '10px';
+                panel.style.top = '10px';
+                panel.style.bottom = 'auto';
+            }
             if (!panel.style.top)
                 panel.style.top = '10px';
             if (!panel.style.left && !panel.style.right)
                 panel.style.right = '10px';
         } catch (e) {}
     }
+    window.__cw_show_panel = ensureCanvasWatchVisible;
+    var _panelWatchdog = setInterval(ensureCanvasWatchVisible, 1000);
     var btns = panel.querySelectorAll('button');
     for (var bi = 0; bi < btns.length; bi++) {
         var b = btns[bi];
@@ -1214,6 +1329,7 @@
         } catch (e) {
             console.log(chipRows);
         }
+        ensureCanvasWatchVisible();
         return { texts: texts, chips: chipRows };
     }
 
@@ -2121,14 +2237,27 @@
     function start() {
         if (S.running)
             return;
+        if (!cwCocosReady()) {
+            if (!S.timer) {
+                S.timer = setInterval(function () {
+                    if (cwCocosReady()) {
+                        try {
+                            clearInterval(S.timer);
+                        } catch (e) {}
+                        S.timer = null;
+                        start();
+                    }
+                }, 500);
+            }
+            setStateUI();
+            return;
+        }
         S.running = true;
         S.timer = setInterval(tick, S.tickMs);
         tick();
         setStateUI();
     }
     function stop() {
-        if (!S.running)
-            return;
         S.running = false;
         try {
             clearInterval(S.timer);
@@ -2138,6 +2267,7 @@
     }
 
     panel.querySelector('#bStart').onclick = function () {
+        ensureCanvasWatchVisible();
         start();
     };
     panel.querySelector('#bStop').onclick = function () {
@@ -2185,7 +2315,9 @@
         scan200Bet();
     };
     panel.querySelector('#bScanText').onclick = function () {
+        ensureCanvasWatchVisible();
         scan200Text();
+        ensureCanvasWatchVisible();
     };
 
     panel.querySelector('#bBetC').addEventListener('click', async function () {
@@ -2234,6 +2366,7 @@
             panel.querySelector('#bText').click();
     }
     document.addEventListener('keydown', onKey);
+    ensureCanvasWatchVisible();
     start();
 
     function teardown() {
@@ -2242,6 +2375,9 @@
         } catch (e) {}
         try {
             document.removeEventListener('keydown', onKey);
+        } catch (e) {}
+        try {
+            clearInterval(_panelWatchdog);
         } catch (e) {}
         try {
             root.remove();
@@ -2341,6 +2477,8 @@
                     var snap = {
                         abx: 'tick',
                         prog: p,
+                        progSec: (typeof window.__cw_prog_sec !== 'undefined' ? window.__cw_prog_sec : null),
+                        progTail: (typeof window.__cw_prog_tail !== 'undefined' ? window.__cw_prog_tail : ''),
                         totals: readTotalsSafe(),
                         username: readUsernameSafe(),
                         seq: readSeqSafe(),

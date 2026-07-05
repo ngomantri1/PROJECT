@@ -13,11 +13,13 @@
 - `Tasks/`: cac strategy va helper dat cuoc.
 - `Assets/`, `Assets/Images.xaml`, `Compat/PackRes.cs`: icon/resource fallback.
 - `v4_js_xoc_dia_live.js`: scan canvas/cocos, map bet buttons/chips, push tick, queue bet.
+- Game entry URL: `MainWindow.DEFAULT_URL = https://v.hitclub.yoga/`; `IsGameUrlLike` nhan host `v.hitclub.yoga`.
 
 ## Module chinh
 - UI/runtime: `MainWindow`.
 - Plugin boundary: `XocDiaTuLinhHitPlugin`, `PluginStubView`.
 - Browser bridge: `EnsureWebReadyAsync`, `EnsureBridgeRegisteredAsync`, `WebView2LiveBridge`, JS resource.
+- Canvas overlay/debug: `Canvas Watch` trong JS, co `window.__cw_show_panel()` va watchdog giu panel hien.
 - Strategy engine: `IBetTask`, `GameContext`, `TaskUtil`, `MoneyManager`, `MoneyHelper`.
 - Money/risk: stake CSV, `MultiChain`, cut profit/loss, S7 `WinUpLoseKeep`.
 - Bet history: `_betAll`, `_pendingRows`, CSV append, pagination.
@@ -43,7 +45,7 @@
 - `Top10PatternFollowTask.cs`: follow top pattern 10 trong window 50.
 
 ## Data flow
-- Game state: JS scan -> `{abx:"tick", prog, totals, seq, status, username}` -> deserialize `CwSnapshot`.
+- Game state: JS scan -> `{abx:"tick", prog, progSec, progTail, totals, seq, status, username}` -> deserialize `CwSnapshot` (C# hien dung `prog/totals/seq/status`, extra fields la debug).
 - Snapshot: `_lastSnap` duoc update trong lock; task doc qua `ctx.GetSnap()`.
 - Start task: UI config -> `ApplyStakeRuntime` -> `BuildContext` -> `IBetTask.RunAsync`.
 - Bet decision: task doc `seq/prog/totals` -> chon side/stake -> `PlaceBet`.
@@ -61,9 +63,14 @@
   - C# goi `window.__cw_bet(side, amount)`.
   - JS push vao `BET_QUEUE`, `processBetQueue()` goi `cwBet` lan luot.
   - JS post `bet` hoac `bet_error` ve C#.
+- Countdown/progress:
+  - `readCountdownSec()` quet node label theo tail `xdtl_jackpot_anim_right/left/lbl_countdown`, fallback `lbl_countdown`.
+  - `collectProgress()` uu tien countdown, quy doi giay ve ratio `0..1`; neu khong co countdown thi fallback `cc.ProgressBar`.
+  - JS ghi debug `window.__cw_prog_sec`, `window.__cw_prog_tail`, panel hien `Countdown`/`ProgTail`.
 
 ## UI update flow
 - `tick` update progress bar, label %, last result, account header, seq UI, status text.
+- `MainWindow` hien `PrgBet/LblProg` tu `snap.prog` theo ratio; neu muon hien giay can doc them `progSec` vao model/C#.
 - Task update mini panel qua callbacks:
   - `UiSetSide` -> `UpdateTabSide`.
   - `UiSetStake` -> `UpdateTabStake`.
@@ -78,6 +85,13 @@
   - map total bet, money/account, text/status, side buttons, chip buttons.
   - `Scan200Text`, `BetMap`, `MoneyMap`, `CanvasWatch` trong `v4_js_xoc_dia_live.js`.
   - Ket qua seq/totals/status duoc day ve C# qua tick.
+- Phinh/chip:
+  - `cwScanChips()`/`wideScan()` tim phinh qua Label/RichText/SpriteFrame/node/path.
+  - Log da xac nhan tail phinh: `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_2..Entry_9`.
+  - `Scan200Text` in them `(Chip scan from Scan200Text)` de debug amount/x/y/w/h/clickable/tail.
+- Canvas Watch visibility:
+  - Root id `__cw_root_allin`; global recovery `window.__cw_show_panel()`.
+  - `_panelWatchdog` goi `ensureCanvasWatchVisible()` moi 1s va duoc clear trong `teardown()`.
 
 ## Flow build/plugin
 - Debug co `ABX_HUB`, tham chieu `ABX.Core.dll` cua Hub va copy output vao `AutoBetHub\Plugins`.

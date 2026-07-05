@@ -3,6 +3,7 @@
 ## Tong quan
 - Project WPF/.NET 8 cho tool auto bet Xoc Dia live, chay doc lap hoac duoc AutoBetHub load nhu plugin.
 - UI chinh la `MainWindow`; game web duoc nhung bang WebView2; logic game duoc inject qua `v4_js_xoc_dia_live.js`.
+- URL game mac dinh hien tai lay thang tu `DEFAULT_URL`: `https://v.hitclub.yoga/`; khong dung `LEGACY_URL`/migration URL cu.
 - Cac chien luoc dat cuoc nam trong `Tasks/*Task.cs`, cung dung `IBetTask` + `GameContext`.
 - Debug build copy DLL plugin sang `..\AutoBetHub\Plugins`; Release publish single-file EXE.
 
@@ -29,6 +30,7 @@
   - `v4_js_xoc_dia_live.js`: exposes `__cw_startPush`, `__cw_stopPush`, `__cw_bet`, `cwBet`.
 - `EnsureWebReadyAsync` gan `WebMessageReceived` dung 1 lan; `tick` cap nhat `_lastSnap`, UI, NI sequence va finalize pending bet.
 - Start flow bat push moi 240ms: `window.__cw_startPush && window.__cw_startPush(240)`.
+- Tick JS hien gui them `progSec` va `progTail` de debug countdown; `prog` van giu dang ratio `0..1` de cac task dung `DecisionPercent` khong bi pha.
 
 ## Pending flow
 - Khi JS gui `{abx:"bet"}`, C# tao `BetRow` placeholder va dua vao `_pendingRows`.
@@ -42,6 +44,7 @@
 - `EvalJsAsync` phai chay tren UI Dispatcher vi WebView2 la UI component.
 - Moi task phai ton trong `CancellationToken`.
 - `TaskUtil.PlaceBet` da co gate/cooldown theo tab; khong dat cuoc truc tiep neu khong can.
+- Canvas Watch phai luon co the hien bang `window.__cw_show_panel()`; JS co `_panelWatchdog` ep panel hien va clear trong `teardown`.
 
 ## Coding rules
 - Khong rewrite code lon trong `MainWindow.xaml.cs` neu khong can; file nay dang gom nhieu flow cu/moi.
@@ -60,9 +63,13 @@
 - Khong pha `__cw_bet` queue trong JS; C# co the goi lien tiep, JS tu serialize.
 - Khong gan `WebMessageReceived` nhieu lan.
 - Khong auto doi UI mode dua tren URL/isGame; comment code da ghi giu nguyen hanh vi nay.
+- Neu sua URL game, chi sua `DEFAULT_URL` va `IsGameUrlLike`; khong them `LEGACY_URL` khi user yeu cau lay thang DEFAULT_URL.
 - Khong xoa resource/image injection trong plugin, vi XAML va converter can StaticResource/shared icons.
 - Khong doi cach tinh win tax: mac dinh win delta * 0.98, Task 17 co payout rieng.
 - Khong bo wait bridge/game data truoc khi start task; no tranh crash khi chua co seq/cocos.
+- Khong doi `prog` sang giay tho trong packet chinh; task hien dang so sanh `prog` voi `DecisionPercent` theo ratio.
+- Countdown tail moi dang do trong JS: `node_in_multimode/top/*/xdtl_jackpot_anim_*/lbl_countdown`, fallback `lbl_countdown`; panel hien `Countdown` va `ProgTail`.
+- Scan phinh/chip: `Scan200Text` co block `(Chip scan from Scan200Text)` lay tu `cwScanChips`; cac tail phinh dang o `ld_bg/btnChoseCoin/New Node/zcontent/Entry_2..Entry_9`.
 
 ## Nhung dieu tuyet doi khong duoc pha
 - Host/plugin lifecycle: `CreateView`, `Stop`, `ShutdownFromHost`, cleanup WebView/CTS/lease.
@@ -71,3 +78,4 @@
 - Gate/cooldown chong ban dup trong `TaskUtil.PlaceBet`.
 - Embedded resource `v4_js_xoc_dia_live.js` va build target copy plugin sang Hub.
 - Multi-tab runtime state trong `StrategyTabState`; dung active tab dung cach.
+- Canvas Watch overlay phuc vu debug/van hanh; khong an `root.style.display='none'`, khong xoa `__cw_show_panel`/watchdog neu chua co thay the.
