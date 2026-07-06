@@ -35,7 +35,8 @@ namespace XocDiaTuLinhHit.Tasks
                 var snap = ctx.GetSnap();
                 string baseSeq = snap?.seq ?? string.Empty;
 
-                string side = PickSideByNI(seq[k], snap?.totals);
+                char pick = seq[k];
+                string side = PickSideByNI(pick, snap?.totals);
                 long stake;
                 if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
                 {
@@ -48,9 +49,13 @@ namespace XocDiaTuLinhHit.Tasks
                 {
                     stake = money.GetStakeForThisBet();
                 }
+                var remainSec = snap?.progSec ?? ((snap?.prog ?? 0) * 20.0);
+                ctx.Log?.Invoke($"[Seq-NI] bet-window k={k} pick={pick} side={side} stake={stake:N0} remain={remainSec:0.0}s seq={baseSeq} totals C={snap?.totals?.C ?? 0:N0} L={snap?.totals?.L ?? 0:N0}");
                 await TaskUtil.PlaceBet(ctx, side, stake, ct);
+                ctx.Log?.Invoke($"[Seq-NI] sent PlaceBet side={side} stake={stake:N0} seq={baseSeq}");
 
                 bool win = await TaskUtil.WaitRoundFinishAndJudge(ctx, side, baseSeq, ct);
+                ctx.Log?.Invoke($"[Seq-NI] round-finish side={side} stake={stake:N0} win={win}");
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(win ? stake : -stake));
                 if (ctx.MoneyStrategyId == "MultiChain")
                 {

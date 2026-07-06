@@ -41,6 +41,8 @@ namespace XocDiaTuLinhHit.Tasks
 
         // Ngưỡng % còn lại để ra quyết định
         public double DecisionPercent { get; init; }
+        // Ngưỡng giây còn lại để vào tiền. HIT dùng progress 0..1, quy đổi theo ván 20s.
+        public int DecisionSeconds { get; init; } = 10;
 
         // Trạng thái chiến lược (lưu Step/PreferLarger/.)
         public DecisionState State { get; init; }

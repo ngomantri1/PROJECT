@@ -35,6 +35,7 @@ namespace XocDiaTuLinhHit.Tasks
         private static long _lastBetMs = 0;
         // Reset UI 1 lần ngay khi vào cửa sổ đặt (p >= DecisionPercent)
         private static bool _uiRoundResetDone = false;
+        private const double BetRoundSeconds = 20.0;
         public static string SeqToParityString(string digitSeq)
         {
             if (string.IsNullOrEmpty(digitSeq)) return "";
@@ -87,15 +88,24 @@ namespace XocDiaTuLinhHit.Tasks
 
         public static async Task WaitUntilBetWindow(GameContext ctx, CancellationToken ct)
         {
-            // Quy ước: prog = phần trăm thời gian đã trôi/hoặc còn lại. Ở code bạn set LblProg = p*100,
-            // ta chọn ngưỡng “<= DecisionPercent” để vào tiền trễ (15% cuối).
+            // HIT: prog là tỉ lệ thời gian còn lại 0..1, ván cược 20s.
+            // Ô "ĐẶT KHI CÒN (GIÂY)" nhập giây còn lại, ví dụ 10 => còn khoảng 10s thì vào tiền.
+            var targetSec = Math.Clamp(ctx.DecisionSeconds, 1, (int)BetRoundSeconds);
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 var s = ctx.GetSnap?.Invoke();
+                if (string.IsNullOrWhiteSpace(s?.progTail)) {
+                    await Task.Delay(120, ct);
+                    continue;
+                }
                 double p = s?.prog ?? 1.0;
-                //TaskUtil.UiRoundMaybeReset(p, ctx.DecisionPercent);
-                if (p <= ctx.DecisionPercent && p > 0) break;
+                var remainingSec = s?.progSec ?? (p * BetRoundSeconds);
+                if (remainingSec <= targetSec && p > 0)
+                {
+                    ctx.Log?.Invoke($"[BET-WINDOW] remain={remainingSec:0.0}s target={targetSec}s");
+                    break;
+                }
                 await Task.Delay(120, ct);
             }
         }

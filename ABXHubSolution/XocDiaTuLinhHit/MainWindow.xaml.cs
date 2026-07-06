@@ -543,16 +543,16 @@ Ví dụ không hợp lệ:
 • Ví dụ: 150000 (khi lỗ ≥ 150.000đ thì dừng).";
 
         const string TIP_DECISION_PERCENT_GENERAL =
-        @"ĐẶT KHI CÒN % THỜI GIAN
-• Nhập phần trăm (0–100). Hệ thống quy về 0.00–1.00 nội bộ.
-• Ý nghĩa: chỉ đặt cược khi thanh thời gian còn lại ≤ giá trị % này.
-• Ví dụ: 25 = đặt khi còn ~25% thời gian phiên.";
+        @"ĐẶT KHI CÒN (GIÂY)
+• Nhập số giây còn lại của phiên 20s.
+• Ý nghĩa: chỉ đặt cược khi thời gian còn lại ≤ số giây này.
+• Ví dụ: 10 = đặt khi còn khoảng 10 giây.";
 
         const string TIP_DECISION_PERCENT_NI =
-        @"ĐẶT KHI CÒN % THỜI GIAN (khuyến nghị cho chiến lược Ít/Nhiều)
-• Nhập phần trăm (0–100), KHÔNG phải giây.
-• Nên để khoảng 15% để bám sát dòng tiền hai cửa.
-• Ví dụ: 15 = đặt khi còn ~15% thời gian phiên.";
+        @"ĐẶT KHI CÒN (GIÂY) (khuyến nghị cho chiến lược Ít/Nhiều)
+• Nhập số giây còn lại của phiên 20s.
+• Nên để 8–10 giây để bám sát dòng tiền hai cửa nhưng vẫn kịp đặt.
+• Ví dụ: 10 = đặt khi còn khoảng 10 giây.";
 
         const string TIP_SIDE_RATIO =
         @"CỬA ĐẶT & TỈ LỆ (Chiến lược 17)
@@ -729,6 +729,7 @@ Ví dụ không hợp lệ:
             public List<long[]> RunStakeChains { get; set; } = new();
             public long[] RunStakeChainTotals { get; set; } = Array.Empty<long>();
             public double RunDecisionPercent { get; set; } = 0;
+            public int RunDecisionSeconds { get; set; } = 10;
             public bool CutStopTriggered { get; set; } = false;
 
             public CancellationTokenSource? TaskCts { get; set; }
@@ -1173,6 +1174,7 @@ Ví dụ không hợp lệ:
         private static string T(TextBox tb, string def = "") => (tb?.Text ?? def).Trim();
         private static string P(PasswordBox? pb, string def = "") => pb?.Password ?? def;
         private static int I(string? s, int def = 0) => int.TryParse(s, out var n) ? n : def;
+        private static int ClampDecisionSeconds(int seconds) => Math.Clamp(seconds, 1, 20);
 
         // DPAPI
         private static string ProtectString(string? s)
@@ -2379,17 +2381,20 @@ Ví dụ không hợp lệ:
                                         {
                                             try
                                             {
-                                                // Progress / % thời gian
-                                                if (snap.prog.HasValue)
+                                                // Progress / giây còn lại: prog vẫn là ratio 0..1, quy đổi theo ván 20s.
+                                                var hasProgressSync = !string.IsNullOrWhiteSpace(snap.progTail);
+                                                if (snap.prog.HasValue && hasProgressSync)
                                                 {
                                                     var p = Math.Max(0, Math.Min(1, snap.prog.Value));
+                                                    var sec = snap.progSec ?? (p * 20.0);
+                                                    sec = Math.Max(0, Math.Min(20, sec));
                                                     if (PrgBet != null) PrgBet.Value = p;
-                                                    if (LblProg != null) LblProg.Text = $"{(int)Math.Round(p * 100)}%";
+                                                    if (LblProg != null) LblProg.Text = $"{(int)Math.Round(sec)}s";
                                                 }
                                                 else
                                                 {
                                                     if (PrgBet != null) PrgBet.Value = 0;
-                                                    if (LblProg != null) LblProg.Text = "-";
+                                                    if (LblProg != null) LblProg.Text = "0s";
                                                 }
 
                                                 // Kết quả gần nhất từ chuỗi seq
@@ -2490,7 +2495,13 @@ Ví dụ không hợp lệ:
                                     string raw = root.TryGetProperty("raw", out var re) ? (re.GetString() ?? "") : "";
                                     int ok = root.TryGetProperty("ok", out var oe) && oe.ValueKind == System.Text.Json.JsonValueKind.Number ? oe.GetInt32() : -1;
                                     int changed = root.TryGetProperty("changed", out var ce) && ce.ValueKind == System.Text.Json.JsonValueKind.Number ? ce.GetInt32() : -1;
-                                    Log($"[BET-TRACE] stage={stage} build={build} side={side} amount={amount:N0} raw={raw} ok={ok} changed={changed}");
+                                    long denom = root.TryGetProperty("denom", out var de) && de.ValueKind == System.Text.Json.JsonValueKind.Number ? de.GetInt64() : 0;
+                                    int focusOk = root.TryGetProperty("focusOk", out var fe) && fe.ValueKind == System.Text.Json.JsonValueKind.Number ? fe.GetInt32() : -1;
+                                    int clickOk = root.TryGetProperty("clickOk", out var cle) && cle.ValueKind == System.Text.Json.JsonValueKind.Number ? cle.GetInt32() : -1;
+                                    string chipNode = root.TryGetProperty("chipNode", out var cne) ? (cne.GetString() ?? "") : "";
+                                    string chipTail = root.TryGetProperty("chipTail", out var cte) ? (cte.GetString() ?? "") : "";
+                                    string sideTail = root.TryGetProperty("sideTail", out var ste) ? (ste.GetString() ?? "") : "";
+                                    Log($"[BET-TRACE] stage={stage} build={build} side={side} amount={amount:N0} denom={denom:N0} focusOk={focusOk} clickOk={clickOk} changed={changed} ok={ok} raw={raw} chipNode={chipNode} chipTail={chipTail} sideTail={sideTail}");
                                     return;
                                 }
 
@@ -4887,6 +4898,7 @@ Ví dụ không hợp lệ:
                 ? tab.RunStakeChainTotals
                 : _stakeChainTotals;
             var decisionPercent = (tab != null && tab.RunDecisionPercent > 0) ? tab.RunDecisionPercent : _decisionPercent;
+            var decisionSeconds = ClampDecisionSeconds(tab != null ? tab.RunDecisionSeconds : cfg.DecisionSeconds);
 
             var stakeSeqArr = stakeSeq.ToArray();
             var stakeChainsArr = stakeChains.Select(a => a.ToArray()).ToArray();
@@ -4903,6 +4915,7 @@ Ví dụ không hợp lệ:
                 StakeChains = stakeChainsArr,
                 StakeChainTotals = stakeChainTotalsArr,
                 DecisionPercent = decisionPercent,
+                DecisionSeconds = decisionSeconds,
                 State = tab.DecisionState,
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => tab.Cooldown,
@@ -5071,10 +5084,12 @@ Ví dụ không hợp lệ:
                 RebuildStakeSeq((TxtStakeCsv?.Text ?? "1000,2000,4000,8000,16000").Trim());
                 ApplyStakeRuntime(activeTab, _stakeSeq, _stakeChains, _stakeChainTotals);
                 activeTab.RunDecisionPercent = _decisionPercent;
+                activeTab.RunDecisionSeconds = ClampDecisionSeconds(I(T(TxtDecisionSecond, "10"), 10));
                 activeTab.IsRunning = true;
                 MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
                 _winTotal = activeTab.WinTotal;
                 if (LblWin != null) LblWin.Text = activeTab.WinTotal.ToString("N0");
+                Log($"[DEC] bet window target={activeTab.RunDecisionSeconds}s");
 
                 int idx = CmbBetStrategy?.SelectedIndex ?? 4;
                 _cfg.BetSeq = (idx == 0) ? (_cfg.BetSeqCL ?? "") : (idx == 2 ? (_cfg.BetSeqNI ?? "") : "");
@@ -5235,6 +5250,7 @@ Ví dụ không hợp lệ:
                 StakeChainTotals = _stakeChainTotals,
 
                 DecisionPercent = _decisionPercent,
+                DecisionSeconds = ClampDecisionSeconds(_cfg.DecisionSeconds),
                 State = _dec,
                 UiDispatcher = Dispatcher,
                 GetCooldown = () => _cooldown,

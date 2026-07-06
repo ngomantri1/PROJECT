@@ -11,7 +11,9 @@
     //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
-    var CW_BUILD = '2026-07-06.bettail-unit500-await-trace1';
+    var CW_BUILD = '2026-07-06.bettail-unit500-internal-side-focuschip-v6';
+	//false ẩn canvas watch, còn true lại là hiển thị bảng canvas watch
+    var CW_HIDE_CANVAS_WATCH = true;
     window.__cw_build = CW_BUILD;
     if (!document.body) {
         return;
@@ -224,6 +226,7 @@
     }
     var HIT_COUNTDOWN_PROGRESS_TAIL = 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/HUD/countDownProgress';
     var HIT_COUNTDOWN_ZERO_EPS = 0.02;
+    var HIT_ROUND_SECONDS = 20;
     function readHitCountdownProgress() {
         var hit = null;
         var tailL = HIT_COUNTDOWN_PROGRESS_TAIL.toLowerCase();
@@ -242,19 +245,31 @@
                 };
             }
         });
-        if (!hit)
+        if (!hit) {
+            try {
+                if (typeof S !== 'undefined') {
+                    S._progTail = '';
+                    S._progSec = 0;
+                    S._progText = '';
+                    S._progIsCountdown = false;
+                }
+                window.__cw_prog_tail = '';
+                window.__cw_prog_sec = 0;
+                window.__cw_prog_text = '';
+            } catch (e) {}
             return 0;
+        }
         if (hit.val <= HIT_COUNTDOWN_ZERO_EPS)
             hit.val = 0;
         try {
             if (typeof S !== 'undefined') {
                 S._progTail = hit.tail || '';
-                S._progSec = null;
+                S._progSec = hit.val * HIT_ROUND_SECONDS;
                 S._progText = '';
                 S._progIsCountdown = false;
             }
             window.__cw_prog_tail = hit.tail || '';
-            window.__cw_prog_sec = null;
+            window.__cw_prog_sec = hit.val * HIT_ROUND_SECONDS;
             window.__cw_prog_text = '';
         } catch (e) {}
         return hit.val;
@@ -996,6 +1011,12 @@
     //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
     //root.style.display='none';
     function ensureCanvasWatchVisible() {
+        if (CW_HIDE_CANVAS_WATCH) {
+            try {
+                root.style.display = 'none';
+            } catch (_) {}
+            return;
+        }
         try {
             root.style.display = '';
             root.style.visibility = 'visible';
@@ -1255,7 +1276,7 @@
         };
         var f = S.focus;
         var base =
-            '• Trạng thái: ' + S.status + ' | Prog: ' + (S.prog == null ? '--' : (((S.prog * 100) | 0) + '%')) + '\n' +
+            '• Trạng thái: ' + S.status + ' | Còn: ' + (S.prog == null ? '--' : (Math.round((S._progSec != null ? S._progSec : (S.prog * HIT_ROUND_SECONDS))) + 's')) + '\n' +
             '• TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
@@ -1739,13 +1760,44 @@
     function clickable(n) {
         return hasBtn(n) || hasTgl(n) || n._touchListener;
     }
+    function nodeClientPoint(node) {
+        var p = null;
+        try {
+            p = node.convertToWorldSpaceAR(cc.v2(0, 0));
+        } catch (_) {
+            p = {
+                x: node.x || 0,
+                y: node.y || 0
+            };
+        }
+        var cvs = document.querySelector('canvas');
+        var rect = cvs ? cvs.getBoundingClientRect() : {
+            left: 0,
+            top: 0,
+            width: 0,
+            height: 0
+        };
+        var vs = (cc.view && cc.view.getVisibleSize) ? cc.view.getVisibleSize() : {
+            width: rect.width || 1,
+            height: rect.height || 1
+        };
+        var x = rect.left + ((p.x || 0) * rect.width / (vs.width || 1));
+        var y = rect.top + (((vs.height || 1) - (p.y || 0)) * rect.height / (vs.height || 1));
+        return {
+            x: x,
+            y: y,
+            wx: p.x || 0,
+            wy: p.y || 0,
+            canvas: cvs
+        };
+    }
     function emitClick(node) {
         var b = getComp(node, cc.Button);
         if (b && b.interactable !== false) {
             try {
                 cc.Component.EventHandler.emitEvents(b.clickEvents, new cc.Event.EventCustom('click', true));
+                return true;
             } catch (e) {}
-            return true;
         }
         var t = getComp(node, cc.Toggle);
         if (t && t.interactable !== false) {
@@ -1753,33 +1805,78 @@
                 t.isChecked = true;
                 if (t._emitToggleEvents)
                     t._emitToggleEvents();
+                return true;
             } catch (e) {}
-            return true;
         }
+        return false;
+    }
+    function emitCanvasTapAt(node, dx, dy) {
         try {
-            var cam = cc.Camera.findCamera(node);
-            var sp = cam.worldToScreen(node.convertToWorldSpaceAR(cc.v2()));
-            var fs = cc.view.getFrameSize(),
-            vs = cc.view.getVisibleSize();
-            var x = sp.x * (fs.width / vs.width),
-            y = sp.y * (fs.height / vs.height);
-            var cvs = document.querySelector('canvas');
+            var pt = nodeClientPoint(node);
+            var cvs = pt.canvas;
+            if (!cvs)
+                return false;
+            var x = pt.x + (dx || 0);
+            var y = pt.y + (dy || 0);
             cvs.dispatchEvent(new PointerEvent('pointerdown', {
                     clientX: x,
                     clientY: y,
                     buttons: 1,
-                    bubbles: true
+                    bubbles: true,
+                    cancelable: true,
+                    pointerType: 'mouse',
+                    isPrimary: true
                 }));
             cvs.dispatchEvent(new PointerEvent('pointerup', {
                     clientX: x,
                     clientY: y,
-                    buttons: 1,
-                    bubbles: true
+                    buttons: 0,
+                    bubbles: true,
+                    cancelable: true,
+                    pointerType: 'mouse',
+                    isPrimary: true
+                }));
+            cvs.dispatchEvent(new MouseEvent('click', {
+                    clientX: x,
+                    clientY: y,
+                    bubbles: true,
+                    cancelable: true
                 }));
             return true;
         } catch (e) {
             return false;
         }
+    }
+    async function focusChipNode(node, val) {
+        try {
+            var pt0 = nodeClientPoint(node);
+            cwBetTrace('cwFocusChip_point', {
+                denom: val,
+                chipNode: node ? (node.name || '') : '',
+                chipTail: node ? fullPath(node, 120) : '',
+                x: Math.round(pt0.x || 0),
+                y: Math.round(pt0.y || 0),
+                wx: Math.round(pt0.wx || 0),
+                wy: Math.round(pt0.wy || 0)
+            });
+        } catch (_) {}
+        var ok = emitClick(node);
+        await sleep(val === 500 ? 180 : 140);
+        if (val === 500) {
+            // Chip 500 nằm sát mép trái, một số bản game không đổi focus nếu chỉ emit EventHandler.
+            var offsets = [[0, 0], [-18, 0], [18, 0], [0, -10]];
+            for (var i = 0; i < offsets.length; i++) {
+                emitCanvasTapAt(node, offsets[i][0], offsets[i][1]);
+                await sleep(70);
+            }
+        }
+        var t = getComp(node, cc.Toggle);
+        if (t && !t.isChecked) {
+            t.isChecked = true;
+            if (t._emitToggleEvents)
+                t._emitToggleEvents();
+        }
+        return ok;
     }
     function clickableOf(node, depth) {
         depth = depth || 5;
@@ -2062,14 +2159,7 @@
                     walk(kids[k]);
             })(cc.director.getScene());
             if (hit) {
-                emitClick(hit);
-                await sleep(140);
-                var t = getComp(hit, cc.Toggle);
-                if (t && !t.isChecked) {
-                    t.isChecked = true;
-                    if (t._emitToggleEvents)
-                        t._emitToggleEvents();
-                }
+                await focusChipNode(hit, val);
                 return true;
             }
             console.warn('[cwFocusChip++] không tìm thấy phỉnh:', val);
@@ -2080,14 +2170,7 @@
             console.warn('[cwFocusChip++] map thiếu node', val);
             return false;
         }
-        emitClick(info.node);
-        await sleep(140);
-        var tg = getComp(info.node, cc.Toggle);
-        if (tg && !tg.isChecked) {
-            tg.isChecked = true;
-            if (tg._emitToggleEvents)
-                tg._emitToggleEvents();
-        }
+        await focusChipNode(info.node, val);
         return true;
     };
 
@@ -2156,6 +2239,28 @@
         };
     }
 
+    function cwBetTrace(stage, data) {
+        data = data || {};
+        try {
+            console.log('[CW][BET_FLOW]', stage, data, 'build=' + CW_BUILD);
+        } catch (_) {}
+        try {
+            if (typeof window.__cw_trace_bet === 'function') {
+                window.__cw_trace_bet(stage, data);
+            } else if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+                var obj = {
+                    abx: 'bet_trace',
+                    stage: stage,
+                    build: CW_BUILD,
+                    ts: Date.now()
+                };
+                for (var k in data)
+                    obj[k] = data[k];
+                window.chrome.webview.postMessage(obj);
+            }
+        } catch (_) {}
+    }
+
     window.cwBet = async function (side, amount) {
         side = normalizeSide(side);
         console.log('[cwBet++] START', {
@@ -2205,6 +2310,11 @@
                 side: side,
                 tail: fullPath(btn, 120)
             });
+            cwBetTrace('cwBet_side_node', {
+                side: side,
+                amount: X,
+                sideTail: fullPath(btn, 120)
+            });
 
             var map = window.cwScanChips() || {};
             if (!Object.keys(map).length) {
@@ -2225,8 +2335,32 @@
             }
 
             if (availSet[String(X)]) {
-                await window.cwFocusChip(X);
-                emitClick(btn);
+                var exactInfo = map[String(X)] || {};
+                var exactChipTail = exactInfo.node ? fullPath(exactInfo.node, 120) : (exactInfo.tail || '');
+                cwBetTrace('cwBet_focus_start', {
+                    side: side,
+                    amount: X,
+                    denom: X,
+                    chipNode: exactInfo.node ? (exactInfo.node.name || '') : '',
+                    chipTail: exactChipTail
+                });
+                var focusRet = await window.cwFocusChip(X);
+                cwBetTrace('cwBet_focus_done', {
+                    side: side,
+                    amount: X,
+                    denom: X,
+                    focusOk: focusRet ? 1 : 0,
+                    chipNode: exactInfo.node ? (exactInfo.node.name || '') : '',
+                    chipTail: exactChipTail
+                });
+                var clickRet = emitClick(btn);
+                cwBetTrace('cwBet_side_click', {
+                    side: side,
+                    amount: X,
+                    denom: X,
+                    clickOk: clickRet ? 1 : 0,
+                    sideTail: fullPath(btn, 120)
+                });
                 await sleep(120);
                 return true;
             }
@@ -2261,8 +2395,23 @@
                     console.warn('[cwBet++] không focus được chip', step.val);
                     return false;
                 }
+                cwBetTrace('cwBet_focus_done', {
+                    side: side,
+                    amount: X,
+                    denom: step.val,
+                    focusOk: ok ? 1 : 0
+                });
                 for (var i2 = 0; i2 < step.count; i2++) {
-                    if (!emitClick(btn))
+                    var stepClickOk = emitClick(btn);
+                    cwBetTrace('cwBet_side_click', {
+                        side: side,
+                        amount: X,
+                        denom: step.val,
+                        turn: i2 + 1,
+                        clickOk: stepClickOk ? 1 : 0,
+                        sideTail: fullPath(btn, 120)
+                    });
+                    if (!stepClickOk)
                         console.warn('[cwBet++] click cửa thất bại', {
                             side: side,
                             denom: step.val,
@@ -2534,6 +2683,7 @@
             } catch (_) {}
             safePost(obj);
         }
+        window.__cw_trace_bet = traceBet;
 
         var _pushTimer = null;
         var _lastJson = '';
@@ -2656,7 +2806,6 @@
                     if (typeof cwBet !== 'function') {
                         throw new Error('cwBet not found');
                     }
-                    var before = readTotalsSafe() || {};
                     var rawResult = await cwBet(side, amt);
                     var ok = rawResult === true || rawResult === 'ok' || (rawResult && rawResult.ok === true);
                     traceBet('cwBet_result', {
@@ -2665,16 +2814,6 @@
                         raw: String(rawResult),
                         ok: ok ? 1 : 0
                     });
-                    try {
-                        if (ok && typeof waitForTotalsChange === 'function') {
-                            var changed = await waitForTotalsChange(before, side, 1600);
-                            traceBet('totals_change', {
-                                side: side,
-                                amount: amt,
-                                changed: changed ? 1 : 0
-                            });
-                        }
-                    } catch (_) {}
                     if (ok) {
                         safePost({
                             abx: 'bet',
