@@ -147,6 +147,7 @@ namespace XocDiaTuLinhHit.Tasks
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
 
+                ctx.Log?.Invoke($"[BET-JS][CALL] tab={tabKey} round={roundKey} side={side} amount={amount:N0}");
                 var js =
                     "(async function(){try{" +
                     " if (typeof window.__cw_bet==='function'){" +
@@ -157,7 +158,20 @@ namespace XocDiaTuLinhHit.Tasks
                 var rRaw = await ctx.EvalJsAsync(js);
                 ctx.Log?.Invoke($"[BET-JS] tab={tabKey} round={roundKey} result={rRaw}");
 
-                bool ok = true;
+                var rText = (rRaw ?? "").Trim();
+                try
+                {
+                    rText = System.Text.Json.JsonSerializer.Deserialize<string>(rText) ?? rText;
+                }
+                catch { }
+
+                bool ok = string.Equals(rText, "ok", StringComparison.OrdinalIgnoreCase);
+                if (!ok)
+                {
+                    ctx.Log?.Invoke($"[BET-JS][FAIL] tab={tabKey} side={side} amount={amount:N0} result={rText}");
+                    return false;
+                }
+
                 if (ok)
                 {
                     _lastBetOkMsByTab[tabKey] = now;

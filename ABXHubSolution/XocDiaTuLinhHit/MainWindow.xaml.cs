@@ -2481,6 +2481,19 @@ Ví dụ không hợp lệ:
                                     return;
                                 }
 
+                                if (abxStr == "bet_trace")
+                                {
+                                    string stage = root.TryGetProperty("stage", out var st) ? (st.GetString() ?? "") : "";
+                                    string build = root.TryGetProperty("build", out var be) ? (be.GetString() ?? "") : "";
+                                    string side = root.TryGetProperty("side", out var se) ? (se.GetString() ?? "") : "";
+                                    long amount = root.TryGetProperty("amount", out var ae) && ae.ValueKind == System.Text.Json.JsonValueKind.Number ? ae.GetInt64() : 0;
+                                    string raw = root.TryGetProperty("raw", out var re) ? (re.GetString() ?? "") : "";
+                                    int ok = root.TryGetProperty("ok", out var oe) && oe.ValueKind == System.Text.Json.JsonValueKind.Number ? oe.GetInt32() : -1;
+                                    int changed = root.TryGetProperty("changed", out var ce) && ce.ValueKind == System.Text.Json.JsonValueKind.Number ? ce.GetInt32() : -1;
+                                    Log($"[BET-TRACE] stage={stage} build={build} side={side} amount={amount:N0} raw={raw} ok={ok} changed={changed}");
+                                    return;
+                                }
+
 
                                 // 4) bet_error
                                 if (abxStr == "bet_error")

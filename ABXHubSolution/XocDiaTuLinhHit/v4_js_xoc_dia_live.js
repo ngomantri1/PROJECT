@@ -11,6 +11,8 @@
     //root.style.display='none';  //bo comment là ẩn canvas watch, còn comment lại là hiển thị bảng canvas watch
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
+    var CW_BUILD = '2026-07-06.bettail-unit500-await-trace1';
+    window.__cw_build = CW_BUILD;
     if (!document.body) {
         return;
     }
@@ -1423,7 +1425,7 @@
     CHIP BETTING CORE (compat)
     ===================================================== */
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
-    var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
+    var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000, 500];
     var cfgBet = {
         delayPick: 220,
         delayTap: 260,
@@ -1700,6 +1702,7 @@
 
     /* ---------------- cwBet classic ---------------- */
     var ALLOWED_SET = {
+        '500': 1,
         '1000': 1,
         '5000': 1,
         '10000': 1,
@@ -1709,7 +1712,20 @@
         '1000000': 1,
         '5000000': 1
     };
-    var DENOMS = [5000000, 1000000, 500000, 100000, 50000, 10000, 5000, 1000];
+    var BET_UNIT = 500;
+    var DENOMS = [5000000, 1000000, 500000, 100000, 50000, 10000, 5000, 1000, 500];
+    var CHIP_CHOICE_BASE_TAIL = 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent';
+    var CHIP_CHOICE_ENTRY_AMOUNT = {
+        Entry_1: 500,
+        Entry_2: 1000,
+        Entry_3: 5000,
+        Entry_4: 10000,
+        Entry_5: 50000,
+        Entry_6: 100000,
+        Entry_7: 500000,
+        Entry_8: 1000000,
+        Entry_9: 5000000
+    };
 
     function active(n) {
         return !n || n.activeInHierarchy !== false;
@@ -1801,49 +1817,38 @@
             return 'TU_DO';
         return s;
     }
-    var SIDE_REGEX = {
-        CHAN: /(CHAN|EVEN)\b/i,
-        LE: /(\bLE\b|ODD)\b/i,
-        SAP_DOI: /(SAP\s*DOI|SAPDOI|2\s*DO\s*2\s*TRANG|2D2T|2R2W|2DO2TRANG)/i,
-        TRANG3_DO1: /(3\s*TRANG\s*1\s*DO|3T1D|3W1R|3TRANG1DO|1\s*DO\s*3\s*TRANG|1D3T|1R3W|1DO3TRANG)/i,
-        DO3_TRANG1: /(3\s*DO\s*1\s*TRANG|3D1T|3R1W|3DO1TRANG|1\s*TRANG\s*3\s*DO|1T3D|1W3R|1TRANG3DO)/i,
-        TU_TRANG: /(TU\s*TRANG|4\s*TRANG|4W|TUTRANG)/i,
-        TU_DO: /(TU\s*DO|4\s*DO|4R|TUDO)/i
+    var SIDE_TAIL_EXACT = {
+        CHAN: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChan/btn1',
+        LE: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/BtnLe/btn1',
+        SAP_DOI: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/Btn2red/btn1',
+        TRANG3_DO1: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/Btn3White/btn1',
+        DO3_TRANG1: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/Btn3red/btn1',
+        TU_TRANG: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/Btn4White/btn1',
+        TU_DO: 'MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/Btn4Red/btn1'
     };
     function findSide(side) {
         var WANT = normalizeSide(side);
-        var rx = SIDE_REGEX[WANT];
-        if (!rx)
+        var exactTail = SIDE_TAIL_EXACT[WANT];
+        if (!exactTail) {
+            console.warn('[cwFindSide] unknown side', side, 'want', WANT, 'build', CW_BUILD);
             return null; // không nhận diện được cửa -> bỏ qua, tránh click nhầm
+        }
+        var exactTailL = exactTail.toLowerCase();
         var hit = null;
         (function walk(n) {
             if (hit || !active(n))
                 return;
-            var lb = getComp(n, cc.Label) || getComp(n, cc.RichText);
-            var ok = false;
-            if (lb && typeof lb.string !== 'undefined') {
-                var s = NORM(lb.string);
-                ok = rx ? rx.test(s) : false;
-            }
-            if (!ok) {
-                var names = [],
-                p;
-                for (p = n; p; p = p.parent)
-                    names.push(p.name || '');
-                var path = names.reverse().join('/').toLowerCase();
-                ok = rx ? rx.test(path) : false;
-            }
-            if (ok) {
-                var c = clickableOf(n, 8);
-                if (clickable(c)) {
-                    hit = c;
-                    return;
-                }
+            var path = fullPath(n, 120).toLowerCase();
+            if (path === exactTailL && clickable(n)) {
+                hit = n;
+                return;
             }
             var kids = n.children || [];
             for (var i = 0; i < kids.length; i++)
                 walk(kids[i]);
         })(cc.director.getScene());
+        if (!hit)
+            console.warn('[cwFindSide] exact tail not found/clickable', WANT, exactTail, 'build', CW_BUILD);
         return hit;
     }
 
@@ -1860,7 +1865,7 @@
         m = s.match(/(\d{1,3}(?:[.,\s]\d{3})+|\d{4,9})/);
         if (m) {
             var v2 = parseInt(m[1].replace(/[^\d]/g, ''), 10);
-            if (v2 % 1000 === 0 && ALLOWED_SET[String(v2)])
+            if (v2 % BET_UNIT === 0 && ALLOWED_SET[String(v2)])
                 return v2;
         }
         return null;
@@ -1889,6 +1894,31 @@
             emitClick(clickableOf(cand));
             await sleep(220);
         }
+    }
+
+    function scanChoiceChipsExact() {
+        var map = {};
+        var base = CHIP_CHOICE_BASE_TAIL.toLowerCase();
+        (function walk(n) {
+            if (!active(n))
+                return;
+            var path = fullPath(n, 120);
+            var pathL = path.toLowerCase();
+            if (pathL.indexOf(base + '/') === 0 && path.slice(CHIP_CHOICE_BASE_TAIL.length + 1).indexOf('/') < 0) {
+                var amount = CHIP_CHOICE_ENTRY_AMOUNT[n.name || ''];
+                if (amount && clickable(n)) {
+                    map[String(amount)] = {
+                        entry: n,
+                        node: n,
+                        tail: path
+                    };
+                }
+            }
+            var kids = n.children || [];
+            for (var i = 0; i < kids.length; i++)
+                walk(kids[i]);
+        })(cc.director.getScene());
+        return map;
     }
 
     function wideScan() {
@@ -1929,6 +1959,8 @@
                 for (p = n; p; p = p.parent)
                     names.push(p.name || '');
                 var path = names.reverse().join('/').toLowerCase();
+                if (/\/xocdiaviewmodel\/(?:xuprefab\/)?chip\d+$/i.test(path) || /\/xocdiaviewmodel\/ld_bg\/listcoinpos\/chip/i.test(path))
+                    continue;
                 if (/chip|coin|bet|chon|choose|phinh|menh/.test(path))
                     score += 3;
                 if (NORM(t).indexOf(String(val)) !== -1)
@@ -1959,7 +1991,10 @@
 
     var prevScan = window.cwScanChips;
     window.cwScanChips = function () {
-        var m = prevScan ? (prevScan() || {}) : {};
+        var m = scanChoiceChipsExact();
+        if (m && Object.keys(m).length)
+            return m;
+        m = prevScan ? (prevScan() || {}) : {};
         if (m && Object.keys(m).length)
             return m;
         m = wideScan();
@@ -1995,7 +2030,9 @@
         if (!map[String(val)]) {
             await tryOpenChipPanel();
             await sleep(180);
-            map = wideScan();
+            map = scanChoiceChipsExact();
+            if (!map[String(val)])
+                map = wideScan();
         }
         if (!map[String(val)]) {
             var hit = null;
@@ -2121,6 +2158,11 @@
 
     window.cwBet = async function (side, amount) {
         side = normalizeSide(side);
+        console.log('[cwBet++] START', {
+            side: side,
+            amount: amount,
+            build: CW_BUILD
+        });
         if (amount == null || isNaN(amount)) {
             if (old_cwBet)
                 return old_cwBet(side);
@@ -2139,7 +2181,19 @@
             console.warn('[cwBet++] amount=0');
             return false;
         }
-        var X = raw - (raw % 1000);
+        var X = raw - (raw % BET_UNIT);
+        console.log('[cwBet++] normalized amount', {
+            raw: raw,
+            X: X,
+            unit: BET_UNIT
+        });
+        if (!X) {
+            console.warn('[cwBet++] normalized amount=0', {
+                raw: raw,
+                unit: BET_UNIT
+            });
+            return false;
+        }
 
         return withLock(async function () {
             var btn = findSide(side);
@@ -2147,6 +2201,10 @@
                 console.warn('[cwBet++] không thấy nút cửa:', side);
                 return false;
             }
+            console.log('[cwBet++] side node', {
+                side: side,
+                tail: fullPath(btn, 120)
+            });
 
             var map = window.cwScanChips() || {};
             if (!Object.keys(map).length) {
@@ -2154,6 +2212,9 @@
                 await sleep(200);
                 map = wideScan();
             }
+            console.log('[cwBet++] chip keys', Object.keys(map || {}).sort(function (a, b) {
+                    return Number(a) - Number(b);
+                }));
             var availSet = {};
             var ks = Object.keys(map);
             for (var i = 0; i < ks.length; i++)
@@ -2218,7 +2279,7 @@
         });
     };
 
-    console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
+    console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports). build=' + CW_BUILD);
 
     /* ---------------- tick & controls ---------------- */
     function statusByProg(p) {
@@ -2457,6 +2518,22 @@
                 } catch (_) {}
             }
         }
+        function traceBet(stage, data) {
+            var obj = {
+                abx: 'bet_trace',
+                stage: stage,
+                build: CW_BUILD,
+                ts: Date.now()
+            };
+            try {
+                for (var k in (data || {}))
+                    obj[k] = data[k];
+            } catch (_) {}
+            try {
+                console.log('[CW][BET_TRACE]', stage, data || {}, 'build=' + CW_BUILD);
+            } catch (_) {}
+            safePost(obj);
+        }
 
         var _pushTimer = null;
         var _lastJson = '';
@@ -2562,11 +2639,19 @@
             if (_processingBetQueue)
                 return;
             _processingBetQueue = true;
+            traceBet('queue_start', {
+                len: BET_QUEUE.length
+            });
             while (BET_QUEUE.length) {
                 var job = BET_QUEUE.shift();
                 var side = job.side,
                 amt = job.amt;
                 var result = 'fail';
+                traceBet('job_start', {
+                    side: side,
+                    amount: amt,
+                    remain: BET_QUEUE.length
+                });
                 try {
                     if (typeof cwBet !== 'function') {
                         throw new Error('cwBet not found');
@@ -2574,9 +2659,20 @@
                     var before = readTotalsSafe() || {};
                     var rawResult = await cwBet(side, amt);
                     var ok = rawResult === true || rawResult === 'ok' || (rawResult && rawResult.ok === true);
+                    traceBet('cwBet_result', {
+                        side: side,
+                        amount: amt,
+                        raw: String(rawResult),
+                        ok: ok ? 1 : 0
+                    });
                     try {
                         if (ok && typeof waitForTotalsChange === 'function') {
-                            await waitForTotalsChange(before, side, 1600);
+                            var changed = await waitForTotalsChange(before, side, 1600);
+                            traceBet('totals_change', {
+                                side: side,
+                                amount: amt,
+                                changed: changed ? 1 : 0
+                            });
                         }
                     } catch (_) {}
                     if (ok) {
@@ -2621,14 +2717,20 @@
             try {
                 side = normalizeSide(side);
                 var amt = Math.max(0, Math.floor(Number(amount) || 0));
-                BET_QUEUE.push({
+                traceBet('api_call', {
                     side: side,
-                    amt: amt,
-                    resolve: null
+                    amount: amt,
+                    queueLen: BET_QUEUE.length,
+                    processing: _processingBetQueue ? 1 : 0
                 });
-                processBetQueue();
-                // Báo OK ngay cho C#, không chờ kết quả thực tế
-                return 'ok';
+                return await new Promise(function (resolve) {
+                    BET_QUEUE.push({
+                        side: side,
+                        amt: amt,
+                        resolve: resolve
+                    });
+                    processBetQueue();
+                });
             } catch (err) {
                 safePost({
                     abx: 'bet_error',

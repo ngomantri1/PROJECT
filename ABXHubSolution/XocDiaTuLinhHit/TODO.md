@@ -9,6 +9,7 @@
   - Status tinh tu `prog` va C# doi mau xanh/do.
   - Ten nhan vat/tai khoan lay theo tail HIT moi va on dinh theo player khop username.
   - Tong cuoc 7 cua lay tu `ld_bg/ListLabel/TotalMoney` voi mapping layout da chot.
+  - Chuoi ket qua HIT da doi sang `ld_bg/box_ketqua`, doc zig-zag 8 cot va map `red@2x=>2`, `white@2x=>1`.
 
 ## Task chua hoan thanh / can kiem chung
 - Kiem thu day du cac strategy index 0..16 sau cac thay doi gan day trong `MainWindow.xaml.cs`.
@@ -23,6 +24,9 @@
 - Kiem thu status: `prog > 0` hien `Chờ đặt cược` mau xanh la cay, `prog = 0` hien `Chờ kết quả` mau do.
 - Kiem thu tong cuoc 7 cua: CHAN/LE/SAP_DOI/TRANG3_DO1/DO3_TRANG1/TU_TRANG/TU_DO phai khop so tien tren canvas, dac biet mapping top[1]=CHAN, top[0]=LE, bottom[0]=SAP_DOI, bottom[1]=DO3_TRANG1, bottom[2]=TRANG3_DO1, bottom[3]=TU_TRANG, bottom[4]=TU_DO.
 - Kiem thu phinh: `Scan200Text` phai in `(Chip scan from Scan200Text)` voi `Entry_2..Entry_9` va amount `1000..5000000`.
+- Kiem thu chuoi ket qua: Canvas Watch va UI phai hien du 32 ky tu digit 2/1; convert sang C/L phai khop bang game, vi du `2/1 -> CCCLLLLCLLCLLLLCLLCLLLLCLCLLCLLL`.
+- Kiem thu cac chien luoc CHAN/LE sau khi doi seq dai dien 2/1; dac biet `SeqToParityString`, `IsWin`, `SetLastResultUI` van dung.
+- Kiem thu Task 17/no hu neu con dung: nguon `box_ketqua` khong phan biet chinh xac `0/1/2/3/4`, can nguon khac neu cham cua dac biet.
 
 ## Task can refactor
 - Tach `MainWindow.xaml.cs` thanh cac partial ro module:
@@ -66,4 +70,5 @@
 - Neu sua pending/history, doc `WebMessageReceived` va `FinalizeLastBet`.
 - Neu sua countdown/progress/status, doc `HIT_COUNTDOWN_PROGRESS_TAIL`, `collectProgress`, `statusByProg`, `TaskUtil.WaitUntil*`.
 - Neu sua totals/account, doc `TAIL_TOTAL_EXACT`, `pickHitTotalsByLayout`, `TAIL_USERNAME_EXACT`, `TAIL_PLAYER_NAME_EXACT`, `TAIL_ACC_EXACT`.
+- Neu sua chuoi ket qua, doc `readBoxKetQuaSeq` trong `v4_js_xoc_dia_live.js`; giu `snap.seq` la digit, khong doi thanh C/L.
 - Neu Canvas Watch bi an trong runtime, dung DevTools console: `window.__cw_show_panel && window.__cw_show_panel()`.

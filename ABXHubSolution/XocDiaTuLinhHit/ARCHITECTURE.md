@@ -46,6 +46,7 @@
 
 ## Data flow
 - Game state: JS scan -> `{abx:"tick", prog, progSec, progTail, totals, seq, status, username}` -> deserialize `CwSnapshot` (C# hien dung `prog/totals/seq/status`, extra fields la debug).
+- `seq` trong packet van la chuoi digit. Voi HIT hien tai, JS doc bang `ld_bg/box_ketqua`, map `red@2x => 2` va `white@2x => 1`; C# convert ve C/L bang `TaskUtil.SeqToParityString`.
 - Snapshot: `_lastSnap` duoc update trong lock; task doc qua `ctx.GetSnap()`.
 - Start task: UI config -> `ApplyStakeRuntime` -> `BuildContext` -> `IBetTask.RunAsync`.
 - Bet decision: task doc `seq/prog/totals` -> chon side/stake -> `PlaceBet`.
@@ -86,6 +87,13 @@
   - map total bet, money/account, text/status, side buttons, chip buttons.
   - `Scan200Text`, `BetMap`, `MoneyMap`, `CanvasWatch` trong `v4_js_xoc_dia_live.js`.
   - Ket qua seq/totals/status duoc day ve C# qua tick.
+- Chuoi ket qua HIT:
+  - Nguon: `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/box_ketqua`.
+  - JS lay sprite `red@2x`/`white@2x`, dedup theo toa do neu toa do hop le.
+  - Thu tu doc: trai sang phai theo cot; cot 1,3,5,7 doc tren -> duoi; cot 2,4,6,8 doc duoi -> tren.
+  - Output `seq` la digit dai dien: `red@2x => 2`, `white@2x => 1`. Chuoi parity tuong ung dung quy tac C# `0/2/4=C`, `1/3=L`.
+  - Path cu `thongke1/thongke2/label/num` da bo khoi source doc seq.
+  - Gioi han: nguon nay khong biet ket qua dac biet that `0/1/2/3/4`, chi biet CHAN/LE.
 - Tong cuoc 7 cua HIT:
   - Tail tien tong cuoc: `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/ListLabel/TotalMoney`.
   - JS gom cac label theo dong `y`, sort theo `x`, roi map layout: top[1]=CHAN, top[0]=LE, bottom[0]=SAP_DOI, bottom[1]=DO3_TRANG1, bottom[2]=TRANG3_DO1, bottom[3]=TU_TRANG, bottom[4]=TU_DO.

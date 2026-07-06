@@ -58,6 +58,10 @@
 - Task id nen kebab-case hoac namespace-like stable (`smart-prev`, `ai15.expert.panel`).
 - Side chuan: `CHAN`, `LE`, `SAP_DOI`, `TRANG3_DO1`, `DO3_TRANG1`, `TU_TRANG`, `TU_DO`.
 - Ket qua seq digit: `0/2/4 => CHAN`, `1/3 => LE`; ball result `BALL0..BALL4`.
+- Seq HIT hien doc tu bang ket qua `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/box_ketqua`:
+  - Lay sprite `red@2x` va `white@2x`.
+  - Doc zig-zag theo cot: cot le tu tren xuong, cot chan tu duoi len.
+  - Vi bang nay chi co mau chan/le, JS map dai dien `red@2x => 2` (CHAN), `white@2x => 1` (LE), khong phai ket qua no hu 0..4 that.
 - Money strategy id dang dung: `IncreaseWhenLose`, `IncreaseWhenWin`, `Victor2`, `ReverseFibo`, `IncreaseEveryRound`, `MultiChain`, `WinUpLoseKeep`.
 
 ## Rule quan trong
@@ -70,6 +74,8 @@
 - Khong bo wait bridge/game data truoc khi start task; no tranh crash khi chua co seq/cocos.
 - Khong doi `prog` sang giay tho trong packet chinh; task hien dang so sanh `prog` voi `DecisionPercent` theo ratio.
 - Countdown/progress HIT dung 1 nguon `HUD/countDownProgress`; khong dung fallback `lbl_countdown`, khong doi `prog` sang giay tho.
+- Chuoi ket qua HIT dung `ld_bg/box_ketqua`, khong dung path cu `thongke1/thongke2/label/num`. Khong tra C/L truc tiep vao `snap.seq`; `snap.seq` phai van la chuoi digit de C# `SeqToParityString`, `IsWin`, UI icon hoat dong.
+- Nguon `box_ketqua` chi dam bao dung CHAN/LE. Khong dung de cham cac cua can phan biet chinh xac `0/1/2/3/4` nhu no hu/Task 17 neu can ket qua dac biet.
 - Tong cuoc 7 cua HIT dung tail `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/ListLabel/TotalMoney`, gom theo layout 2 dong: top[1]=CHAN, top[0]=LE, bottom[0]=SAP_DOI, bottom[1]=DO3_TRANG1, bottom[2]=TRANG3_DO1, bottom[3]=TU_TRANG, bottom[4]=TU_DO.
 - Ten nhan vat doc tu `RoomScenebinhThuongXocDia/FootterRoomUi/Left/buttonName/NameUser`; tai khoan doc bang cach tim `PlayerViewXocDia/PlayerName/name` khop ten nhan vat roi lay `PlayerName/Mn/mn` trong cung subtree, de tranh nhay sang nguoi choi khac.
 - Scan phinh/chip: `Scan200Text` co block `(Chip scan from Scan200Text)` lay tu `cwScanChips`; cac tail phinh dang o `ld_bg/btnChoseCoin/New Node/zcontent/Entry_2..Entry_9`.
