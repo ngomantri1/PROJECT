@@ -4736,6 +4736,29 @@ Ví dụ không hợp lệ:
                     if (Dispatcher.CheckAccess()) Apply();
                     else Dispatcher.Invoke(Apply);
                 },
+                UiAddWinAndSetTotal = (delta, total) =>
+                {
+                    void Apply()
+                    {
+                        var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
+                        tab.Stats.TotalProfit += net;
+                        try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
+
+                        tab.WinTotal = total;
+                        if (ReferenceEquals(_activeTab, tab))
+                        {
+                            _winTotal = tab.WinTotal;
+                            if (LblWin != null) LblWin.Text = tab.WinTotal.ToString("N0");
+                        }
+
+                        CheckCutAndStopIfNeeded(tab);
+                        UpdateStatsUi(tab);
+                        _ = SaveStatsAsync();
+                    }
+
+                    if (Dispatcher.CheckAccess()) Apply();
+                    else Dispatcher.Invoke(Apply);
+                },
                 UiWinLoss = s => Dispatcher.Invoke(() => UpdateTabWinLoss(tab, s)),
             };
         }
@@ -5112,6 +5135,22 @@ Ví dụ không hợp lệ:
                         {
                             Log($"[MONEY][AUTO-RESET-NONNEG][SKIP] reason=win-total-negative | winTotal={_winTotal:N0} | netDelta={net:N0} | strategy={(string.IsNullOrWhiteSpace(moneyStrategyId) ? "-" : moneyStrategyId)} | legacy=1");
                         }
+
+                        if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
+                        CheckCutAndStopIfNeeded();
+                        UpdateStatsWin(net);
+                    }
+
+                    if (Dispatcher.CheckAccess()) Apply();
+                    else Dispatcher.Invoke(Apply);
+                },
+                UiAddWinAndSetTotal = (delta, total) =>
+                {
+                    void Apply()
+                    {
+                        var net = (applyWinTax && delta > 0) ? Math.Round(delta * 0.98) : delta;
+                        _winTotal = total;
+                        try { MoneyHelper.NotifyTempProfit(moneyStrategyId, net); } catch { }
 
                         if (LblWin != null) LblWin.Text = _winTotal.ToString("N0");
                         CheckCutAndStopIfNeeded();

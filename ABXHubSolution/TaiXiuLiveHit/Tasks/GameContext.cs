@@ -68,6 +68,7 @@ namespace TaiXiuLiveHit.Tasks
         public Action<string>? UiSetSide;     // "TAI"/"XIU"
         public Action<double>? UiSetStake;    // tiền đang đánh
         public Action<double>? UiAddWin;      // cộng/trừ tiền thắng lũy kế
+        public Action<double, double>? UiAddWinAndSetTotal; // cộng thống kê, rồi set tiền thắng hiển thị
         public Action<bool>? UiWinLoss;       // true = win, false = loss
         public Action<int, int>? UiSetChainLevel; // (chainIndex, levelIndex) cho MultiChain
     }

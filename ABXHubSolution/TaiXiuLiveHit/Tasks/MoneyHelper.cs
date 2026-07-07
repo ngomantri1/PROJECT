@@ -258,57 +258,57 @@ namespace TaiXiuLiveHit.Tasks
             if (win == null)
                 return;
 
+            int oldChainIndex = chainIndex;
             long stake = curChain[levelIndex];
-            long curThreshold = GetMultiChainThreshold(curChain);
+            int nextLevelIndex = levelIndex;
 
             if (win == true)
             {
                 chainNet += 0.98 * stake;
-                levelIndex = 0;
-
-                if (chainIndex == 0)
-                {
-                    if (chainNet > 0)
-                        chainNet = 0;
-                    return;
-                }
-
-                var prevChain = chains[chainIndex - 1] ?? Array.Empty<long>();
-                long prevThreshold = GetMultiChainThreshold(prevChain);
-                if (prevThreshold > 0 && chainNet >= prevThreshold)
-                {
-                    chainIndex--;
-                    levelIndex = 0;
-                    chainNet = 0;
-                }
-
-                return;
+                nextLevelIndex = 0;
             }
-
-            chainNet -= stake;
-
-            if (curThreshold > 0 && chainNet <= -curThreshold)
-            {
-                if (chainIndex + 1 < chainCount)
-                {
-                    chainIndex++;
-                    levelIndex = 0;
-                    chainNet = 0;
-                }
-                else
-                {
-                    chainIndex = 0;
-                    levelIndex = 0;
-                    chainNet = 0;
-                }
-
-                return;
-            }
-
-            if (levelIndex + 1 < curChain.Length)
-                levelIndex++;
             else
-                levelIndex = curChain.Length - 1;
+            {
+                chainNet -= stake;
+                if (levelIndex + 1 < curChain.Length)
+                    nextLevelIndex = levelIndex + 1;
+                else
+                    nextLevelIndex = curChain.Length - 1;
+            }
+
+            if (chainNet > 0)
+            {
+                chainIndex = 0;
+                levelIndex = 0;
+                chainNet = 0;
+                return;
+            }
+
+            long cumulativeThreshold = 0;
+            int targetChainIndex = 0;
+
+            for (int i = 0; i < chainCount; i++)
+            {
+                cumulativeThreshold += GetMultiChainThreshold(chains[i] ?? Array.Empty<long>());
+                if (chainNet > -cumulativeThreshold)
+                {
+                    targetChainIndex = i;
+                    break;
+                }
+
+                targetChainIndex = i;
+            }
+
+            if (cumulativeThreshold > 0 && chainNet <= -cumulativeThreshold)
+            {
+                chainIndex = 0;
+                levelIndex = 0;
+                chainNet = 0;
+                return;
+            }
+
+            chainIndex = targetChainIndex;
+            levelIndex = (chainIndex == oldChainIndex) ? nextLevelIndex : 0;
         }
 
         // Cập nhật trạng thái sau khi biết win/lose

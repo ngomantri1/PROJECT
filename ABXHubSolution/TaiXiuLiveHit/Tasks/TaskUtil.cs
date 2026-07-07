@@ -165,6 +165,8 @@ namespace TaiXiuLiveHit.Tasks
                 // Cập nhật UI chỉ khi thực sự được phép bắn
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetSide?.Invoke(side));
                 await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetStake?.Invoke(amount));
+                if (MoneyHelper.IsMultiChainStrategy(ctx.MoneyStrategyId))
+                    await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetChainLevel?.Invoke(ctx.MoneyChainIndex, ctx.MoneyChainStep));
 
                 // Giữ contract gọi bet xuống JS như hiện tại
                 var js =
@@ -203,10 +205,11 @@ namespace TaiXiuLiveHit.Tasks
         {
             ct.ThrowIfCancellationRequested();
 
-            await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
-
             bool isMultiChain = MoneyHelper.IsMultiChainStrategy(ctx.MoneyStrategyId);
             bool isMultiChainAdvanced = MoneyHelper.IsMultiChainAdvancedStrategy(ctx.MoneyStrategyId);
+            if (!isMultiChainAdvanced)
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
+
             if (isMultiChain)
             {
                 int chainIndex = ctx.MoneyChainIndex;
@@ -236,6 +239,16 @@ namespace TaiXiuLiveHit.Tasks
                 ctx.MoneyChainIndex = chainIndex;
                 ctx.MoneyChainStep = chainStep;
                 ctx.MoneyChainProfit = chainProfit;
+
+                await ctx.UiDispatcher.InvokeAsync(() => ctx.UiSetChainLevel?.Invoke(chainIndex, chainStep));
+
+                if (isMultiChainAdvanced)
+                {
+                    if (ctx.UiAddWinAndSetTotal != null)
+                        await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWinAndSetTotal.Invoke(netDelta, ctx.MoneyChainProfit));
+                    else
+                        await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
+                }
             }
             else
             {
