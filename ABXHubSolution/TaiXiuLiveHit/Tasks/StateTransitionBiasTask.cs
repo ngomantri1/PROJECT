@@ -55,7 +55,7 @@ namespace TaiXiuLiveHit.Tasks
                 char next = DecideNext(last, parity);
 
                 long stake;
-                if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
+                if (MoneyHelper.IsMultiChainStrategy(ctx.MoneyStrategyId))   // đặt đúng id bạn đặt ở combobox
                 {
                     stake = MoneyHelper.CalcAmountMultiChain(
                         ctx.StakeChains,

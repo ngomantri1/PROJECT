@@ -205,20 +205,33 @@ namespace TaiXiuLiveHit.Tasks
 
             await ctx.UiDispatcher.InvokeAsync(() => ctx.UiAddWin?.Invoke(netDelta));
 
-            bool isMultiChain = string.Equals(ctx.MoneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase);
+            bool isMultiChain = MoneyHelper.IsMultiChainStrategy(ctx.MoneyStrategyId);
+            bool isMultiChainAdvanced = MoneyHelper.IsMultiChainAdvancedStrategy(ctx.MoneyStrategyId);
             if (isMultiChain)
             {
                 int chainIndex = ctx.MoneyChainIndex;
                 int chainStep = ctx.MoneyChainStep;
                 double chainProfit = ctx.MoneyChainProfit;
 
-                MoneyHelper.UpdateAfterRoundMultiChain(
-                    ctx.StakeChains,
-                    ctx.StakeChainTotals,
-                    ref chainIndex,
-                    ref chainStep,
-                    ref chainProfit,
-                    win);
+                if (isMultiChainAdvanced)
+                {
+                    MoneyHelper.UpdateAfterRoundMultiChainAdvanced(
+                        ctx.StakeChains,
+                        ref chainIndex,
+                        ref chainStep,
+                        ref chainProfit,
+                        win);
+                }
+                else
+                {
+                    MoneyHelper.UpdateAfterRoundMultiChain(
+                        ctx.StakeChains,
+                        ctx.StakeChainTotals,
+                        ref chainIndex,
+                        ref chainStep,
+                        ref chainProfit,
+                        win);
+                }
 
                 ctx.MoneyChainIndex = chainIndex;
                 ctx.MoneyChainStep = chainStep;

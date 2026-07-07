@@ -48,7 +48,7 @@ namespace TaiXiuLiveHit.Tasks
         public DecisionState State { get; init; }
 
         // Kiểu quản lý vốn + input UI (nạp từ MainWindow)
-        // "IncreaseWhenLose" | "IncreaseWhenWin" | "Victor2" | "ReverseFibo" | "MultiChain"
+        // "IncreaseWhenLose" | "IncreaseWhenWin" | "Victor2" | "ReverseFibo" | "MultiChain" | "MultiChainAdvanced"
         public string MoneyStrategyId { get; init; }
 
         public string SideRateText { get; init; } = "";

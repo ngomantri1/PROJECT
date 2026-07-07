@@ -113,7 +113,7 @@ namespace TaiXiuLiveHit.Tasks
                 var (next, conf) = PredictNextWithConfidence(parity, DefaultMaxPatternLen);
                 string side = ParityCharToSideSafe(next);
                 long stake;
-                if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
+                if (MoneyHelper.IsMultiChainStrategy(ctx.MoneyStrategyId))   // đặt đúng id bạn đặt ở combobox
                 {
                     stake = MoneyHelper.CalcAmountMultiChain(
                         ctx.StakeChains,

@@ -189,7 +189,7 @@ namespace TaiXiuLiveHit.Tasks
                 // Đặt cược theo placedPick
                 string side = (placedPick == 0) ? "TAI" : "XIU";
                 long stake;
-                if (ctx.MoneyStrategyId == "MultiChain")   // đặt đúng id bạn đặt ở combobox
+                if (MoneyHelper.IsMultiChainStrategy(ctx.MoneyStrategyId))   // đặt đúng id bạn đặt ở combobox
                 {
                     stake = MoneyHelper.CalcAmountMultiChain(
                         ctx.StakeChains,

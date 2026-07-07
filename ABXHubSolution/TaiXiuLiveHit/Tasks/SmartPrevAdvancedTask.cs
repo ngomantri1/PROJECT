@@ -63,7 +63,7 @@ namespace TaiXiuLiveHit.Tasks
 
                 string side = DecideNextSide(parity);
                 long stake;
-                if (ctx.MoneyStrategyId == "MultiChain")
+                if (MoneyHelper.IsMultiChainStrategy(ctx.MoneyStrategyId))
                 {
                     stake = MoneyHelper.CalcAmountMultiChain(
                         ctx.StakeChains,

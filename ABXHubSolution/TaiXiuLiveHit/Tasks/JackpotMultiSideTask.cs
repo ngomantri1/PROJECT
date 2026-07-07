@@ -53,7 +53,7 @@ namespace TaiXiuLiveHit.Tasks
                 var snap = ctx.GetSnap();
                 string baseSeq = snap?.seq ?? string.Empty;
 
-                long baseStake = ctx.MoneyStrategyId == "MultiChain"
+                long baseStake = MoneyHelper.IsMultiChainStrategy(ctx.MoneyStrategyId)
                     ? MoneyHelper.CalcAmountMultiChain(
                         ctx.StakeChains,
                         ctx.MoneyChainIndex,

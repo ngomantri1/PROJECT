@@ -203,6 +203,23 @@ namespace TaiXiuLiveHit.Tasks
         }
 
         // ====== NEW: kiểu 5. Đa tầng chuỗi tiền ======
+        public static bool IsMultiChainStrategy(string? strategyId)
+        {
+            return string.Equals(strategyId, "MultiChain", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(strategyId, "MultiChainAdvanced", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool IsMultiChainAdvancedStrategy(string? strategyId)
+        {
+            return string.Equals(strategyId, "MultiChainAdvanced", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static long GetMultiChainThreshold(long[] chain)
+        {
+            if (chain == null || chain.Length == 0) return 0;
+            return chain[0] * chain.Length;
+        }
+
         // Lấy tiền sẽ đánh ở ván sắp tới, theo chuỗi & mức hiện tại
         public static long CalcAmountMultiChain(long[][] chains, int chainIndex, int levelIndex)
         {
@@ -215,6 +232,83 @@ namespace TaiXiuLiveHit.Tasks
 
             levelIndex = Math.Clamp(levelIndex, 0, chain.Length - 1);
             return chain[levelIndex];
+        }
+
+        public static void UpdateAfterRoundMultiChainAdvanced(
+            long[][] chains,
+            ref int chainIndex,
+            ref int levelIndex,
+            ref double chainNet,
+            bool? win)
+        {
+            int chainCount = chains?.Length ?? 0;
+            if (chainCount == 0) return;
+
+            chainIndex = Math.Clamp(chainIndex, 0, chainCount - 1);
+            var curChain = chains[chainIndex] ?? Array.Empty<long>();
+            if (curChain.Length == 0)
+            {
+                chainIndex = 0;
+                curChain = chains[0] ?? Array.Empty<long>();
+            }
+            if (curChain.Length == 0) return;
+
+            levelIndex = Math.Clamp(levelIndex, 0, curChain.Length - 1);
+
+            if (win == null)
+                return;
+
+            long stake = curChain[levelIndex];
+            long curThreshold = GetMultiChainThreshold(curChain);
+
+            if (win == true)
+            {
+                chainNet += 0.98 * stake;
+                levelIndex = 0;
+
+                if (chainIndex == 0)
+                {
+                    if (chainNet > 0)
+                        chainNet = 0;
+                    return;
+                }
+
+                var prevChain = chains[chainIndex - 1] ?? Array.Empty<long>();
+                long prevThreshold = GetMultiChainThreshold(prevChain);
+                if (prevThreshold > 0 && chainNet >= prevThreshold)
+                {
+                    chainIndex--;
+                    levelIndex = 0;
+                    chainNet = 0;
+                }
+
+                return;
+            }
+
+            chainNet -= stake;
+
+            if (curThreshold > 0 && chainNet <= -curThreshold)
+            {
+                if (chainIndex + 1 < chainCount)
+                {
+                    chainIndex++;
+                    levelIndex = 0;
+                    chainNet = 0;
+                }
+                else
+                {
+                    chainIndex = 0;
+                    levelIndex = 0;
+                    chainNet = 0;
+                }
+
+                return;
+            }
+
+            if (levelIndex + 1 < curChain.Length)
+                levelIndex++;
+            else
+                levelIndex = curChain.Length - 1;
         }
 
         // Cập nhật trạng thái sau khi biết win/lose

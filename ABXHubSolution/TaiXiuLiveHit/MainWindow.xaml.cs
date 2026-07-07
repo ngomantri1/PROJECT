@@ -2092,7 +2092,7 @@ Ví dụ không hợp lệ:
             if (ReferenceEquals(_activeTab, tab))
             {
                 if (LblStake != null) LblStake.Text = rounded.ToString("N0");
-                if (!string.Equals(_cfg.MoneyStrategy, "MultiChain", StringComparison.OrdinalIgnoreCase) && LblLevel != null)
+                if (!MoneyHelper.IsMultiChainStrategy(_cfg.MoneyStrategy) && LblLevel != null)
                     LblLevel.Text = tab.LastLevelText;
                 UpdateStatsUi(tab);
             }
@@ -4534,7 +4534,7 @@ Ví dụ không hợp lệ:
             if (rounded > 0)
                 tab.Stats.TotalBetAmount += rounded;
 
-            if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase))
+            if (!MoneyHelper.IsMultiChainStrategy(moneyStrategyId))
             {
                 var stakeSeq = (tab.RunStakeSeq != null && tab.RunStakeSeq.Length > 0)
                     ? tab.RunStakeSeq
@@ -4546,7 +4546,7 @@ Ví dụ không hợp lệ:
             if (ReferenceEquals(_activeTab, tab))
             {
                 if (LblStake != null) LblStake.Text = rounded.ToString("N0");
-                if (!string.Equals(moneyStrategyId, "MultiChain", StringComparison.OrdinalIgnoreCase) && LblLevel != null)
+                if (!MoneyHelper.IsMultiChainStrategy(moneyStrategyId) && LblLevel != null)
                     LblLevel.Text = tab.LastLevelText;
                 UpdateStatsUi(tab);
             }

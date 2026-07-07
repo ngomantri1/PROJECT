@@ -927,6 +927,7 @@
                                             <ComboBoxItem Content="5. Quản lý vốn đa tầng" Tag="MultiChain" />
                                             <ComboBoxItem Content="6. Thua thắng đều lên mức" Tag="IncreaseEveryRound" />
                                             <ComboBoxItem Content="7. Thắng đánh lên, thua giữ nguyên mức" Tag="WinUpLoseKeep" />
+                                            <ComboBoxItem Content="8. Quản lý vốn đa tầng nâng cao" Tag="MultiChainAdvanced" />
                                         </ComboBox>
                                     </Grid>
                                     <!--  CHUỖI TIỀN (CSV)  -->
