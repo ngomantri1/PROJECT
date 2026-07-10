@@ -1054,7 +1054,7 @@ Ví dụ không hợp lệ:
 
         private void UpdateAccountHeaderFromGame(string? username, long? amount)
         {
-            if (!GetIsGameByUrlFallback()) return;
+            if (!_isGameUi && !GetIsGameByUrlFallback()) return;
 
             if (LblUserName != null)
                 LblUserName.Text = string.IsNullOrWhiteSpace(username) ? "" : username;
