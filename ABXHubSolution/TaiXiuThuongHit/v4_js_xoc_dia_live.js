@@ -2,7 +2,7 @@
     'use strict';
     console.log('[CW] xoc-dia-live panel script init');
     /* =========================================================
-    CanvasWatch + MoneyMap + BetMap + TextMap + Scan200Text
+    CanvasWatch + MoneyMap + BetMap + TextMap + Scan500Text
     + TK Sequence (restore): LEFT→RIGHT columns, zig-zag T↓/B↑
     (Compat build: no spread operator, no optional chaining)
     + FIX: totals TÀI/XỈU by (x,tail) — TÀI x=591, XỈU x=973,
@@ -463,13 +463,13 @@
             return true;
         return s.length >= 4;
     }
-    function buildTextRects() {
+    function buildTextRects(includeMoneyText) {
         var ls = collectLabels(),
         out = [];
         for (var i = 0; i < ls.length; i++) {
             var L = ls[i];
             var s = (L.text || '').trim();
-            if (!isTextCandidate(s))
+            if (!(includeMoneyText && isMoneyText(s)) && !isTextCandidate(s))
                 continue;
             var x = Math.round(L.x),
             y = Math.round(L.y),
@@ -978,9 +978,9 @@
         '<button id="bMoney">MoneyMap</button>' +
         '<button id="bBet">BetMap</button>' +
         '<button id="bText">TextMap</button>' +
-        '<button id="bScanMoney">Scan200Money</button>' +
-        '<button id="bScanBet">Scan200Bet</button>' +
-        '<button id="bScanText">Scan200Text</button>' +
+        '<button id="bScanMoney">Scan500Money</button>' +
+        '<button id="bScanBet">Scan500Bet</button>' +
+        '<button id="bScanText">Scan500Text</button>' +
         '</div>' +
         '<div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">' +
         '<span>Tiền (×1K)</span>' +
@@ -1294,10 +1294,10 @@
     }
 
     /* ---------------- scan tools ---------------- */
-    function scan200Money() {
+    function scan500Money() {
         var money = buildMoneyRects().sort(function (a, b) {
             return a.y - b.y;
-        }).slice(0, 200)
+        }).slice(0, 500)
             .map(function (m) {
                 return {
                     txt: m.txt,
@@ -1309,20 +1309,20 @@
                     tail: m.tail
                 };
             });
-        console.log('(Money index x200)\ttxt\tval\tx\ty\tw\th\ttail');
+        console.log('(Money index x500)\ttxt\tval\tx\ty\tw\th\ttail');
         for (var i = 0; i < money.length; i++) {
             var r = money[i];
             console.log(i + "\t'" + r.txt + "'\t" + r.val + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
         }
         console.log(money);
     }
-    function scan200Bet() {
+    function scan500Bet() {
         var btns = collectButtons().filter(function (b) {
             return b.w >= 16 && b.h >= 12;
         })
             .sort(function (a, b) {
                 return a.y - b.y;
-            }).slice(0, 200)
+            }).slice(0, 500)
             .map(function (b) {
                 return {
                     x: b.x,
@@ -1332,20 +1332,21 @@
                     tail: b.tail
                 };
             });
-        console.log('(Bet index x200)\tx\ty\tw\th\ttail');
+        console.log('(Bet index x500)\tx\ty\tw\th\ttail');
         for (var i = 0; i < btns.length; i++) {
             var r = btns[i];
             console.log(i + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
         }
         console.log(btns);
     }
-    function scan200Text() {
-        var texts = buildTextRects().sort(function (a, b) {
+    function scan500Text() {
+        var texts = buildTextRects(true).sort(function (a, b) {
             return a.y - b.y;
-        }).slice(0, 200)
+        }).slice(0, 500)
             .map(function (t) {
                 return {
                     text: t.text,
+                    val: moneyOf(t.text),
                     x: t.x,
                     y: t.y,
                     w: t.w,
@@ -1353,10 +1354,10 @@
                     tail: t.tail
                 };
             });
-        console.log('(Text index x200)\ttext\tx\ty\tw\th\ttail');
+        console.log('(Text index x500, includes money text)\ttext\tval\tx\ty\tw\th\ttail');
         for (var i = 0; i < texts.length; i++) {
             var r = texts[i];
-            console.log(i + "\t'" + r.text + "'\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
+            console.log(i + "\t'" + r.text + "'\t" + r.val + "\t" + r.x + "\t" + r.y + "\t" + r.w + "\t" + r.h + "\t'" + r.tail + "'");
         }
         try {
             console.table(texts);
@@ -2140,7 +2141,7 @@
         });
     };
 
-    console.log('[READY] CW merged (compat + TextMap + Scan200Text + TK sequence + Totals by (x,tail) + standardized exports).');
+    console.log('[READY] CW merged (compat + TextMap + Scan500Text + TK sequence + Totals by (x,tail) + standardized exports).');
 
     /* ---------------- tick & controls ---------------- */
     function statusByProg(p) {
@@ -2322,13 +2323,13 @@
         panel.style.zIndex = '2147483647';
     };
     panel.querySelector('#bScanMoney').onclick = function () {
-        scan200Money();
+        scan500Money();
     };
     panel.querySelector('#bScanBet').onclick = function () {
-        scan200Bet();
+        scan500Bet();
     };
     panel.querySelector('#bScanText').onclick = function () {
-        scan200Text();
+        scan500Text();
     };
 
     panel.querySelector('#bBetC').addEventListener('click', async function () {
@@ -2799,7 +2800,7 @@
             }
 
             // 2) Ghi đè TK + Tài/Xỉu nếu lấy được qua moneyTailList()
-            var ACC_TAIL_EXACT = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel';
+            var ACC_TAIL_EXACT = 'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser';
 
             var TX_TOTAL_TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal';
             var TX_TAI_X = 246; // TÀI
