@@ -15742,6 +15742,14 @@ try{
                             CancelPopupTransitWatch("already-game-ready");
                             return;
                         }
+                        if (HasRecentGameSignal(out var recentGameReason))
+                        {
+                            Log("[PopupWeb][STUCK-WATCH] skip recovery reason=recent-game-signal | signal=" +
+                                recentGameReason +
+                                " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                            CancelPopupTransitWatch("recent-game-signal");
+                            return;
+                        }
 
                         if (_popupTransitRecoverAttempts >= PopupTransitMaxRecoverAttempts)
                         {

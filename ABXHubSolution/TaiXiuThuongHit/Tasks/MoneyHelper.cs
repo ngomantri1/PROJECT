@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace TaiXiuLiveHit.Tasks
+namespace TaiXiuThuongHit.Tasks
 {
     internal static class MoneyHelper
     {
