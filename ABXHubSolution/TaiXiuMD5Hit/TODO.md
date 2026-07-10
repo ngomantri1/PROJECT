@@ -10,9 +10,6 @@
 - Đã hoàn thành: đổi tổng cược Tài/Xỉu sang tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, phân biệt Tài `x=313`, Xỉu `x=799`.
 - Đã hoàn thành: đổi `Scan200Text` thành `Scan500Text` và cho phép scan text dạng tiền.
 - Đã hoàn thành: bỏ code/model các cửa Chẵn/Lẻ (`SD`, `TT`, `T3T`, `T3D`, `TD`) khỏi project HIT Tài Xỉu.
-- Đã hoàn thành: chỉnh cơ chế bet giống `TaiXiuThuongZoWin`: cửa chỉ click 1 lần, sau đó click phỉnh theo plan, cuối cùng click xác nhận đặt cược 1 lần.
-- Đã hoàn thành: cập nhật tail đặt cược từ log `D:\NOTE\OneDrive\Desktop\log\devtool.log`: phỉnh `Btn20M/btn5M/btn1M/btn500K/btn100K/btn50k/btn10k/btn1K`, cửa `nodeSkeleton/btnCuocTai`, `nodeSkeleton/btnCuocXiu`, nút xác nhận `menuMoney/btnFunctions/btnDatCuoc`.
-- Đã hoàn thành: bỏ fallback sang engine cũ `window.cwBet(...)` trong queue cược Tài/Xỉu để tránh click lại cửa nhiều lần.
 
 ## Cập nhật hôm nay (2026-06-02)
 - Đã hoàn thành: fix đổi `TxtStakeCsv` khi task đang chạy để ván kế tiếp ăn chuỗi tiền mới.
@@ -63,9 +60,6 @@
 - Canvas Watch chỉ hiển thị `TK`, `TÀI`, `XỈU`, không còn `SẤP ĐÔI`, `TỨ TRẮNG`, `TỨ ĐỎ`, `3 TRẮNG`, `3 ĐỎ`.
 - Bảng C# phải nhận đúng tên nhân vật, tài khoản, phiên, tổng cược Tài/Xỉu từ tick bridge.
 - Bấm `Scan500Text` phải thấy được text dạng tiền/tổng cược và tail tương ứng trong DevTools log.
-- Test đặt cược thực tế sau khi đổi tail: cửa Tài/Xỉu chỉ click 1 lần, phỉnh cuối cùng được click đủ theo plan, sau đó `btnDatCuoc` xác nhận 1 lần.
-- Test các mệnh giá có trong log mới: `20M`, `5M`, `1M`, `500K`, `100K`, `50K`, `10K`, `1K`; lưu ý hiện không có `50M` và `10M` trong scan mới.
-- Test `bet_error`/`bet_perf` khi tail phỉnh/cửa/xác nhận bị lệch để chắc queue báo lỗi thay vì fallback sang engine cũ.
 - Task 17 (multi-side): finalize winners + account delta + pending rows.
 - Trial/license expiry theo local timezone và release lease khi đóng app.
 - Lock mouse trên VPS/RDP khi toggle nhiều lần.

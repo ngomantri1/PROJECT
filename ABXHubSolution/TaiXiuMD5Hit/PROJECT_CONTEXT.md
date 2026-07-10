@@ -9,12 +9,6 @@
 - Nguồn tài khoản duy nhất: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`. Lưu ý tail game viết là `lbMoneyYser`, không sửa thành `lbMoneyUser`.
 - Nguồn phiên: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`.
 - Nguồn tổng cược Tài/Xỉu dùng chung tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng tọa độ `x=313` cho Tài và `x=799` cho Xỉu.
-- Cơ chế đặt cược đã chỉnh giống project `TaiXiuThuongZoWin`: click cửa Tài/Xỉu đúng 1 lần, sau đó click các phỉnh theo plan, cuối cùng click nút xác nhận đặt cược đúng 1 lần.
-- Đã bỏ fallback sang engine cược cũ `window.cwBet(...)` trong queue Tài/Xỉu vì engine cũ có thể click lại cửa theo từng phỉnh, sai nghiệp vụ HIT hiện tại.
-- Tail đặt cược HIT xác nhận từ `D:\NOTE\OneDrive\Desktop\log\devtool.log`:
-- Phỉnh: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/Btn20M`, `btn5M`, `btn1M`, `btn500K`, `btn100K`, `btn50k`, `btn10k`, `btn1K`.
-- Cửa Tài/Xỉu: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeSkeleton/btnCuocTai` và `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeSkeleton/btnCuocXiu`.
-- Nút xác nhận: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc`.
 - `CwTotals` chỉ còn `T`, `X`, `A`. Tài Xỉu không có `SD`, `TT`, `T3T`, `T3D`, `TD`; không thêm lại các field/cửa của Chẵn/Lẻ.
 - `Scan500Text` thay cho `Scan200Text`, có scan cả text dạng tiền để tìm tail mới khi game đổi UI.
 
@@ -47,7 +41,7 @@
 - `seg1>=2` -> luôn đánh theo.
 
 ## Tổng quan project
-- `TaiXiuThuongHit` là app WPF (.NET 8) auto-bet Tài/Xỉu Live qua WebView2.
+- `TaiXiuMD5Hit` là app WPF (.NET 8) auto-bet Tài/Xỉu Live qua WebView2.
 - Chạy được 2 mode:
 - Standalone (Release `WinExe`).
 - Plugin cho `AutoBetHub`/`ABX.Core` (Debug).
@@ -71,7 +65,7 @@
 - Chờ `WaitForBridgeAndGameDataAsync`.
 - Build `GameContext`.
 - Chạy `IBetTask.RunAsync(...)` theo index `0..17`.
-7. Task gọi `TaskUtil.PlaceBet` -> JS queue `__cw_bet` -> click cửa 1 lần -> click phỉnh theo plan -> click xác nhận 1 lần -> `bet/bet_error/bet_perf`.
+7. Task gọi `TaskUtil.PlaceBet` -> JS queue `__cw_bet` -> `bet/bet_error/bet_perf`.
 8. Khi ván chốt: finalize pending rows, cập nhật win/loss/stats/money.
 9. Nếu đang chạy mà người dùng sửa `TxtStakeCsv`, runtime phải ăn chuỗi tiền mới từ ván kế tiếp mà không restart task.
 
@@ -96,7 +90,6 @@
 - Không phá sync global fields giữa tabs (`SyncGlobalFieldsFromActive`).
 - Không làm mất level/state quản lý vốn hiện tại khi chỉ đổi chuỗi tiền lúc task đang chạy.
 - Không thay các tail HIT hiện tại nếu chưa có log `Scan500Text` xác nhận tail mới.
-- Không bật lại fallback `window.cwBet(...)` cho Tài/Xỉu nếu yêu cầu nghiệp vụ vẫn là cửa chỉ click 1 lần; fallback cũ có thể click cửa lặp theo phỉnh.
 - Không thêm lại các cửa Chẵn/Lẻ (`Sấp đôi`, `Tứ trắng`, `Tứ đỏ`, `3 trắng`, `3 đỏ`) vào Canvas Watch hoặc `CwTotals` của project Tài Xỉu HIT.
 
 ## WebSocket/bridge flow
@@ -119,7 +112,6 @@
 
 ## Tuyệt đối không được phá
 - Contract JS: `window.__cw_bet`, `window.__cw_startPush`, schema `abx=*`.
-- Contract click cược HIT: trong `v4_js_xoc_dia_live.js`, flow Tài/Xỉu phải giữ thứ tự click cửa 1 lần -> click phỉnh -> click xác nhận 1 lần.
 - Flow start an toàn: ensure web -> inject bridge -> wait data -> run task.
 - Mapping strategy index `0..17`.
 - Logic money strategy (`MoneyManager`/`MoneyHelper`) và state MultiChain trong `GameContext`.

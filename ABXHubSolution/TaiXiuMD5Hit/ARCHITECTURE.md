@@ -8,12 +8,6 @@
 - tài khoản: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`
 - phiên: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`
 - tổng Tài/Xỉu: tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, Tài `x=313`, Xỉu `x=799`
-- Tail đặt cược đang dùng trong `v4_js_xoc_dia_live.js`:
-- cửa Tài: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeSkeleton/btnCuocTai`
-- cửa Xỉu: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeSkeleton/btnCuocXiu`
-- nút xác nhận: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc`
-- phỉnh: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/Btn20M`, `btn5M`, `btn1M`, `btn500K`, `btn100K`, `btn50k`, `btn10k`, `btn1K`
-- Flow click cược đã theo ZoWin: click cửa 1 lần -> click phỉnh theo plan -> click xác nhận 1 lần; không fallback sang `window.cwBet(...)`.
 - `CwTotals` trong `Models.cs` chỉ có `T`, `X`, `A`. Các field Chẵn/Lẻ cũ (`SD`, `TT`, `T3T`, `T3D`, `TD`) đã bị loại bỏ khỏi model và JS totals.
 - `Scan500Text` dùng để debug khi game đổi node/tail; kết quả log phải là căn cứ trước khi đổi tail production.
 
@@ -43,7 +37,7 @@
 - `WebView2LiveBridge.cs`: bridge inject/reinject cho top doc/frame.
 - `v4_js_xoc_dia_live.js`: đọc dữ liệu game + đặt cược.
 - `Tasks/`: chiến lược + utility bet/money.
-- `TaiXiuThuongHitPlugin.cs`: adapter plugin.
+- `TaiXiuMD5HitPlugin.cs`: adapter plugin.
 - `Models.cs`: snapshot/totals/decision model.
 
 ## Module chính
@@ -81,7 +75,6 @@
 - `v4_js_xoc_dia_live.js`:
 - push `tick`
 - bet queue
-- `cwBetTxByChip`: lập plan phỉnh, click cửa 1 lần, click phỉnh theo plan, click `btnDatCuoc` xác nhận 1 lần
 - `bet/bet_error/bet_perf`
 - đọc username/tài khoản/phiên/tổng cược T/X bằng tail HIT chính xác
 - dựng Canvas Watch và các nút debug `Scan500Money`, `Scan500Bet`, `Scan500Text`
@@ -93,7 +86,7 @@
 2. C# parse tick -> cập nhật `_lastSnap` + UI.
 3. Task đọc snapshot qua `GameContext.GetSnap()`.
 4. Task quyết định side/stake -> `PlaceBet`.
-5. JS xử lý queue cược bằng `cwBetTxByChip`: tìm tail cửa/phỉnh/xác nhận -> click cửa 1 lần -> click phỉnh theo plan -> click xác nhận 1 lần -> trả event.
+5. JS xử lý queue cược và trả event.
 6. C# finalize pending rows khi round chốt (`seq` đổi) theo `_pendingBaseSeq` hoặc theo winners của multi-side.
 7. Nếu `TxtStakeCsv` đổi trong lúc run, `MainWindow` đẩy chuỗi mới vào `StrategyTabState` và `GameContext`; từ ván kế tiếp `MoneyManager` lấy stake từ chuỗi mới theo đúng level hiện tại.
 
@@ -114,7 +107,7 @@
 ## OCR/canvas flow
 - Không dùng OCR lib.
 - Dùng Cocos scene traversal + tail matching trong JS.
-- Dùng `PointerEvent` lên canvas để click side/chip/confirm; với HIT Tài/Xỉu hiện tại, side chỉ được click 1 lần trước khi click phỉnh.
+- Dùng `PointerEvent` lên canvas để click chip/side/confirm.
 - Có fallback source cho progress/seq, nhưng username/tài khoản/phiên/tổng T/X đang ưu tiên tail HIT đã xác nhận bằng log.
 - Canvas Watch hiển thị username, tài khoản, phiên, Tài, Xỉu; không hiển thị các cửa Chẵn/Lẻ.
 - Khi cần tìm tail mới, dùng `Scan500Text` vì tool này scan cả money text và tăng giới hạn từ 200 lên 500.

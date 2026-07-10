@@ -9,8 +9,6 @@
 - Đã fix bug tổng cược Tài/Xỉu không hiển thị: tail hiện tại là `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng tọa độ Tài `x=313`, Xỉu `x=799`.
 - Đã loại bỏ bug/nhầm lẫn do dùng lại code Chẵn/Lẻ: `CwTotals` và Canvas Watch không còn các field/cửa `SD`, `TT`, `T3T`, `T3D`, `TD`.
 - Đã tăng công cụ debug `Scan200Text` lên `Scan500Text` và cho scan money text để tìm tail mới khi UI HIT đổi.
-- Đã fix lệch cơ chế bet so với ZoWin: HIT không còn fallback sang `window.cwBet(...)` khi `cwBetTxByChip` fail, vì fallback cũ có thể click cửa lại nhiều lần theo từng phỉnh.
-- Đã cập nhật tail đặt cược theo scan log mới: cửa `nodeSkeleton/btnCuocTai`, `nodeSkeleton/btnCuocXiu`; xác nhận `menuMoney/btnFunctions/btnDatCuoc`; phỉnh `Btn20M/btn5M/btn1M/btn500K/btn100K/btn50k/btn10k/btn1K`.
 
 ## Cập nhật hôm nay (2026-06-02)
 - Đã phát hiện và fix bug runtime money: sửa `TxtStakeCsv` khi đang `Dừng đặt cược` nhưng ván sau vẫn lấy stake từ chuỗi cũ.
@@ -39,7 +37,7 @@
 - Bridge reinject theo lifecycle top doc + frame.
 - Save config/stats dạng atomic (`.tmp` -> `File.Move`).
 - Countdown license/trial dùng mốc local time (`DateTimeOffset.Now`).
-- JS bet queue có `bet_perf` metrics; fallback sang engine cũ đã tắt để giữ đúng nghiệp vụ click cửa 1 lần.
+- JS bet queue có fallback + `bet_perf` metrics.
 
 ## Bug chưa fix
 - Chưa có nguồn truth thống nhất cho kết quả bet ở tầng C#.
@@ -53,8 +51,6 @@
 - Tồn tại song song branch legacy/new làm tăng độ phức tạp.
 - Money runtime trước đây snapshot chuỗi tiền lúc start và `MoneyManager` giữ `_seq` cố định, nên thay đổi UI không vào được vòng task đang chạy.
 - HIT đổi node/tail theo UI mới; các tail cũ dạng `MiniGameScene/.../TxGameLive/...` hoặc `moneyLabel` có thể không còn đúng.
-- Tail đặt cược cũ trỏ `MiniGameScene/.../TxGameLive/...` và danh sách phỉnh cũ có `50M/10M`, trong khi log mới của HIT là `LobbyNew/.../TxGame2/...`, có `20M/5M` và không thấy `50M/10M`.
-- Fallback `window.cwBet(...)` là legacy flow, không phù hợp yêu cầu hiện tại vì có thể click cửa lặp lại theo từng phỉnh.
 - Một số code cũ dùng lại naming Chẵn/Lẻ (`C/L`, `Chan/Le`) trong khi nghiệp vụ HIT là Tài/Xỉu (`T/X`), dễ gây lệch model và UI.
 
 ## Workaround tạm thời
@@ -64,14 +60,12 @@
 - Giữ `DecisionSeconds` vùng an toàn (đặc biệt nhóm N/I).
 - Không còn cần workaround Stop/Play lại chỉ để đổi chuỗi tiền; runtime đã hỗ trợ ăn chuỗi mới từ ván kế tiếp.
 - Khi nghi tail sai, bấm `Scan500Text` và lưu DevTools log; chỉ đổi hardcoded tail sau khi thấy đúng text/tọa độ trong log.
-- Khi nghi tail đặt cược sai, bấm `Scan500Bet` hoặc xem log DevTools để xác nhận lại 3 nhóm tail: phỉnh, `btnCuocTai/btnCuocXiu`, và `btnDatCuoc`.
 - Nếu Canvas Watch không hiện, kiểm tra console probe `hasRoot/rootDisplay`; nếu `hasCc=true` nhưng `hasRoot=false` thì cần reinject JS.
 
 ## Vùng code dễ lỗi
 - `MainWindow.xaml.cs`: `WebMessageReceived`, play/stop, bridge inject/probe, timers license/trial.
 - `Tasks/TaskUtil.cs`: place/judge/post-round money.
-- `v4_js_xoc_dia_live.js`: click canvas, queue cược, tail phỉnh/cửa/xác nhận, fallback totals/session/progress.
-- `v4_js_xoc_dia_live.js`: không bật lại fallback legacy `window.cwBet(...)` trong flow Tài/Xỉu nếu chưa đổi lại yêu cầu nghiệp vụ click cửa 1 lần.
+- `v4_js_xoc_dia_live.js`: click canvas, queue cược, fallback totals/session/progress.
 - `v4_js_xoc_dia_live.js`: vùng tail HIT cho username/tài khoản/phiên/tổng T/X và root `__cw_root_allin`.
 - `Models.cs`: `CwTotals` phải giữ đúng `T`, `X`, `A`; không thêm lại field Chẵn/Lẻ.
 - Config/stats I/O khi save liên tiếp nhiều tab.
