@@ -5,12 +5,12 @@
     CanvasWatch + MoneyMap + BetMap + TextMap + Scan500Text
     + TK Sequence (restore): LEFT→RIGHT columns, zig-zag T↓/B↑
     (Compat build: no spread operator, no optional chaining)
-    + FIX: totals TÀI/XỈU by (x,tail) — TÀI x=313, XỈU x=799,
-    tail = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal'
+    + FIX: totals TÀI/XỈU by (x,tail) — TÀI x=307, XỈU x=805,
+    tail = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal'
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
     // Đổi true/false ở đây để bật/tắt bảng Canvas Watch.
-    var SHOW_CANVAS_WATCH = true;
+    var SHOW_CANVAS_WATCH = false;
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
 
@@ -807,9 +807,9 @@
     }
 
     /* ---------------- helpers for totals by (x, tail) ---------------- */
-    var TAIL_TOTAL_EXACT = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal';
-    var X_TAI = 313; // TÀI
-    var X_XIU = 799; // XỈU
+    var TAIL_TOTAL_EXACT = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal';
+    var X_TAI = 307; // TÀI
+    var X_XIU = 805; // XỈU
     function tailEquals(t, exact) {
         if (t == null)
             return false;
@@ -2771,9 +2771,9 @@
             // 2) Ghi đè TK + Tài/Xỉu nếu lấy được qua moneyTailList()
             var ACC_TAIL_EXACT = 'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser';
 
-            var TX_TOTAL_TAIL = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal';
-            var TX_TAI_X = 313; // TÀI
-            var TX_XIU_X = 799; // XỈU
+            var TX_TOTAL_TAIL = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal';
+            var TX_TAI_X = 307; // TÀI
+            var TX_XIU_X = 805; // XỈU
 
             if (typeof window.moneyTailList === 'function') {
 
@@ -2949,7 +2949,7 @@
 
     function readSessionSafe() {
         try {
-            var TAIL = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId';
+            var TAIL = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId';
             var txt = '';
 
             // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
@@ -3432,38 +3432,38 @@
     // --- Bet TÀI/XỈU bằng chip menuMoney + nút ĐẶT CƯỢC ---
 
     // Nút cửa TÀI / XỈU trên bàn chính
-    var TX_TAIL_BTN_TAI = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeSkeleton/btnCuocTai';
-    var TX_TAIL_BTN_XIU = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeSkeleton/btnCuocXiu';
+    var TX_TAIL_BTN_TAI = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeSkeleton/btnCuocTai';
+    var TX_TAIL_BTN_XIU = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeSkeleton/btnCuocXiu';
 
     // Nút ĐẶT CƯỢC (menuMoney/btnFunctions/btnDatCuoc)
     var TX_TAIL_BTN_DATCUOC =
-        'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc';
+        'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc';
 
     // Chip ở hàng menuMoney/btnPrices (ở giữa màn hình, KHÔNG phải TipDealer)
     var TX_MENU_CHIP_CONFIG = [{
             amount: 20000000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/Btn20M'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/Btn20M'
         }, {
             amount: 5000000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn5M'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn5M'
         }, {
             amount: 1000000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn1M'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn1M'
         }, {
             amount: 500000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn500K'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn500K'
         }, {
             amount: 100000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn100K'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn100K'
         }, {
             amount: 50000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn50k'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn50k'
         }, {
             amount: 10000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn10k'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn10k'
         }, {
             amount: 1000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn1K'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn1K'
         }
     ];
     var TX_BET_DELAY = {
@@ -3536,10 +3536,6 @@
         var tailLower = String(tailEnd || '').toLowerCase();
         if (!tailLower)
             return null;
-        var lastSeg = '';
-        var segs = tailLower.split('/');
-        if (segs.length)
-            lastSeg = segs[segs.length - 1];
         var hit = null;
         var hitScore = -1e9;
         walkNodes(function (n) {
@@ -3550,10 +3546,6 @@
             var score = -1e9;
             if (tl.endsWith(tailLower))
                 score = 100;
-            else if (tl.indexOf(tailLower) !== -1)
-                score = 80;
-            else if (lastSeg && tl.indexOf(lastSeg) !== -1)
-                score = 60;
             if (score < 0)
                 return;
             if (clickable(n))
@@ -3562,40 +3554,6 @@
                 score += 5;
             if (score > hitScore) {
                 hitScore = score;
-                hit = n;
-            }
-        });
-        return hit;
-    }
-
-    function txFindNodeByAnyTailEnds(cands) {
-        if (!cands || !cands.length)
-            return null;
-        for (var i = 0; i < cands.length; i++) {
-            var n = txFindNodeByTailEnd(cands[i]);
-            if (n)
-                return n;
-        }
-        return null;
-    }
-
-    function txFindNodeByNameTailRegex(re) {
-        var hit = null;
-        var best = -1e9;
-        walkNodes(function (n) {
-            var nm = String((n && n.name) || '').toLowerCase();
-            var tl = String(tailOf(n, 16) || '').toLowerCase();
-            if (!re.test(nm) && !re.test(tl))
-                return;
-            var score = 0;
-            if (clickable(n))
-                score += 20;
-            if (nm && re.test(nm))
-                score += 8;
-            if (tl && re.test(tl))
-                score += 6;
-            if (score > best) {
-                best = score;
                 hit = n;
             }
         });
@@ -3617,40 +3575,6 @@
                 tailEnd: cfg.tailEnd,
                 node: n
             });
-        }
-
-        // Fallback: scan động theo node name/tail trong menuMoney/btnPrices
-        var dyn = {};
-        walkNodes(function (n) {
-            var nm = String((n && n.name) || '');
-            var tl = String(tailOf(n, 16) || '').toLowerCase();
-            var keyPath = (tl.indexOf('btnprices') !== -1 || tl.indexOf('menumoney') !== -1 || tl.indexOf('btnfunctions') !== -1);
-            if (!keyPath)
-                return;
-            var text = (nm + ' ' + tl).toLowerCase();
-            var m = text.match(/(\d+)\s*(k|m)\b/i);
-            if (!m)
-                return;
-            var amount = parseInt(m[1], 10);
-            if (isNaN(amount))
-                return;
-            amount = amount * ((String(m[2]).toUpperCase() === 'M') ? 1000000 : 1000);
-            if (!(amount > 0))
-                return;
-            var k = String(amount);
-            if (seen[k] || dyn[k])
-                return;
-            if (!clickable(n))
-                return;
-            dyn[k] = {
-                amount: amount,
-                tailEnd: 'dynamic:' + nm,
-                node: n
-            };
-        });
-        for (var kk in dyn) {
-            if (Object.prototype.hasOwnProperty.call(dyn, kk))
-                out.push(dyn[kk]);
         }
 
         out.sort(function (a, b) {
@@ -3702,12 +3626,7 @@
 
     function txClickSide(side) {
         var isTai = (String(side || '').toUpperCase() === 'TAI');
-        var tails = isTai ? [TX_TAIL_BTN_TAI, 'nodeSprite/btnCuocTai', 'btnCuocTai']
-             : [TX_TAIL_BTN_XIU, 'nodeSprite/btnCuocXiu', 'btnCuocXiu'];
-        var n = txFindNodeByAnyTailEnds(tails);
-        if (!n) {
-            n = txFindNodeByNameTailRegex(isTai ? /btncuoctai|cuoctai|buttontai/ : /btncuocxiu|cuocxiu|buttonxiu/);
-        }
+        var n = txFindNodeByTailEnd(isTai ? TX_TAIL_BTN_TAI : TX_TAIL_BTN_XIU);
         if (!n) {
             console.warn('[cwBetTx] Không tìm thấy nút cửa', side);
             return txSetErr('side_not_found_' + side);
@@ -3722,14 +3641,7 @@
     }
 
     async function txClickDatCuoc() {
-        var n = txFindNodeByAnyTailEnds([
-                    TX_TAIL_BTN_DATCUOC,
-                    'btnFunctions/btnDatCuoc',
-                    'btnDatCuoc'
-                ]);
-        if (!n) {
-            n = txFindNodeByNameTailRegex(/btndatcuoc|datcuoc|xacnhan|confirm/);
-        }
+        var n = txFindNodeByTailEnd(TX_TAIL_BTN_DATCUOC);
         if (!n) {
             console.warn('[cwBetTx] Không tìm thấy nút ĐẶT CƯỢC');
             return txSetErr('datcuoc_not_found');
