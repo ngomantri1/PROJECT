@@ -5,8 +5,8 @@
     CanvasWatch + MoneyMap + BetMap + TextMap + Scan500Text
     + TK Sequence (restore): LEFT→RIGHT columns, zig-zag T↓/B↑
     (Compat build: no spread operator, no optional chaining)
-    + FIX: totals TÀI/XỈU by (x,tail) — TÀI x=591, XỈU x=973,
-    tail = 'XDLive/Canvas/Bg/footer/listLabel/totalBet'
+    + FIX: totals TÀI/XỈU by (x,tail) — TÀI x=313, XỈU x=799,
+    tail = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal'
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
     // Đổi true/false ở đây để bật/tắt bảng Canvas Watch.
@@ -807,16 +807,9 @@
     }
 
     /* ---------------- helpers for totals by (x, tail) ---------------- */
-    var TAIL_TOTAL_EXACT = 'XDLive/Canvas/Bg/footer/listLabel/totalBet';
-    var X_TAI = 591; // TÀI
-    var X_XIU = 973; // XỈU
-    // --- NEW extra totals (by x under same tail) ---
-    var X_SAPDOI = 783; // SẤP ĐÔI
-    var X_TUTRANG = 561; // TỨ TRẮNG
-    var X_TUDO = 1004; // TỨ ĐỎ
-    var X_3DO = 856; // 3 ĐỎ
-    var X_3TRANG = 709; // 3 TRẮNG
-
+    var TAIL_TOTAL_EXACT = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal';
+    var X_TAI = 313; // TÀI
+    var X_XIU = 799; // XỈU
     function tailEquals(t, exact) {
         if (t == null)
             return false;
@@ -865,48 +858,34 @@
     // Export standardized helpers
     window.moneyTailList = moneyTailList;
     window.pickByXTail = pickByXTail;
-    window.cwPickChan = function () {
+    window.cwPickTai = function () {
         return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_TAI, TAIL_TOTAL_EXACT);
     };
-    window.cwPickLe = function () {
+    window.cwPickXiu = function () {
         return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_XIU, TAIL_TOTAL_EXACT);
     };
+    window.cwPickChan = window.cwPickTai;
+    window.cwPickLe = window.cwPickXiu;
 
     /* ---------------- totals (using x & tail) ---------------- */
     function totals(S) {
         S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
 
         var list = moneyTailList(TAIL_TOTAL_EXACT);
-        var mC = pickByXTail(list, X_TAI, TAIL_TOTAL_EXACT); // TÀI
-        var mL = pickByXTail(list, X_XIU, TAIL_TOTAL_EXACT); // XỈU
-        var mSD = pickByXTail(list, X_SAPDOI, TAIL_TOTAL_EXACT); // SẤP ĐÔI
-        var mTT = pickByXTail(list, X_TUTRANG, TAIL_TOTAL_EXACT); // TỨ TRẮNG
-        var m3T = pickByXTail(list, X_3TRANG, TAIL_TOTAL_EXACT); // 3 TRẮNG
-        var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
-        var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
-
+        var mT = pickByXTail(list, X_TAI, TAIL_TOTAL_EXACT); // TÀI
+        var mX = pickByXTail(list, X_XIU, TAIL_TOTAL_EXACT); // XỈU
         // Account (A) keeps old robust resolver
         if (!S.selAcc)
             autoBindAcc(S);
         var rA = resolve(S.money, S.selAcc);
 
         return {
-            C: mC ? mC.val : null,
-            L: mL ? mL.val : null,
+            T: mT ? mT.val : null,
+            X: mX ? mX.val : null,
             A: rA ? rA.val : null,
-            SD: mSD ? mSD.val : null,
-            TT: mTT ? mTT.val : null,
-            T3T: m3T ? m3T.val : null,
-            T3D: m3D ? m3D.val : null,
-            TD: mTD ? mTD.val : null,
-            rawC: mC ? mC.txt : null,
-            rawL: mL ? mL.txt : null,
-            rawA: rA ? rA.txt : null,
-            rawSD: mSD ? mSD.txt : null,
-            rawTT: mTT ? mTT.txt : null,
-            rawT3T: m3T ? m3T.txt : null,
-            rawT3D: m3D ? m3D.txt : null,
-            rawTD: mTD ? mTD.txt : null
+            rawT: mT ? mT.txt : null,
+            rawX: mX ? mX.txt : null,
+            rawA: rA ? rA.txt : null
         };
     }
     function sampleTotalsNow() {
@@ -914,8 +893,8 @@
             return totals(S);
         } catch (e) {
             return {
-                C: null,
-                L: null,
+                T: null,
+                X: null,
                 A: null
             };
         }
@@ -927,7 +906,7 @@
         while (((performance && performance.now ? performance.now() : Date.now()) - t0) < timeout) {
             await sleep(90);
             var cur = sampleTotalsNow();
-            if ((side === 'TAI' && cur.C !== last.C) || (side === 'XIU' && cur.L !== last.L) || (cur.A !== last.A))
+        if ((side === 'TAI' && cur.T !== last.T) || (side === 'XIU' && cur.X !== last.X) || (cur.A !== last.A))
                 return true;
             last = cur;
         }
@@ -1225,16 +1204,11 @@
         // thì fallback về S._lastTotals như cũ
         if (!t) {
             t = S._lastTotals || {
-                C: null,
-                L: null,
+                T: null,
+                X: null,
                 A: null,
-                SD: null,
-                TT: null,
-                T3T: null,
-                T3D: null,
-                TD: null,
-                rawC: null,
-                rawL: null,
+                rawT: null,
+                rawX: null,
                 rawA: null
             };
         }
@@ -1268,12 +1242,7 @@
             '• Username : ' + (userName || '--') +
             ' | TK : ' + fmt(t.A) +
             '|TÀI: ' + fmt(t.T) +
-            '|XỈU: ' + fmt(t.X) +
-            '|SẤP ĐÔI: ' + fmt(t.SD) +
-            '|TỨ TRẮNG: ' + fmt(t.TT) +
-            '|3 TRẮNG: ' + fmt(t.T3T) +
-            '|3 ĐỎ: ' + fmt(t.T3D) +
-            '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
+            '|XỈU: ' + fmt(t.X) + '\n' +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
             '  tail: ' + (f ? f.tail : '-') + '\n' +
@@ -2802,9 +2771,9 @@
             // 2) Ghi đè TK + Tài/Xỉu nếu lấy được qua moneyTailList()
             var ACC_TAIL_EXACT = 'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser';
 
-            var TX_TOTAL_TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal';
-            var TX_TAI_X = 246; // TÀI
-            var TX_XIU_X = 785; // XỈU
+            var TX_TOTAL_TAIL = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal';
+            var TX_TAI_X = 313; // TÀI
+            var TX_XIU_X = 799; // XỈU
 
             if (typeof window.moneyTailList === 'function') {
 
@@ -2980,7 +2949,7 @@
 
     function readSessionSafe() {
         try {
-            var TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbSesionId';
+            var TAIL = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId';
             var txt = '';
 
             // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
