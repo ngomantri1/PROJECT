@@ -10,7 +10,7 @@
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
     // Đổi true/false ở đây để bật/tắt bảng Canvas Watch.
-    var SHOW_CANVAS_WATCH = true;
+    var SHOW_CANVAS_WATCH = false;
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
 
@@ -3432,46 +3432,44 @@
     // --- Bet TÀI/XỈU bằng chip menuMoney + nút ĐẶT CƯỢC ---
 
     // Nút cửa TÀI / XỈU trên bàn chính
-    var TX_TAIL_BTN_TAI = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocTai';
-    var TX_TAIL_BTN_XIU = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeSprite/btnCuocXiu';
+    var TX_TAIL_BTN_TAI = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeSkeleton/btnCuocTai';
+    var TX_TAIL_BTN_XIU = 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeSkeleton/btnCuocXiu';
 
     // Nút ĐẶT CƯỢC (menuMoney/btnFunctions/btnDatCuoc)
     var TX_TAIL_BTN_DATCUOC =
-        'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc';
+        'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc';
 
     // Chip ở hàng menuMoney/btnPrices (ở giữa màn hình, KHÔNG phải TipDealer)
     var TX_MENU_CHIP_CONFIG = [{
-            amount: 50000000,
-            tailEnd: 'menuMoney/btnPrices/Btn50M'
+            amount: 20000000,
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/Btn20M'
         }, {
-            amount: 10000000,
-            tailEnd: 'menuMoney/btnPrices/btn10M'
+            amount: 5000000,
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn5M'
         }, {
             amount: 1000000,
-            tailEnd: 'menuMoney/btnPrices/btn1M'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn1M'
         }, {
             amount: 500000,
-            tailEnd: 'menuMoney/btnPrices/btn500K'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn500K'
         }, {
             amount: 100000,
-            tailEnd: 'menuMoney/btnPrices/btn100K'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn100K'
         }, {
             amount: 50000,
-            tailEnd: 'menuMoney/btnPrices/btn50k'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn50k'
         }, {
             amount: 10000,
-            tailEnd: 'menuMoney/btnPrices/btn10k'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn10k'
         }, {
             amount: 1000,
-            tailEnd: 'menuMoney/btnPrices/btn1K'
+            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/menuMoney/btnPrices/btn1K'
         }
     ];
-    // Giữ nhịp gần với hàm cũ: tổng delay mỗi vòng rải chip xấp xỉ mức trước đây.
     var TX_BET_DELAY = {
-        chipToSide: 60, // sau khi chọn phỉnh -> đợi rất ngắn rồi click cửa
-        sideToChip: 80, // sau khi click cửa -> đợi ngắn trước vòng kế
-        chipToChip: 80, // giữa các vòng click liên tiếp
-        afterChipsBeforeConfirm: 120 // giảm nhịp chờ trước confirm để tăng tốc
+        sideToChip: 260, // sau khi click cửa -> đợi rồi mới bấm phỉnh
+        chipToChip: 220, // giữa các lần click phỉnh liên tiếp
+        afterChipsBeforeConfirm: 260 // sau khi xong phỉnh -> đợi rồi mới ấn ĐẶT CƯỢC
     };
     var _txLastErr = '';
     var _txPerfLast = null;
@@ -3903,20 +3901,9 @@
                 var ok = await cwBetTxByChip(side, amt);
                 txPerf = _txPerfLast;
                 if (!ok) {
-                    // fallback: thử engine cũ nếu nhánh TX-tail bị lệch trên 1 số host
-                    fallbackUsed = true;
-                    var tFallback0 = nowMs();
-                    try {
-                        if (typeof window.cwBet === 'function') {
-                            var okClassic = await window.cwBet(side, amt);
-                            if (okClassic) {
-                                await sleep(220);
-                                await txClickDatCuoc().catch(function () {});
-                                ok = true;
-                            }
-                        }
-                    } catch (_) {}
-                    fallbackMs = ms1(nowMs() - tFallback0);
+                    // Không fallback sang engine cũ vì engine đó có thể click lại cửa theo từng phỉnh.
+                    fallbackUsed = false;
+                    fallbackMs = 0;
                 }
                 if (!ok) {
                     throw new Error(_txLastErr || 'click_failed');

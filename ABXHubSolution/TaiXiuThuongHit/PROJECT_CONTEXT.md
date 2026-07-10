@@ -1,5 +1,17 @@
 ﻿# PROJECT_CONTEXT
 
+## Cập nhật hôm nay (2026-07-10)
+- Đã xử lý lại bridge/canvas cho HIT Tài Xỉu theo đúng nghiệp vụ `T/X`, không còn dùng lại field Chẵn/Lẻ `C/L`.
+- Canvas Watch panel được điều khiển bằng biến JS `SHOW_CANVAS_WATCH` trong `v4_js_xoc_dia_live.js`; muốn ẩn/hiện chỉ đổi `true/false`.
+- Bridge readiness phải đợi root Canvas Watch `__cw_root_allin` tồn tại. Nếu `window.cc` đã có nhưng root chưa có thì phải reinject `_appJs`; không được coi bridge ready quá sớm.
+- Luồng mở game từ trang chủ đã dùng cơ chế click mở Tài Xỉu từ home, giống project ZoWin, thay vì chỉ mở popup/trang rời.
+- Nguồn username/tên nhân vật duy nhất: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`.
+- Nguồn tài khoản duy nhất: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`. Lưu ý tail game viết là `lbMoneyYser`, không sửa thành `lbMoneyUser`.
+- Nguồn phiên: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`.
+- Nguồn tổng cược Tài/Xỉu dùng chung tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng tọa độ `x=313` cho Tài và `x=799` cho Xỉu.
+- `CwTotals` chỉ còn `T`, `X`, `A`. Tài Xỉu không có `SD`, `TT`, `T3T`, `T3D`, `TD`; không thêm lại các field/cửa của Chẵn/Lẻ.
+- `Scan500Text` thay cho `Scan200Text`, có scan cả text dạng tiền để tìm tail mới khi game đổi UI.
+
 ## Cập nhật hôm nay (2026-06-02)
 - Đã fix lỗi: khi task nghiệp vụ đang chạy (`Bắt đầu cược` đã chuyển sang `Dừng đặt cược`), sửa `TxtStakeCsv` nhưng ván sau vẫn ăn chuỗi tiền cũ.
 - Kỳ vọng nghiệp vụ mới:
@@ -45,16 +57,17 @@
 ## Flow hoạt động chính
 1. `Window_Loaded`: load config/stats/tab, init WebView2, register/inject bridge.
 2. Navigate URL, autofill login.
-3. JS `__cw_startPush(240)` gửi `tick` liên tục (`progress/seq/totals/session/username`).
-4. `WebMessageReceived` cập nhật snapshot/UI/trạng thái ván.
-5. Play:
+3. Từ trang chủ HIT, click mở Tài Xỉu bằng JS/home click flow; không phụ thuộc popup rời.
+4. JS `__cw_startPush(240)` gửi `tick` liên tục (`progress/seq/totals/session/username`).
+5. `WebMessageReceived` cập nhật snapshot/UI/trạng thái ván.
+6. Play:
 - Validate input theo chiến lược.
 - Chờ `WaitForBridgeAndGameDataAsync`.
 - Build `GameContext`.
 - Chạy `IBetTask.RunAsync(...)` theo index `0..17`.
-6. Task gọi `TaskUtil.PlaceBet` -> JS queue `__cw_bet` -> `bet/bet_error/bet_perf`.
-7. Khi ván chốt: finalize pending rows, cập nhật win/loss/stats/money.
-8. Nếu đang chạy mà người dùng sửa `TxtStakeCsv`, runtime phải ăn chuỗi tiền mới từ ván kế tiếp mà không restart task.
+7. Task gọi `TaskUtil.PlaceBet` -> JS queue `__cw_bet` -> `bet/bet_error/bet_perf`.
+8. Khi ván chốt: finalize pending rows, cập nhật win/loss/stats/money.
+9. Nếu đang chạy mà người dùng sửa `TxtStakeCsv`, runtime phải ăn chuỗi tiền mới từ ván kế tiếp mà không restart task.
 
 ## Coding rules
 - UI update chỉ qua `Dispatcher`.
@@ -66,6 +79,7 @@
 ## Naming rules
 - Strategy class: `*Task` + `IBetTask`.
 - Side nội bộ: `TAI`/`XIU`; parity: `T`/`X`; major/minor: `N`/`I`.
+- Totals Tài/Xỉu chỉ dùng `T`/`X`/`A`; không dùng `C`/`L` và không dùng field phụ của Chẵn/Lẻ.
 - Bridge message dùng `abx`: `tick`, `bet`, `bet_error`, `bet_perf`, `cw_diag`, `js_loaded`.
 
 ## Rule quan trọng
@@ -75,11 +89,14 @@
 - Không bỏ qua finalize `_pendingRows` khi round kết thúc.
 - Không phá sync global fields giữa tabs (`SyncGlobalFieldsFromActive`).
 - Không làm mất level/state quản lý vốn hiện tại khi chỉ đổi chuỗi tiền lúc task đang chạy.
+- Không thay các tail HIT hiện tại nếu chưa có log `Scan500Text` xác nhận tail mới.
+- Không thêm lại các cửa Chẵn/Lẻ (`Sấp đôi`, `Tứ trắng`, `Tứ đỏ`, `3 trắng`, `3 đỏ`) vào Canvas Watch hoặc `CwTotals` của project Tài Xỉu HIT.
 
 ## WebSocket/bridge flow
 - Nguồn dữ liệu nghiệp vụ chính là bridge `postMessage`.
 - CDP `Network.webSocket*` chỉ để quan sát packet (recv/send log đang tắt).
 - Bridge có cơ chế reinject + probe readiness cho top doc và frame.
+- Probe bridge phải kiểm tra cả `window.cc`, các hàm bridge, và DOM root `__cw_root_allin` để tránh trạng thái hàm có nhưng Canvas Watch chưa dựng.
 
 ## Pending flow
 - `abx='bet'` -> tạo `BetRow` placeholder và thêm `_pendingRows`.

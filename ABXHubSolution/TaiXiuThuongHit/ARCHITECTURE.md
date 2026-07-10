@@ -1,5 +1,16 @@
 ﻿# ARCHITECTURE
 
+## Cập nhật hôm nay (2026-07-10)
+- HIT Tài Xỉu hiện đọc dữ liệu bằng Cocos scene traversal + tail matching trong `v4_js_xoc_dia_live.js`.
+- Canvas Watch được dựng trong DOM root `__cw_root_allin`; bridge probe trong `MainWindow.xaml.cs` phải coi root này là điều kiện ready khi `window.cc` đã sẵn sàng.
+- `v4_js_xoc_dia_live.js` đang là nguồn đọc trực tiếp:
+- username: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`
+- tài khoản: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`
+- phiên: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`
+- tổng Tài/Xỉu: tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, Tài `x=313`, Xỉu `x=799`
+- `CwTotals` trong `Models.cs` chỉ có `T`, `X`, `A`. Các field Chẵn/Lẻ cũ (`SD`, `TT`, `T3T`, `T3D`, `TD`) đã bị loại bỏ khỏi model và JS totals.
+- `Scan500Text` dùng để debug khi game đổi node/tail; kết quả log phải là căn cứ trước khi đổi tail production.
+
 ## Cập nhật hôm nay (2026-06-02)
 - Đã chỉnh luồng money runtime để chuỗi tiền có thể đổi live khi task đang chạy.
 - `StrategyTabState` vẫn giữ state chạy hiện tại, nhưng `RunStakeSeq`/`RunStakeChains`/`RunStakeChainTotals` giờ có thể được refresh trong lúc run.
@@ -65,9 +76,13 @@
 - push `tick`
 - bet queue
 - `bet/bet_error/bet_perf`
+- đọc username/tài khoản/phiên/tổng cược T/X bằng tail HIT chính xác
+- dựng Canvas Watch và các nút debug `Scan500Money`, `Scan500Bet`, `Scan500Text`
+- `Models.cs`:
+- `CwTotals` chỉ biểu diễn `T`, `X`, `A`
 
 ## Data flow
-1. JS scan scene -> emit `tick`.
+1. JS scan scene bằng tail HIT -> emit `tick`.
 2. C# parse tick -> cập nhật `_lastSnap` + UI.
 3. Task đọc snapshot qua `GameContext.GetSnap()`.
 4. Task quyết định side/stake -> `PlaceBet`.
@@ -93,4 +108,6 @@
 - Không dùng OCR lib.
 - Dùng Cocos scene traversal + tail matching trong JS.
 - Dùng `PointerEvent` lên canvas để click chip/side/confirm.
-- Có fallback source cho progress/seq/totals/username.
+- Có fallback source cho progress/seq, nhưng username/tài khoản/phiên/tổng T/X đang ưu tiên tail HIT đã xác nhận bằng log.
+- Canvas Watch hiển thị username, tài khoản, phiên, Tài, Xỉu; không hiển thị các cửa Chẵn/Lẻ.
+- Khi cần tìm tail mới, dùng `Scan500Text` vì tool này scan cả money text và tăng giới hạn từ 200 lên 500.

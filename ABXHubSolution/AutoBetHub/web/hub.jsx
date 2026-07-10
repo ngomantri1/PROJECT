@@ -3,8 +3,13 @@
                     /* ================== DATA ================== */
                     const GAMES = [
                       { title: "Xóc Đĩa Live HIT, GO88, NET88, TX88",                      slug: "xoc-dia-live-hit",        tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaLiveHit.png" },
-                      { title: "Tài Xỉu Live HIT, GO88, NET88, TX88",                      slug: "tai-xiu-live-hit",        tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveHit.png" },
-                      { title: "Aviator HIT, GO88, NET88, TX88",                           slug: "aviator-hit",             tag: "aviator",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/AviatorHit.png" },
+                      { title: "Xóc Đĩa Phụng Tứ Linh HIT",                                slug: "xoc-dia-tu-linh-hit",     tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaTuLinhHit.png" },
+                      
+					  { title: "Tài Xỉu Live HIT, GO88, NET88, TX88",                      slug: "tai-xiu-live-hit",        tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveHit.png" },
+					  { title: "Tài Xỉu Thường HIT",                                       slug: "tai-xiu-thuong-hit",      tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuThuongHit.png" },
+                      { title: "Tài Xỉu MD5 HIT",                                          slug: "tai-xiu-md5-hit",         tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuMD5Hit.png" },
+                      
+					  { title: "Aviator HIT, GO88, NET88, TX88",                           slug: "aviator-hit",             tag: "aviator",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/AviatorHit.png" },
                       { title: "Xóc Đĩa Tứ Linh SunWin, ZoWin, NhatVip, GemVip",           slug: "xoc-dia-tu-linh-zowin",   tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaTuLinhZoWin.png" },
                       { title: "Tài Xỉu Thường SunWin, ZoWin, NhatVip, GemVip",            slug: "tai-xiu-thuong-zowin",    tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuThuongZoWin.png" },
                       { title: "Tài Xỉu Live SunWin, ZoWin, NhatVip, GemVip",              slug: "tai-xiu-live-sunwin",     tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveSunWin.png" },
