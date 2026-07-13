@@ -5,8 +5,8 @@
     CanvasWatch + MoneyMap + BetMap + TextMap + Scan200Text
     + TK Sequence (restore): LEFT→RIGHT columns, zig-zag T↓/B↑
     (Compat build: no spread operator, no optional chaining)
-    + FIX: totals TÀI/XỈU by (x,tail) — TÀI x=591, XỈU x=973,
-    tail = 'XDLive/Canvas/Bg/footer/listLabel/totalBet'
++ FIX: totals TÀI/XỈU by (x,tail) — TÀI x=246, XỈU x=785,
+  tail = 'LobbyNew/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal'
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
     // Đổi true/false ở đây để bật/tắt bảng Canvas Watch.
@@ -777,39 +777,11 @@
         });
         return cands[0];
     }
-    function autoBindAcc(S) {
-        if (S.selAcc)
-            return;
-        var list = S.money && S.money.length ? S.money : buildMoneyRects();
-        var cand = list.filter(function (m) {
-            var t = m.tl;
-            return (t.indexOf('/footer/khungmoney/moneylb') !== -1);
-        });
-        cand = cand.filter(function (m) {
-            var t = m.tl;
-            return (t.indexOf('jackpot') === -1 && t.indexOf('/footer/totalbetlb') !== t.length - ('/footer/totalbetlb'.length));
-        });
-        if (!cand.length)
-            return;
-        cand.sort(function (a, b) {
-            return (a.n.y - b.n.y) || (area(b) - area(a));
-        });
-        var acc = cand[cand.length - 1];
-        S.selAcc = {
-            tail: acc.tail,
-            anchorN: {
-                x: acc.n.x,
-                y: acc.n.y,
-                w: acc.n.w,
-                h: acc.n.h
-            }
-        };
-    }
-
     /* ---------------- helpers for totals by (x, tail) ---------------- */
-    var TAIL_TOTAL_EXACT = 'XDLive/Canvas/Bg/footer/listLabel/totalBet';
-    var X_TAI = 591; // TÀI
-    var X_XIU = 973; // XỈU
+    var TAIL_TOTAL_EXACT = 'LobbyNew/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal';
+    var ACC_TAIL_EXACT = 'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser';
+    var X_TAI = 246; // TÀI
+    var X_XIU = 785; // XỈU
     // --- NEW extra totals (by x under same tail) ---
     var X_SAPDOI = 783; // SẤP ĐÔI
     var X_TUTRANG = 561; // TỨ TRẮNG
@@ -885,10 +857,8 @@
         var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
         var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
 
-        // Account (A) keeps old robust resolver
-        if (!S.selAcc)
-            autoBindAcc(S);
-        var rA = resolve(S.money, S.selAcc);
+        var accList = moneyTailList(ACC_TAIL_EXACT);
+        var rA = accList.length ? accList[accList.length - 1] : null;
 
         return {
             C: mC ? mC.val : null,
@@ -951,7 +921,10 @@
         showBet: false,
         showText: false,
         stakeK: 1,
-        seq: ''
+        seq: '',
+        progSec: null,
+        progSrc: '',
+        progTail: ''
     };
 
     var ROOT = '__cw_root_allin';
@@ -1240,7 +1213,9 @@
 
         var f = S.focus;
         var secLeft = null;
-        if (typeof S.prog === 'number') {
+        if (typeof S.progSec === 'number') {
+            secLeft = S.progSec;
+        } else if (typeof S.prog === 'number') {
             var s = Math.round(S.prog * 45);
             if (s < 0)
                 s = 0;
@@ -2201,9 +2176,27 @@
     window.cwStatusByProg = statusByProg;
 
     function tick() {
-        var p = collectProgress();
+        var progInfo = null;
+        try {
+            if (typeof window.__cw_readProgressInfo === 'function')
+                progInfo = window.__cw_readProgressInfo();
+            else if (typeof window.__cw_progSec === 'number' || typeof window.__cw_lastProg === 'number') {
+                progInfo = {
+                    prog: (typeof window.__cw_lastProg === 'number') ? window.__cw_lastProg : null,
+                    sec: (typeof window.__cw_progSec === 'number') ? window.__cw_progSec : null,
+                    src: window.__cw_progSrc || '',
+                    tail: window.__cw_progTail || ''
+                };
+            }
+        } catch (_) {
+            progInfo = null;
+        }
+        var p = progInfo ? progInfo.prog : null;
         if (p != null)
             S.prog = p;
+        S.progSec = progInfo && typeof progInfo.sec === 'number' ? progInfo.sec : null;
+        S.progSrc = progInfo && progInfo.src ? String(progInfo.src) : '';
+        S.progTail = progInfo && progInfo.tail ? String(progInfo.tail) : '';
         S.status = statusByProg(p == null ? null : p);
         var T = totals(S);
         S._lastTotals = T;
@@ -2432,6 +2425,8 @@
     var _cdStuckCount = 0;
     var _cdZeroHoldUntil = 0;
     var _cdLastSeenAt = 0;
+    var USER_TAIL_EXACT = 'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser';
+    var ACC_TAIL_EXACT = 'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser';
 
     function shallowChanged(obj) {
         var s = '';
@@ -2506,6 +2501,64 @@
             return String(out || '');
         } catch (_) {
             return '';
+        }
+    }
+
+    function moneyOfBridge(raw) {
+        try {
+            if (raw == null)
+                return null;
+            var s = String(raw).trim().toUpperCase();
+            var mul = 1;
+            if (/[KMB]$/.test(s)) {
+                if (/K$/.test(s))
+                    mul = 1e3;
+                else if (/M$/.test(s))
+                    mul = 1e6;
+                else
+                    mul = 1e9;
+                s = s.slice(0, -1).replace(/,/g, '').replace(/[^\d.]/g, '');
+                var v = parseFloat(s);
+                return isFinite(v) ? Math.round(v * mul) : null;
+            }
+            var d = s.replace(/\D/g, '');
+            if (!d)
+                return null;
+            return parseInt(d, 10);
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function findNodeByExactTailBridge(tail) {
+        try {
+            var scene = getSceneSafeBridge();
+            if (!scene || !tail)
+                return null;
+
+            var parts = String(tail).split('/').filter(Boolean);
+            if (parts.length && parts[0] === scene.name)
+                parts.shift();
+
+            var node = scene;
+            for (var i = 0; i < parts.length; i++) {
+                var name = parts[i];
+                var kids = node.children || node._children || [];
+                var found = null;
+                for (var j = 0; j < kids.length; j++) {
+                    var kid = kids[j];
+                    if (kid && kid.name === name) {
+                        found = kid;
+                        break;
+                    }
+                }
+                if (!found)
+                    return null;
+                node = found;
+            }
+            return node;
+        } catch (_) {
+            return null;
         }
     }
 
@@ -2777,9 +2830,14 @@
         var info = readProgressInfo();
         try {
             window.__cw_progSrc = info.src || 'none';
+            window.__cw_progSec = (typeof info.sec === 'number') ? info.sec : null;
+            window.__cw_progTail = info.tail || '';
         } catch (_) {}
         return info.prog;
     }
+    try {
+        window.__cw_readProgressInfo = readProgressInfo;
+    } catch (_) {}
 
     // Đọc tổng tiền an toàn: lấy nền từ totals() mới nhất (tick)
     // và ghi đè TK + TÀI + XỈU bằng cách scan theo tail/x.
@@ -2798,28 +2856,24 @@
             }
 
             // 2) Ghi đè TK + Tài/Xỉu nếu lấy được qua moneyTailList()
-            var ACC_TAIL_EXACT = 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel';
-
-            var TX_TOTAL_TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal';
+            var TX_TOTAL_TAIL = 'LobbyNew/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal';
             var TX_TAI_X = 246; // TÀI
             var TX_XIU_X = 785; // XỈU
 
-            if (typeof window.moneyTailList === 'function') {
+            t.A = null;
+            t.rawA = null;
 
-                // 2.1 TK (tài khoản)
-                try {
-                    var accList = window.moneyTailList(ACC_TAIL_EXACT) || [];
-                    if (accList.length) {
-                        var acc = accList[accList.length - 1]; // thường là label dưới cùng
-                        var aval = (typeof acc.val === 'number')
-                         ? acc.val
-                         : Number(acc.val || 0) || null;
-                        if (aval != null)
-                            t.A = aval;
-                        if (!t.rawA)
-                            t.rawA = acc.txt || acc.raw || null;
-                    }
-                } catch (_) {}
+            try {
+                var accNode = findNodeByExactTailBridge(ACC_TAIL_EXACT);
+                var accText = nodeTextSafeBridge(accNode);
+                var aval = moneyOfBridge(accText);
+                if (aval != null) {
+                    t.A = aval;
+                    t.rawA = accText || null;
+                }
+            } catch (_) {}
+
+            if (typeof window.moneyTailList === 'function') {
 
                 // 2.2 Tổng TÀI / XỈU trong Tài Xỉu Live
                 try {
@@ -2978,85 +3032,9 @@
 
     function readSessionSafe() {
         try {
-            var TAIL = 'MiniGameScene/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbSesionId';
-            var txt = '';
-
-            // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
-            if (typeof collectLabels === 'function') {
-                var labels = collectLabels();
-                if (labels && labels.length) {
-                    var tailLc = TAIL.toLowerCase();
-                    for (var i = 0; i < labels.length; i++) {
-                        var l = labels[i];
-                        var tl = String(l.tail || l.tl || '').toLowerCase();
-                        if (!tl)
-                            continue;
-
-                        // ưu tiên khớp đúng tail, hoặc chứa lbSesionId
-                        if (tl === tailLc ||
-                            (tl.indexOf('lbsesionid') !== -1 && tl.indexOf('borderTabble'.toLowerCase()) !== -1)) {
-                            txt = String(l.text || '').trim();
-                            if (txt)
-                                break;
-                        }
-                    }
-                }
-            }
-
-            // 2) Fallback: đi trực tiếp theo tail như đoạn ông chủ test
-            if (!txt) {
-                function findByTail(tail) {
-                    if (!tail)
-                        return null;
-
-                    if (window.findNodeByTailCompat)
-                        return window.findNodeByTailCompat(tail);
-                    if (window.__abx_findNodeByTail)
-                        return window.__abx_findNodeByTail(tail);
-
-                    var scene = getSceneSafeBridge();
-                    if (!scene)
-                        return null;
-                    var parts = String(tail).split('/').filter(Boolean);
-                    if (parts[0] === scene.name)
-                        parts.shift();
-
-                    var node = scene;
-                    for (var i = 0; i < parts.length; i++) {
-                        var name = parts[i];
-                        var kids = node.children || node._children || [];
-                        var found = null;
-                        for (var j = 0; j < kids.length; j++) {
-                            var kid = kids[j];
-                            if (kid && kid.name === name) {
-                                found = kid;
-                                break;
-                            }
-                        }
-                        if (!found)
-                            return null;
-                        node = found;
-                    }
-                    return node;
-                }
-
-                function getNodeText(node) {
-                    if (!node || !node.getComponent)
-                        return '';
-                    var lbl = node.getComponent(cc.Label);
-                    if (lbl && lbl.string != null)
-                        return String(lbl.string);
-                    var rt = node.getComponent(cc.RichText);
-                    if (rt && rt.string != null)
-                        return String(rt.string);
-                    return '';
-                }
-
-                var node = findByTail(TAIL);
-                if (node) {
-                    txt = getNodeText(node);
-                }
-            }
+            var TAIL = 'LobbyNew/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbSesionId';
+            var node = findNodeByExactTailBridge(TAIL);
+            var txt = nodeTextSafeBridge(node);
 
             txt = String(txt || '').trim();
             if (!txt)
@@ -3074,7 +3052,7 @@
 
     window.readSessionSafe = readSessionSafe;
 
-    // NEW: read username with multi-source fallback
+    // Đọc username đúng một nguồn từ canvas chính.
     function readUsernameInfo() {
         function normalizeUser(s) {
             return String(s || '').trim().replace(/\s+/g, ' ');
@@ -3091,103 +3069,14 @@
                 return false;
             return true;
         }
-        function findByTail(tail) {
-            if (!tail)
-                return null;
-            if (window.findNodeByTailCompat)
-                return window.findNodeByTailCompat(tail);
-            if (window.__abx_findNodeByTail)
-                return window.__abx_findNodeByTail(tail);
-
-            var scene = getSceneSafeBridge();
-            if (!scene)
-                return null;
-            var parts = String(tail).split('/').filter(Boolean);
-            if (parts[0] === scene.name)
-                parts.shift();
-
-            var node = scene;
-            for (var i = 0; i < parts.length; i++) {
-                var name = parts[i];
-                var kids = node.children || node._children || [];
-                var found = null;
-                for (var j = 0; j < kids.length; j++) {
-                    if (kids[j] && kids[j].name === name) {
-                        found = kids[j];
-                        break;
-                    }
-                }
-                if (!found)
-                    return null;
-                node = found;
-            }
-            return node;
-        }
-
         try {
-            var tails = [
-                'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser',
-                'MiniGameScene/Canvas/FooterRoomUi/Left/buttonName/NameUser',
-                'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/lbUserName',
-                'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/Label'
-            ];
-            for (var i = 0; i < tails.length; i++) {
-                var node = findByTail(tails[i]);
-                var txt = normalizeUser(nodeTextSafeBridge(node));
-                if (isLikelyUser(txt))
-                    return {
-                        username: txt,
-                        src: 'tail_exact'
-                    };
-            }
-        } catch (_) {}
-
-        try {
-            var labels = collectLabelNodesBridge();
-            var best = null;
-            var bestScore = -1e9;
-            for (var k = 0; k < labels.length; k++) {
-                var l = labels[k];
-                var txt2 = normalizeUser(l.text || '');
-                if (!isLikelyUser(txt2))
-                    continue;
-                var tl = String(l.tail || '').toLowerCase();
-                var sc = 0;
-                if (tl.indexOf('nameuser') !== -1)
-                    sc += 45;
-                if (tl.indexOf('buttonname') !== -1 || tl.indexOf('username') !== -1 || tl.indexOf('nick') !== -1 || tl.indexOf('account') !== -1)
-                    sc += 25;
-                if (tl.indexOf('footterroomui') !== -1 || tl.indexOf('/left/') !== -1)
-                    sc += 10;
-                if (tl.indexOf('chat') !== -1 || tl.indexOf('contentchat') !== -1 || tl.indexOf('tip') !== -1 ||
-                    tl.indexOf('moneylabel') !== -1 || tl.indexOf('popup') !== -1 || tl.indexOf('lbtotal') !== -1) {
-                    sc -= 45;
-                }
-                if (/^[A-Za-z0-9_.\-]{3,24}$/.test(txt2))
-                    sc += 15;
-                if (txt2.length >= 4 && txt2.length <= 18)
-                    sc += 8;
-                if (sc > bestScore) {
-                    bestScore = sc;
-                    best = txt2;
-                }
-            }
-            if (best && bestScore >= 12)
+            var node = findNodeByExactTailBridge(USER_TAIL_EXACT);
+            var txt = normalizeUser(nodeTextSafeBridge(node));
+            if (isLikelyUser(txt))
                 return {
-                    username: best,
-                    src: 'label_scan'
+                    username: txt,
+                    src: 'tail_exact'
                 };
-        } catch (_) {}
-
-        try {
-            if (typeof window.__cw_lastUser === 'string' && window.__cw_lastUser.length) {
-                var last = normalizeUser(window.__cw_lastUser);
-                if (isLikelyUser(last))
-                    return {
-                        username: last,
-                        src: 'cache_user'
-                    };
-            }
         } catch (_) {}
 
         return {
@@ -3239,11 +3128,13 @@
                 try {
                     if (typeof p === 'number' && !isNaN(p))
                         window.__cw_lastProg = p;
+                    window.__cw_progSec = (typeof progInfo.sec === 'number') ? progInfo.sec : null;
                     if (seq && seq.length)
                         window.__cw_lastSeq = seq;
                     if (userName)
                         window.__cw_lastUser = userName;
                     window.__cw_progSrc = progInfo.src || 'none';
+                    window.__cw_progTail = progInfo.tail || '';
                     window.__cw_seqSrc = seqInfo.src || 'none';
                     window.__cw_userSrc = userInfo.src || 'none';
                 } catch (_) {}

@@ -1054,14 +1054,25 @@ Ví dụ không hợp lệ:
 
         private void UpdateAccountHeaderFromGame(string? username, long? amount)
         {
-            if (!GetIsGameByUrlFallback()) return;
-
             if (LblUserName != null)
-                LblUserName.Text = string.IsNullOrWhiteSpace(username) ? "" : username;
+                LblUserName.Text = string.IsNullOrWhiteSpace(username) ? "" : username.Trim();
             if (LblAmount != null)
                 LblAmount.Text = amount.HasValue
-                    ? amount.Value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
-                    : "-";
+                    ? FormatCanvasMoney(amount.Value)
+                    : "";
+        }
+
+        private static string FormatCanvasMoney(long amount)
+        {
+            var abs = Math.Abs(amount);
+            var sign = amount < 0 ? "-" : "";
+            if (abs >= 1_000_000_000)
+                return sign + (abs / 1_000_000_000.0).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + "B";
+            if (abs >= 1_000_000)
+                return sign + (abs / 1_000_000.0).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + "M";
+            if (abs >= 1_000)
+                return sign + (abs / 1_000.0).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + "K";
+            return amount.ToString("0", System.Globalization.CultureInfo.InvariantCulture);
         }
 
 
