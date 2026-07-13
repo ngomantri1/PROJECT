@@ -10,7 +10,7 @@
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
     // Đổi true/false ở đây để bật/tắt bảng Canvas Watch.
-    var SHOW_CANVAS_WATCH = true;
+    var SHOW_CANVAS_WATCH = false;
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
 
@@ -782,13 +782,6 @@
     var ACC_TAIL_EXACT = 'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser';
     var X_TAI = 246; // TÀI
     var X_XIU = 785; // XỈU
-    // --- NEW extra totals (by x under same tail) ---
-    var X_SAPDOI = 783; // SẤP ĐÔI
-    var X_TUTRANG = 561; // TỨ TRẮNG
-    var X_TUDO = 1004; // TỨ ĐỎ
-    var X_3DO = 856; // 3 ĐỎ
-    var X_3TRANG = 709; // 3 TRẮNG
-
     function tailEquals(t, exact) {
         if (t == null)
             return false;
@@ -851,12 +844,6 @@
         var list = moneyTailList(TAIL_TOTAL_EXACT);
         var mC = pickByXTail(list, X_TAI, TAIL_TOTAL_EXACT); // TÀI
         var mL = pickByXTail(list, X_XIU, TAIL_TOTAL_EXACT); // XỈU
-        var mSD = pickByXTail(list, X_SAPDOI, TAIL_TOTAL_EXACT); // SẤP ĐÔI
-        var mTT = pickByXTail(list, X_TUTRANG, TAIL_TOTAL_EXACT); // TỨ TRẮNG
-        var m3T = pickByXTail(list, X_3TRANG, TAIL_TOTAL_EXACT); // 3 TRẮNG
-        var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
-        var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
-
         var accList = moneyTailList(ACC_TAIL_EXACT);
         var rA = accList.length ? accList[accList.length - 1] : null;
 
@@ -864,19 +851,9 @@
             C: mC ? mC.val : null,
             L: mL ? mL.val : null,
             A: rA ? rA.val : null,
-            SD: mSD ? mSD.val : null,
-            TT: mTT ? mTT.val : null,
-            T3T: m3T ? m3T.val : null,
-            T3D: m3D ? m3D.val : null,
-            TD: mTD ? mTD.val : null,
             rawC: mC ? mC.txt : null,
             rawL: mL ? mL.txt : null,
-            rawA: rA ? rA.txt : null,
-            rawSD: mSD ? mSD.txt : null,
-            rawTT: mTT ? mTT.txt : null,
-            rawT3T: m3T ? m3T.txt : null,
-            rawT3D: m3D ? m3D.txt : null,
-            rawTD: mTD ? mTD.txt : null
+            rawA: rA ? rA.txt : null
         };
     }
     function sampleTotalsNow() {
@@ -1200,11 +1177,6 @@
                 C: null,
                 L: null,
                 A: null,
-                SD: null,
-                TT: null,
-                T3T: null,
-                T3D: null,
-                TD: null,
                 rawC: null,
                 rawL: null,
                 rawA: null
@@ -1242,12 +1214,7 @@
             '• Username : ' + (userName || '--') +
             ' | TK : ' + fmt(t.A) +
             '|TÀI: ' + fmt(t.T) +
-            '|XỈU: ' + fmt(t.X) +
-            '|SẤP ĐÔI: ' + fmt(t.SD) +
-            '|TỨ TRẮNG: ' + fmt(t.TT) +
-            '|3 TRẮNG: ' + fmt(t.T3T) +
-            '|3 ĐỎ: ' + fmt(t.T3D) +
-            '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
+            '|XỈU: ' + fmt(t.X) + '\n' +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
             '  tail: ' + (f ? f.tail : '-') + '\n' +
