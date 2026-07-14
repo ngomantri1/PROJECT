@@ -1,14 +1,26 @@
 <Application x:Class="CryptoScanner.Desktop.App"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:helpers="clr-namespace:CryptoScanner.Desktop.Helpers"
  StartupUri="MainWindow.xaml">
  <Application.Resources>
+  <helpers:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
   <SolidColorBrush x:Key="Bg" Color="#0B1220"/>
   <SolidColorBrush x:Key="Panel" Color="#111B2E"/>
   <SolidColorBrush x:Key="Panel2" Color="#16233A"/>
   <SolidColorBrush x:Key="Text" Color="#EAF0FA"/>
   <SolidColorBrush x:Key="Muted" Color="#91A1B8"/>
   <SolidColorBrush x:Key="Accent" Color="#4F8CFF"/>
+  <SolidColorBrush x:Key="Good" Color="#25B56B"/>
+  <SolidColorBrush x:Key="Priority" Color="#3B82F6"/>
+  <SolidColorBrush x:Key="Watch" Color="#D7A928"/>
+  <SolidColorBrush x:Key="Needs" Color="#8B5CF6"/>
+  <SolidColorBrush x:Key="Reject" Color="#8A94A8"/>
+  <DataTemplate x:Key="RuleChipTemplate">
+   <Border Background="{StaticResource Panel2}" CornerRadius="4" Padding="6,3" Margin="0,3,4,3">
+    <TextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap"/>
+   </Border>
+  </DataTemplate>
   <Style TargetType="Button">
    <Setter Property="Foreground" Value="White"/><Setter Property="Background" Value="{StaticResource Accent}"/>
    <Setter Property="Padding" Value="16,9"/><Setter Property="Margin" Value="4"/><Setter Property="BorderThickness" Value="0"/>

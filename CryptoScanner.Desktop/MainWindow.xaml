@@ -4,49 +4,178 @@
  Title="Crypto Scanner Desktop V1" Height="820" Width="1450" MinHeight="650" MinWidth="1100"
  Background="{StaticResource Bg}" WindowStartupLocation="CenterScreen">
  <Grid Margin="18">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="*"/>
+   <RowDefinition Height="Auto"/>
+  </Grid.RowDefinitions>
+
   <DockPanel Grid.Row="0" Margin="0,0,0,14">
    <StackPanel>
     <TextBlock Text="CRYPTO SCANNER" FontSize="28" FontWeight="Bold"/>
     <TextBlock Text="Spot market screening • CoinGecko + Binance" Foreground="{StaticResource Muted}"/>
    </StackPanel>
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-   <Button Content="QUÉT THỊ TRƯỜNG" Command="{Binding ScanCommand}"/>
-   <Button Content="DỪNG" Command="{Binding CancelCommand}" Background="#D9534F"/>
-   <Button Content="XUẤT JSON" Command="{Binding ExportCommand}" Background="#27A36A"/>
-    <Button Content="MỞ THƯ MỤC" Command="{Binding OpenExportFolderCommand}" Background="#5B6B84"/>
+    <Button Content="QUÉT THỊ TRƯỜNG" Command="{Binding ScanCommand}"/>
+    <Button Content="DỪNG" Command="{Binding CancelCommand}" Background="#D9534F"/>
+    <Button Content="XUẤT JSON" Command="{Binding ExportCommand}" Background="#27A36A"/>
+    <Button Content="MỞ EXPORT" Command="{Binding OpenExportFolderCommand}" Background="#5B6B84"/>
+    <Button Content="MỞ LOG" Command="{Binding OpenLogFolderCommand}" Background="#5B6B84"/>
    </StackPanel>
   </DockPanel>
+
   <UniformGrid Grid.Row="1" Columns="5" Margin="0,0,0,14">
-   <Border Background="{StaticResource Panel}" CornerRadius="10" Margin="4" Padding="14"><StackPanel><TextBlock Text="BTC REGIME" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding BtcRegime}" FontSize="22" FontWeight="Bold"/></StackPanel></Border>
-   <Border Background="{StaticResource Panel}" CornerRadius="10" Margin="4" Padding="14"><StackPanel><TextBlock Text="COINS SCANNED" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding ScannedCount}" FontSize="22" FontWeight="Bold"/></StackPanel></Border>
-   <Border Background="{StaticResource Panel}" CornerRadius="10" Margin="4" Padding="14"><StackPanel><TextBlock Text="PASSED FILTER" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding PassedCount}" FontSize="22" FontWeight="Bold"/></StackPanel></Border>
-   <Border Background="{StaticResource Panel}" CornerRadius="10" Margin="4" Padding="14"><StackPanel><TextBlock Text="BUY READY" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding BuyReadyCount}" FontSize="22" FontWeight="Bold"/></StackPanel></Border>
-   <Border Background="{StaticResource Panel}" CornerRadius="10" Margin="4" Padding="14"><StackPanel><TextBlock Text="UPDATED" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding UpdatedAt}" FontSize="16" FontWeight="SemiBold"/></StackPanel></Border>
+   <Border Background="{StaticResource Panel}" CornerRadius="8" Margin="4" Padding="14"><StackPanel><TextBlock Text="BTC REGIME" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding BtcRegime}" FontSize="22" FontWeight="Bold"/></StackPanel></Border>
+   <Border Background="{StaticResource Panel}" CornerRadius="8" Margin="4" Padding="14"><StackPanel><TextBlock Text="COINS SCANNED" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding ScannedCount}" FontSize="22" FontWeight="Bold"/></StackPanel></Border>
+   <Border Background="{StaticResource Panel}" CornerRadius="8" Margin="4" Padding="14"><StackPanel><TextBlock Text="PASSED FILTER" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding PassedCount}" FontSize="22" FontWeight="Bold"/></StackPanel></Border>
+   <Border Background="{StaticResource Panel}" CornerRadius="8" Margin="4" Padding="14"><StackPanel><TextBlock Text="BUY READY" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding BuyReadyCount}" FontSize="22" FontWeight="Bold"/></StackPanel></Border>
+   <Border Background="{StaticResource Panel}" CornerRadius="8" Margin="4" Padding="14"><StackPanel><TextBlock Text="UPDATED" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding UpdatedAt}" FontSize="16" FontWeight="SemiBold"/></StackPanel></Border>
   </UniformGrid>
-  <Border Grid.Row="2" Background="{StaticResource Panel}" CornerRadius="10" Padding="8">
-   <DataGrid ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedCoin}" AlternationCount="2">
-    <DataGrid.Columns>
-     <DataGridTextColumn Header="#" Binding="{Binding Rank}" Width="45"/>
-     <DataGridTextColumn Header="Coin" Binding="{Binding Symbol}" Width="85"/>
-     <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="160"/>
-     <DataGridTextColumn Header="Score" Binding="{Binding Score}" Width="75"/>
-     <DataGridTextColumn Header="Price" Binding="{Binding Price, StringFormat=N6}" Width="100"/>
-     <DataGridTextColumn Header="Market Cap" Binding="{Binding MarketCap, StringFormat=N0}" Width="130"/>
-     <DataGridTextColumn Header="Volume 24h" Binding="{Binding TotalVolume, StringFormat=N0}" Width="130"/>
-     <DataGridTextColumn Header="Binance Vol" Binding="{Binding BinanceQuoteVolume, StringFormat=N0}" Width="130"/>
-     <DataGridTextColumn Header="FDV/MC" Binding="{Binding FdvMcRatio, StringFormat=N2}" Width="85"/>
-     <DataGridTextColumn Header="Circ." Binding="{Binding CirculatingRatio, StringFormat=P0}" Width="80"/>
-     <DataGridTextColumn Header="RSI H4" Binding="{Binding Rsi4H, StringFormat=N1}" Width="80"/>
-     <DataGridTextColumn Header="RSI D1" Binding="{Binding Rsi1D, StringFormat=N1}" Width="80"/>
-     <DataGridTextColumn Header="Setup" Binding="{Binding Setup}" Width="130"/>
-     <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120"/>
-     <DataGridTextColumn Header="Data" Binding="{Binding DataQuality, StringFormat=P0}" Width="75"/>
-    </DataGrid.Columns>
-   </DataGrid>
-  </Border>
+
+  <Grid Grid.Row="2">
+   <Grid.ColumnDefinitions>
+    <ColumnDefinition Width="*"/>
+    <ColumnDefinition Width="390"/>
+   </Grid.ColumnDefinitions>
+
+   <Border Grid.Column="0" Background="{StaticResource Panel}" CornerRadius="8" Padding="8" Margin="0,0,10,0">
+    <Grid>
+     <DataGrid ItemsSource="{Binding DisplayResults}" SelectedItem="{Binding SelectedCoin, Mode=TwoWay}" AlternationCount="2" RowHeight="42">
+      <DataGrid.Columns>
+       <DataGridTextColumn Header="#" Binding="{Binding Rank, Mode=OneWay}" Width="44"/>
+       <DataGridTemplateColumn Header="Coin" Width="150">
+        <DataGridTemplateColumn.CellTemplate>
+         <DataTemplate>
+          <StackPanel VerticalAlignment="Center">
+           <TextBlock Text="{Binding CoinLine, Mode=OneWay}" FontWeight="SemiBold"/>
+           <TextBlock Text="{Binding CoinSubLine, Mode=OneWay}" Foreground="{StaticResource Muted}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+          </StackPanel>
+         </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+       </DataGridTemplateColumn>
+       <DataGridTemplateColumn Header="Market" Width="86">
+        <DataGridTemplateColumn.CellTemplate>
+         <DataTemplate>
+          <StackPanel VerticalAlignment="Center">
+           <TextBlock Text="{Binding MarketTechnicalScore, Mode=OneWay}" FontWeight="SemiBold"/>
+           <ProgressBar Height="4" Minimum="0" Maximum="100" Value="{Binding MarketTechnicalScore, Mode=OneWay}"/>
+          </StackPanel>
+         </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+       </DataGridTemplateColumn>
+       <DataGridTemplateColumn Header="Entry" Width="86">
+        <DataGridTemplateColumn.CellTemplate>
+         <DataTemplate>
+          <StackPanel VerticalAlignment="Center">
+           <TextBlock Text="{Binding EntryReadinessScore, Mode=OneWay}" FontWeight="SemiBold"/>
+           <ProgressBar Height="4" Minimum="0" Maximum="100" Value="{Binding EntryReadinessScore, Mode=OneWay}"/>
+          </StackPanel>
+         </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+       </DataGridTemplateColumn>
+       <DataGridTemplateColumn Header="Status" Width="150">
+        <DataGridTemplateColumn.CellTemplate>
+         <DataTemplate>
+          <Border CornerRadius="4" Padding="7,3" HorizontalAlignment="Left">
+           <Border.Style>
+            <Style TargetType="Border">
+             <Setter Property="Background" Value="{StaticResource Reject}"/>
+             <Style.Triggers>
+              <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="BUY_READY"><Setter Property="Background" Value="{StaticResource Good}"/></DataTrigger>
+              <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="WATCHLIST_PRIORITY"><Setter Property="Background" Value="{StaticResource Priority}"/></DataTrigger>
+              <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="WATCHLIST"><Setter Property="Background" Value="{StaticResource Watch}"/></DataTrigger>
+              <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="NEEDS_DATA"><Setter Property="Background" Value="{StaticResource Needs}"/></DataTrigger>
+             </Style.Triggers>
+            </Style>
+           </Border.Style>
+           <TextBlock Text="{Binding Status, Mode=OneWay}" FontWeight="SemiBold" FontSize="11"/>
+          </Border>
+         </DataTemplate>
+        </DataGridTemplateColumn.CellTemplate>
+       </DataGridTemplateColumn>
+       <DataGridTextColumn Header="Price" Binding="{Binding PriceDisplay, Mode=OneWay}" Width="90"/>
+       <DataGridTextColumn Header="MC" Binding="{Binding MarketCapDisplay, Mode=OneWay}" Width="80"/>
+       <DataGridTextColumn Header="Total Vol" Binding="{Binding TotalVolumeDisplay, Mode=OneWay}" Width="90"/>
+       <DataGridTextColumn Header="Binance Vol" Binding="{Binding BinanceVolumeDisplay, Mode=OneWay}" Width="95"/>
+       <DataGridTextColumn Header="Setup" Binding="{Binding Setup, Mode=OneWay}" Width="145"/>
+       <DataGridTextColumn Header="Reason" Binding="{Binding ReasonDisplay, Mode=OneWay}" Width="110"/>
+      </DataGrid.Columns>
+     </DataGrid>
+
+     <Border Background="{StaticResource Panel}" Visibility="{Binding ShowInitialState, Converter={StaticResource BoolToVisibility}}" IsHitTestVisible="False">
+      <TextBlock Text="Chưa có dữ liệu. Bấm QUÉT THỊ TRƯỜNG để bắt đầu." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="16"/>
+     </Border>
+     <Border Background="{StaticResource Panel}" Visibility="{Binding ShowNoResultsState, Converter={StaticResource BoolToVisibility}}" IsHitTestVisible="False">
+      <TextBlock Text="Không có coin phù hợp với bộ lọc hiện tại." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="16"/>
+     </Border>
+     <Border Background="{StaticResource Panel}" Visibility="{Binding ShowErrorState, Converter={StaticResource BoolToVisibility}}" IsHitTestVisible="False">
+      <TextBlock Text="Quét thất bại. Xem log để biết chi tiết." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#FFB4B4" FontSize="16"/>
+     </Border>
+    </Grid>
+   </Border>
+
+   <Border Grid.Column="1" Background="{StaticResource Panel}" CornerRadius="8" Padding="14">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+     <StackPanel>
+      <TextBlock Text="COIN DETAIL" Foreground="{StaticResource Muted}" FontWeight="SemiBold"/>
+      <TextBlock Text="{Binding SelectedCoin.Symbol}" FontSize="24" FontWeight="Bold" Margin="0,4,0,0"/>
+      <TextBlock Text="{Binding SelectedCoin.Name}" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+
+      <Separator Margin="0,12"/>
+      <TextBlock Text="Scores" FontWeight="SemiBold" Margin="0,0,0,6"/>
+      <UniformGrid Columns="2">
+       <TextBlock Text="Market" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.MarketTechnicalScore}"/>
+       <TextBlock Text="Entry" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.EntryReadinessScore}"/>
+       <TextBlock Text="Source" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.SourceCoverageScore}"/>
+       <TextBlock Text="Fields" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.FieldCompletenessScore}"/>
+       <TextBlock Text="Quality" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.DataQualityScore}"/>
+      </UniformGrid>
+
+      <Separator Margin="0,12"/>
+      <TextBlock Text="Market" FontWeight="SemiBold" Margin="0,0,0,6"/>
+      <UniformGrid Columns="2">
+       <TextBlock Text="Price" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.PriceDisplay}"/>
+       <TextBlock Text="Market Cap" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.MarketCapDisplay}"/>
+       <TextBlock Text="Total Volume" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.TotalVolumeDisplay}"/>
+       <TextBlock Text="Binance Vol" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.BinanceVolumeDisplay}"/>
+       <TextBlock Text="Volume/MC" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.VolumeMarketCapDisplay}"/>
+       <TextBlock Text="FDV/MC" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.FdvMcDisplay}"/>
+       <TextBlock Text="Circ" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.CirculatingDisplay}"/>
+       <TextBlock Text="Category" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.Category}" TextWrapping="Wrap"/>
+      </UniformGrid>
+
+      <Separator Margin="0,12"/>
+      <TextBlock Text="Technical" FontWeight="SemiBold" Margin="0,0,0,6"/>
+      <UniformGrid Columns="2">
+       <TextBlock Text="RSI H4" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.Rsi4HDisplay}"/>
+       <TextBlock Text="RSI D1" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.Rsi1DDisplay}"/>
+       <TextBlock Text="EMA20 H4" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.Ema20H4Display}"/>
+       <TextBlock Text="EMA50 H4" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.Ema50H4Display}"/>
+       <TextBlock Text="EMA200 D1" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.Ema200D1Display}"/>
+       <TextBlock Text="MACD H4" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.MacdH4}"/>
+       <TextBlock Text="RS vs BTC" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.RelativePerformanceDisplay}"/>
+       <TextBlock Text="Setup" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.Setup}" TextWrapping="Wrap"/>
+      </UniformGrid>
+
+      <Separator Margin="0,12"/>
+      <TextBlock Text="Decision" FontWeight="SemiBold" Margin="0,0,0,6"/>
+      <TextBlock Text="{Binding SelectedCoin.DecisionCode}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding SelectedCoin.DecisionReason}" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+      <Separator Margin="0,12"/>
+      <Expander Header="Risk flags" IsExpanded="True"><ItemsControl ItemsSource="{Binding SelectedCoin.RiskFlags}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
+      <Expander Header="Fail rules" IsExpanded="True"><ItemsControl ItemsSource="{Binding SelectedCoin.FailRules}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
+      <Expander Header="Pass rules"><ItemsControl ItemsSource="{Binding SelectedCoin.PassRules}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
+      <Expander Header="Unknown rules"><ItemsControl ItemsSource="{Binding SelectedCoin.UnknownRules}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
+     </StackPanel>
+    </ScrollViewer>
+   </Border>
+  </Grid>
+
   <DockPanel Grid.Row="3" Margin="0,12,0,0">
    <ProgressBar Height="8" Minimum="0" Maximum="100" Value="{Binding Progress}" Width="300"/>
+   <TextBlock Text="{Binding ProgressDetail}" Foreground="{StaticResource Text}" Margin="14,0,0,0" VerticalAlignment="Center"/>
    <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource Muted}" Margin="14,0,0,0" VerticalAlignment="Center"/>
   </DockPanel>
  </Grid>
