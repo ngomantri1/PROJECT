@@ -10,10 +10,11 @@ public sealed class ScanResult
  public string UnlockStatus {get;set;}="UNKNOWN"; public decimal? Unlock30dPct {get;set;} public decimal? Unlock90dPct {get;set;}
  public string MonitoringTag {get;set;}="UNKNOWN"; public string DelistRisk {get;set;}="UNKNOWN"; public string LegalRisk {get;set;}="UNKNOWN";
  public decimal? Ema20H4 {get;set;} public decimal? Ema50H4 {get;set;} public decimal? Ema200D1 {get;set;} public string MacdH4 {get;set;}="UNKNOWN"; public decimal? RelativePerformanceVsBtc30dPct {get;set;}
+ public decimal? BreakoutLevel {get;set;} public decimal? DistanceToBreakoutPct {get;set;} public decimal? VolumeRatio20 {get;set;} public bool BreakoutConfirmed {get;set;} public bool RetestConfirmed {get;set;}
  public string Setup {get;set;}="NONE"; public string Status {get;set;}="WATCHLIST"; public string Decision {get;set;}="WATCHLIST";
  public string DecisionCode {get;set;}="UNKNOWN"; public string DecisionReason {get;set;}="";
  public List<string> RiskFlags {get;set;}=[]; public List<string> PassRules {get;set;}=[]; public List<string> FailRules {get;set;}=[]; public List<string> UnknownRules {get;set;}=[];
- public int MarketTechnicalScore {get;set;} public int PreliminaryScore {get;set;} public int? FinalScore {get;set;} public int SourceCoverageScore {get;set;} public int FieldCompletenessScore {get;set;} public int DataQualityScore {get;set;}
+ public int MarketTechnicalScore {get;set;} public int EntryReadinessScore {get;set;} public int PreliminaryScore {get;set;} public int? FinalScore {get;set;} public int SourceCoverageScore {get;set;} public int FieldCompletenessScore {get;set;} public int DataQualityScore {get;set;}
  [JsonIgnore] public int Score {get;set;}
  [JsonIgnore] public double DataQuality {get;set;}
  public DateTimeOffset GeneratedAt {get;set;}

@@ -39,8 +39,9 @@ public sealed class ExportService
     market_cap_max_usd=settings.MaxMarketCapUsd,
     max_fdv_market_cap_ratio=settings.MaxFdvMarketCapRatio,
     min_circulating_ratio=settings.MinCirculatingRatio,
-    active_scan_profile=settings.ActiveScanProfile,
-    max_technical_candidates=GetMaxTechnicalCandidates(settings)
+   active_scan_profile=settings.ActiveScanProfile,
+   max_technical_candidates=GetMaxTechnicalCandidates(settings),
+   data_quality_formula="MIN_SOURCE_AND_COMPLETENESS"
    },
    filter_summary=new
    {

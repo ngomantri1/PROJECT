@@ -21,19 +21,19 @@ public sealed class TechnicalAnalysisService
   if(macd<0&&macd<=prevMacd) return "BEARISH";
   return "NEUTRAL";
  }
- public decimal? RelativeStrength30d(IReadOnlyList<decimal> closes,IReadOnlyList<decimal> benchmarkCloses)
+ public decimal? RelativePerformanceVsBtc30dPct(IReadOnlyList<decimal> closes,IReadOnlyList<decimal> benchmarkCloses)
  {
   if(closes.Count<31||benchmarkCloses.Count<31||closes[^31]==0||benchmarkCloses[^31]==0) return null;
   var assetReturn=(closes[^1]-closes[^31])/closes[^31];
   var benchmarkReturn=(benchmarkCloses[^1]-benchmarkCloses[^31])/benchmarkCloses[^31];
-  return assetReturn-benchmarkReturn;
+  return (assetReturn-benchmarkReturn)*100m;
  }
  public string DetectSetup(IReadOnlyList<decimal> h4,IReadOnlyList<decimal> d1,double rsi4)
  {
   if(h4.Count<60||d1.Count<210) return "INSUFFICIENT";
-  var e20=Ema(h4.TakeLast(100).ToList(),20); var e50=Ema(h4.TakeLast(100).ToList(),50); var e200=Ema(d1,200); var last=d1[^1];
-  if(e20>e50 && last>e200 && rsi4>=45 && rsi4<=65) return "TREND_BREAKOUT";
-  if(rsi4<40 && h4[^1]>h4[^5]) return "EARLY_REVERSAL";
+  var e20=Ema(h4.TakeLast(100).ToList(),20); var e50=Ema(h4.TakeLast(100).ToList(),50); var e200=Ema(d1,200); var macd=MacdTrend(h4); var lastH4=h4[^1]; var lastD1=d1[^1];
+  if(lastH4>e20 && e20>e50 && lastD1>e200 && macd=="BULLISH" && rsi4>=45 && rsi4<=65) return "BREAKOUT_CANDIDATE";
+  if(rsi4<40 && h4[^1]>h4[^5] && macd!="BEARISH" && lastD1>e200*0.90m) return "EARLY_REVERSAL";
   return "WATCH";
  }
 }
