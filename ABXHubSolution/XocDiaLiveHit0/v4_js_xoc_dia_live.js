@@ -1,4 +1,4 @@
-(() => {
+(async () => {
     'use strict';
     console.log('[CW] xoc-dia-live panel script init');
     /* =========================================================
@@ -66,8 +66,22 @@
     })();
 
     if (!window.cc) {
-        console.log('[CW] skip: cc not found:', CW_FRAME_INFO);
-        return;
+        if (window[NS + '_waiting_cc']) {
+            console.log('[CW] wait already active:', CW_FRAME_INFO);
+            return;
+        }
+        window[NS + '_waiting_cc'] = 1;
+        console.log('[CW] wait: cc not found yet:', CW_FRAME_INFO);
+        for (var __cwWaitCc = 0; !window.cc && __cwWaitCc < 120; __cwWaitCc++) {
+            await new Promise(function (resolve) {
+                setTimeout(resolve, 250);
+            });
+        }
+        window[NS + '_waiting_cc'] = 0;
+        if (!window.cc) {
+            console.log('[CW] skip: cc not found after wait:', CW_FRAME_INFO);
+            return;
+        }
     }
     console.log('[CW] cc found:', CW_FRAME_INFO, 'director=', !!(cc.director), 'getScene=', !!(cc.director && cc.director.getScene));
 
@@ -571,37 +585,9 @@
         });
         return cands[0];
     }
-    function autoBindAcc(S) {
-        if (S.selAcc)
-            return;
-        var list = S.money && S.money.length ? S.money : buildMoneyRects();
-        var cand = list.filter(function (m) {
-            var t = m.tl;
-            return (t.indexOf('/footer/khungmoney/moneylb') !== -1);
-        });
-        cand = cand.filter(function (m) {
-            var t = m.tl;
-            return (t.indexOf('jackpot') === -1 && t.indexOf('/footer/totalbetlb') !== t.length - ('/footer/totalbetlb'.length));
-        });
-        if (!cand.length)
-            return;
-        cand.sort(function (a, b) {
-            return (a.n.y - b.n.y) || (area(b) - area(a));
-        });
-        var acc = cand[cand.length - 1];
-        S.selAcc = {
-            tail: acc.tail,
-            anchorN: {
-                x: acc.n.x,
-                y: acc.n.y,
-                w: acc.n.w,
-                h: acc.n.h
-            }
-        };
-    }
-
     /* ---------------- helpers for totals by (x, tail) ---------------- */
     var TAIL_TOTAL_EXACT = 'XDLive/Canvas/Bg/footer/listLabel/totalBet';
+    var TAIL_ACCOUNT_EXACT = 'XDLive/Canvas/Bg/footer/khungmoney/moneyLB';
     var X_CHAN = 591; // CHẴN
     var X_LE = 973; // LẺ
     // --- NEW extra totals (by x under same tail) ---
@@ -665,6 +651,23 @@
     window.cwPickLe = function () {
         return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_LE, TAIL_TOTAL_EXACT);
     };
+    window.cwPickAccount = function () {
+        return pickAccountMoney();
+    };
+
+    function pickAccountMoney() {
+        var arr = moneyTailList(TAIL_ACCOUNT_EXACT);
+        if (!arr.length)
+            return null;
+        arr.sort(function (a, b) {
+            var ay = (a.n && a.n.y != null) ? a.n.y : a.y;
+            var by = (b.n && b.n.y != null) ? b.n.y : b.y;
+            var aa = (a.n && a.n.w && a.n.h) ? (a.n.w * a.n.h) : ((a.w || 0) * (a.h || 0));
+            var ba = (b.n && b.n.w && b.n.h) ? (b.n.w * b.n.h) : ((b.w || 0) * (b.h || 0));
+            return (ay - by) || (ba - aa);
+        });
+        return arr[0];
+    }
 
     /* ---------------- totals (using x & tail) ---------------- */
     function totals(S) {
@@ -679,15 +682,13 @@
         var m3D = pickByXTail(list, X_3DO, TAIL_TOTAL_EXACT); // 3 ĐỎ
         var mTD = pickByXTail(list, X_TUDO, TAIL_TOTAL_EXACT); // TỨ ĐỎ
 
-        // Account (A) keeps old robust resolver
-        if (!S.selAcc)
-            autoBindAcc(S);
-        var rA = resolve(S.money, S.selAcc);
+        // Account (A): exact new tail only, no fallback to old resolver/tail.
+        var mA = pickAccountMoney();
 
         return {
             C: mC ? mC.val : null,
             L: mL ? mL.val : null,
-            A: rA ? rA.val : null,
+            A: mA ? mA.val : null,
             SD: mSD ? mSD.val : null,
             TT: mTT ? mTT.val : null,
             T3T: m3T ? m3T.val : null,
@@ -695,7 +696,7 @@
             TD: mTD ? mTD.val : null,
             rawC: mC ? mC.txt : null,
             rawL: mL ? mL.txt : null,
-            rawA: rA ? rA.txt : null,
+            rawA: mA ? mA.txt : null,
             rawSD: mSD ? mSD.txt : null,
             rawTT: mTT ? mTT.txt : null,
             rawT3T: m3T ? m3T.txt : null,
@@ -766,6 +767,9 @@
         timer: null,
         tickMs: 240,
         prog: null,
+        progSec: null,
+        progSrc: '',
+        progTail: '',
         status: 'ĐỢI MỞ BÁT',
         money: [],
         text: [],
@@ -1080,8 +1084,9 @@
             rawA: null
         };
         var f = S.focus;
+        var secLeft = (typeof S.progSec === 'number') ? S.progSec : progressToSec(S.prog);
         var base =
-            '• Trạng thái: ' + S.status + ' | Prog: ' + (S.prog == null ? '--' : (((S.prog * 100) | 0) + '%')) + '\n' +
+            '• Trạng thái: ' + S.status + ' | Còn: ' + (secLeft == null ? '--' : (secLeft + 's')) + '\n' +
             '• TK : ' + fmt(t.A) + '|CHẴN: ' + fmt(t.C) + '|SẤP ĐÔI: ' + fmt(t.SD) + '|LẺ :' + fmt(t.L) + '|TỨ TRẮNG: ' + fmt(t.TT) + '|3 TRẮNG: ' + fmt(t.T3T) + '|3 ĐỎ: ' + fmt(t.T3D) + '|TỨ ĐỎ: ' + fmt(t.TD) + '\n' +
 
             '• Focus: ' + (f ? f.kind : '-') + '\n' +
@@ -2021,10 +2026,24 @@
         return "";
     }
 
+    function progressToSec(p) {
+        if (typeof p !== 'number' || isNaN(p))
+            return null;
+        var ratio = Math.max(0, Math.min(1, p));
+        return Math.max(0, Math.min(45, Math.round(ratio * 45)));
+    }
+
     function tick() {
         var p = collectProgress();
         if (p != null)
             S.prog = p;
+        S.progSec = progressToSec(p);
+        S.progSrc = (S.progSec == null) ? '' : 'progress_ratio';
+        S.progTail = '';
+        window.__cw_lastProg = S.prog;
+        window.__cw_progSec = S.progSec;
+        window.__cw_progSrc = S.progSrc;
+        window.__cw_progTail = S.progTail;
         S.status = statusByProg(p == null ? null : p);
         var T = totals(S);
         S._lastTotals = T;
@@ -2292,11 +2311,22 @@
                 _lastJson = '';
                 _pushTimer = setInterval(function () {
                     var p = readProgressVal(); // lấy progress hiện tại
+                    var sec = progressToSec(p);
+                    window.__cw_lastProg = p;
+                    window.__cw_progSec = sec;
+                    window.__cw_progSrc = (sec == null) ? '' : 'progress_ratio';
+                    window.__cw_progTail = '';
                     var st = (typeof statusByProg === 'function') // tính status theo rule mới
                      ? statusByProg(p) : '';
                     var snap = {
                         abx: 'tick',
                         prog: p,
+                        progSec: sec,
+                        progSrc: window.__cw_progSrc || '',
+                        progTail: window.__cw_progTail || '',
+                        timeSec: sec,
+                        timePercent: sec == null ? null : sec / 45,
+                        timeText: sec == null ? '' : (sec + 's'),
                         totals: readTotalsSafe(),
                         username: readUsernameSafe(),
                         seq: readSeqSafe(),

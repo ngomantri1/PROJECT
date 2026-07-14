@@ -980,7 +980,9 @@
                                         MaxHeight="120"
                                         Margin="{StaticResource ValueFieldMargin}"
                                         HorizontalAlignment="Stretch"
-                                        Text="0" />
+                                        LostFocus="TxtDecisionSecond_LostFocus"
+                                        PreviewTextInput="TxtDecisionSecond_PreviewTextInput"
+                                        Text="10" />
                                     <!--  CỬA ĐẶT &amp; TỈ LỆ  -->
                                     <Grid
                                         x:Name="RowSideRatio"

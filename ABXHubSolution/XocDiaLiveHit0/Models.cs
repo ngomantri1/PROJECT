@@ -30,6 +30,9 @@ namespace XocDiaLiveHit0
         public string session { get; set; }
         public string username { get; set; }
         public string status { get; set; }
+        public string? progSrc { get; set; }
+        public int? progSec { get; set; }
+        public string? progTail { get; set; }
     }
 
     public sealed class DecisionState
