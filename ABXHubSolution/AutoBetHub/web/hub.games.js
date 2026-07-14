@@ -1,8 +1,9 @@
 window.ABX_HUB_GAMES = [
   { title: "Xóc Đĩa Live HIT, GO88, NET88, TX88",                      slug: "xoc-dia-live-hit",        tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaLiveHit.png" },
+  { title: "Xóc Đĩa Live HIT trang chính",                             slug: "xoc-dia-live-hit0",       tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaLiveHit0.png" },
   { title: "Xóc Đĩa Phụng Tứ Linh HIT",                                slug: "xoc-dia-tu-linh-hit",     tag: "Xóc đĩa",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/XocDiaTuLinhHit.png" },
   { title: "Tài Xỉu Live HIT, GO88, NET88, TX88",                      slug: "tai-xiu-live-hit",        tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveHit.png" },
-  { title: "Tài Xỉu Live HIT trang chính",                             slug: "tai-xiu-live-hit0",       tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveHit.png" },
+  { title: "Tài Xỉu Live HIT trang chính",                             slug: "tai-xiu-live-hit0",       tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuLiveHit0.png" },
   { title: "Tài Xỉu Thường HIT",                                       slug: "tai-xiu-thuong-hit",      tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuThuongHit.png" },
   { title: "Tài Xỉu MD5 HIT",                                          slug: "tai-xiu-md5-hit",         tag: "Tài xỉu",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/TaiXiuMD5Hit.png" },
   { title: "Aviator HIT, GO88, NET88, TX88",                           slug: "aviator-hit",             tag: "aviator",  gradient: "from-rose-500 to-fuchsia-500", img: "Assets/AviatorHit.png" },
