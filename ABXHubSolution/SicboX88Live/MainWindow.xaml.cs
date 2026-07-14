@@ -533,7 +533,7 @@ Ví dụ không hợp lệ:
   Cho phép khoảng trắng BÊN TRONG <cửa_kế_tiếp>.
 • So khớp: xét K kết quả gần nhất với K = độ dài <mẫu_quá_khứ>; nếu khớp thì đặt theo <cửa_kế_tiếp>.
 • <cửa_kế_tiếp>: có thể là 1 ký tự (C/L) hoặc một chuỗi C/L (ví dụ: CLL).
-• Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–10 ký tự.
+• Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–20 ký tự.
 Ví dụ hợp lệ:
   CCL -> C
   LLL -> L C
@@ -553,7 +553,7 @@ Ví dụ không hợp lệ:
   Cho phép khoảng trắng BÊN TRONG <cửa_kế_tiếp>.
 • So khớp: xét K kết quả gần nhất với K = độ dài <mẫu_quá_khứ>; nếu khớp thì đặt theo <cửa_kế_tiếp>.
 • <cửa_kế_tiếp>: có thể là 1 ký tự (I/N) hoặc một chuỗi I/N (ví dụ: INNN).
-• Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–10 ký tự.
+• Độ dài khuyến nghị cho <mẫu_quá_khứ>: 1–20 ký tự.
 Ví dụ hợp lệ:
   INN -> I
   NNN -> N I
@@ -8053,7 +8053,7 @@ Ví dụ không hợp lệ:
                     return false;
                 }
 
-                // LHS: chỉ C/L + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
+                // LHS: chỉ C/L + khoảng trắng; độ dài 1–20 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
@@ -8064,9 +8064,9 @@ Ví dụ không hợp lệ:
                     else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm C/L (cho phép khoảng trắng giữa các ký tự)."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
-                if (lhs.Length < 1 || lhs.Length > 10)
+                if (lhs.Length < 1 || lhs.Length > 20)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (C/L).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–20 ký tự (C/L).";
                     return false;
                 }
 
@@ -8130,9 +8130,9 @@ Ví dụ không hợp lệ:
                     else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm T/X hoặc 0..6."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
-                if (lhs.Length < 1 || lhs.Length > 10)
+                if (lhs.Length < 1 || lhs.Length > 20)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (T/X).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–20 ký tự (T/X).";
                     return false;
                 }
 
@@ -8190,7 +8190,7 @@ Ví dụ không hợp lệ:
                     return false;
                 }
 
-                // LHS: chỉ I/N + khoảng trắng; độ dài 1–10 sau khi bỏ khoảng trắng
+                // LHS: chỉ I/N + khoảng trắng; độ dài 1–20 sau khi bỏ khoảng trắng
                 var lhsRaw = m.Groups[1].Value;
                 var lhsBuf = new System.Text.StringBuilder(lhsRaw.Length);
                 foreach (char ch in lhsRaw)
@@ -8201,9 +8201,9 @@ Ví dụ không hợp lệ:
                     else { err = $"Quy tắc {idx}: <mẫu_quá_khứ> chỉ gồm I/N (cho phép khoảng trắng giữa các ký tự)."; return false; }
                 }
                 var lhs = lhsBuf.ToString();
-                if (lhs.Length < 1 || lhs.Length > 10)
+                if (lhs.Length < 1 || lhs.Length > 20)
                 {
-                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–10 ký tự (I/N).";
+                    err = $"Quy tắc {idx}: độ dài <mẫu_quá_khứ> phải 1–20 ký tự (I/N).";
                     return false;
                 }
 
