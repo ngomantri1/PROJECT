@@ -8,7 +8,7 @@ namespace XocDiaLiveHit0
     /// <summary>
     /// Converter tính chiều rộng tiến độ.
     /// Hỗ trợ:
-    ///   - MultiBinding: values[0] = ActualWidth, values[1] = percent (0..1), values[2] = minWidth (optional)
+    ///   - MultiBinding: values[0] = ActualWidth, values[1] = value, values[2] = minimum, values[3] = maximum
     ///   - Binding đơn:  value     = percent (0..1), parameter = ActualWidth (hoặc "w=...,min=...")
     /// </summary>
     public sealed class ProgressWidthConverter : IValueConverter, IMultiValueConverter
@@ -31,20 +31,21 @@ namespace XocDiaLiveHit0
         // ===== MultiBinding =====
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
-            // patterns thường gặp:
-            // [0]=ActualWidth, [1]=Percent(0..1), [2]=MinWidth (optional)
             double actualWidth = ToDouble(values, 0, double.NaN);
-            double percent = ToDouble(values, 1, 0);
-            double minWidth = ToDouble(values, 2, 0);
+            double value = ToDouble(values, 1, 0);
+            double minimum = ToDouble(values, 2, 0);
+            double maximum = ToDouble(values, 3, double.NaN);
+
+            double percent;
+            if (!double.IsNaN(maximum) && maximum > minimum)
+                percent = (value - minimum) / (maximum - minimum);
+            else
+                percent = value;
 
             percent = Clamp01(percent);
-
             if (double.IsNaN(actualWidth) || actualWidth <= 0) return 0d;
 
-            double w = actualWidth * percent;
-            if (!double.IsNaN(minWidth) && minWidth > 0 && w < minWidth) w = minWidth;
-
-            return w;
+            return actualWidth * percent;
         }
 
         public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)

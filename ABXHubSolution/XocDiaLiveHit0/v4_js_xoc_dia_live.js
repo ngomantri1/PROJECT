@@ -13,7 +13,7 @@
 
     // Doi true/false o day de bat/tat bang Canvas Watch.
     // true = hien bang, false = an bang.
-    var SHOW_CANVAS_WATCH = true;
+    var SHOW_CANVAS_WATCH = false;
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
     var CW_FRAME_INFO = (window.top === window ? 'top' : 'iframe') + ' | ' + String(location.href || '');
