@@ -6,7 +6,7 @@
 - `MainWindow.xaml`, `MainWindow.xaml.cs`
   - shell UI + runtime orchestrator.
 - `web/`
-  - home SPA (`hub.html`) + card assets.
+  - home shell (`hub.html`), source JSX (`hub.jsx`), generated runtime (`hub.app.js`), vendor scripts, card assets.
 - `Hosting/`
   - plugin discovery/loading path đang dùng thực tế.
 - `Services/`
@@ -28,6 +28,7 @@
   - plugin lifecycle
   - update flow
   - WebView2 bridge
+  - frontend diagnostics bridge
   - shortcut flow
 - `Hosting.PluginLoader`
   - scan DLL
@@ -66,7 +67,13 @@
 - `Services/HostContext.cs`
   - duplicate implementation của `HostContext`, hiện không phải path đang dùng.
 - `web/hub.html`
-  - game catalog, search/filter, pinned/auto-jump, update popup, host bridge.
+  - shell chỉ load vendor + `hub.app.js`.
+- `web/hub.jsx`
+  - source thật của menu/home UI.
+- `web/hub.app.js`
+  - JS generated từ `hub.jsx`; file app runtime thực sự load.
+- `web/vendor/*`
+  - runtime local cho React/Tailwind; giảm phụ thuộc CDN.
 
 ## Data Flow
 ### Startup
@@ -74,9 +81,11 @@
 2. `MainWindow` tạo local folders.
 3. Copy/extract `Plugins`, `web`, fixed WebView2.
 4. Apply pending version folder.
-5. Init `WebView2`.
-6. Load plugin DLL.
-7. Navigate `hub.html` hoặc activate plugin ngay nếu có slug.
+5. Nếu có `web` local trong `%LocalAppData%\AutoBetHub\web`, host override sang đó.
+6. Init `WebView2`.
+7. Hook `homeDiagnostics`.
+8. Load plugin DLL.
+9. Navigate `hub.html` hoặc activate plugin ngay nếu có slug.
 
 ### Plugin Activation
 1. User action từ web gửi `enterGame`.
@@ -106,6 +115,9 @@
   - `sendHost({ cmd, slug, file, title })`
   - `window.chrome.webview.postMessage`
   - `MainWindow.HookWebMessages`
+- Outbound diagnostics:
+  - injected script trong host post `homeDiagnostics`
+  - log `DOMContentLoaded`, `window.onerror`, `unhandledrejection`, `console.warn/error`
 - Inbound về web:
   - host tạo payload update
   - `CoreWebView2.PostWebMessageAsJson`
@@ -113,9 +125,12 @@
 - Packet type hiện thấy rõ:
   - web -> host: command packet
   - host -> web: `updateStatus`
+  - web/diagnostics -> host: `homeDiagnostics`
 
 ## UI Update Flow
 - Home UI:
+  - source edit ở `hub.jsx`
+  - runtime thực tế ở `hub.app.js`
   - React state + `localStorage` + `sessionStorage`
   - không bind trực tiếp sang WPF ngoài message bridge.
 - WPF UI:
@@ -124,6 +139,9 @@
 - Close flow:
   - plugin active -> hide window, mark pending close
   - plugin báo closed -> shutdown
+- Build caveat:
+  - `dotnet build` hiện chưa có target tự compile `hub.jsx` -> `hub.app.js`
+  - vì vậy UI/menu có thể lệch giữa source và runtime JS
 
 ## OCR / Canvas Flow
 - Không thấy source OCR/canvas trong host repo này.
@@ -138,4 +156,8 @@
 - Có code duplicate/legacy:
   - `HostContext` root vs `Services/HostContext.cs`
   - `Hosting/PluginLoadContext.cs` vs root `PluginLoadContext.cs`
-- `hub.html` đang phụ thuộc CDN, không phải asset local hoàn toàn.
+- `hub.html` hiện chỉ là shell, không phải nơi sửa menu chính.
+- Khi debug menu/home:
+  - kiểm tra cả `hub.jsx`
+  - `hub.app.js`
+  - `%LocalAppData%\AutoBetHub\web`
