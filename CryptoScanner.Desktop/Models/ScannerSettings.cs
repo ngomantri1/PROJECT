@@ -17,6 +17,7 @@ public sealed class ScannerSettings
  public decimal MinStrongVolumeUsd { get; set; } = 20_000_000m;
  public decimal MinBinanceQuoteVolumeUsd { get; set; } = 5_000_000m;
  public decimal RejectBinanceQuoteVolumeUsd { get; set; } = 2_000_000m;
+ public UnlockRuleSettings UnlockRules { get; set; } = new();
  public int BuyReadyScore { get; set; } = 85;
  public int WatchlistScore { get; set; } = 75;
  public int CandleLimit { get; set; } = 220;

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -51,6 +52,45 @@ public sealed class BinanceClient
   {
    AppLogger.Error($"Binance klines request failed: symbol={symbol}; interval={interval}; elapsedMs={sw.ElapsedMilliseconds}",ex);
    throw;
+  }
+ }
+
+ public async Task<List<BinanceKlineClose>> GetKlineClosesAsync(string symbol,string interval,DateTimeOffset start,DateTimeOffset end,CancellationToken ct)
+ {
+  var sw=Stopwatch.StartNew();
+  var startMs=start.ToUnixTimeMilliseconds();
+  var endMs=end.ToUnixTimeMilliseconds();
+  var url=$"klines?symbol={symbol}&interval={interval}&startTime={startMs}&endTime={endMs}&limit=1000";
+  AppLogger.Info($"Binance historical klines request started: {url}");
+  try
+  {
+   using var s=await _http.GetStreamAsync(url,ct);
+   using var doc=await JsonDocument.ParseAsync(s,cancellationToken:ct);
+   var result=new List<BinanceKlineClose>();
+   foreach(var row in doc.RootElement.EnumerateArray())
+   {
+    if(row.ValueKind!=JsonValueKind.Array || row.GetArrayLength()<7) continue;
+    if(!decimal.TryParse(row[4].GetString(),NumberStyles.Any,CultureInfo.InvariantCulture,out var close)) continue;
+    result.Add(new BinanceKlineClose
+    {
+     Symbol=symbol,
+     OpenTime=DateTimeOffset.FromUnixTimeMilliseconds(row[0].GetInt64()),
+     CloseTime=DateTimeOffset.FromUnixTimeMilliseconds(row[6].GetInt64()),
+     Close=close
+    });
+   }
+   AppLogger.Info($"Binance historical klines request completed: symbol={symbol}; interval={interval}; rows={result.Count}; elapsedMs={sw.ElapsedMilliseconds}");
+   return result;
+  }
+  catch(OperationCanceledException)
+  {
+   AppLogger.Warn($"Binance historical klines request canceled: symbol={symbol}; interval={interval}; elapsedMs={sw.ElapsedMilliseconds}");
+   throw;
+  }
+  catch(Exception ex)
+  {
+   AppLogger.Warn($"Binance historical klines request failed: symbol={symbol}; interval={interval}; elapsedMs={sw.ElapsedMilliseconds}; {ex.Message}");
+   return [];
   }
  }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using System.Net.Http;
 using System.Net.Http.Json;
 using CryptoScanner.Desktop.Models;
@@ -36,6 +37,40 @@ public sealed class CoinGeckoClient
   {
    AppLogger.Error($"CoinGecko markets request failed; total={all.Count}; elapsedMs={sw.ElapsedMilliseconds}",ex);
    throw;
+  }
+ }
+
+ public async Task<List<(DateTimeOffset Time, decimal Price)>> GetMarketChartRangePricesAsync(string coinId,DateTimeOffset from,DateTimeOffset to,CancellationToken ct)
+ {
+  var sw=Stopwatch.StartNew();
+  var url=$"coins/{Uri.EscapeDataString(coinId)}/market_chart/range?vs_currency=usd&from={from.ToUnixTimeSeconds()}&to={to.ToUnixTimeSeconds()}";
+  AppLogger.Info($"CoinGecko range price request started: coinId={coinId}");
+  try
+  {
+   using var stream=await _http.GetStreamAsync(url,ct);
+   using var doc=await JsonDocument.ParseAsync(stream,cancellationToken:ct);
+   var result=new List<(DateTimeOffset Time, decimal Price)>();
+   if(doc.RootElement.TryGetProperty("prices",out var prices)&&prices.ValueKind==JsonValueKind.Array)
+   {
+    foreach(var item in prices.EnumerateArray())
+    {
+     if(item.ValueKind!=JsonValueKind.Array||item.GetArrayLength()<2) continue;
+     var time=DateTimeOffset.FromUnixTimeMilliseconds(item[0].GetInt64());
+     if(item[1].TryGetDecimal(out var price)) result.Add((time,price));
+    }
+   }
+   AppLogger.Info($"CoinGecko range price request completed: coinId={coinId}; points={result.Count}; elapsedMs={sw.ElapsedMilliseconds}");
+   return result;
+  }
+  catch(OperationCanceledException)
+  {
+   AppLogger.Warn($"CoinGecko range price request canceled: coinId={coinId}; elapsedMs={sw.ElapsedMilliseconds}");
+   throw;
+  }
+  catch(Exception ex)
+  {
+   AppLogger.Warn($"CoinGecko range price request failed: coinId={coinId}; elapsedMs={sw.ElapsedMilliseconds}; {ex.Message}");
+   return [];
   }
  }
 }

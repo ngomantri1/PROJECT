@@ -8,7 +8,8 @@ CryptoScannerDesktopV1.sln
 │   ├── MainWindow.xaml(.cs)
 │   ├── Helpers/
 │   │   ├── ObservableObject.cs
-│   │   └── RelayCommand.cs
+│   │   ├── RelayCommand.cs
+│   │   └── AsyncRelayCommand.cs
 │   ├── Models/
 │   │   ├── CoinMarket.cs
 │   │   ├── BinanceModels.cs
@@ -20,7 +21,8 @@ CryptoScannerDesktopV1.sln
 │   │   ├── ScannerService.cs
 │   │   └── ExportService.cs
 │   └── ViewModels/
-│       └── MainViewModel.cs
+│       ├── MainViewModel.cs
+│       └── CoinDisplayItem.cs
 ├── README.md
 └── CODEX_TASKS.md
 ```
@@ -34,8 +36,10 @@ CryptoScannerDesktopV1.sln
 
 ### Presentation/MVVM
 - `MainViewModel.cs`: điều phối scan/cancel/export; giữ trạng thái UI và collection kết quả.
+- `CoinDisplayItem.cs`: display wrapper giữ reference tới `ScanResult` gốc, chỉ phục vụ format/binding UI.
 - `ObservableObject.cs`: triển khai `INotifyPropertyChanged`.
-- `RelayCommand.cs`: command đồng bộ, đang dùng lambda `async void` gián tiếp cho thao tác async.
+- `RelayCommand.cs`: command đồng bộ cho thao tác nhanh như mở folder/copy/mở link.
+- `AsyncRelayCommand.cs`: command async cho scan/export, chống chạy song song và có fallback exception handler.
 
 ### Data models
 - `CoinMarket.cs`: DTO CoinGecko.
@@ -50,7 +54,7 @@ CryptoScannerDesktopV1.sln
 ### Domain/application services
 - `TechnicalAnalysisService.cs`: RSI, EMA, phát hiện setup sơ bộ.
 - `ScannerService.cs`: orchestration, filter, symbol matching, scoring, ranking, BTC regime.
-- `ExportService.cs`: xuất JSON vào thư mục `exports` dưới `AppContext.BaseDirectory`.
+- `ExportService.cs`: xuất `market_snapshot_*.json` và `scanner_log_*.json` vào `%LOCALAPPDATA%\CryptoScanner.Desktop\exports`.
 
 ## Dependency hiện tại
 ```text

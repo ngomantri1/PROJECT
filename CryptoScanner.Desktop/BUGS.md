@@ -26,15 +26,7 @@
 - **Workaround:** Không coi kết quả thiếu dữ liệu là BUY.
 - **Fix cần làm:** `UNKNOWN`, policy rõ ràng và gating status.
 
-### 4. Async command là `async void` gián tiếp
-- **Trạng thái:** Chưa fix.
-- **Vị trí:** `new(async _ => await ScanAsync())` với `RelayCommand(Action<object?>)`.
-- **Nguyên nhân:** Async lambda chuyển thành `async void`.
-- **Hậu quả:** Exception/cancel lifecycle khó kiểm soát; double invocation có thể có race nhỏ trước `_busy` refresh.
-- **Workaround:** ViewModel có try/catch và `_busy`.
-- **Fix cần làm:** `IAsyncCommand/AsyncRelayCommand`.
-
-### 5. Không có timeout/retry/cache
+### 4. Không có timeout/retry/cache
 - **Trạng thái:** Chưa fix.
 - **Vị trí:** `CoinGeckoClient`, `BinanceClient`.
 - **Nguyên nhân:** HttpClient mặc định và gọi public API trực tiếp.
@@ -42,7 +34,7 @@
 - **Workaround:** Chạy lại scan.
 - **Fix cần làm:** timeout hợp lý, retry/backoff, 429 handling và cache.
 
-### 6. Scoring và setup có false positive
+### 5. Scoring và setup có false positive
 - **Trạng thái:** Chưa fix.
 - **Vị trí:** `ScannerService`, `TechnicalAnalysisService.DetectSetup`.
 - **Nguyên nhân:** Công thức đơn giản; `EARLY_REVERSAL` chỉ kiểm tra RSI<40 và close hiện tại > close 4 nến trước.
@@ -50,7 +42,7 @@
 - **Workaround:** Chỉ xem là pre-screen, xác minh bằng ChatGPT/chart.
 - **Fix cần làm:** volume, structure break, divergence thật, ATR/R:R, BTC regime gating.
 
-### 7. `DataQuality` không phản ánh đủ nguồn
+### 6. `DataQuality` không phản ánh đủ nguồn
 - **Trạng thái:** Chưa fix.
 - **Vị trí:** `ScannerService`.
 - **Nguyên nhân:** Công thức cố định, Binance mặc nhiên cộng điểm; chưa có unlock/news/on-chain.
@@ -58,7 +50,7 @@
 - **Workaround:** Không dùng DataQuality để giải ngân.
 - **Fix cần làm:** tính theo ma trận nguồn và trạng thái PASS/UNKNOWN/CONFLICT.
 
-### 8. DataGrid summary có thể chưa cập nhật tức thời trong lúc thêm item
+### 7. DataGrid summary có thể chưa cập nhật tức thời trong lúc thêm item
 - **Trạng thái:** Chưa fix/ảnh hưởng thấp.
 - **Vị trí:** `PassedCount`, `BuyReadyCount` chỉ Raise sau khi load xong.
 - **Nguyên nhân:** Derived properties không subscribe collection change.
@@ -67,7 +59,12 @@
 - **Fix cần làm:** Raise khi collection thay đổi hoặc bind collection view/statistics model.
 
 ## Bug đã fix
-- Chưa có changelog hoặc bằng chứng source về bug đã fix trước đó.
+
+### Async command là `async void` gián tiếp
+- **Trạng thái:** Đã fix.
+- **Vị trí cũ:** `new(async _ => await ScanAsync())` với `RelayCommand(Action<object?>)`.
+- **Fix:** Thêm `AsyncRelayCommand` và chuyển `ScanCommand`/`ExportCommand` sang command async có trạng thái chạy, chống chạy song song và fallback exception handler.
+- **File:** `Helpers/AsyncRelayCommand.cs`, `ViewModels/MainViewModel.cs`.
 
 ## Vùng code dễ lỗi
 - `ScannerService.ScanAsync`: orchestration, filter, scoring, exception handling.

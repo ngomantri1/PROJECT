@@ -2,7 +2,7 @@
 
 ## P0 — Ưu tiên cao
 - [ ] Build solution trên Windows/.NET 10 và sửa toàn bộ compiler/runtime error.
-- [ ] Thay `async` lambda trên `RelayCommand` bằng `AsyncRelayCommand` có quản lý exception và trạng thái chạy.
+- [x] Thay `async` lambda trên `RelayCommand` bằng `AsyncRelayCommand` có quản lý exception và trạng thái chạy.
 - [ ] Không nuốt exception trong vòng quét từng coin và BTC regime; ghi lỗi theo coin/source.
 - [ ] Thêm timeout, retry exponential backoff và xử lý HTTP 429/5xx.
 - [ ] Dùng `IHttpClientFactory` hoặc shared managed `HttpClient` qua DI.
@@ -55,4 +55,4 @@
 - [ ] Missing FDV/total supply không được làm coin vượt filter mặc định.
 - [ ] Score/status boundaries.
 - [ ] JSON schema và decimal serialization.
-- [ ] UI command enable/disable sau lỗi hoặc hủy.
+- [x] UI command enable/disable sau lỗi hoặc hủy.

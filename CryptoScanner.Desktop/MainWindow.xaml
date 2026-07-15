@@ -20,6 +20,7 @@
     <Button Content="QUÉT THỊ TRƯỜNG" Command="{Binding ScanCommand}"/>
     <Button Content="DỪNG" Command="{Binding CancelCommand}" Background="#D9534F"/>
     <Button Content="XUẤT JSON" Command="{Binding ExportCommand}" Background="#27A36A"/>
+    <Button Content="BACKTEST" Command="{Binding BacktestCommand}" Background="#6F5CC4"/>
     <Button Content="MỞ EXPORT" Command="{Binding OpenExportFolderCommand}" Background="#5B6B84"/>
     <Button Content="MỞ LOG" Command="{Binding OpenLogFolderCommand}" Background="#5B6B84"/>
    </StackPanel>
@@ -41,7 +42,42 @@
 
    <Border Grid.Column="0" Background="{StaticResource Panel}" CornerRadius="8" Padding="8" Margin="0,0,10,0">
     <Grid>
-     <DataGrid ItemsSource="{Binding DisplayResults}" SelectedItem="{Binding SelectedCoin, Mode=TwoWay}" AlternationCount="2" RowHeight="42">
+     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+     </Grid.RowDefinitions>
+
+     <DockPanel Grid.Row="0" Margin="0,0,0,8">
+      <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+       <TextBox Width="220" Height="30" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Padding="8,0" ToolTip="Tìm symbol, tên coin, category hoặc setup"/>
+       <ComboBox Width="120" Height="30" Margin="8,0,0,0" ItemsSource="{Binding StatusFilters}" SelectedItem="{Binding StatusFilter, Mode=TwoWay}" VerticalContentAlignment="Center"/>
+      </StackPanel>
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+       <TextBlock Text="{Binding BreakdownSummary}" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+       <TextBlock Text="{Binding FilteredCount}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+       <TextBlock Text=" visible" Foreground="{StaticResource Muted}" VerticalAlignment="Center"/>
+      </StackPanel>
+     </DockPanel>
+
+     <DataGrid Grid.Row="1" ItemsSource="{Binding ResultsView}" SelectedItem="{Binding SelectedCoin, Mode=TwoWay}" AlternationCount="2" RowHeight="42">
+      <DataGrid.InputBindings>
+       <MouseBinding MouseAction="LeftDoubleClick" Command="{Binding OpenTradingViewCommand}" CommandParameter="{Binding SelectedCoin}"/>
+      </DataGrid.InputBindings>
+      <DataGrid.RowStyle>
+       <Style TargetType="DataGridRow">
+        <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=DataGrid}}"/>
+        <Setter Property="ContextMenu">
+         <Setter.Value>
+          <ContextMenu>
+           <MenuItem Header="Copy symbol" Command="{Binding PlacementTarget.Tag.CopySymbolCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+           <MenuItem Header="Open TradingView" Command="{Binding PlacementTarget.Tag.OpenTradingViewCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+           <MenuItem Header="Open Binance" Command="{Binding PlacementTarget.Tag.OpenBinanceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+           <MenuItem Header="Open CoinGecko" Command="{Binding PlacementTarget.Tag.OpenCoinGeckoCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+          </ContextMenu>
+         </Setter.Value>
+        </Setter>
+       </Style>
+      </DataGrid.RowStyle>
       <DataGrid.Columns>
        <DataGridTextColumn Header="#" Binding="{Binding Rank, Mode=OneWay}" Width="44"/>
        <DataGridTemplateColumn Header="Coin" Width="150">
@@ -74,7 +110,7 @@
          </DataTemplate>
         </DataGridTemplateColumn.CellTemplate>
        </DataGridTemplateColumn>
-       <DataGridTemplateColumn Header="Status" Width="150">
+       <DataGridTemplateColumn Header="Status" Width="118">
         <DataGridTemplateColumn.CellTemplate>
          <DataTemplate>
           <Border CornerRadius="4" Padding="7,3" HorizontalAlignment="Left">
@@ -89,7 +125,7 @@
              </Style.Triggers>
             </Style>
            </Border.Style>
-           <TextBlock Text="{Binding Status, Mode=OneWay}" FontWeight="SemiBold" FontSize="11"/>
+           <TextBlock Text="{Binding StatusDisplay, Mode=OneWay}" FontWeight="SemiBold" FontSize="11"/>
           </Border>
          </DataTemplate>
         </DataGridTemplateColumn.CellTemplate>
@@ -103,13 +139,13 @@
       </DataGrid.Columns>
      </DataGrid>
 
-     <Border Background="{StaticResource Panel}" Visibility="{Binding ShowInitialState, Converter={StaticResource BoolToVisibility}}" IsHitTestVisible="False">
+     <Border Grid.Row="1" Background="{StaticResource Panel}" Visibility="{Binding ShowInitialState, Converter={StaticResource BoolToVisibility}}" IsHitTestVisible="False">
       <TextBlock Text="Chưa có dữ liệu. Bấm QUÉT THỊ TRƯỜNG để bắt đầu." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="16"/>
      </Border>
-     <Border Background="{StaticResource Panel}" Visibility="{Binding ShowNoResultsState, Converter={StaticResource BoolToVisibility}}" IsHitTestVisible="False">
+     <Border Grid.Row="1" Background="{StaticResource Panel}" Visibility="{Binding ShowNoResultsState, Converter={StaticResource BoolToVisibility}}" IsHitTestVisible="False">
       <TextBlock Text="Không có coin phù hợp với bộ lọc hiện tại." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="16"/>
      </Border>
-     <Border Background="{StaticResource Panel}" Visibility="{Binding ShowErrorState, Converter={StaticResource BoolToVisibility}}" IsHitTestVisible="False">
+     <Border Grid.Row="1" Background="{StaticResource Panel}" Visibility="{Binding ShowErrorState, Converter={StaticResource BoolToVisibility}}" IsHitTestVisible="False">
       <TextBlock Text="Quét thất bại. Xem log để biết chi tiết." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#FFB4B4" FontSize="16"/>
      </Border>
     </Grid>
@@ -123,7 +159,7 @@
       <TextBlock Text="{Binding SelectedCoin.Name}" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
 
       <Separator Margin="0,12"/>
-      <TextBlock Text="Scores" FontWeight="SemiBold" Margin="0,0,0,6"/>
+      <TextBlock Text="SCORES" FontWeight="Bold" Margin="0,0,0,6"/>
       <UniformGrid Columns="2">
        <TextBlock Text="Market" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.MarketTechnicalScore}"/>
        <TextBlock Text="Entry" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.EntryReadinessScore}"/>
@@ -133,7 +169,7 @@
       </UniformGrid>
 
       <Separator Margin="0,12"/>
-      <TextBlock Text="Market" FontWeight="SemiBold" Margin="0,0,0,6"/>
+      <TextBlock Text="MARKET" FontWeight="Bold" Margin="0,0,0,6"/>
       <UniformGrid Columns="2">
        <TextBlock Text="Price" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.PriceDisplay}"/>
        <TextBlock Text="Market Cap" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.MarketCapDisplay}"/>
@@ -146,7 +182,7 @@
       </UniformGrid>
 
       <Separator Margin="0,12"/>
-      <TextBlock Text="Technical" FontWeight="SemiBold" Margin="0,0,0,6"/>
+      <TextBlock Text="TECHNICAL" FontWeight="Bold" Margin="0,0,0,6"/>
       <UniformGrid Columns="2">
        <TextBlock Text="RSI H4" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.Rsi4HDisplay}"/>
        <TextBlock Text="RSI D1" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding SelectedCoin.Rsi1DDisplay}"/>
@@ -159,15 +195,16 @@
       </UniformGrid>
 
       <Separator Margin="0,12"/>
-      <TextBlock Text="Decision" FontWeight="SemiBold" Margin="0,0,0,6"/>
-      <TextBlock Text="{Binding SelectedCoin.DecisionCode}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+      <TextBlock Text="DECISION" FontWeight="Bold" Margin="0,0,0,6"/>
+      <TextBlock Text="{Binding SelectedCoin.DecisionShort}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+      <TextBlock Text="{Binding SelectedCoin.DecisionCode}" Foreground="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"/>
       <TextBlock Text="{Binding SelectedCoin.DecisionReason}" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
 
       <Separator Margin="0,12"/>
-      <Expander Header="Risk flags" IsExpanded="True"><ItemsControl ItemsSource="{Binding SelectedCoin.RiskFlags}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
-      <Expander Header="Fail rules" IsExpanded="True"><ItemsControl ItemsSource="{Binding SelectedCoin.FailRules}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
-      <Expander Header="Pass rules"><ItemsControl ItemsSource="{Binding SelectedCoin.PassRules}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
-      <Expander Header="Unknown rules"><ItemsControl ItemsSource="{Binding SelectedCoin.UnknownRules}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
+      <Expander Header="{Binding SelectedCoin.RiskFlagsHeader}" IsExpanded="True"><ItemsControl ItemsSource="{Binding SelectedCoin.RiskFlags}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
+      <Expander Header="{Binding SelectedCoin.FailRulesHeader}" IsExpanded="True"><ItemsControl ItemsSource="{Binding SelectedCoin.FailRules}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
+      <Expander Header="{Binding SelectedCoin.PassRulesHeader}"><ItemsControl ItemsSource="{Binding SelectedCoin.PassRules}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
+      <Expander Header="{Binding SelectedCoin.UnknownRulesHeader}"><ItemsControl ItemsSource="{Binding SelectedCoin.UnknownRules}" ItemTemplate="{StaticResource RuleChipTemplate}"/></Expander>
      </StackPanel>
     </ScrollViewer>
    </Border>

@@ -5,9 +5,10 @@ namespace CryptoScanner.Desktop.Services;
 public sealed class ScannerService
 {
  readonly CoinGeckoClient _cg=new(); readonly BinanceClient _bn=new(); readonly TechnicalAnalysisService _ta=new(); readonly ScannerSettings _settings=LoadSettings();
- public async Task<(List<ScanResult> Results,int Scanned,string BtcRegime)> ScanAsync(IProgress<(double,string)> progress,CancellationToken ct)
+ public async Task<(List<ScanResult> Results,int Scanned,string BtcRegime,ScanPipelineMetrics Metrics,UnlockCacheSummary UnlockCache)> ScanAsync(IProgress<(double,string)> progress,CancellationToken ct)
  {
   AppLogger.Info("Scan started");
+  var unlockProvider=new CachedUnlockProvider(_settings.UnlockRules.MaxCacheAgeHours);
   progress.Report((3,"Đang lấy dữ liệu CoinGecko...")); var markets=await _cg.GetMarketsAsync(ct);
   AppLogger.Info($"CoinGecko markets loaded: {markets.Count}");
   var excluded=markets.Where(IsExcluded).ToList();
@@ -19,6 +20,7 @@ public sealed class ScannerService
   progress.Report((15,$"Qua bộ lọc cứng: {filtered.Count} coin. Đang kiểm tra Binance..."));
   var tickers=await _bn.GetTickersAsync(ct);
   var maxCandidates=GetMaxTechnicalCandidates();
+  var binanceMatched=filtered.Count(x=>tickers.ContainsKey(x.Symbol.ToUpperInvariant()+"USDT"));
   var selectedCandidates=filtered
    .Where(x=>tickers.ContainsKey(x.Symbol.ToUpperInvariant()+"USDT"))
    .Select(x=>new{Coin=x,Pair=x.Symbol.ToUpperInvariant()+"USDT",PreTechnicalScore=PreTechnicalScore(x,tickers[x.Symbol.ToUpperInvariant()+"USDT"].QuoteVolume)})
@@ -32,7 +34,7 @@ public sealed class ScannerService
   AppLogger.Info("Selected technical candidates by pre-rank: "+string.Join(", ",selectedCandidates.Select(x=>$"{x.Pair}:{x.PreTechnicalScore}")));
   var regime="UNKNOWN"; var btcCloses=new List<decimal>();
   try{btcCloses=await _bn.GetClosesAsync("BTCUSDT","1d",220,ct); if(btcCloses.Count>200){var e50=_ta.Ema(btcCloses,50);var e200=_ta.Ema(btcCloses,200);regime=btcCloses[^1]>e50&&e50>e200?"BULL":btcCloses[^1]<e200?"BEAR":"SIDEWAY";}}catch(Exception ex) when (ex is not OperationCanceledException){AppLogger.Error("BTC regime failed",ex);}
-  var results=new List<ScanResult>(); int i=0;
+  var results=new List<ScanResult>(); int i=0; int skippedCandidates=0;
   foreach(var coin in tradable)
   {
    ct.ThrowIfCancellationRequested(); i++; var pair=coin.Symbol.ToUpperInvariant()+"USDT";
@@ -55,6 +57,20 @@ public sealed class ScannerService
     var failRules=new List<string>();
     var unknownRules=new List<string>{"UNLOCK_UNKNOWN","GITHUB_UNKNOWN","TVL_UNKNOWN","NEWS_UNKNOWN","HOLDER_CONCENTRATION_UNKNOWN","LEGAL_RISK_UNKNOWN"};
     var riskFlags=new List<string>();
+    var unlockProviderResult=await unlockProvider.GetAsync(coin.Id,coin.Symbol,ct);
+    var unlockRule=UnlockRuleEvaluator.Evaluate(unlockProviderResult,_settings.UnlockRules);
+    if(unlockRule.HasValidData)
+    {
+     unknownRules.Remove("UNLOCK_UNKNOWN");
+     passRules.AddRange(unlockRule.PassRules);
+     failRules.AddRange(unlockRule.FailRules);
+     riskFlags.AddRange(unlockRule.RiskFlags);
+    }
+    else
+    {
+     riskFlags.AddRange(unlockRule.RiskFlags);
+     foreach(var rule in unlockRule.UnknownRules.Where(x=>!unknownRules.Contains(x))) unknownRules.Add(rule);
+    }
     if(IsNonStandardSymbol(coin.Symbol)){riskFlags.Add("NON_STANDARD_SYMBOL"); failRules.Add("NON_STANDARD_SYMBOL_REVIEW_REQUIRED");}
     if(tickers[pair].QuoteVolume<_settings.RejectBinanceQuoteVolumeUsd) failRules.Add("BINANCE_VOLUME_TOO_LOW");
     else if(tickers[pair].QuoteVolume<_settings.MinBinanceQuoteVolumeUsd) riskFlags.Add("LOW_LIQUIDITY");
@@ -67,7 +83,7 @@ public sealed class ScannerService
     if(e20H4.HasValue&&e50H4.HasValue&&e200D1.HasValue) passRules.Add("EMA_CALCULATED"); else unknownRules.Add("EMA_INSUFFICIENT");
     if(macdH4!="INSUFFICIENT") passRules.Add("MACD_CALCULATED"); else unknownRules.Add("MACD_INSUFFICIENT");
     if(relativePerformanceVsBtc30dPct.HasValue) passRules.Add("RELATIVE_STRENGTH_CALCULATED"); else unknownRules.Add("RELATIVE_STRENGTH_UNKNOWN");
-    var sourceCoverageScore=55;
+    var sourceCoverageScore=Math.Min(100,55+unlockRule.SourceCoverageBonus);
     var fieldCompletenessScore=55;
     if(CategoryFor(coin)!="UNKNOWN") fieldCompletenessScore+=5; else unknownRules.Add("CATEGORY_UNKNOWN");
     if(coin.Fdv.HasValue) fieldCompletenessScore+=5; else unknownRules.Add("FDV_UNKNOWN");
@@ -81,23 +97,38 @@ public sealed class ScannerService
     if(riskFlags.Count>0) preliminaryScore=Math.Min(preliminaryScore,95);
     var status=Decide(preliminaryScore,setup,regime,failRules,unknownRules,riskFlags);
     var decisionCode=DecisionCode(status,failRules,unknownRules,riskFlags);
+    ApplyUnlockDecision(unlockRule,failRules,ref status,ref decisionCode);
     var entryReadinessScore=EntryReadinessScore(preliminaryScore,status,riskFlags,unknownRules,failRules);
     results.Add(new(){Id=coin.Id,Symbol=coin.Symbol.ToUpperInvariant(),Name=coin.Name,
      Category=CategoryFor(coin),Price=RoundPrice(coin.Price),MarketCap=Math.Round(coin.MarketCap,0),TotalVolume=Math.Round(coin.TotalVolume,0),BinanceQuoteVolume=Math.Round(tickers[pair].QuoteVolume,0),VolumeMarketCapRatio=Math.Round(volumeMc,4),
-     FdvMcRatio=Math.Round(fdvMc,4),CirculatingRatio=Math.Round(circ,4),Rsi4H=Math.Round(r4,2),Rsi1D=Math.Round(r1,2),UnlockStatus="UNKNOWN",
+     FdvMcRatio=Math.Round(fdvMc,4),CirculatingRatio=Math.Round(circ,4),Rsi4H=Math.Round(r4,2),Rsi1D=Math.Round(r1,2),UnlockStatus=unlockRule.UnlockStatus,Unlock30dPct=unlockRule.Unlock30dPct,Unlock90dPct=unlockRule.Unlock90dPct,
      Ema20H4=RoundNullablePrice(e20H4),Ema50H4=RoundNullablePrice(e50H4),Ema200D1=RoundNullablePrice(e200D1),MacdH4=macdH4,RelativePerformanceVsBtc30dPct=relativePerformanceVsBtc30dPct.HasValue?Math.Round(relativePerformanceVsBtc30dPct.Value,2):null,
      BreakoutLevel=null,DistanceToBreakoutPct=null,VolumeRatio20=null,BreakoutConfirmed=false,RetestConfirmed=false,Setup=setup,Score=preliminaryScore,Status=status,Decision=status,DecisionCode=decisionCode,DecisionReason=DecisionReason(decisionCode,regime),
      DataQuality=sourceCoverageScore/100d,MarketTechnicalScore=preliminaryScore,EntryReadinessScore=entryReadinessScore,PreliminaryScore=preliminaryScore,FinalScore=null,SourceCoverageScore=sourceCoverageScore,FieldCompletenessScore=fieldCompletenessScore,DataQualityScore=Math.Min(sourceCoverageScore,fieldCompletenessScore),RiskFlags=riskFlags,PassRules=passRules,FailRules=failRules,UnknownRules=unknownRules,GeneratedAt=DateTimeOffset.Now});
-    AppLogger.Info($"Coin analyzed: {pair}; preliminaryScore={preliminaryScore}; status={status}; setup={setup}; sourceCoverage={sourceCoverageScore}; fieldCompleteness={fieldCompletenessScore}");
+    AppLogger.Info($"Coin analyzed: {pair}; preliminaryScore={preliminaryScore}; status={status}; setup={setup}; unlock={unlockRule.UnlockStatus}; sourceCoverage={sourceCoverageScore}; fieldCompleteness={fieldCompletenessScore}");
    } catch(Exception ex) when (ex is not OperationCanceledException)
    {
+    skippedCandidates++;
     AppLogger.Error($"Coin skipped: {pair}; id={coin.Id}; name={coin.Name}", ex);
    }
    await Task.Delay(_settings.PerCoinDelayMs,ct);
   }
   results=results.OrderByDescending(x=>x.Score).ThenByDescending(x=>x.BinanceQuoteVolume).ToList(); for(int r=0;r<results.Count;r++)results[r].Rank=r+1;
+  var metrics=new ScanPipelineMetrics
+  {
+   CoinsScanned=markets.Count,
+   ExcludedBeforeHardFilter=excluded.Count,
+   HardFilterPassed=filtered.Count,
+   BinanceTickersLoaded=tickers.Count,
+   BinancePairMatched=binanceMatched,
+   MaxTechnicalCandidates=maxCandidates,
+   TechnicalCandidates=tradable.Count,
+   SuccessfulCandidates=results.Count,
+   SkippedCandidates=skippedCandidates
+  };
+  AppLogger.Info($"Unlock cache summary: loaded={unlockProvider.Summary.Loaded}; valid={unlockProvider.Summary.ItemsValid}; invalid={unlockProvider.Summary.ItemsInvalid}; matches={unlockProvider.Summary.CandidateMatches}; missing={unlockProvider.Summary.CandidateMissing}; expired={unlockProvider.Summary.IsExpired}");
   AppLogger.Info($"Scan completed; results={results.Count}; btcRegime={regime}");
-  progress.Report((100,"Hoàn tất.")); return (results,markets.Count,regime);
+  progress.Report((100,"Hoàn tất.")); return (results,markets.Count,regime,metrics,unlockProvider.Summary);
  }
 
  int GetMaxTechnicalCandidates()
@@ -145,6 +176,9 @@ public sealed class ScannerService
 
  static string DecisionCode(string status,List<string> failRules,List<string> unknownRules,List<string> riskFlags)
  {
+  if(failRules.Contains("NON_STANDARD_SYMBOL_REVIEW_REQUIRED")) return "NON_STANDARD_SYMBOL_REVIEW_REQUIRED";
+  if(failRules.Contains("BINANCE_VOLUME_TOO_LOW")) return "BINANCE_VOLUME_TOO_LOW";
+  if(failRules.Contains("UNLOCK_30D_TOO_HIGH")||failRules.Contains("UNLOCK_90D_TOO_HIGH")) return "UNLOCK_FAIL";
   if(failRules.Count>0) return failRules[0];
   if(unknownRules.Contains("TECHNICAL_DATA_INSUFFICIENT")) return "NEEDS_MORE_TECHNICAL_DATA";
   if(riskFlags.Contains("EXTREME_OVERBOUGHT")) return "WAIT_PULLBACK";
@@ -153,8 +187,17 @@ public sealed class ScannerService
   return status=="BUY_READY"?"READY_AFTER_FULL_CONFIRMATION":"PRELIMINARY_WATCH";
  }
 
+ static void ApplyUnlockDecision(UnlockRuleResult unlockRule,List<string> failRules,ref string status,ref string decisionCode)
+ {
+  if(!unlockRule.IsFail) return;
+  if(failRules.Contains("NON_STANDARD_SYMBOL_REVIEW_REQUIRED")||failRules.Contains("BINANCE_VOLUME_TOO_LOW")) return;
+  status="REJECT";
+  decisionCode="UNLOCK_FAIL";
+ }
+
  static string DecisionReason(string code,string btcRegime)=>code switch
  {
+  "UNLOCK_FAIL"=>"Unlock pressure is above the configured fail threshold.",
   "BINANCE_VOLUME_TOO_LOW"=>"Binance spot volume is below the reject threshold.",
   "NON_STANDARD_SYMBOL_REVIEW_REQUIRED"=>"Symbol is non-standard and requires manual review before inclusion.",
   "NEEDS_MORE_TECHNICAL_DATA"=>"Technical candle history is insufficient for a reliable setup.",

@@ -8,14 +8,23 @@ public sealed class CoinDisplayItem
  public CoinDisplayItem(ScanResult source){Source=source;}
 
  public ScanResult Source { get; }
+ public string Id=>Source.Id;
  public int Rank=>Source.Rank;
  public string Symbol=>Source.Symbol;
  public string Name=>Source.Name;
  public string CoinLine=>Source.Symbol;
- public string CoinSubLine=>Source.Name;
+ public string CoinSubLine=>Source.Category=="UNKNOWN"?Source.Name:$"{Source.Name} • {Source.Category}";
  public int MarketTechnicalScore=>Source.MarketTechnicalScore;
  public int EntryReadinessScore=>Source.EntryReadinessScore;
  public string Status=>Source.Status;
+ public string StatusDisplay=>Source.Status switch
+ {
+  "BUY_READY"=>"BUY",
+  "WATCHLIST_PRIORITY"=>"PRIORITY",
+  "WATCHLIST"=>"WATCH",
+  "NEEDS_DATA"=>"DATA",
+  _=>Source.Status
+ };
  public string PriceDisplay=>NumberFormatter.Price(Source.Price);
  public string MarketCapDisplay=>NumberFormatter.Compact(Source.MarketCap);
  public string TotalVolumeDisplay=>NumberFormatter.Compact(Source.TotalVolume);
@@ -44,10 +53,24 @@ public sealed class CoinDisplayItem
  public string MacdH4=>Source.MacdH4;
  public string RelativePerformanceDisplay=>NumberFormatter.OptionalPercent(Source.RelativePerformanceVsBtc30dPct);
  public string DecisionCode=>Source.DecisionCode;
+ public string DecisionShort=>Source.DecisionCode switch
+ {
+  "WAIT_UNLOCK_AND_MARKET_CONFIRMATION"=>"Wait Unlock",
+  "WAIT_PULLBACK"=>"Wait Pullback",
+  "BINANCE_VOLUME_TOO_LOW"=>"Low Liquidity",
+  "NON_STANDARD_SYMBOL_REVIEW_REQUIRED"=>"Manual Review",
+  "SCORE_BELOW_WATCHLIST_THRESHOLD"=>"Score Low",
+  "NEEDS_MORE_TECHNICAL_DATA"=>"Needs Data",
+  _=>Source.DecisionCode.Replace('_',' ')
+ };
  public string DecisionReason=>Source.DecisionReason;
  public int SourceCoverageScore=>Source.SourceCoverageScore;
  public int FieldCompletenessScore=>Source.FieldCompletenessScore;
  public int DataQualityScore=>Source.DataQualityScore;
+ public string RiskFlagsHeader=>$"Risk flags ({Source.RiskFlags.Count})";
+ public string PassRulesHeader=>$"Pass rules ({Source.PassRules.Count})";
+ public string FailRulesHeader=>$"Fail rules ({Source.FailRules.Count})";
+ public string UnknownRulesHeader=>$"Unknown rules ({Source.UnknownRules.Count})";
  public IEnumerable<string> RiskFlags=>Source.RiskFlags.Count>0?Source.RiskFlags:["None"];
  public IEnumerable<string> PassRules=>Source.PassRules.Count>0?Source.PassRules:["None"];
  public IEnumerable<string> FailRules=>Source.FailRules.Count>0?Source.FailRules:["None"];
