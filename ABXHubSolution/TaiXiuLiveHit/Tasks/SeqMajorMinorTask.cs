@@ -21,7 +21,7 @@ namespace TaiXiuLiveHit.Tasks
         {
             var money = new MoneyManager(() => ctx.StakeSeq, ctx.MoneyStrategyId);
             var raw = (ctx.BetSeq ?? "").Trim().ToUpperInvariant().Replace(" ", "");
-            char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'N' || ch == 'I');
+            char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'N' || ch == 'I' || ch == '0');
             if (seq.Length == 0) throw new InvalidOperationException("Chuỗi N/I không hợp lệ.");
 
             int k = 0;
@@ -34,6 +34,14 @@ namespace TaiXiuLiveHit.Tasks
 
                 var snap = ctx.GetSnap();
                 string baseSession = snap?.session ?? string.Empty;
+
+                if (seq[k] == '0')
+                {
+                    ctx.Log?.Invoke("[Seq N/I] Gặp ký tự 0: bỏ qua ván này, không đặt cược.");
+                    await TaskUtil.WaitRoundFinishNoBet(ctx, baseSession, ct);
+                    k = (k + 1) % seq.Length;
+                    continue;
+                }
 
                 string side = PickSideByNI(seq[k], snap?.totals);
                 long stake;

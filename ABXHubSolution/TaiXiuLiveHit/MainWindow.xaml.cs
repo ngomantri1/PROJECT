@@ -7584,14 +7584,14 @@ Ví dụ không hợp lệ:
             {
                 if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'T' || u == 'X') { count++; continue; }  // và T/X
-                err = "Chỉ cho phép khoảng trắng và ký tự T hoặc X (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
+                if (u == 'T' || u == 'X' || u == '0') { count++; continue; }  // và T/X/0
+                err = "Chỉ cho phép khoảng trắng và ký tự T, X hoặc 0 (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số khác, ký tự khác).";
                 return false;
             }
 
             if (count < 2 || count > 100)
             {
-                err = "Độ dài 2–50 ký tự (tính theo T/X, bỏ qua khoảng trắng).";
+                err = "Độ dài 2–50 ký tự (tính theo T/X/0, bỏ qua khoảng trắng).";
                 return false;
             }
 
@@ -7613,14 +7613,14 @@ Ví dụ không hợp lệ:
             {
                 if (char.IsWhiteSpace(ch)) continue;          // chỉ cho phép khoảng trắng
                 char u = char.ToUpperInvariant(ch);
-                if (u == 'I' || u == 'N') { count++; continue; }  // và I/N
-                err = "Chỉ cho phép khoảng trắng và ký tự I hoặc N (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số, ký tự khác).";
+                if (u == 'I' || u == 'N' || u == '0') { count++; continue; }  // và I/N/0
+                err = "Chỉ cho phép khoảng trắng và ký tự I, N hoặc 0 (không dùng dấu phẩy/gạch/chấm phẩy/gạch dưới, số khác, ký tự khác).";
                 return false;
             }
 
             if (count < 2 || count > 100)
             {
-                err = "Độ dài 2–50 ký tự (tính theo I/N, bỏ qua khoảng trắng).";
+                err = "Độ dài 2–50 ký tự (tính theo I/N/0, bỏ qua khoảng trắng).";
                 return false;
             }
 
@@ -8022,4 +8022,3 @@ Ví dụ không hợp lệ:
     }
 
 }
-

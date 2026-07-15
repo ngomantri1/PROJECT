@@ -16,8 +16,8 @@ namespace TaiXiuLiveHit.Tasks
             var raw = (ctx.BetSeq ?? "").Trim().ToUpperInvariant().Replace(" ", "");
             if (string.IsNullOrEmpty(raw)) throw new InvalidOperationException("Chưa nhập CHUỖI CẦU (T/X).");
 
-            // chỉ giữ C hoặc L
-            char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'T' || ch == 'X');
+            // chỉ giữ T/X hoặc 0 (0 = bỏ qua 1 ván)
+            char[] seq = Array.FindAll(raw.ToCharArray(), ch => ch == 'T' || ch == 'X' || ch == '0');
             if (seq.Length == 0) throw new InvalidOperationException("CHUỖI CẦU không hợp lệ.");
 
             int k = 0;
@@ -30,6 +30,14 @@ namespace TaiXiuLiveHit.Tasks
 
                 var snap = ctx.GetSnap();
                 string baseSession = snap?.session ?? string.Empty;
+
+                if (seq[k] == '0')
+                {
+                    ctx.Log?.Invoke("[Seq T/X] Gặp ký tự 0: bỏ qua ván này, không đặt cược.");
+                    await WaitRoundFinishNoBet(ctx, baseSession, ct);
+                    k = (k + 1) % seq.Length;
+                    continue;
+                }
 
                 string side = ParityCharToSide(seq[k]);
                 long stake;

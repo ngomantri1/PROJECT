@@ -306,6 +306,20 @@ namespace TaiXiuLiveHit.Tasks
                 await Task.Delay(120, ct);
             }
         }
+
+        public static async Task WaitRoundFinishNoBet(GameContext ctx, string baseSession, CancellationToken ct)
+        {
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var s = ctx.GetSnap?.Invoke();
+                var curSession = s?.session ?? "";
+                if (!string.Equals(curSession, baseSession, StringComparison.Ordinal))
+                    return;
+
+                await Task.Delay(120, ct);
+            }
+        }
     }
 }
 
