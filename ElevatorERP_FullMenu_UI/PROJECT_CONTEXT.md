@@ -1,0 +1,252 @@
+# PROJECT_CONTEXT
+
+> Source of truth for AI coding. Last source review: **2026-07-16**. Read this file before changing code.
+
+## 1. Project overview
+
+ElevatorERP is an internal ERP for **Công ty Thang máy Miền Trung**, expected to serve about 100 users across management, sales, operations, engineering, KCS, accounting, HR, installation, maintenance and repair teams.
+
+The system manages the full elevator lifecycle:
+
+`Đăng ký khách hàng → Lịch chăm sóc → Khảo sát → Báo giá → Hợp đồng → Dự án → Hồ sơ thang máy → Thi công → KCS → Kiểm định → Nghiệm thu → Bàn giao → Bảo hành → Bảo trì → Sự cố sửa chữa`
+
+Core domain decisions:
+
+- Do **not** use the term or entity **“Cơ hội bán hàng”**.
+- The sales intake function is **“Đăng ký khách hàng”**.
+- A project may be created only from a signed contract or an explicitly approved exceptional deployment.
+- One project can contain many elevators.
+- Project is the cross-department coordination center.
+- Elevator dossier is the lifecycle record of one physical elevator.
+- UI navigation is grouped by business capability, not hard-coded by department.
+
+## 2. Current source truth
+
+The current package is a **functional foundation plus a full-menu UI prototype**, not a completed V0–V9 ERP.
+
+### Real backend/API features
+
+- Cookie login/logout/current user.
+- Users, roles, additive permissions and simple data scopes.
+- Dashboard statistics for customers and care activities.
+- Customer registration: list/search/filter/create.
+- Customer care: list/calendar/create/complete.
+- User-role assignment.
+- File upload with basic allow-listing and stored metadata.
+- Basic audit records.
+- PostgreSQL demo seeding.
+
+### UI-only development workspaces
+
+Most V3–V9 routes use `ModuleWorkspace.tsx` and persist sample rows to browser `localStorage`.
+They are useful for layout and interaction testing only. They are **not evidence that the related business module, API, permission, workflow, audit or database schema is complete**.
+
+There is intentionally no Live/Demo/Planned label in the menu. All menu items are open for the sole developer, but implementation status must still be determined from source and tests.
+
+## 3. Technology
+
+### Current implementation
+
+- Frontend: Next.js 15 App Router, React 19, TypeScript 5.
+- UI: Ant Design 5, `@ant-design/icons`, Ant Design ProComponents.
+- Backend: ASP.NET Core 8 Minimal API.
+- ORM: Entity Framework Core 8 with Npgsql.
+- Database: PostgreSQL 16.
+- Reverse proxy: Nginx.
+- Runtime: Docker Compose.
+- Authentication: ASP.NET Core cookie authentication with persisted Data Protection keys.
+- Local file storage: bind-mounted VPS/local disk path; metadata in PostgreSQL.
+
+### Chosen target architecture, not fully implemented
+
+- Modular Monolith.
+- Redis cache.
+- Hangfire or ASP.NET Core Worker for background jobs.
+- SignalR for realtime notifications and invalidation.
+- Ubuntu Linux production with Nginx and HTTPS.
+- At least one backup copy outside the VPS.
+
+Important current gaps:
+
+- Backend is still one API project; modules are not physically separated.
+- Redis exists only as a container and has no backend client usage.
+- No SignalR hub/client.
+- No worker/Hangfire service.
+- No EF Core migrations; startup uses `EnsureCreatedAsync()`.
+
+## 4. Main runtime flow
+
+1. Browser requests `http(s)://host`.
+2. Nginx sends page requests to Next.js and `/api/*` to ASP.NET Core.
+3. Login posts credentials to `/api/auth/login`.
+4. Backend verifies PBKDF2 password hash and issues `elevator_erp_auth` HttpOnly cookie.
+5. Frontend calls `/api/auth/me` with `credentials: include`.
+6. `AppShell` filters menu entries that declare a permission.
+7. Every real protected endpoint must independently call `RequirePermission(...)`; frontend hiding is never security.
+8. EF Core reads/writes PostgreSQL.
+9. Mutating real APIs save audit entries where implemented.
+10. UI refreshes by re-fetching the affected API after a successful mutation.
+
+Development-only workspace flow:
+
+1. Catch-all route `/[...workspace]` renders `ModuleWorkspace`.
+2. Route configuration chooses title, status set and generic fields.
+3. Sample rows are generated in the browser.
+4. Create/update/delete writes only to `localStorage` key `elevator-erp:workspace:{pathname}`.
+5. This path must be replaced by a real module service/API before production.
+
+## 5. Coding rules
+
+### General
+
+- Inspect existing code and tests before changing behavior.
+- Make small, reviewable changes; do not rewrite unrelated areas.
+- Do not mark a feature complete because a menu route or generic workspace exists.
+- Preserve backward compatibility unless an explicit migration is included.
+- Add or update tests for every business rule, permission rule and state transition.
+- Use UTC in persistence and API timestamps; format to Vietnamese local time only in UI.
+- Validate input in the backend even when frontend validation exists.
+- Return structured error payloads; do not expose stack traces or secrets.
+- Use soft delete for business records that require traceability.
+- All sensitive mutations must be auditable.
+
+### Backend
+
+- Use async EF/API calls; never use `.Result`, `.Wait()` or shared mutable static state.
+- `DbContext` remains scoped per request/job and must never be shared across threads.
+- Add `CancellationToken` to database, file and long-running operations.
+- Business invariants belong in the domain/application layer, not only in endpoint/UI code.
+- Authorization must be checked before loading or returning sensitive data.
+- Save the business transaction first; publish realtime notifications only after commit succeeds.
+- Prefer explicit request/response DTOs; do not expose EF entities directly.
+- When Modular Monolith extraction starts, modules may depend on SharedKernel contracts, not on another module’s EF internals.
+
+### Frontend
+
+- Keep server data as server data; `localStorage` is permitted only for temporary development workspaces.
+- Do not store auth tokens, contracts, prices, payroll or real customer data in `localStorage`.
+- Use the shared API layer and consistent error parsing.
+- After mutation, either safely update cache/state or re-fetch; avoid duplicate requests and double-submit.
+- Keep desktop table/mobile card parity.
+- Long forms use `StepsForm` or structured sections; mobile actions remain reachable.
+- Do not manipulate DOM directly when React/Ant Design can own the state.
+- Browser-only APIs must run in client components/effects, never during server rendering.
+
+## 6. Naming rules
+
+### C#
+
+- Types, records, public members: `PascalCase`.
+- Locals and parameters: `camelCase`.
+- Async methods: suffix `Async`.
+- Interfaces: prefix `I` (`IFileStorage`).
+- Entity names singular; `DbSet` names plural.
+- IDs: `Guid`; timestamps: `DateTimeOffset`.
+- Permission codes: lowercase dotted form, e.g. `customer.view`, `quotation.approve`.
+- Workflow/status constants: uppercase stable codes, e.g. `PENDING_APPROVAL`, while Vietnamese labels stay in UI/catalog data.
+
+### TypeScript/Next.js
+
+- React components and types: `PascalCase`.
+- Hooks/functions/variables: `camelCase`.
+- Route folders: lowercase kebab-case.
+- API types use explicit names such as `CustomerListItem`, `CreateCustomerRequest`.
+- Do not use `any` for domain/API data.
+
+### Database and business codes
+
+- Current physical database naming is EF default and not yet standardized. Do not mass-rename tables/columns without an approved migration plan.
+- Human-readable codes (`KH-`, `BG-`, `HD-`, `DA-`, `TM-`) must be generated concurrency-safely; never rely on `COUNT + 1` in production.
+
+## 7. Permission and approval rules
+
+- One account can have multiple roles.
+- Effective permission is the union of allowed permissions from all roles.
+- V1 does not use explicit `DENY`.
+- Authorization dimensions eventually include function, data scope, project, sensitive fields, workflow state and approval limit.
+- Backend returns `403` when permission or data scope is insufficient.
+- Creator/requester must not approve their own sensitive transaction.
+- Installer must not perform final KCS approval.
+- Payment creator must not approve the same payment.
+- Quotation creator must not approve the same quotation.
+- Signed contract core data is immutable; changes use appendices/change requests.
+
+## 8. Pending and workflow flow
+
+### Business pending states
+
+- Quotation: `DRAFT → PENDING_APPROVAL → APPROVED → SENT → REVISION_REQUESTED → new version`, or `REJECTED`.
+- Contract: `DRAFT → TECH_REVIEW → ACCOUNTING_REVIEW → PENDING_APPROVAL → APPROVED → SIGNED → IN_PROGRESS → COMPLETED → LIQUIDATED`.
+- Project creation is blocked until contract is `SIGNED` or exceptional deployment approval exists.
+- Care: `UPCOMING → DONE`; overdue must be derived/updated when due time passes.
+- Long-running system work should use `QUEUED → RUNNING → COMPLETED/FAILED`, with retry metadata and an idempotency key.
+
+### UI pending rules
+
+- Show loading state for fetches and disable the submitted action while a mutation is pending.
+- Do not show success before the server confirms commit.
+- Prevent double-submit.
+- On failure, preserve user input and show a Vietnamese actionable message.
+- On success, refresh the authoritative server state.
+
+## 9. Websocket / SignalR flow
+
+### Current state
+
+No SignalR hub, websocket client, event contract or Nginx websocket proxy configuration exists. Do not assume realtime behavior is available.
+
+### Target rule
+
+Use SignalR mainly for notification/invalidation, not as the source of truth:
+
+`Command API → validate permission/workflow → DB transaction commit → publish event → SignalR group → client receives event → invalidate/re-fetch affected API`
+
+Suggested event envelope:
+
+- `eventId`
+- `eventType`
+- `occurredAtUtc`
+- `entityType`
+- `entityId`
+- `projectId` when applicable
+- `version`
+- minimal non-sensitive `payload`
+
+Rules:
+
+- Join groups by user, role/department when justified, and project assignment.
+- Never broadcast confidential financial/payroll/contract fields to broad groups.
+- Clients must tolerate duplicate/out-of-order events and re-fetch authoritative data.
+- Nginx must add websocket `Upgrade` and `Connection` proxy headers when SignalR is introduced.
+
+## 10. Threading and UI update rules
+
+- Request handlers and jobs are async end-to-end.
+- A scoped EF `DbContext` is used by only one request/job execution context.
+- Background jobs persist state; they do not directly manipulate UI state.
+- React state updates occur through hooks/components; SignalR callbacks enqueue state invalidation/refetch rather than mutating unrelated component state.
+- Abort or ignore stale fetch results when route/filter changes can race.
+- Optimistic UI is allowed only for reversible, low-risk actions; approvals, payments, KCS and handover require confirmed server results.
+
+## 11. OCR / canvas
+
+No OCR or canvas implementation exists in the current source.
+
+Mobile construction photos should initially use standard camera/file input, client-side compression/thumbnail generation and retryable upload. Any future OCR/canvas pipeline must be isolated behind a service and must not block the UI thread.
+
+## 12. Things that must never be broken
+
+- Never introduce “Cơ hội bán hàng”.
+- Never rename “Đăng ký khách hàng” back to opportunity/lead without a business decision.
+- Never allow project creation before signed contract or exceptional approval.
+- Never model one project as exactly one elevator.
+- Never use frontend menu visibility as the only authorization control.
+- Never let a sensitive record creator self-approve.
+- Never overwrite old quotation versions.
+- Never directly edit signed contract core content.
+- Never expose uploaded files through an unprotected public URL.
+- Never store real secrets or production passwords in Git.
+- Never expose PostgreSQL or Redis publicly.
+- Never enable demo seeding in production.
+- Never run `docker compose down -v` or delete `.data` when data must be preserved.
+- Never claim a V3–V9 module is complete until its API, schema/migration, permissions, audit, workflow and tests are implemented.

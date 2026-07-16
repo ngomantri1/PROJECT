@@ -1,0 +1,12 @@
+.env
+.data/
+.idea/
+**/bin/
+**/obj/
+frontend/node_modules/
+frontend/.next/
+uploads/
+backups/
+*.log
+*.user
+*.suo
