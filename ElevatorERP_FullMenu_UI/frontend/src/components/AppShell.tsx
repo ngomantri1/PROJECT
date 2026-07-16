@@ -359,7 +359,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               items: [
                 {
                   key: 'identity',
-                  disabled: true,
                   label: (
                     <div className='account-menu-summary'>
                       <Avatar size={42} className='user-avatar'>

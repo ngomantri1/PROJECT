@@ -90,9 +90,9 @@ export default function Dashboard() {
             </Typography.Paragraph>
             <Space wrap>
               <Button type='primary' onClick={() => router.push('/customers')}>
-                Bắt đầu công việc <ArrowRightOutlined />
+                Quản lý khách hàng <ArrowRightOutlined />
               </Button>
-              <Button onClick={() => router.push('/care')}>Lịch hôm nay</Button>
+              <Button onClick={() => router.push('/care')}>Lịch chăm sóc</Button>
             </Space>
           </div>
           <div className='welcome-visual' aria-hidden='true'>
@@ -107,8 +107,8 @@ export default function Dashboard() {
           </div>
         </ProCard>
 
-        <Row gutter={[16, 16]} className='section-gap'>
-          <Col xs={24} sm={12} xl={6}>
+        <Row gutter={[16, 16]} className='section-gap dashboard-kpi-row'>
+          <Col xs={12} sm={12} xl={6}>
             <StatisticCard
               className='stat-card stat-blue'
               loading={!data && !error}
@@ -120,7 +120,7 @@ export default function Dashboard() {
               }}
             />
           </Col>
-          <Col xs={24} sm={12} xl={6}>
+          <Col xs={12} sm={12} xl={6}>
             <StatisticCard
               className='stat-card stat-cyan'
               loading={!data && !error}
@@ -132,7 +132,7 @@ export default function Dashboard() {
               }}
             />
           </Col>
-          <Col xs={24} sm={12} xl={6}>
+          <Col xs={12} sm={12} xl={6}>
             <StatisticCard
               className='stat-card stat-violet'
               loading={!data && !error}
@@ -144,7 +144,7 @@ export default function Dashboard() {
               }}
             />
           </Col>
-          <Col xs={24} sm={12} xl={6}>
+          <Col xs={12} sm={12} xl={6}>
             <StatisticCard
               className='stat-card stat-orange'
               loading={!data && !error}
