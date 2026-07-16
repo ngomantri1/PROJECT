@@ -7,6 +7,7 @@
   <Grid.RowDefinitions>
    <RowDefinition Height="Auto"/>
    <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
    <RowDefinition Height="*"/>
    <RowDefinition Height="Auto"/>
   </Grid.RowDefinitions>
@@ -20,9 +21,9 @@
     <Button Content="QUÉT THỊ TRƯỜNG" Command="{Binding ScanCommand}"/>
     <Button Content="DỪNG" Command="{Binding CancelCommand}" Background="#D9534F"/>
     <Button Content="XUẤT JSON" Command="{Binding ExportCommand}" Background="#27A36A"/>
+    <Button Content="IMPORT UNLOCK" Command="{Binding ImportUnlockCacheCommand}" Background="#3E7A8A"/>
     <Button Content="BACKTEST" Command="{Binding BacktestCommand}" Background="#6F5CC4"/>
     <Button Content="MỞ EXPORT" Command="{Binding OpenExportFolderCommand}" Background="#5B6B84"/>
-    <Button Content="MỞ LOG" Command="{Binding OpenLogFolderCommand}" Background="#5B6B84"/>
    </StackPanel>
   </DockPanel>
 
@@ -34,7 +35,58 @@
    <Border Background="{StaticResource Panel}" CornerRadius="8" Margin="4" Padding="14"><StackPanel><TextBlock Text="UPDATED" Foreground="{StaticResource Muted}"/><TextBlock Text="{Binding UpdatedAt}" FontSize="16" FontWeight="SemiBold"/></StackPanel></Border>
   </UniformGrid>
 
-  <Grid Grid.Row="2">
+  <UniformGrid Grid.Row="2" Columns="3" Margin="0,0,0,14">
+   <Border Background="{StaticResource Panel}" CornerRadius="8" Margin="4" Padding="12">
+    <StackPanel>
+     <TextBlock Text="SCANNER HEALTH" Foreground="{StaticResource Muted}" FontWeight="SemiBold"/>
+     <TextBlock Margin="0,5,0,0">
+      <Run Text="Last scan: "/><Run Text="{Binding Health.Scanner.LastScanDisplay, Mode=OneWay}"/>
+      <Run Text="  |  BTC: "/><Run Text="{Binding Health.Scanner.BtcRegime, Mode=OneWay}"/>
+     </TextBlock>
+     <TextBlock Foreground="{StaticResource Muted}" Margin="0,3,0,0">
+      <Run Text="{Binding Health.Scanner.CandidateDisplay, Mode=OneWay}"/>
+      <Run Text="  |  Priority / Watch / Reject: "/><Run Text="{Binding Health.Scanner.StatusCountDisplay, Mode=OneWay}"/>
+     </TextBlock>
+     <TextBlock Foreground="{StaticResource Muted}" Margin="0,3,0,0" ToolTip="{Binding UnlockCachePath}">
+      <Run Text="Unlock: "/><Run Text="{Binding Health.Scanner.UnlockDisplay, Mode=OneWay}"/>
+      <Run Text="  |  History: "/><Run Text="{Binding Health.Scanner.HistorySavedDisplay, Mode=OneWay}"/>
+      <Run Text="  |  "/><Run Text="{Binding Health.Scanner.ElapsedDisplay, Mode=OneWay}"/>
+     </TextBlock>
+    </StackPanel>
+   </Border>
+
+   <Border Background="{StaticResource Panel}" CornerRadius="8" Margin="4" Padding="12">
+    <StackPanel>
+     <TextBlock Text="BACKTEST" Foreground="{StaticResource Muted}" FontWeight="SemiBold"/>
+     <TextBlock Margin="0,5,0,0">
+      <Run Text="Latest: "/><Run Text="{Binding Health.Backtest.LatestDisplay, Mode=OneWay}"/>
+     </TextBlock>
+     <TextBlock Foreground="{StaticResource Muted}" Margin="0,3,0,0">
+      <Run Text="{Binding Health.Backtest.SnapshotDisplay, Mode=OneWay}"/>
+      <Run Text="  |  "/><Run Text="{Binding Health.Backtest.HorizonDisplay, Mode=OneWay}"/>
+     </TextBlock>
+     <TextBlock Foreground="{StaticResource Muted}" Margin="0,3,0,0" Text="{Binding Health.Backtest.MissingDisplay}"/>
+    </StackPanel>
+   </Border>
+
+   <Border Background="{StaticResource Panel}" CornerRadius="8" Margin="4" Padding="12">
+    <StackPanel>
+     <TextBlock Text="HISTORY" Foreground="{StaticResource Muted}" FontWeight="SemiBold"/>
+     <TextBlock Margin="0,5,0,0">
+      <Run Text="{Binding Health.History.EntriesDisplay, Mode=OneWay}"/>
+      <Run Text="  |  Latest: "/><Run Text="{Binding Health.History.LatestDisplay, Mode=OneWay}"/>
+     </TextBlock>
+     <TextBlock Foreground="{StaticResource Muted}" Margin="0,3,0,0">
+      <Run Text="Scan ID: "/><Run Text="{Binding Health.History.ScanIdDisplay, Mode=OneWay}"/>
+     </TextBlock>
+     <TextBlock Foreground="{StaticResource Muted}" Margin="0,3,0,0">
+      <Run Text="Retention: "/><Run Text="{Binding Health.History.RetentionDisplay, Mode=OneWay}"/>
+     </TextBlock>
+    </StackPanel>
+   </Border>
+  </UniformGrid>
+
+  <Grid Grid.Row="3">
    <Grid.ColumnDefinitions>
     <ColumnDefinition Width="*"/>
     <ColumnDefinition Width="390"/>
@@ -135,7 +187,7 @@
        <DataGridTextColumn Header="Total Vol" Binding="{Binding TotalVolumeDisplay, Mode=OneWay}" Width="90"/>
        <DataGridTextColumn Header="Binance Vol" Binding="{Binding BinanceVolumeDisplay, Mode=OneWay}" Width="95"/>
        <DataGridTextColumn Header="Setup" Binding="{Binding Setup, Mode=OneWay}" Width="145"/>
-       <DataGridTextColumn Header="Reason" Binding="{Binding ReasonDisplay, Mode=OneWay}" Width="110"/>
+       <DataGridTextColumn Header="Reason" Binding="{Binding ReasonDisplay, Mode=OneWay}" Width="*"/>
       </DataGrid.Columns>
      </DataGrid>
 
@@ -210,7 +262,7 @@
    </Border>
   </Grid>
 
-  <DockPanel Grid.Row="3" Margin="0,12,0,0">
+  <DockPanel Grid.Row="4" Margin="0,12,0,0">
    <ProgressBar Height="8" Minimum="0" Maximum="100" Value="{Binding Progress}" Width="300"/>
    <TextBlock Text="{Binding ProgressDetail}" Foreground="{StaticResource Text}" Margin="14,0,0,0" VerticalAlignment="Center"/>
    <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource Muted}" Margin="14,0,0,0" VerticalAlignment="Center"/>

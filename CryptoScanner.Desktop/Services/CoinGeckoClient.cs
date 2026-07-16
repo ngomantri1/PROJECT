@@ -1,12 +1,15 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using CryptoScanner.Desktop.Models;
 namespace CryptoScanner.Desktop.Services;
 public sealed class CoinGeckoClient
 {
- readonly HttpClient _http = new(){ BaseAddress=new Uri("https://api.coingecko.com/api/v3/") };
+ const int MaxAttempts = 3;
+ static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)];
+ readonly HttpClient _http = new(){ BaseAddress=new Uri("https://api.coingecko.com/api/v3/"), Timeout=TimeSpan.FromSeconds(30) };
  public CoinGeckoClient(){_http.DefaultRequestHeaders.UserAgent.ParseAdd("CryptoScannerDesktop/1.0");}
  public async Task<List<CoinMarket>> GetMarketsAsync(CancellationToken ct)
  {
@@ -19,7 +22,7 @@ public sealed class CoinGeckoClient
    {
     var url=$"coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page={page}&sparkline=false";
     AppLogger.Info($"CoinGecko page {page} request: {url}");
-    var batch=await _http.GetFromJsonAsync<List<CoinMarket>>(url,ct)??[];
+    var batch=await GetJsonWithRetryAsync<List<CoinMarket>>(url,$"CoinGecko page {page}",ct)??[];
     all.AddRange(batch);
     AppLogger.Info($"CoinGecko page {page} loaded: count={batch.Count}; total={all.Count}");
     if(batch.Count<250) break;
@@ -38,6 +41,53 @@ public sealed class CoinGeckoClient
    AppLogger.Error($"CoinGecko markets request failed; total={all.Count}; elapsedMs={sw.ElapsedMilliseconds}",ex);
    throw;
   }
+ }
+
+ async Task<T?> GetJsonWithRetryAsync<T>(string url,string operation,CancellationToken ct)
+ {
+  for(var attempt=1;attempt<=MaxAttempts;attempt++)
+  {
+   try
+   {
+    using var response=await _http.GetAsync(url,ct);
+    if(!response.IsSuccessStatusCode)
+    {
+     throw new HttpRequestException(
+      $"CoinGecko request failed: {(int)response.StatusCode} {response.ReasonPhrase}",
+      null,
+      response.StatusCode);
+    }
+
+    return await response.Content.ReadFromJsonAsync<T>(cancellationToken:ct);
+   }
+   catch(OperationCanceledException) when (ct.IsCancellationRequested)
+   {
+    throw;
+   }
+   catch(TaskCanceledException ex) when (attempt<MaxAttempts && !ct.IsCancellationRequested)
+   {
+    var delay=RetryDelays[Math.Min(attempt-1,RetryDelays.Length-1)];
+    AppLogger.Warn($"{operation} timeout; attempt={attempt}/{MaxAttempts}; retryInMs={(int)delay.TotalMilliseconds}; {ex.Message}");
+    await Task.Delay(delay,ct);
+   }
+   catch(Exception ex) when (attempt<MaxAttempts && ExternalApiError.IsTransient(ex))
+   {
+    var delay=GetRetryDelay(ex,attempt);
+    AppLogger.Warn($"{operation} transient failure; attempt={attempt}/{MaxAttempts}; retryInMs={(int)delay.TotalMilliseconds}; {ex.Message}");
+    await Task.Delay(delay,ct);
+   }
+  }
+
+  using var finalResponse=await _http.GetAsync(url,ct);
+  finalResponse.EnsureSuccessStatusCode();
+  return await finalResponse.Content.ReadFromJsonAsync<T>(cancellationToken:ct);
+ }
+
+ static TimeSpan GetRetryDelay(Exception ex,int attempt)
+ {
+  var status=ExternalApiError.GetHttpStatusCode(ex);
+  if(status==HttpStatusCode.TooManyRequests) return attempt==1 ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(10);
+  return RetryDelays[Math.Min(attempt-1,RetryDelays.Length-1)];
  }
 
  public async Task<List<(DateTimeOffset Time, decimal Price)>> GetMarketChartRangePricesAsync(string coinId,DateTimeOffset from,DateTimeOffset to,CancellationToken ct)

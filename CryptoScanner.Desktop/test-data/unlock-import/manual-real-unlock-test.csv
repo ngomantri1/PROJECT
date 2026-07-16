@@ -1,0 +1,4 @@
+coin_id,symbol,unlock_30d_pct,unlock_90d_pct,next_unlock_at,percentage_basis,source,source_url,verified_at,confidence
+celestia,TIA,1.2,2.4,2026-08-15T00:00:00+00:00,CURRENT_CIRCULATING_SUPPLY,MANUAL_REAL_DATA_TEST,https://example.com/source,2026-07-16T04:30:00+07:00,LOW
+injective-protocol,INJ,0.5,1.8,2026-08-01T00:00:00+00:00,CURRENT_CIRCULATING_SUPPLY,MANUAL_REAL_DATA_TEST,https://example.com/source,2026-07-16T04:30:00+07:00,LOW
+arbitrum,ARB,2.0,4.0,2026-09-01T00:00:00+00:00,CURRENT_CIRCULATING_SUPPLY,MANUAL_REAL_DATA_TEST,https://example.com/source,2026-07-16T04:30:00+07:00,LOW

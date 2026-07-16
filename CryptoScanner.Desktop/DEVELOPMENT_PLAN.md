@@ -678,6 +678,346 @@ Mục tiêu: bổ sung dữ liệu unlock từ cache local để giảm `UNLOCK_
 - [x] `UNLOCK_FAIL` không override hard reject mạnh hơn như non-standard symbol hoặc Binance volume quá thấp.
 - [x] Ghi `unlock_cache_summary` vào `scanner_log`.
 - [x] Thêm `config/unlock-cache.example.json` làm mẫu nhập cache thủ công.
+- [x] Test positive-path với cache local giả: PASS/WARN/FAIL, match theo `coin_id`, xóa `UNLOCK_UNKNOWN`, tăng SourceCoverage/DataQuality.
+- [x] Xóa cache/snapshot/log test giả sau khi kiểm chứng để tránh dùng nhầm dữ liệu đầu tư.
 - [x] Build pass sau khi triển khai.
 
-Trạng thái: đã triển khai foundation. Việc cần kiểm tra sau khi chạy UI: scan khi không có cache vẫn bình thường, scan khi có `%LOCALAPPDATA%\CryptoScanner.Desktop\data\unlock-cache.json` thì log có match/missing và snapshot fill `UnlockStatus`, `Unlock30dPct`, `Unlock90dPct` cho coin khớp.
+Trạng thái: hoàn tất foundation. Scan khi không có cache vẫn bình thường; scan với cache thử nghiệm đã xác nhận `UnlockStatus`, `Unlock30dPct`, `Unlock90dPct`, rule lists, SourceCoverage/DataQuality và DecisionCode được cập nhật đúng cho coin khớp.
+
+## V1.8: Backtest Review / Mini Health Dashboard
+
+Mục tiêu: hiển thị nhanh tình trạng scanner, backtest và lịch sử ngay trong ứng dụng, không cần mở thủ công JSON. Đây chỉ là lớp đọc và trình bày dữ liệu đã tồn tại.
+
+### Phạm vi khóa
+
+- [x] Không thêm API.
+- [x] Không thêm chart.
+- [x] Không sửa `ScannerService`.
+- [x] Không sửa scoring hoặc decision rules.
+- [x] Không sửa schema `market_snapshot`.
+- [x] Không sửa output scanner hoặc backtest.
+- [x] Không tạo thêm file export.
+- [x] Không dùng `FileSystemWatcher`.
+- [x] Không thêm nút mở log.
+- [x] Không thêm nút mở backtest.
+- [x] Không tự chạy scan hoặc backtest.
+- [x] Không làm UI dashboard lớn.
+
+### Nguồn dữ liệu chỉ đọc
+
+- [x] `%LOCALAPPDATA%\CryptoScanner.Desktop\exports\scanner_log_*.json`.
+- [x] `%LOCALAPPDATA%\CryptoScanner.Desktop\backtests\backtest_results_*.json`.
+- [x] `%LOCALAPPDATA%\CryptoScanner.Desktop\history\history_index.json`.
+
+### Nguyên tắc đọc file
+
+- [x] Chọn scanner log và backtest mới nhất bằng `generated_at` trong JSON; fallback `LastWriteTimeUtc` nếu thiếu.
+- [x] Nếu file mới nhất bị hỏng, thử file hợp lệ kế tiếp.
+- [x] Không để một JSON hỏng làm mất toàn bộ health dashboard.
+- [x] Đọc bất đồng bộ, không block UI thread.
+- [x] Bắt riêng lỗi file không tồn tại, file đang ghi, JSON lỗi, thiếu property hoặc sai kiểu dữ liệu.
+- [x] Không throw exception lên ViewModel/UI.
+- [x] Trả trạng thái đọc rõ ràng: `OK`, `NO_DATA`, `READ_ERROR`.
+- [x] Không giữ file handle sau khi deserialize.
+
+### Phase 1: Scanner Health Summary
+
+Nguồn: scanner log hợp lệ mới nhất trong `exports`.
+
+- [x] Last Scan từ `generated_at`.
+- [x] Scan Status từ `scan_status`.
+- [x] BTC Regime từ `scan_summary.btc_regime`.
+- [x] Candidates từ `scan_summary.candidates`.
+- [x] Priority/Watch/Reject từ `scan_summary`.
+- [x] Elapsed từ `scan_timing.elapsed_seconds`.
+- [x] Unlock Matches/Missing từ `unlock_cache_summary`.
+- [x] History Saved từ `history.history_saved`.
+- [x] Suy ra Unlock Source từ `unlock_cache_summary`, không cần đọc `market_snapshot`.
+
+Quy tắc Unlock Source:
+
+- [x] `loaded=true`, `is_expired=false` => `LOCAL_CACHE`.
+- [x] `loaded=true`, `is_expired=true` => `LOCAL_CACHE_EXPIRED`.
+- [x] `loaded=false` và warning chứa `not found` => `CACHE_MISSING`.
+- [x] `loaded=false` với lỗi đọc/parse => `CACHE_ERROR`.
+- [x] Không có scanner log => `NO_DATA`.
+
+### Phase 2: Backtest Summary
+
+Nguồn: backtest result hợp lệ mới nhất trong `backtests`.
+
+- [x] Last Backtest từ `backtest_id`.
+- [x] Generated At từ `generated_at`.
+- [x] Snapshots Processed từ `snapshots_processed`.
+- [x] Snapshots Skipped từ `snapshots_skipped`.
+- [x] Pending Horizons từ `excluded_counts.pending`.
+- [x] Missing Price từ `excluded_counts.missing_price`.
+- [x] Unsupported Symbol từ `excluded_counts.unsupported_symbol`.
+- [x] Completed Horizons phải đếm trực tiếp từ `snapshot_results -> candidates -> horizons -> status == COMPLETED`.
+- [x] Không lấy completed từ `group_summaries`.
+- [x] Có thể đếm trực tiếp Pending/Missing/Unsupported để kiểm tra chéo với `excluded_counts`; nếu lệch thì hiển thị nguồn chuẩn và ghi warning.
+- [x] `group_summaries` rỗng không làm summary lỗi.
+
+### Phase 3: History Summary
+
+Nguồn: `history\history_index.json`.
+
+- [x] History Entries là số entry hợp lệ.
+- [x] Last Snapshot xác định bằng timestamp mới nhất, không mặc định phần tử cuối mảng.
+- [x] Last Scan ID từ entry mới nhất hợp lệ.
+- [x] Entry thiếu timestamp hoặc scan ID phải được bỏ qua an toàn.
+- [x] Retention Days chỉ hiển thị nếu đã có field hoặc cấu hình hiện hữu đọc được.
+- [x] Không sửa schema `history_index.json` chỉ để phục vụ UI.
+- [x] Nếu chưa có retention source thì hiển thị `—` hoặc bỏ dòng.
+
+### Phase 4: Refresh
+
+- [x] Tạo một luồng refresh duy nhất: `RefreshHealthAsync()`.
+- [x] Gọi sau khi `MainViewModel` khởi tạo xong.
+- [x] Gọi sau khi scan hoàn thành và file đã ghi xong.
+- [x] Gọi sau khi backtest hoàn thành và file kết quả đã ghi xong.
+- [x] Gọi sau export thủ công nếu command export vẫn tạo file độc lập.
+- [ ] Không gọi refresh khi file mới bắt đầu ghi.
+- [ ] Không refresh hai lần cho cùng một scan chỉ vì scan vừa hoàn thành vừa export JSON.
+- [x] Chống refresh chồng nhau bằng `SemaphoreSlim`, cancellation token hoặc cờ `IsRefreshingHealth`.
+- [x] Đọc và deserialize ngoài UI thread.
+- [x] Gán summary mới về ViewModel một lần; không cập nhật từng property rời rạc khi đang đọc.
+- [ ] Giữ summary cũ cho tới khi summary mới đọc xong.
+- [ ] Nếu refresh lỗi, không làm mất dữ liệu hợp lệ trước đó; chỉ cập nhật trạng thái lỗi phù hợp.
+
+### Model và service dự kiến
+
+- [x] Thêm `Models\AppHealthSummary.cs`.
+- [x] Thêm `Services\AppHealthService.cs`.
+- [x] `AppHealthSummary` gồm `ScannerHealthSummary`, `BacktestHealthSummary`, `HistoryHealthSummary`.
+- [x] Mỗi nhóm có `HealthReadStatus Status`, `string? Message`, `DateTimeOffset? GeneratedAt`.
+- [x] `AppHealthService` resolve AppData paths, tìm file hợp lệ mới nhất, đọc JSON an toàn, tính summary.
+- [x] `AppHealthService` không chứa logic UI, không sửa file, không gọi scanner/backtest và không tạo export.
+
+### UI đề xuất
+
+- [x] Thêm một panel nhỏ dưới hàng dashboard card.
+- [x] Không chart.
+- [x] Không DataGrid mới.
+- [x] Không popup.
+- [x] Không nút mở file.
+- [ ] Không dùng màu cảnh báo quá mạnh.
+- [ ] `NO_DATA` hiển thị rõ nhưng không coi là lỗi nghiêm trọng.
+- [ ] Dùng binding nullable/fallback phù hợp, không binding tới property không tồn tại.
+- [ ] Không đặt logic đọc file trong code-behind.
+
+Ví dụ:
+
+```text
+SCANNER HEALTH
+Last scan: 09:45 | 45 candidates | BTC: BEAR
+Unlock: LOCAL_CACHE 3/{candidates} | History: Saved
+
+BACKTEST
+Latest: 09:49 | snapshots: 9/0
+Horizons: 0 completed | 1170 pending | missing: 0
+
+HISTORY
+Entries: 9 | latest: 20260715T094500_86EC
+```
+
+### File có thể cần sửa
+
+- [ ] `ViewModels\MainViewModel.cs`.
+- [ ] `MainWindow.xaml`.
+- [ ] `DEVELOPMENT_PLAN.md`.
+
+### Tiêu chí chốt
+
+- [ ] App mở được khi chưa có thư mục `exports`.
+- [ ] App mở được khi chưa có scanner log.
+- [ ] App mở được khi chưa có backtest file.
+- [ ] App mở được khi chưa có history file.
+- [ ] App mở được khi cả ba nguồn đều chưa tồn tại.
+- [ ] Scanner log hỏng không làm crash app.
+- [ ] Backtest JSON hỏng không làm crash app.
+- [ ] History index hỏng không làm crash app.
+- [ ] File mới nhất hỏng thì scanner/backtest health thử file hợp lệ trước đó.
+- [ ] JSON thiếu property không gây lỗi binding.
+- [ ] Scanner health hiển thị đúng scan mới nhất, BTC regime, counts, elapsed, unlock source, unlock match/missing và history saved.
+- [ ] Backtest health hiển thị đúng file mới nhất, processed/skipped, completed từ horizon status, pending/missing/unsupported không đếm trùng.
+- [ ] History health đếm đúng entry hợp lệ, latest entry theo timestamp và latest scan ID.
+- [ ] Health summary tải khi mở app.
+- [ ] Sau scan, scanner và history summary cập nhật.
+- [ ] Sau backtest, backtest summary cập nhật.
+- [ ] Không refresh chồng nhiều lần.
+- [ ] Không đọc file khi file chưa ghi hoàn tất.
+- [ ] UI không bị treo trong lúc refresh.
+- [ ] Không có binding error.
+- [ ] Không có unhandled exception.
+- [ ] Build sạch.
+- [ ] Không thay đổi scanner output.
+- [ ] Không thay đổi backtest output.
+- [ ] Không thay đổi snapshot schema.
+- [ ] Không tạo file export mới.
+- [ ] Không ảnh hưởng kết quả scan, scoring hoặc decision code.
+
+### Test tối thiểu
+
+- [ ] Chạy app khi xóa toàn bộ scanner log, backtest và history.
+- [ ] Chạy app với scanner log hợp lệ.
+- [ ] Chạy app với scanner log mới nhất bị hỏng và file trước đó hợp lệ.
+- [ ] Chạy app khi chưa có backtest.
+- [ ] Chạy app với backtest chỉ có `PENDING`.
+- [ ] Chạy app với backtest có ít nhất một `COMPLETED`.
+- [ ] Chạy app với `history_index.json` rỗng.
+- [ ] Chạy app với history index bị hỏng.
+- [ ] Chạy scan và kiểm tra UI refresh.
+- [ ] Chạy backtest và kiểm tra UI refresh.
+- [ ] Kiểm tra Output window không có binding error.
+- [ ] So sánh file scanner/backtest trước và sau V1.8 để xác nhận dashboard không đổi schema hoặc nội dung output.
+
+Trạng thái: đã khóa kế hoạch. Sẵn sàng triển khai khi bắt đầu sprint V1.8.
+
+## V1.9: Manual Unlock Import
+
+Mục tiêu: cho phép người dùng chọn một file JSON unlock, validate toàn bộ nội dung rồi nhập an toàn vào `%LOCALAPPDATA%\CryptoScanner.Desktop\data\unlock-cache.json`.
+
+### Phạm vi khóa
+
+- [x] Không gọi API.
+- [x] Không scrape.
+- [x] Không tạo dữ liệu unlock giả.
+- [x] Không tự sửa dữ liệu người dùng.
+- [x] Không tự chạy scanner sau import.
+- [x] Không sửa scoring.
+- [x] Không sửa `ScannerService`.
+- [x] Không sửa schema `market_snapshot`.
+- [x] Không sửa backtest engine.
+
+### Triển khai
+
+- [x] Thêm `UnlockCacheInspector` dùng chung cho `CachedUnlockProvider` và `UnlockCacheImportService`.
+- [x] Thêm `UnlockImportResult`.
+- [x] Thêm `UnlockCacheImportService`.
+- [x] Import validate trước khi ghi cache thật.
+- [x] File import giới hạn 5 MB.
+- [x] Từ chối invalid JSON, unsupported schema, missing `updated_at`, no valid item, duplicate `coin_id`/`symbol`, percentage ngoài 0-100.
+- [x] Cache hết hạn được import thành công kèm cảnh báo.
+- [x] Ghi temp file trong cùng thư mục data và replace atomically.
+- [x] Giữ tối đa một backup `unlock-cache.previous.json`.
+- [x] Import lỗi không làm thay đổi cache hiện tại.
+- [x] Copy bytes sau validation để không đổi encoding/format file nguồn.
+- [x] Thêm command/nút `IMPORT UNLOCK`.
+- [x] Disable import khi app đang busy.
+- [x] Import thành công nhắc người dùng chạy scanner lại.
+- [x] Ghi runtime log success/failure, không ghi nội dung file vào log.
+
+### Test đã chạy
+
+- [x] Valid import: tạo được `unlock-cache.json`.
+- [x] Invalid JSON: import fail, cache cũ giữ nguyên.
+- [x] Duplicate `coin_id`: import fail, cache cũ giữ nguyên.
+- [x] Percentage sai: import fail, cache cũ giữ nguyên.
+- [x] Expired cache: import success, `IsExpired=true`.
+- [x] Invalid JSON giữ nguyên SHA-256 cache cũ và không để lại temp file.
+- [x] File đích bị khóa trả `WRITE_FAILED`, giữ nguyên SHA-256 cache cũ và không để lại temp file.
+- [x] Build Release sạch.
+- [x] Thêm bộ file test thủ công trong `test-data/unlock-import`.
+
+### Cần test thủ công
+
+- [x] Nút `IMPORT UNLOCK` mở file picker trong UI.
+- [x] Import file hợp lệ qua UI, sau đó chạy scanner và Health hiển thị `LOCAL_CACHE`.
+- [x] Import JSON hỏng qua UI, cache hợp lệ trước đó không bị ghi đè.
+- [x] Import cache hết hạn qua UI, sau đó chạy scanner và Health hiển thị `LOCAL_CACHE_EXPIRED`.
+- [x] Import lại file hợp lệ sau test expired, sau đó chạy scanner và Health trở về `LOCAL_CACHE`.
+- [ ] Output window không có binding error.
+
+Trạng thái: DONE. V1.9 đã có bằng chứng UI/import/scanner/history/snapshot cho valid import, invalid JSON, expired cache và restore cache hợp lệ. Output binding là checklist vận hành còn có thể kiểm tra thêm khi mở bằng Visual Studio.
+
+## V1.10: Stabilization
+
+Mục tiêu: khóa chất lượng runtime trước khi thêm nguồn unlock thật. V1.10 chỉ sửa lỗi và ổn định vận hành; không thêm API, không scrape, không thêm provider mới, không đổi scoring, không đổi snapshot schema, không đổi backtest engine và không mở rộng UI lớn.
+
+- [x] Không hiển thị stack trace dài trong popup người dùng.
+- [x] Không spam nhiều popup cho một lần scan lỗi.
+- [x] Phân loại `429 Too Many Requests` thành thông báo thử lại sau.
+- [x] Phân loại lỗi transport/connection closed thành lỗi mạng tạm thời.
+- [x] Phân loại timeout thành lỗi nguồn dữ liệu phản hồi quá lâu.
+- [x] Thêm retry/backoff nhẹ cho CoinGecko markets.
+- [x] Retry có số lần tối đa.
+- [x] CoinGecko client có timeout.
+- [x] Giữ stack trace chi tiết trong runtime log.
+- [x] Không ghi snapshot/history thành công giả khi scan thất bại.
+- [x] Không xóa bảng kết quả cũ khi scan mới thất bại.
+- [x] Sau scan thành công, Scanner Health lấy trạng thái unlock từ kết quả vừa chạy trong bộ nhớ để tránh hiển thị scanner log cũ.
+- [x] Auto history save không phụ thuộc metadata null.
+- [x] Snapshot/history lưu lại sau scan thành công: scan ID `20260716T031514_BA3D`.
+- [x] Unlock cache pipeline verified with controlled test data: `LOCAL_CACHE 3/43`.
+
+Điểm cần hiểu đúng: `LOCAL_CACHE 3/43` chứng minh pipeline cache/import/provider hoạt động với dữ liệu kiểm thử có kiểm soát. Nó không chứng minh dữ liệu unlock là dữ liệu thật hoặc chính xác cho đầu tư. Trong tài liệu chung phải ghi mẫu số động là `3/{candidate_count}`, không hardcode `43`.
+
+### Cần test nốt trước khi đánh dấu DONE tuyệt đối
+
+- [x] Người dùng bấm `DỪNG` trong lúc scan đang chạy/retry, app không treo, không popup lặp và nút trở lại đúng trạng thái.
+- [ ] Debug build sạch sau khi đóng app, không còn lock file.
+- [ ] Release build sạch và chạy smoke test bản Release.
+- [ ] Output window không có binding error.
+- [ ] File integrity: snapshot/log/history index không 0 byte và không để lại temp file.
+
+Trạng thái: patch chính đã pass qua UI cho popup 429, cancel, `LOCAL_CACHE 3/43`, `History: Saved` và auto snapshot/history. Chưa đánh dấu DONE tuyệt đối cho tới khi hoàn tất Debug/Release build, Output binding và Release smoke test.
+
+## V1.11: Real Unlock Data Intake & Normalization
+
+Mục tiêu: chuyển dữ liệu unlock lấy từ nguồn bên ngoài sang đúng schema nội bộ của CryptoScanner, có nguồn gốc và thời gian cập nhật rõ ràng. Không tự gọi web/API trong app và không lặp lại chức năng import đã hoàn thành ở V1.9.
+
+### Phạm vi khóa
+
+- [x] Không scrape trực tiếp website.
+- [x] Không nhúng trình duyệt.
+- [x] Không hardcode HTML selector.
+- [x] Không tự đăng nhập website.
+- [x] Không gọi API trong scanner.
+- [x] Không biến file mẫu thành dữ liệu thật.
+- [x] Không tự động suy đoán coin khi symbol trùng.
+
+### Thiết kế cần khóa
+
+- [x] Định nghĩa rõ `unlock_30d_pct` và `unlock_90d_pct`.
+- [x] Khuyến nghị: phần trăm lượng token sẽ unlock trong kỳ so với circulating supply tại thời điểm dữ liệu được thu thập.
+- [ ] Xác nhận logic scoring hiện tại dùng đúng ý nghĩa phần trăm này.
+- [x] Identity ưu tiên `coin_id` CoinGecko, `symbol` chỉ là fallback.
+- [ ] Xem có cần `source`/`retrieved_at` trong cache schema hay giữ schema `1.0` hiện tại.
+- [ ] Nếu thêm `source`, chỉ làm khi parser chấp nhận property bổ sung hoặc chủ động nâng schema lên `1.1`.
+
+### Converter ngoài app chính
+
+- [x] Thiết kế `Tools/UnlockCacheConverter`.
+- [x] Input: CSV, JSON đơn giản hoặc file thủ công theo template.
+- [x] Output: `unlock-cache.json`.
+- [x] Validate required fields, duplicate `coin_id`/`symbol`, percentage 0-100.
+- [ ] Nếu input là danh sách event, tính 30D/90D rõ ràng.
+- [x] In report item hợp lệ/lỗi.
+- [x] Không tự chép vào AppData; người dùng import qua nút `IMPORT UNLOCK`.
+- [x] Converter workflow pass qua app: `LOCAL_CACHE 3/43`, `History: Saved`, scan ID `20260716T043700_D467`.
+
+### Tài liệu nguồn dữ liệu
+
+- [x] Nguồn nào được chấp nhận.
+- [x] Ngày lấy dữ liệu và `retrieved_at`.
+- [x] Cách chuyển đổi.
+- [x] Ý nghĩa 30D/90D.
+- [x] Coin không có lịch unlock xử lý thế nào.
+- [x] Coin không match xử lý thế nào.
+- [x] Cache hết hạn sau bao lâu.
+- [x] Không dùng dữ liệu mẫu để ra quyết định đầu tư thật.
+
+Trạng thái: V1.11 Intake + Converter workflow đã pass bằng controlled/manual test data. Chưa phải dữ liệu unlock thật từ nguồn chính thức.
+
+## V1.12: Unlock Source Workflow
+
+Mục tiêu: chuẩn bị nguồn dữ liệu unlock thật ở dạng CSV/JSON để đưa qua converter V1.11. V1.12 vẫn không gọi API trong scanner, không scrape website và không tự động ghi cache vào AppData.
+
+- [x] Tạo `docs/UNLOCK_SOURCE_WORKFLOW.md`.
+- [ ] Chọn nguồn dữ liệu unlock thật được chấp nhận.
+- [ ] Tạo CSV thật theo format converter.
+- [ ] Chạy converter tạo `unlock-cache.generated.json`.
+- [ ] Import file generated vào app.
+- [ ] Scan và xác nhận `LOCAL_CACHE x/{candidate_count}` với dữ liệu thật.
+- [ ] Ghi audit: nguồn, ngày lấy dữ liệu, `percentage_basis`, coin không match.

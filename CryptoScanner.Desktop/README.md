@@ -20,7 +20,10 @@
 - Chấm điểm ban đầu và xuất snapshot JSON.
 
 ## Giới hạn V1
-- Chưa tích hợp unlock, GitHub, DefiLlama, tin tức và order-book spread.
+- Unlock hiện chỉ đọc cache local nếu người dùng tự đặt file tại `%LOCALAPPDATA%\CryptoScanner.Desktop\data\unlock-cache.json`; app không tự tải hoặc tự tạo dữ liệu unlock.
+- File `config\unlock-cache.example.json` chỉ là mẫu định dạng để kiểm thử, không phải dữ liệu thị trường thật.
+- Quy trình chuẩn hóa dữ liệu unlock thật được ghi trong `docs\UNLOCK_REAL_DATA_INTAKE.md`; file test không được dùng để ra quyết định đầu tư.
+- Chưa tích hợp GitHub, DefiLlama, tin tức và order-book spread.
 - Mapping CoinGecko symbol → Binance symbol có thể sai với ticker trùng tên.
 - Score là phiên bản kỹ thuật ban đầu, chưa phải khuyến nghị đầu tư.
 - API công khai có thể rate-limit; cần thêm cache/retry trong V1.1.

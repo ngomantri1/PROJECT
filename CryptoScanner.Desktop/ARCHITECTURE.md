@@ -1,62 +1,104 @@
 # ARCHITECTURE
 
-## Cấu trúc hiện tại
+## Cấu trúc project hiện tại
+
 ```text
-CryptoScannerDesktopV1.sln
-├── CryptoScanner.Desktop/
-│   ├── App.xaml(.cs)
-│   ├── MainWindow.xaml(.cs)
-│   ├── Helpers/
-│   │   ├── ObservableObject.cs
-│   │   ├── RelayCommand.cs
-│   │   └── AsyncRelayCommand.cs
-│   ├── Models/
-│   │   ├── CoinMarket.cs
-│   │   ├── BinanceModels.cs
-│   │   └── ScanResult.cs
-│   ├── Services/
-│   │   ├── CoinGeckoClient.cs
-│   │   ├── BinanceClient.cs
-│   │   ├── TechnicalAnalysisService.cs
-│   │   ├── ScannerService.cs
-│   │   └── ExportService.cs
-│   └── ViewModels/
-│       ├── MainViewModel.cs
-│       └── CoinDisplayItem.cs
-├── README.md
-└── CODEX_TASKS.md
+CryptoScanner.Desktop/
+├── App.xaml(.cs)
+├── MainWindow.xaml(.cs)
+├── config/
+│   ├── scanner-settings.json
+│   └── unlock-cache.example.json
+├── Helpers/
+│   ├── ObservableObject.cs
+│   ├── RelayCommand.cs
+│   ├── AsyncRelayCommand.cs
+│   └── BoolToVisibilityConverter.cs
+├── Models/
+│   ├── AppHealthSummary.cs
+│   ├── BacktestModels.cs
+│   ├── BinanceModels.cs
+│   ├── CoinMarket.cs
+│   ├── HistoryIndexDocument.cs
+│   ├── HistoryIndexEntry.cs
+│   ├── HistorySaveResult.cs
+│   ├── ScannerSettings.cs
+│   ├── ScanPipelineMetrics.cs
+│   ├── ScanResult.cs
+│   ├── ScanSessionMetadata.cs
+│   └── UnlockModels.cs
+├── Services/
+│   ├── AppHealthService.cs
+│   ├── AppLogger.cs
+│   ├── BacktestMetricsService.cs
+│   ├── BacktestService.cs
+│   ├── BinanceClient.cs
+│   ├── CachedUnlockProvider.cs
+│   ├── CoinGeckoClient.cs
+│   ├── ExportService.cs
+│   ├── HistoricalPriceProvider.cs
+│   ├── HistoryReader.cs
+│   ├── HistoryService.cs
+│   ├── ScannerService.cs
+│   ├── TechnicalAnalysisService.cs
+│   └── UnlockRuleEvaluator.cs
+└── ViewModels/
+    ├── MainViewModel.cs
+    └── CoinDisplayItem.cs
 ```
 
 ## Module chính
 
 ### UI layer
-- `App.xaml`: resource/theme toàn ứng dụng.
-- `MainWindow.xaml`: dashboard, nút lệnh, summary cards, DataGrid và progress bar.
-- `MainWindow.xaml.cs`: chỉ khởi tạo ViewModel làm `DataContext`.
+
+- `App.xaml`: theme/resource toàn app. Đang chứa style Button, TextBox, ComboBox, DataGrid, DataGridColumnHeader, DataGridCell.
+- `MainWindow.xaml`: dashboard, toolbar, health dashboard, search/filter, DataGrid, detail panel, progress/status bar.
+- `MainWindow.xaml.cs`: chỉ khởi tạo `MainViewModel` làm `DataContext`.
 
 ### Presentation/MVVM
-- `MainViewModel.cs`: điều phối scan/cancel/export; giữ trạng thái UI và collection kết quả.
-- `CoinDisplayItem.cs`: display wrapper giữ reference tới `ScanResult` gốc, chỉ phục vụ format/binding UI.
-- `ObservableObject.cs`: triển khai `INotifyPropertyChanged`.
-- `RelayCommand.cs`: command đồng bộ cho thao tác nhanh như mở folder/copy/mở link.
-- `AsyncRelayCommand.cs`: command async cho scan/export, chống chạy song song và có fallback exception handler.
+
+- `MainViewModel.cs`: điều phối scan/cancel/export/backtest/open folder, giữ trạng thái UI, collection kết quả, filter/search, selected coin và health summary.
+- `CoinDisplayItem.cs`: display wrapper giữ reference tới `ScanResult` gốc. Chỉ phục vụ binding/format UI.
+- `ObservableObject.cs`: `INotifyPropertyChanged`.
+- `RelayCommand.cs`: command đồng bộ.
+- `AsyncRelayCommand.cs`: command async, chống chạy song song và log unhandled exception.
 
 ### Data models
+
+- `ScanResult.cs`: contract chính giữa scanner, export, UI và backtest.
 - `CoinMarket.cs`: DTO CoinGecko.
-- `BinanceModels.cs`: DTO ticker Binance và parse quote volume.
-- `ScanResult.cs`: model kết quả hiển thị và export.
+- `BinanceModels.cs`: DTO Binance ticker/klines.
+- `ScannerSettings.cs`: cấu hình filter/profile/rule.
+- `ScanSessionMetadata.cs`: metadata scan, timing, pipeline, unlock cache.
+- `UnlockModels.cs`: cache item, status, summary unlock.
+- `BacktestModels.cs`: backtest result/horizon/summary.
+- `HistoryIndexDocument.cs`, `HistoryIndexEntry.cs`, `HistorySaveResult.cs`: history index.
+- `AppHealthSummary.cs`: DTO đọc health cho UI.
 
 ### Infrastructure/API
-- `CoinGeckoClient.cs`: REST client lấy danh sách market.
-- `BinanceClient.cs`: REST client lấy ticker và close prices từ klines.
-- Các client hiện tự tạo `HttpClient`, chưa có DI, retry, timeout policy hoặc cache.
 
-### Domain/application services
-- `TechnicalAnalysisService.cs`: RSI, EMA, phát hiện setup sơ bộ.
-- `ScannerService.cs`: orchestration, filter, symbol matching, scoring, ranking, BTC regime.
-- `ExportService.cs`: xuất `market_snapshot_*.json` và `scanner_log_*.json` vào `%LOCALAPPDATA%\CryptoScanner.Desktop\exports`.
+- `CoinGeckoClient.cs`: REST client lấy market universe.
+- `BinanceClient.cs`: REST client lấy ticker, candles, historical prices.
+- `AppLogger.cs`: ghi log local vào `%LOCALAPPDATA%\CryptoScanner.Desktop\logs`.
+- Chưa có DI/IHttpClientFactory.
+- Chưa có retry/backoff đầy đủ.
+
+### Domain/Application services
+
+- `ScannerService.cs`: orchestration chính, filter, candidate ranking, technical analysis, unlock rule, scoring, decision, risk flags.
+- `TechnicalAnalysisService.cs`: RSI/EMA/MACD/setup.
+- `CachedUnlockProvider.cs`: đọc `%LOCALAPPDATA%\CryptoScanner.Desktop\data\unlock-cache.json`.
+- `UnlockRuleEvaluator.cs`: đánh giá unlock PASS/WARN/FAIL theo ngưỡng.
+- `ExportService.cs`: xuất `market_snapshot_*.json`, `scanner_log_*.json`, lưu history khi được yêu cầu.
+- `HistoryService.cs`: lưu snapshot/log vào history và cập nhật `history_index.json`.
+- `HistoryReader.cs`: đọc history cho backtest.
+- `HistoricalPriceProvider.cs`: lấy giá historical để backtest.
+- `BacktestService.cs`: chạy backtest foundation và xuất `backtest_results_*.json`.
+- `BacktestMetricsService.cs`: tính metrics từ kết quả completed.
+- `AppHealthService.cs`: đọc scanner log, backtest result, history index để tạo mini health dashboard.
 
 ## Dependency hiện tại
+
 ```text
 MainWindow
   -> MainViewModel
@@ -64,52 +106,115 @@ MainWindow
           -> CoinGeckoClient
           -> BinanceClient
           -> TechnicalAnalysisService
-          -> Models
+          -> CachedUnlockProvider
+          -> UnlockRuleEvaluator
+          -> ScannerSettings
       -> ExportService
-      -> ScanResult
+          -> HistoryService
+      -> BacktestService
+          -> HistoryReader
+          -> HistoricalPriceProvider
+          -> BacktestMetricsService
+      -> AppHealthService
+          -> scanner_log_*.json
+          -> backtest_results_*.json
+          -> history_index.json
+      -> CoinDisplayItem
 ```
 
-UI không gọi API trực tiếp. Tuy nhiên dependency đang được `new` trực tiếp nên khó mock/test.
+UI không gọi API trực tiếp. Dependency vẫn được `new` trực tiếp, chưa có DI nên test/mocking còn hạn chế.
 
-## File phụ trách gì
-- `MainViewModel`: trạng thái phiên quét và lệnh UI.
-- `ScannerService`: toàn bộ pipeline scan và scoring V1.
-- `CoinGeckoClient`: universe market đầu vào.
-- `BinanceClient`: xác nhận pair, volume và candles.
-- `TechnicalAnalysisService`: chỉ báo kỹ thuật.
-- `ExportService`: snapshot JSON.
-- `ScanResult`: contract chính giữa scanner, UI và export.
+## Data flow scan
 
-## Data flow
 ```text
 CoinGecko /coins/markets
   -> List<CoinMarket>
   -> hard filters
   -> Binance ticker match
-  -> Binance H4 + D1 closes
-  -> indicators/setup
-  -> score/status/data quality
+  -> pre-technical ranking
+  -> top technical candidates
+  -> Binance H4/D1 candles
+  -> technical indicators/setup
+  -> CachedUnlockProvider
+  -> UnlockRuleEvaluator
+  -> score/status/decision/risk/rules
   -> List<ScanResult>
-  -> ObservableCollection
-  -> DataGrid
-  -> JSON export
+  -> CoinDisplayItem collection
+  -> DataGrid + detail panel
+  -> ExportService
+  -> market_snapshot + scanner_log + history
 ```
+
+## Export flow
+
+```text
+Scan complete
+  -> ExportService.ExportAsync(saveHistory: true)
+  -> exports\market_snapshot_*.json
+  -> exports\scanner_log_*.json
+  -> history\yyyy-MM-dd\...
+  -> history\history_index.json
+
+Manual export
+  -> ExportService.ExportAsync(saveHistory: false)
+  -> exports\market_snapshot_*.json
+  -> exports\scanner_log_*.json
+  -> no duplicate history entry
+```
+
+## Backtest flow
+
+```text
+BACKTEST command
+  -> BacktestService.RunAsync
+  -> HistoryReader reads history_index.json
+  -> load each historical snapshot
+  -> evaluate 7D/14D/30D horizons
+  -> if target time not reached: PENDING
+  -> if enough age: fetch historical price
+  -> output backtest_results_*.json
+```
+
+Backtest không sửa snapshot cũ.
+
+## Health Dashboard flow
+
+```text
+App start / scan completed / export completed / backtest completed
+  -> MainViewModel.RefreshHealthAsync
+  -> AppHealthService.LoadAsync
+      -> latest valid scanner_log_*.json
+      -> latest valid backtest_results_*.json
+      -> history_index.json
+  -> AppHealthSummary
+  -> UI binding
+```
+
+Nguyên tắc:
+
+- Không dùng `FileSystemWatcher` ở V1.8.
+- Đọc file async.
+- File hỏng hoặc thiếu trả `NO_DATA`/`READ_ERROR`, không crash UI.
+- `Completed` backtest phải đếm trực tiếp từ horizon status, không lấy từ `group_summaries`.
+- `Retention` chỉ hiển thị nếu có dữ liệu, nếu không là `--`.
 
 ## REST packet flow
 
 ### CoinGecko
+
 ```text
 GET /api/v3/coins/markets
   ?vs_currency=usd
   &order=market_cap_desc
   &per_page=250
-  &page=1..5
+  &page=1..n
   &sparkline=false
 -> JSON array
 -> CoinMarket
 ```
 
 ### Binance ticker
+
 ```text
 GET /api/v3/ticker/24hr
 -> JSON array
@@ -118,45 +223,59 @@ GET /api/v3/ticker/24hr
 ```
 
 ### Binance candles
+
 ```text
 GET /api/v3/klines?symbol={PAIR}&interval={4h|1d}&limit=220
 -> JSON arrays
--> lấy phần tử index 4 (close)
+-> close at index 4
 -> List<decimal>
 ```
 
 ## WebSocket packet flow
-- Không tồn tại trong V1.
+
+- Không có WebSocket trong project hiện tại.
 - Không có subscribe/unsubscribe, heartbeat, reconnect hoặc packet dispatcher.
-- Tên mục này được giữ để AI coding không nhầm REST polling với realtime stream.
+- Nếu sau này thêm realtime thì phải tách service riêng.
 
 ## UI update flow
+
 ```text
 Button Command
- -> MainViewModel.ScanAsync
+ -> MainViewModel async command
+ -> service async workflow
  -> Progress<(double,string)>
- -> ScannerService.ScanAsync
- -> progress.Report(...)
  -> UI SynchronizationContext
- -> Progress + StatusMessage bindings
+ -> bound properties
 
 Scan complete
- -> foreach result -> ObservableCollection.Add
- -> DataGrid refresh
- -> Raise summary properties
+ -> raw List<ScanResult>
+ -> DisplayResults: ObservableCollection<CoinDisplayItem>
+ -> ICollectionView filter/search
+ -> DataGrid + detail panel
 ```
 
 ## OCR/canvas flow
-- Không có OCR, image processing, browser canvas hoặc screenshot flow trong project.
-- Không thêm dependency OCR/canvas nếu không có use case mới.
+
+- Không có OCR.
+- Không có canvas.
+- Không có screenshot/image processing flow.
 
 ## Kiến trúc đích đề xuất
-Khi mở rộng, tách thành project/layer hoặc ít nhất folder rõ ràng:
+
+Khi mở rộng:
+
 ```text
 Desktop/UI
 Application/Scanner
+Application/Backtest
 Core/Rules + Models + Interfaces
-Infrastructure/API + Persistence + Logging
+Infrastructure/API + Cache + Persistence + Logging
 Tests
 ```
-Ưu tiên interface hóa API clients và settings trước khi tách solution lớn.
+
+Ưu tiên refactor:
+
+- Interface hóa clients/services.
+- DI cho settings/client/service.
+- Tách filter/scoring/decision khỏi `ScannerService`.
+- Thêm test project cho rule/backtest/health reader.

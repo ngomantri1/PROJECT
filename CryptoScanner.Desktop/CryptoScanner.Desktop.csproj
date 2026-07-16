@@ -13,4 +13,8 @@
     <None Include="config\scanner-settings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Tools\**\*.cs" />
+  </ItemGroup>
+
 </Project>

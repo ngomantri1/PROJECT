@@ -7,6 +7,7 @@ using System.Windows.Data;
 using CryptoScanner.Desktop.Helpers;
 using CryptoScanner.Desktop.Models;
 using CryptoScanner.Desktop.Services;
+using Microsoft.Win32;
 
 namespace CryptoScanner.Desktop.ViewModels;
 
@@ -15,11 +16,15 @@ public sealed class MainViewModel : ObservableObject
  readonly ScannerService _scanner = new();
  readonly ExportService _export = new();
  readonly BacktestService _backtest = new();
+ readonly AppHealthService _healthService = new();
+ readonly UnlockCacheImportService _unlockImport = new();
+ readonly SemaphoreSlim _healthRefreshGate = new(1, 1);
  readonly List<ScanResult> _rawResults = [];
  CancellationTokenSource? _cts;
  bool _isScanning;
  bool _isExporting;
  bool _isBacktesting;
+ bool _isImporting;
  bool _hasScanned;
  bool _scanFailed;
  double _progress;
@@ -34,6 +39,7 @@ public sealed class MainViewModel : ObservableObject
  DateTimeOffset? _updated;
  ScanSessionMetadata? _lastScanMetadata;
  CoinDisplayItem? _selectedCoin;
+ AppHealthSummary _health = new();
 
  public ObservableCollection<CoinDisplayItem> DisplayResults { get; } = [];
  public ICollectionView ResultsView { get; }
@@ -47,8 +53,8 @@ public sealed class MainViewModel : ObservableObject
  public RelayCommand CancelCommand { get; }
  public AsyncRelayCommand ExportCommand { get; }
  public AsyncRelayCommand BacktestCommand { get; }
+ public AsyncRelayCommand ImportUnlockCacheCommand { get; }
  public RelayCommand OpenExportFolderCommand { get; }
- public RelayCommand OpenLogFolderCommand { get; }
  public RelayCommand CopySymbolCommand { get; }
  public RelayCommand OpenTradingViewCommand { get; }
  public RelayCommand OpenBinanceCommand { get; }
@@ -63,12 +69,13 @@ public sealed class MainViewModel : ObservableObject
   CancelCommand = new(_ => _cts?.Cancel(), _ => CanCancel);
   ExportCommand = new(ExportAsync, () => CanExport, ex => AppLogger.Error("Unhandled export command exception", ex));
   BacktestCommand = new(BacktestAsync, () => CanBacktest, ex => AppLogger.Error("Unhandled backtest command exception", ex));
+  ImportUnlockCacheCommand = new(ImportUnlockCacheAsync, () => CanImportUnlockCache, ex => AppLogger.Error("Unhandled unlock import command exception", ex));
   OpenExportFolderCommand = new(_ => OpenExportFolder());
-  OpenLogFolderCommand = new(_ => OpenLogFolder());
   CopySymbolCommand = new(x => CopySymbol(x as CoinDisplayItem ?? SelectedCoin), x => (x as CoinDisplayItem ?? SelectedCoin) is not null);
   OpenTradingViewCommand = new(x => OpenTradingView(x as CoinDisplayItem ?? SelectedCoin), x => (x as CoinDisplayItem ?? SelectedCoin) is not null);
   OpenBinanceCommand = new(x => OpenBinance(x as CoinDisplayItem ?? SelectedCoin), x => (x as CoinDisplayItem ?? SelectedCoin) is not null);
   OpenCoinGeckoCommand = new(x => OpenCoinGecko(x as CoinDisplayItem ?? SelectedCoin), x => (x as CoinDisplayItem ?? SelectedCoin) is not null);
+  _ = RefreshHealthAsync();
  }
 
  public double Progress { get => _progress; set => Set(ref _progress, value); }
@@ -81,11 +88,13 @@ public sealed class MainViewModel : ObservableObject
  public bool IsScanning { get => _isScanning; private set { if (Set(ref _isScanning, value)) RaiseCommandState(); } }
  public bool IsExporting { get => _isExporting; private set { if (Set(ref _isExporting, value)) RaiseCommandState(); } }
  public bool IsBacktesting { get => _isBacktesting; private set { if (Set(ref _isBacktesting, value)) RaiseCommandState(); } }
- public bool IsBusy => IsScanning || IsExporting || IsBacktesting;
+ public bool IsImporting { get => _isImporting; private set { if (Set(ref _isImporting, value)) RaiseCommandState(); } }
+ public bool IsBusy => IsScanning || IsExporting || IsBacktesting || IsImporting;
  public bool CanScan => !IsBusy;
  public bool CanCancel => IsScanning || IsBacktesting;
  public bool CanExport => _rawResults.Count > 0 && !IsBusy;
  public bool CanBacktest => !IsBusy;
+ public bool CanImportUnlockCache => !IsBusy;
  public int ScannedCount { get => _scanned; set => Set(ref _scanned, value); }
  public int PassedCount => DisplayResults.Count;
  public int BuyReadyCount => DisplayResults.Count(x => x.Source.Status == "BUY_READY");
@@ -95,11 +104,13 @@ public sealed class MainViewModel : ObservableObject
  public int FilteredCount => ResultsView.Cast<CoinDisplayItem>().Count();
  public string BreakdownSummary => $"Priority {PriorityCount}  •  Watch {WatchlistCount}  •  Reject {RejectCount}";
  public string UpdatedAt => _updated?.ToString("dd/MM/yyyy HH:mm") ?? "--";
+ public string UnlockCachePath => AppPaths.UnlockCachePath;
  public bool HasResults => DisplayResults.Count > 0;
  public bool HasVisibleResults => FilteredCount > 0;
  public bool ShowInitialState => !IsBusy && !_hasScanned && !HasResults && !_scanFailed;
  public bool ShowNoResultsState => !IsBusy && _hasScanned && !HasVisibleResults && !_scanFailed;
  public bool ShowErrorState => _scanFailed;
+ public AppHealthSummary Health { get => _health; private set => Set(ref _health, value); }
 
  async Task ScanAsync()
  {
@@ -108,7 +119,6 @@ public sealed class MainViewModel : ObservableObject
   _scanFailed = false;
   var scanStartedAt = DateTimeOffset.Now;
   var stopwatch = Stopwatch.StartNew();
-  ClearResults();
   try
   {
    AppLogger.Info("Scan command started");
@@ -117,7 +127,7 @@ public sealed class MainViewModel : ObservableObject
    var p = new Progress<(double, string)>(x => UpdateProgress(x.Item1, x.Item2));
    var data = await _scanner.ScanAsync(p, _cts.Token);
    stopwatch.Stop();
-   _lastScanMetadata = new ScanSessionMetadata
+   var metadata = new ScanSessionMetadata
    {
    ScanStartedAt = scanStartedAt,
    ScanEndedAt = DateTimeOffset.Now,
@@ -125,6 +135,8 @@ public sealed class MainViewModel : ObservableObject
     Pipeline = data.Metrics,
     UnlockCache = data.UnlockCache
    };
+   _lastScanMetadata = metadata;
+   ClearResults();
    _rawResults.AddRange(data.Results);
    foreach (var x in _rawResults)
    {
@@ -137,7 +149,9 @@ public sealed class MainViewModel : ObservableObject
    BtcRegime = data.BtcRegime;
    _updated = DateTimeOffset.Now;
    RaiseSummary();
-   await SaveCompletedScanHistoryAsync();
+   var historySaved = await SaveCompletedScanHistoryAsync(data.Results, data.Scanned, data.BtcRegime, metadata);
+   await RefreshHealthAsync();
+   ApplyLiveScannerHealth(data, DateTimeOffset.Now, stopwatch.ElapsedMilliseconds, historySaved);
    AppLogger.Info($"Scan command completed; scanned={ScannedCount}; results={DisplayResults.Count}; logDir={AppLogger.LogDirectory}");
   }
   catch (OperationCanceledException)
@@ -163,10 +177,13 @@ public sealed class MainViewModel : ObservableObject
     ElapsedMs = stopwatch.ElapsedMilliseconds
    };
    _scanFailed = true;
-   StatusMessage = "Quét thất bại. Xem log để biết chi tiết.";
+   var userMessage = ExternalApiError.ToUserMessage(ex);
+   StatusMessage = userMessage;
    ProgressStage = "Error";
    AppLogger.Error("Scan command failed", ex);
-   MessageBox.Show(ex.ToString(), "Scanner error");
+   MessageBox.Show(
+    $"{userMessage}\n\nChi tiết kỹ thuật đã được ghi vào log:\n{AppLogger.CurrentLogPath}",
+    "Scanner error");
   }
   finally
   {
@@ -185,6 +202,7 @@ public sealed class MainViewModel : ObservableObject
    AppLogger.Info("Export command started");
    var path = await _export.ExportAsync(_rawResults, BtcRegime, ScannedCount, _lastScanMetadata);
    StatusMessage = "Đã xuất: " + path;
+   await RefreshHealthAsync();
    MessageBox.Show(path, "Xuất JSON thành công");
   }
   catch (Exception ex)
@@ -215,6 +233,7 @@ public sealed class MainViewModel : ObservableObject
    Progress = 100;
    ProgressStage = "Completed";
    StatusMessage = "Đã xuất backtest: " + path;
+   await RefreshHealthAsync();
   }
   catch (OperationCanceledException)
   {
@@ -233,22 +252,119 @@ public sealed class MainViewModel : ObservableObject
   }
  }
 
- async Task SaveCompletedScanHistoryAsync()
+ async Task ImportUnlockCacheAsync()
+ {
+  IsImporting = true;
+  try
+  {
+  var dialog = new OpenFileDialog
+  {
+   Title = "Import unlock cache JSON",
+   Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+   CheckFileExists = true,
+   Multiselect = false
+  };
+
+  if (dialog.ShowDialog() != true) return;
+
+  StatusMessage = "Đang import unlock cache...";
+  var result = await _unlockImport.ImportAsync(dialog.FileName);
+  if (result.Success)
+  {
+   StatusMessage = $"Đã import unlock cache: {result.ItemsValid}/{result.ItemsTotal} items. Chạy scanner lại để áp dụng.";
+   var expiryNote = result.IsExpired ? "\n\nCảnh báo: cache vừa import đã hết hạn." : "";
+   MessageBox.Show(
+    $"Unlock cache imported successfully.\n\nItems: {result.ItemsValid}/{result.ItemsTotal}\nUpdated at: {result.UpdatedAt:dd/MM/yyyy HH:mm}\nStatus: {(result.IsExpired ? "Expired" : "Valid")}{expiryNote}\n\nRun scanner again to apply the imported unlock data.",
+    "Import unlock cache");
+  }
+  else
+  {
+   StatusMessage = "Import unlock cache thất bại: " + result.StatusCode;
+   MessageBox.Show(
+    $"Import failed.\n\n{result.Message}\n\nThe existing unlock cache was not changed.",
+    "Import unlock cache error");
+  }
+  }
+  finally
+  {
+   IsImporting = false;
+  }
+ }
+
+ async Task<bool> SaveCompletedScanHistoryAsync(
+  IReadOnlyCollection<ScanResult> results,
+  int scannedCount,
+  string btcRegime,
+  ScanSessionMetadata? metadata)
  {
   try
   {
-   if (_rawResults.Count == 0 || _lastScanMetadata is null) return;
-   var path = await _export.ExportAsync(_rawResults, BtcRegime, ScannedCount, _lastScanMetadata, saveHistory: true);
+   if (results.Count == 0)
+   {
+    AppLogger.Warn("Auto history export skipped: scan result list is empty.");
+    return false;
+   }
+
+   if (metadata is null)
+   {
+    AppLogger.Warn("Auto history export skipped: scan metadata is missing.");
+    return false;
+   }
+
+   var path = await _export.ExportAsync(results, btcRegime, scannedCount, metadata, saveHistory: true);
    StatusMessage = "Đã tự lưu snapshot/history: " + path;
+   return true;
   }
   catch (Exception ex)
   {
    AppLogger.Warn("Auto history export failed: " + ex.Message);
+   return false;
   }
  }
 
+ void ApplyLiveScannerHealth(
+  (List<ScanResult> Results, int Scanned, string BtcRegime, ScanPipelineMetrics Metrics, UnlockCacheSummary UnlockCache) data,
+  DateTimeOffset scanEndedAt,
+  long elapsedMs,
+  bool historySaved)
+ {
+  var unlock = data.UnlockCache;
+  var scanner = new ScannerHealthSummary
+  {
+   Status = HealthReadStatus.OK,
+   Message = "Live scanner result",
+   ScanStatus = "COMPLETED",
+   GeneratedAt = scanEndedAt,
+   BtcRegime = data.BtcRegime,
+   Candidates = data.Results.Count,
+   Priority = data.Results.Count(x => x.Status == "WATCHLIST_PRIORITY"),
+   Watch = data.Results.Count(x => x.Status == "WATCHLIST"),
+   Reject = data.Results.Count(x => x.Status == "REJECT"),
+   ElapsedSeconds = Math.Round(elapsedMs / 1000d, 2),
+   UnlockSource = ResolveUnlockSource(unlock),
+   UnlockMatches = unlock.CandidateMatches,
+   UnlockMissing = unlock.CandidateMissing,
+   HistorySaved = historySaved
+  };
+
+  Health = new AppHealthSummary
+  {
+   Scanner = scanner,
+   Backtest = Health.Backtest,
+   History = Health.History
+  };
+ }
+
+ static string ResolveUnlockSource(UnlockCacheSummary unlock)
+ {
+  if (unlock.Loaded && !unlock.IsExpired) return "LOCAL_CACHE";
+  if (unlock.Loaded && unlock.IsExpired) return "LOCAL_CACHE_EXPIRED";
+  if (!unlock.Loaded && (unlock.Warning?.Contains("not found", StringComparison.OrdinalIgnoreCase) ?? false)) return "CACHE_MISSING";
+  if (!unlock.Loaded) return "CACHE_ERROR";
+  return "NO_DATA";
+ }
+
  void OpenExportFolder() => OpenFolder(ExportService.ExportDirectory, "export");
- void OpenLogFolder() => OpenFolder(AppLogger.LogDirectory, "log");
 
  void OpenFolder(string directory, string label)
  {
@@ -421,6 +537,7 @@ public sealed class MainViewModel : ObservableObject
   Raise(nameof(CanCancel));
   Raise(nameof(CanExport));
   Raise(nameof(CanBacktest));
+  Raise(nameof(CanImportUnlockCache));
   Raise(nameof(HasResults));
   Raise(nameof(HasVisibleResults));
   Raise(nameof(ShowInitialState));
@@ -435,6 +552,7 @@ public sealed class MainViewModel : ObservableObject
   Raise(nameof(CanCancel));
   Raise(nameof(CanExport));
   Raise(nameof(CanBacktest));
+  Raise(nameof(CanImportUnlockCache));
   RaiseStates();
   RefreshCommands();
  }
@@ -445,9 +563,27 @@ public sealed class MainViewModel : ObservableObject
   CancelCommand.RaiseCanExecuteChanged();
   ExportCommand.RaiseCanExecuteChanged();
   BacktestCommand.RaiseCanExecuteChanged();
+  ImportUnlockCacheCommand.RaiseCanExecuteChanged();
   CopySymbolCommand.RaiseCanExecuteChanged();
   OpenTradingViewCommand.RaiseCanExecuteChanged();
   OpenBinanceCommand.RaiseCanExecuteChanged();
   OpenCoinGeckoCommand.RaiseCanExecuteChanged();
+ }
+
+ async Task RefreshHealthAsync()
+ {
+  if (!await _healthRefreshGate.WaitAsync(0)) return;
+  try
+  {
+   Health = await _healthService.LoadAsync();
+  }
+  catch (Exception ex)
+  {
+   AppLogger.Warn("Health refresh failed: " + ex.Message);
+  }
+  finally
+  {
+   _healthRefreshGate.Release();
+  }
  }
 }

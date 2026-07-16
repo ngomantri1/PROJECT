@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text.Json;
 using CryptoScanner.Desktop.Models;
 
 namespace CryptoScanner.Desktop.Services;
@@ -7,13 +6,11 @@ namespace CryptoScanner.Desktop.Services;
 public sealed class CachedUnlockProvider
 {
  readonly int _defaultMaxCacheAgeHours;
- readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
  bool _loaded;
  bool _loadAttempted;
  bool _cacheExpired;
  string _loadStatus = "CACHE_MISSING";
  string _cachePath = "";
- UnlockCacheDocument? _document;
  Dictionary<string, UnlockInfo> _byCoinId = new(StringComparer.OrdinalIgnoreCase);
  Dictionary<string, UnlockInfo> _byAlias = new(StringComparer.OrdinalIgnoreCase);
  Dictionary<string, List<UnlockInfo>> _bySymbol = new(StringComparer.OrdinalIgnoreCase);
@@ -90,38 +87,25 @@ public sealed class CachedUnlockProvider
   Summary.Path = _cachePath;
   if (string.IsNullOrWhiteSpace(_cachePath) || !File.Exists(_cachePath))
   {
-   Summary.Warning = "unlock-cache.json not found.";
+   Summary.Warning = $"unlock-cache.json not found. Expected path: {AppPaths.UnlockCachePath}";
    _loadStatus = "CACHE_MISSING";
-   AppLogger.Info("Unlock cache not found; scanner continues with UNLOCK_UNKNOWN.");
+   AppLogger.Info($"Unlock cache not found; scanner continues with UNLOCK_UNKNOWN. expectedPath={AppPaths.UnlockCachePath}");
    return;
   }
 
   try
   {
-   await using var stream = File.OpenRead(_cachePath);
-   _document = await JsonSerializer.DeserializeAsync<UnlockCacheDocument>(stream, _jsonOptions, ct);
-   if (_document is null)
+   var inspection = await new UnlockCacheInspector(_defaultMaxCacheAgeHours).InspectFileAsync(_cachePath, strictImport: false, ct);
+   CopySummary(inspection.Summary);
+   if (!inspection.Success)
    {
-   Summary.Warning = "unlock-cache.json is empty or invalid.";
     _loadStatus = "INVALID_ITEM";
-    AppLogger.Warn("Unlock cache invalid: empty document");
+    AppLogger.Warn("Unlock cache invalid: " + inspection.Message);
     return;
    }
 
-   Summary.SchemaVersion = _document.SchemaVersion;
-   Summary.UpdatedAt = _document.UpdatedAt;
-   Summary.ItemsTotal = _document.Items.Count;
-   if (_document.SchemaVersion != "1.0")
-   {
-   Summary.Warning = $"Unsupported unlock cache schema: {_document.SchemaVersion}";
-    _loadStatus = "INVALID_ITEM";
-    AppLogger.Warn(Summary.Warning);
-    return;
-   }
-
-   _cacheExpired = IsExpired(_document);
-   Summary.IsExpired = _cacheExpired;
-   BuildIndexes(_document.Items);
+   _cacheExpired = inspection.Summary.IsExpired;
+   BuildIndexes(inspection.ValidItems);
    Summary.Loaded = true;
    _loaded = true;
    AppLogger.Info($"Unlock cache loaded: path={_cachePath}; valid={Summary.ItemsValid}; invalid={Summary.ItemsInvalid}; expired={Summary.IsExpired}");
@@ -134,22 +118,23 @@ public sealed class CachedUnlockProvider
   }
  }
 
- void BuildIndexes(List<UnlockInfo> items)
+ void CopySummary(UnlockCacheSummary source)
  {
-  var validItems = new List<UnlockInfo>();
-  foreach (var item in items)
-  {
-   if (IsValid(item))
-   {
-    validItems.Add(item);
-    Summary.ItemsValid++;
-   }
-   else
-   {
-    Summary.ItemsInvalid++;
-   }
-  }
+  Summary.Path = source.Path;
+  Summary.Loaded = source.Loaded;
+  Summary.SchemaVersion = source.SchemaVersion;
+  Summary.UpdatedAt = source.UpdatedAt;
+  Summary.IsExpired = source.IsExpired;
+  Summary.ItemsTotal = source.ItemsTotal;
+  Summary.ItemsValid = source.ItemsValid;
+  Summary.ItemsInvalid = source.ItemsInvalid;
+  Summary.DuplicateCoinIds = source.DuplicateCoinIds;
+  Summary.DuplicateSymbols = source.DuplicateSymbols;
+  Summary.Warning = source.Warning;
+ }
 
+ void BuildIndexes(List<UnlockInfo> validItems)
+ {
   var duplicateCoinIds = validItems.Where(x => !string.IsNullOrWhiteSpace(x.CoinId))
    .GroupBy(x => x.CoinId.Trim(), StringComparer.OrdinalIgnoreCase)
    .Where(x => x.Count() > 1)
@@ -189,38 +174,12 @@ public sealed class CachedUnlockProvider
   };
  }
 
- bool IsExpired(UnlockCacheDocument document)
- {
-  var now = DateTimeOffset.Now;
-  if (document.ExpiresAt.HasValue) return document.ExpiresAt.Value <= now;
-  var maxAge = document.MaxCacheAgeHours.GetValueOrDefault(_defaultMaxCacheAgeHours);
-  return document.UpdatedAt.HasValue && document.UpdatedAt.Value.AddHours(maxAge) <= now;
- }
-
- static bool IsValid(UnlockInfo item)
- {
-  if (string.IsNullOrWhiteSpace(item.CoinId) && string.IsNullOrWhiteSpace(item.Symbol)) return false;
-  if (!ValidPct(item.Unlock30dPct) || !ValidPct(item.Unlock90dPct)) return false;
-  if (item.NextUnlockAt.HasValue && item.NextUnlockAt.Value < DateTimeOffset.Now.AddDays(-1)) return false;
-  return true;
- }
-
- static bool ValidPct(decimal? value) => !value.HasValue || value.Value is >= 0m and <= 100m;
-
- static string NormalizeSymbol(string symbol) => new(symbol.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
+ static string NormalizeSymbol(string symbol) => UnlockCacheInspector.NormalizeSymbol(symbol);
 
  static bool IsNonStandardSymbol(string symbol) => symbol.Any(c => !char.IsAsciiLetterOrDigit(c));
 
  static string ResolveCachePath()
  {
-  var local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CryptoScanner.Desktop", "data", "unlock-cache.json");
-  if (File.Exists(local)) return local;
-  var paths = new[]
-  {
-   local,
-   Path.Combine(AppContext.BaseDirectory, "config", "unlock-cache.json"),
-   Path.Combine(Environment.CurrentDirectory, "config", "unlock-cache.json")
-  };
-  return paths.FirstOrDefault(File.Exists) ?? local;
+  return AppPaths.UnlockCachePath;
  }
 }

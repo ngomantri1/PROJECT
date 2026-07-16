@@ -183,7 +183,10 @@ public sealed class ScannerService
   if(unknownRules.Contains("TECHNICAL_DATA_INSUFFICIENT")) return "NEEDS_MORE_TECHNICAL_DATA";
   if(riskFlags.Contains("EXTREME_OVERBOUGHT")) return "WAIT_PULLBACK";
   if(status=="REJECT") return "SCORE_BELOW_WATCHLIST_THRESHOLD";
-  if(riskFlags.Contains("BTC_BEAR_REGIME")||unknownRules.Contains("UNLOCK_UNKNOWN")) return "WAIT_UNLOCK_AND_MARKET_CONFIRMATION";
+  if(riskFlags.Contains("UNLOCK_PRESSURE_WARNING")) return "UNLOCK_PRESSURE_WARNING";
+  if(riskFlags.Contains("BTC_BEAR_REGIME")&&unknownRules.Contains("UNLOCK_UNKNOWN")) return "WAIT_UNLOCK_AND_MARKET_CONFIRMATION";
+  if(riskFlags.Contains("BTC_BEAR_REGIME")) return "WAIT_MARKET_CONFIRMATION";
+  if(unknownRules.Contains("UNLOCK_UNKNOWN")) return "WAIT_UNLOCK_CONFIRMATION";
   return status=="BUY_READY"?"READY_AFTER_FULL_CONFIRMATION":"PRELIMINARY_WATCH";
  }
 
@@ -202,8 +205,11 @@ public sealed class ScannerService
   "NON_STANDARD_SYMBOL_REVIEW_REQUIRED"=>"Symbol is non-standard and requires manual review before inclusion.",
   "NEEDS_MORE_TECHNICAL_DATA"=>"Technical candle history is insufficient for a reliable setup.",
   "WAIT_PULLBACK"=>"RSI is extremely overbought; wait for pullback or confirmation.",
+  "UNLOCK_PRESSURE_WARNING"=>"Unlock data is available, but upcoming unlock pressure requires caution.",
   "SCORE_BELOW_WATCHLIST_THRESHOLD"=>"Preliminary score is below the watchlist threshold.",
   "WAIT_UNLOCK_AND_MARKET_CONFIRMATION"=>$"Preliminary setup exists, but unlock data is unavailable and BTC regime is {btcRegime}.",
+  "WAIT_MARKET_CONFIRMATION"=>$"Unlock data is available, but BTC regime is {btcRegime}; wait for market confirmation.",
+  "WAIT_UNLOCK_CONFIRMATION"=>"Preliminary setup exists, but unlock data is unavailable.",
   _=>"Preliminary market and technical data only; final decision requires unlock, risk and fundamental checks."
  };
 
