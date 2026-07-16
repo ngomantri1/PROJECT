@@ -22,7 +22,6 @@ import {
   FilterOutlined,
   PhoneOutlined,
   PlusOutlined,
-  ReloadOutlined,
   SearchOutlined,
   TeamOutlined,
   UserAddOutlined,
@@ -193,14 +192,6 @@ export default function Customers() {
           title: 'Đăng ký khách hàng',
           subTitle: 'Quản lý khách hàng, nhu cầu ban đầu và người phụ trách',
           breadcrumb: {},
-          extra: [
-            <Button key='reload' icon={<ReloadOutlined />} onClick={() => void load()}>
-              Làm mới
-            </Button>,
-            <Button key='add' type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
-              Thêm khách hàng
-            </Button>,
-          ],
         }}
       >
         <Row gutter={[16, 16]}>
@@ -243,6 +234,9 @@ export default function Customers() {
             />
             <Button type='primary' icon={<FilterOutlined />} onClick={() => void load()}>
               Áp dụng
+            </Button>
+            <Button type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+              Thêm khách hàng
             </Button>
           </div>
         </ProCard>

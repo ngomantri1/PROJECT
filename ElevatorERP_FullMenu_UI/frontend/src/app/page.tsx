@@ -76,19 +76,6 @@ export default function Dashboard() {
           title: 'Tổng quan điều hành',
           subTitle: 'Theo dõi nhanh hoạt động kinh doanh và chăm sóc khách hàng',
           breadcrumb: {},
-          extra: [
-            <Button key='care' icon={<CalendarOutlined />} onClick={() => router.push('/care')}>
-              Xem lịch chăm sóc
-            </Button>,
-            <Button
-              key='customer'
-              type='primary'
-              icon={<UserAddOutlined />}
-              onClick={() => router.push('/customers')}
-            >
-              Đăng ký khách hàng
-            </Button>,
-          ],
         }}
       >
         {error && <Alert type='error' showIcon message={error} className='section-gap' />}

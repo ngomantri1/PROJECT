@@ -44,47 +44,57 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 .menu-stage{flex:0 0 auto;padding:1px 6px;border-radius:999px;font-size:10px;line-height:18px;font-weight:700;background:rgba(255,255,255,.1);color:rgba(255,255,255,.62)}
 .ant-menu-item-disabled .menu-stage{background:rgba(255,255,255,.06)}
 .ant-pro-layout-header{border-bottom:1px solid #e9edf4!important;box-shadow:0 2px 10px rgba(16,24,40,.03)}
-.theme-toggle-button,.shell-icon-button{color:#475467}
-.theme-toggle-button:hover,.shell-icon-button:hover{background:#f2f4f7!important;color:#1677ff!important}
-.user-dropdown-trigger{cursor:pointer;border-radius:10px;padding:4px 7px;transition:.2s}
-.user-dropdown-trigger:hover{background:#f5f7fa}
+.shell-icon-button{color:var(--account-secondary)!important;width:38px!important;height:38px!important}
+.shell-icon-button:hover{background:var(--account-hover)!important;color:#1677ff!important}
 .user-avatar,.user-table-avatar,.customer-avatar{background:linear-gradient(145deg,#2f8cff,#0f5fd7)!important;color:#fff!important;font-weight:700}
 .avatar-title{display:flex;flex-direction:column;line-height:1.2;min-width:0}
 .avatar-title b{font-size:13px;color:#172033;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .avatar-title small{font-size:11px;color:#8a94a6;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ant-pro-sider .user-dropdown-trigger{
-  width:calc(100% - 28px);
-  margin-inline:14px;
-  padding:9px 10px;
-  gap:10px;
-  background:rgba(255,255,255,.07);
-  border:1px solid rgba(255,255,255,.12);
-  box-shadow:0 10px 24px rgba(0,0,0,.16);
-}
-.ant-pro-sider .user-dropdown-trigger:hover{background:rgba(255,255,255,.12)}
-.ant-pro-sider .user-avatar{flex:0 0 auto}
-.ant-pro-sider .avatar-title{max-width:166px}
-.ant-pro-sider .avatar-title b{color:#fff;font-weight:750}
-.ant-pro-sider .avatar-title small{color:#b8c7d9}
-.ant-pro-sider .ant-badge-dot{
-  box-shadow:0 0 0 2px #071a32;
-}
 .erp-content{position:relative;min-height:calc(100vh - 64px)}
-.erp-global-toolbar{
+.erp-account-toolbar{
   position:absolute;
-  top:14px;
-  right:360px;
+  top:12px;
+  right:24px;
   z-index:20;
   display:flex;
   align-items:center;
-  gap:6px;
-  padding:5px;
-  border:1px solid rgba(231,236,243,.9);
-  border-radius:12px;
-  background:rgba(255,255,255,.86);
-  box-shadow:0 8px 24px rgba(16,24,40,.08);
+  gap:8px;
+  padding:4px 5px;
+  border:1px solid var(--account-border);
+  border-radius:var(--account-radius);
+  background:var(--account-bg);
+  color:var(--account-color);
+  box-shadow:0 8px 24px rgba(16,24,40,.06);
   backdrop-filter:blur(10px);
 }
+.account-trigger{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:230px;
+  min-height:42px;
+  padding:3px 8px 3px 5px;
+  border:0;
+  border-radius:calc(var(--account-radius) - 2px);
+  background:transparent;
+  color:var(--account-color);
+  cursor:pointer;
+  text-align:left;
+  transition:.2s;
+}
+.account-trigger:hover,.account-trigger:focus-visible{background:var(--account-hover);outline:none}
+.account-trigger-copy{display:flex;flex:1;min-width:0;flex-direction:column;line-height:1.2}
+.account-trigger-copy b,.account-trigger-copy small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.account-trigger-copy b{font-size:13px;font-weight:750;color:var(--account-color)}
+.account-trigger-copy small{margin-top:3px;font-size:11px;color:var(--account-secondary)}
+.account-trigger-arrow{flex:0 0 auto;font-size:11px;color:var(--account-secondary)}
+.account-menu-summary{display:flex;gap:12px;min-width:270px;max-width:320px;padding:6px 4px}
+.account-menu-copy{min-width:0;display:flex;flex-direction:column;line-height:1.35}
+.account-menu-copy b,.account-menu-copy span,.account-menu-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-menu-copy b{font-size:14px;color:var(--text)}
+.account-menu-copy span{font-size:12px;color:var(--muted)}
+.account-menu-copy small{margin-top:4px;font-size:11px;color:var(--muted)}
+.erp-page-container .ant-page-header-heading-extra{padding-right:330px}
 .erp-page-container .ant-page-header-heading{align-items:center}
 .erp-page-container .ant-pro-page-container-children-container{padding-block-start:20px!important}
 .section-gap{margin-top:16px}
@@ -172,7 +182,10 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 .demo-account-box{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:22px;padding:12px 14px;border:1px dashed #cfd8e6;border-radius:10px;background:#fafcff;font-size:12px;color:#667085}.demo-account-box b{margin-right:auto;color:#344054}.demo-account-box span{padding:3px 7px;background:#eef3f9;border-radius:5px;font-family:monospace;color:#344054}.login-footer{text-align:center;color:#98a2b3;font-size:11px;margin-top:30px}
 
 @media(max-width:1100px){
-  .erp-global-toolbar{right:24px;top:62px}
+  .erp-account-toolbar{top:12px;right:14px}
+  .erp-page-container .ant-page-header-heading-extra{padding-right:208px}
+  .account-trigger{width:auto;padding-right:7px}
+  .account-trigger-copy{display:none}
   .welcome-visual{display:none}.welcome-copy{max-width:none}
   .login-page{grid-template-columns:1fr 480px}.login-brand-panel{padding:42px}.login-hero-copy h1{font-size:38px!important}
 }
@@ -180,7 +193,8 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 @media(max-width:900px){
   .erp-page-container .ant-pro-page-container-children-container{padding-inline:14px!important;padding-block-start:14px!important}
   .erp-page-container .ant-page-header{padding-inline:14px!important}
-  .erp-global-toolbar{top:58px;right:14px}
+  .erp-account-toolbar{top:12px;right:14px}
+  .erp-page-container .ant-page-header-heading-extra{padding-right:132px}
   .avatar-title{display:none}
   .desktop-table{display:none}.mobile-card-list{display:block}
   .filter-search{max-width:none}.filter-select{flex:1;min-width:180px}
@@ -190,7 +204,11 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 
 @media(max-width:640px){
   .erp-page-container .ant-page-header-heading{align-items:flex-start}.erp-page-container .ant-page-header-heading-extra{width:100%;margin-inline-start:0!important}.erp-page-container .ant-page-header-heading-extra>*{flex:1}
-  .erp-global-toolbar{top:64px}.erp-global-toolbar .theme-toggle-button{display:none!important}
+  .erp-account-toolbar{top:8px;right:10px;gap:4px;padding:3px}
+  .erp-page-container .ant-page-header-heading-extra{padding-right:0;padding-top:44px}
+  .erp-account-toolbar .theme-toggle-button{display:none!important}
+  .shell-icon-button{width:34px!important;height:34px!important}
+  .account-trigger{min-height:36px;padding:0 4px}
   .welcome-panel .ant-pro-card-body{padding:24px!important}.welcome-copy h2{font-size:24px!important}.welcome-copy p{font-size:13px}.welcome-panel{min-height:auto}
   .stat-card .ant-statistic-content{font-size:25px!important}.stat-card .ant-pro-card-body{padding:15px!important}.stat-icon{width:35px;height:35px}
   .mini-stat .ant-pro-card-body{padding:13px!important;gap:9px}.mini-stat-icon{width:35px;height:35px;font-size:16px}.mini-stat b{font-size:20px}.mini-stat small{font-size:10px}
@@ -244,16 +262,8 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 .ant-pro-table-list-toolbar-title{font-size:15px!important;font-weight:750!important}
 
 html[data-theme='dark'] .ant-pro-layout-header{border-bottom-color:#243044!important;box-shadow:none}
-html[data-theme='dark'] .erp-global-toolbar{
-  border-color:#263247;
-  background:rgba(17,24,39,.86);
-  box-shadow:0 12px 30px rgba(0,0,0,.28);
-}
-html[data-theme='dark'] .theme-toggle-button,
-html[data-theme='dark'] .shell-icon-button{color:#d1d5db}
-html[data-theme='dark'] .theme-toggle-button:hover,
-html[data-theme='dark'] .shell-icon-button:hover{background:#1f2937!important;color:#60a5fa!important}
-html[data-theme='dark'] .user-dropdown-trigger:hover{background:#1f2937}
+html[data-theme='dark'] .erp-account-toolbar{box-shadow:0 12px 30px rgba(0,0,0,.28)}
+html[data-theme='dark'] .shell-icon-button:hover{color:#60a5fa!important}
 html[data-theme='dark'] .avatar-title b,
 html[data-theme='dark'] .mini-stat b,
 html[data-theme='dark'] .table-primary-text,

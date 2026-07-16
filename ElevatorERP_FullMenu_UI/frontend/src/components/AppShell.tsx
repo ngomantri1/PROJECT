@@ -1,5 +1,6 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -7,8 +8,8 @@ import {
   Badge,
   Button,
   Dropdown,
-  Space,
   Spin,
+  theme as antdTheme,
   Tooltip,
 } from 'antd';
 import {
@@ -32,6 +33,7 @@ import {
   FundProjectionScreenOutlined,
   HddOutlined,
   IdcardOutlined,
+  DownOutlined,
   LogoutOutlined,
   MoonOutlined,
   NotificationOutlined,
@@ -217,6 +219,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { isDark, toggleMode } = useThemeMode();
+  const { token } = antdTheme.useToken();
 
   const loadCurrentUser = useCallback(() => {
     setLoadError('');
@@ -261,6 +264,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     router.replace('/login');
   };
 
+  const primaryRole = me.roles[0] || me.department || 'Chưa phân vai trò';
+  const accountToolbarStyle = {
+    '--account-bg': token.colorBgContainer,
+    '--account-color': token.colorText,
+    '--account-secondary': token.colorTextSecondary,
+    '--account-border': token.colorBorderSecondary,
+    '--account-hover': token.colorBgTextHover,
+    '--account-radius': `${token.borderRadiusLG}px`,
+  } as CSSProperties;
+
   return (
     <ProLayout
       title='Thang máy Miền Trung'
@@ -284,19 +297,85 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         if (route.children || !route.path) return dom;
         return <Link href={route.path}>{dom}</Link>;
       }}
-      avatarProps={{
-        icon: <UserOutlined />,
-        title: (
-          <span className='avatar-title'>
-            <b>{me.displayName}</b>
-            <small>{me.department || 'Chưa phân phòng ban'}</small>
-          </span>
-        ),
-        render: (_props, dom) => (
+      token={{
+        header: {
+          colorBgHeader: isDark ? '#111827' : '#ffffff',
+          colorHeaderTitle: isDark ? '#f3f4f6' : '#10233f',
+          heightLayoutHeader: 64,
+        },
+        sider: {
+          colorMenuBackground: isDark ? '#020617' : '#071a32',
+          colorTextMenu: 'rgba(255,255,255,.88)',
+          colorTextMenuSelected: '#ffffff',
+          colorBgMenuItemSelected: '#1677ff',
+          colorBgMenuItemHover: 'rgba(255,255,255,.11)',
+          colorMenuItemDivider: 'rgba(255,255,255,.1)',
+          colorTextMenuTitle: 'rgba(255,255,255,.66)',
+        },
+        pageContainer: {
+          paddingInlinePageContainerContent: 24,
+          paddingBlockPageContainerContent: 20,
+        },
+      }}
+    >
+      <div className='erp-content'>
+        <div className='erp-account-toolbar' style={accountToolbarStyle}>
+          <Tooltip title={isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}>
+            <Button
+              type='text'
+              shape='circle'
+              className='shell-icon-button theme-toggle-button'
+              icon={isDark ? <SunOutlined /> : <MoonOutlined />}
+              onClick={toggleMode}
+              aria-label={isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}
+            />
+          </Tooltip>
+          <Tooltip title='Thông báo'>
+            <Badge dot>
+              <Button
+                type='text'
+                shape='circle'
+                className='shell-icon-button notification-button'
+                icon={<BellOutlined />}
+                onClick={() => router.push('/notifications')}
+                aria-label='Thông báo'
+              />
+            </Badge>
+          </Tooltip>
+          <Tooltip title='Trợ giúp và cấu hình'>
+            <Button
+              type='text'
+              shape='circle'
+              className='shell-icon-button help-button'
+              icon={<QuestionCircleOutlined />}
+              onClick={() => router.push('/admin/settings')}
+              aria-label='Trợ giúp và cấu hình'
+            />
+          </Tooltip>
           <Dropdown
             trigger={['click']}
+            placement='bottomRight'
             menu={{
               items: [
+                {
+                  key: 'identity',
+                  disabled: true,
+                  label: (
+                    <div className='account-menu-summary'>
+                      <Avatar size={42} className='user-avatar'>
+                        {me.displayName.charAt(0)}
+                      </Avatar>
+                      <div className='account-menu-copy'>
+                        <b>{me.displayName}</b>
+                        <span>{me.department || 'Chưa phân phòng ban'}</span>
+                        {me.roles.length > 0 && (
+                          <small>{me.roles.join(', ')}</small>
+                        )}
+                      </div>
+                    </div>
+                  ),
+                },
+                { type: 'divider' },
                 {
                   key: 'account',
                   icon: <UserOutlined />,
@@ -326,65 +405,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               ],
             }}
           >
-            <Space className='user-dropdown-trigger'>
-              <Avatar className='user-avatar'>{me.displayName.charAt(0)}</Avatar>
-              {dom}
-            </Space>
+            <button className='account-trigger' type='button' aria-label='Mở menu tài khoản'>
+              <Avatar size={36} className='user-avatar'>
+                {me.displayName.charAt(0)}
+              </Avatar>
+              <span className='account-trigger-copy'>
+                <b title={me.displayName}>{me.displayName}</b>
+                <small title={primaryRole}>{primaryRole}</small>
+              </span>
+              <DownOutlined className='account-trigger-arrow' />
+            </button>
           </Dropdown>
-        ),
-      }}
-      token={{
-        header: {
-          colorBgHeader: isDark ? '#111827' : '#ffffff',
-          colorHeaderTitle: isDark ? '#f3f4f6' : '#10233f',
-          heightLayoutHeader: 64,
-        },
-        sider: {
-          colorMenuBackground: isDark ? '#020617' : '#071a32',
-          colorTextMenu: 'rgba(255,255,255,.88)',
-          colorTextMenuSelected: '#ffffff',
-          colorBgMenuItemSelected: '#1677ff',
-          colorBgMenuItemHover: 'rgba(255,255,255,.11)',
-          colorMenuItemDivider: 'rgba(255,255,255,.1)',
-          colorTextMenuTitle: 'rgba(255,255,255,.66)',
-        },
-        pageContainer: {
-          paddingInlinePageContainerContent: 24,
-          paddingBlockPageContainerContent: 20,
-        },
-      }}
-    >
-      <div className='erp-content'>
-        <div className='erp-global-toolbar'>
-          <Tooltip title={isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}>
-            <Button
-              type='text'
-              shape='circle'
-              className='theme-toggle-button'
-              icon={isDark ? <SunOutlined /> : <MoonOutlined />}
-              onClick={toggleMode}
-            />
-          </Tooltip>
-          <Tooltip title='Thông báo'>
-            <Badge dot offset={[-4, 5]}>
-              <Button
-                type='text'
-                shape='circle'
-                className='shell-icon-button notification-button'
-                icon={<BellOutlined />}
-                onClick={() => router.push('/notifications')}
-              />
-            </Badge>
-          </Tooltip>
-          <Tooltip title='Trợ giúp và cấu hình'>
-            <Button
-              type='text'
-              shape='circle'
-              className='shell-icon-button help-button'
-              icon={<QuestionCircleOutlined />}
-              onClick={() => router.push('/admin/settings')}
-            />
-          </Tooltip>
         </div>
         {children}
       </div>

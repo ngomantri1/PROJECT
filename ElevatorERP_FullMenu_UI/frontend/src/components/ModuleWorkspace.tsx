@@ -29,7 +29,6 @@ import {
   FileTextOutlined,
   FilterOutlined,
   PlusOutlined,
-  ReloadOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
 import {
@@ -424,11 +423,48 @@ export default function ModuleWorkspace() {
           title: config.title,
           subTitle: config.subtitle,
           breadcrumb: {},
-          extra: [
-            <Button key='reset' icon={<ReloadOutlined />} onClick={resetData}>Khôi phục dữ liệu</Button>,
-            config.createEnabled && (
+        }}
+      >
+        <Row gutter={[16, 16]}>
+          {[
+            { label: `Tổng ${config.entity}`, value: rows.length, icon: <FileTextOutlined />, tone: 'blue' },
+            { label: 'Đang xử lý', value: inProgress, icon: <ClockCircleOutlined />, tone: 'cyan' },
+            { label: 'Cần chú ý', value: waiting, icon: <FilterOutlined />, tone: 'orange' },
+            { label: 'Hoàn thành', value: completed, icon: <CheckCircleOutlined />, tone: 'green' },
+          ].map((item) => (
+            <Col xs={12} lg={6} key={item.label}>
+              <ProCard className={`mini-stat mini-stat-${item.tone}`}>
+                <span className='mini-stat-icon'>{item.icon}</span>
+                <span>
+                  <small>{item.label}</small>
+                  <b>{item.value}</b>
+                </span>
+              </ProCard>
+            </Col>
+          ))}
+        </Row>
+
+        <ProCard className='section-gap filter-card'>
+          <div className='filter-row'>
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              prefix={<SearchOutlined />}
+              placeholder={`Tìm mã, tên ${config.entity}, khách hàng hoặc người phụ trách...`}
+              allowClear
+              className='filter-search'
+            />
+            <Select
+              value={status}
+              onChange={setStatus}
+              allowClear
+              placeholder='Tất cả trạng thái'
+              className='filter-select'
+              options={config.statuses}
+            />
+            <Button type='primary' icon={<FilterOutlined />}>Áp dụng</Button>
+            {config.createEnabled && (
               <DrawerForm<WorkspaceForm>
-                key='create'
                 title={`Thêm ${config.entity}`}
                 width={560}
                 trigger={<Button type='primary' icon={<PlusOutlined />}>Thêm mới</Button>}
@@ -492,48 +528,7 @@ export default function ModuleWorkspace() {
                 )}
                 <ProFormTextArea name='notes' label='Ghi chú' fieldProps={{ rows: 4 }} />
               </DrawerForm>
-            ),
-          ].filter(Boolean),
-        }}
-      >
-        <Row gutter={[16, 16]}>
-          {[
-            { label: `Tổng ${config.entity}`, value: rows.length, icon: <FileTextOutlined />, tone: 'blue' },
-            { label: 'Đang xử lý', value: inProgress, icon: <ClockCircleOutlined />, tone: 'cyan' },
-            { label: 'Cần chú ý', value: waiting, icon: <FilterOutlined />, tone: 'orange' },
-            { label: 'Hoàn thành', value: completed, icon: <CheckCircleOutlined />, tone: 'green' },
-          ].map((item) => (
-            <Col xs={12} lg={6} key={item.label}>
-              <ProCard className={`mini-stat mini-stat-${item.tone}`}>
-                <span className='mini-stat-icon'>{item.icon}</span>
-                <span>
-                  <small>{item.label}</small>
-                  <b>{item.value}</b>
-                </span>
-              </ProCard>
-            </Col>
-          ))}
-        </Row>
-
-        <ProCard className='section-gap filter-card'>
-          <div className='filter-row'>
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              prefix={<SearchOutlined />}
-              placeholder={`Tìm mã, tên ${config.entity}, khách hàng hoặc người phụ trách...`}
-              allowClear
-              className='filter-search'
-            />
-            <Select
-              value={status}
-              onChange={setStatus}
-              allowClear
-              placeholder='Tất cả trạng thái'
-              className='filter-select'
-              options={config.statuses}
-            />
-            <Button type='primary' icon={<FilterOutlined />}>Áp dụng</Button>
+            )}
           </div>
         </ProCard>
 

@@ -24,7 +24,6 @@ import {
   ClockCircleOutlined,
   ExclamationCircleOutlined,
   PlusOutlined,
-  ReloadOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
 import {
@@ -251,14 +250,6 @@ export default function Care() {
           title: 'Lịch chăm sóc khách hàng',
           subTitle: 'Lập lịch, theo dõi và ghi nhận kết quả chăm sóc',
           breadcrumb: {},
-          extra: [
-            <Button key='reload' icon={<ReloadOutlined />} onClick={() => void load()}>
-              Làm mới
-            </Button>,
-            <Button key='add' type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
-              Thêm lịch
-            </Button>,
-          ],
         }}
       >
         <Row gutter={[16, 16]}>
@@ -297,6 +288,9 @@ export default function Care() {
               <Tag color='blue'>Sắp tới: {summary.upcoming}</Tag>
               <Tag color='red'>Quá hạn: {summary.overdue}</Tag>
               <Tag color='green'>Hoàn thành: {summary.done}</Tag>
+              <Button type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+                Thêm lịch
+              </Button>
             </Space>
           </Space>
         </ProCard>

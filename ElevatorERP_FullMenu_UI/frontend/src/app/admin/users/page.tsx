@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Avatar,
-  Button,
   Card,
   Col,
   Descriptions,
@@ -19,7 +18,6 @@ import {
   ApartmentOutlined,
   CheckCircleOutlined,
   LockOutlined,
-  ReloadOutlined,
   SafetyCertificateOutlined,
   TeamOutlined,
   UserOutlined,
@@ -156,11 +154,6 @@ export default function Users() {
           title: 'Người dùng và vai trò',
           subTitle: 'Một tài khoản có thể được gán nhiều vai trò; quyền hiệu lực là tổng quyền',
           breadcrumb: {},
-          extra: [
-            <Button key='reload' icon={<ReloadOutlined />} onClick={() => void load()}>
-              Làm mới
-            </Button>,
-          ],
         }}
       >
         <Row gutter={[16, 16]}>
