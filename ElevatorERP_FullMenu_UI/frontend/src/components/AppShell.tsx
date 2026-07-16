@@ -34,8 +34,8 @@ import {
   HddOutlined,
   IdcardOutlined,
   LogoutOutlined,
+  MoonOutlined,
   NotificationOutlined,
-  PlusOutlined,
   ProjectOutlined,
   QuestionCircleOutlined,
   ReconciliationOutlined,
@@ -43,6 +43,7 @@ import {
   SearchOutlined,
   SettingOutlined,
   SolutionOutlined,
+  SunOutlined,
   TeamOutlined,
   ToolOutlined,
   UserAddOutlined,
@@ -54,6 +55,7 @@ import { ProLayout } from '@ant-design/pro-components';
 import type { MenuDataItem } from '@ant-design/pro-components';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useThemeMode } from '@/components/AppProviders';
 import { api } from '@/lib/api';
 
 type Me = {
@@ -216,6 +218,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const { isDark, toggleMode } = useThemeMode();
 
   const loadCurrentUser = useCallback(() => {
     setLoadError('');
@@ -284,46 +287,49 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         return <Link href={route.path}>{dom}</Link>;
       }}
       headerContentRender={() => (
-        <div className='header-search-wrap'>
-          <Input
-            className='global-search'
-            prefix={<SearchOutlined />}
-            placeholder='Tìm khách hàng, công việc, dự án...'
-            onPressEnter={() => router.push('/customers')}
-            suffix={<span className='search-shortcut'>Ctrl K</span>}
-          />
+        <div className='erp-header-content'>
+          <div className='header-search-wrap'>
+            <Input
+              className='global-search'
+              prefix={<SearchOutlined />}
+              placeholder='Tìm khách hàng, công việc, dự án...'
+              onPressEnter={() => router.push('/customers')}
+              suffix={<span className='search-shortcut'>Ctrl K</span>}
+            />
+          </div>
+          <Space className='erp-header-actions' size={8}>
+            <Tooltip title={isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}>
+              <Button
+                type='text'
+                shape='circle'
+                className='theme-toggle-button'
+                icon={isDark ? <SunOutlined /> : <MoonOutlined />}
+                onClick={toggleMode}
+              />
+            </Tooltip>
+            <Tooltip title='Thông báo'>
+              <Badge dot offset={[-4, 5]}>
+                <Button
+                  type='text'
+                  shape='circle'
+                  className='shell-icon-button notification-button'
+                  icon={<BellOutlined />}
+                  onClick={() => router.push('/notifications')}
+                />
+              </Badge>
+            </Tooltip>
+            <Tooltip title='Trợ giúp và cấu hình'>
+              <Button
+                type='text'
+                shape='circle'
+                className='shell-icon-button help-button'
+                icon={<QuestionCircleOutlined />}
+                onClick={() => router.push('/admin/settings')}
+              />
+            </Tooltip>
+          </Space>
         </div>
       )}
-      actionsRender={() => [
-        <Tooltip key='quick' title='Tạo nhanh đăng ký khách hàng'>
-          <Button
-            type='primary'
-            className='header-quick-button'
-            icon={<PlusOutlined />}
-            onClick={() => router.push('/customers')}
-          >
-            Tạo nhanh
-          </Button>
-        </Tooltip>,
-        <Tooltip key='notification' title='Thông báo'>
-          <Badge dot offset={[-4, 5]}>
-            <Button
-              type='text'
-              shape='circle'
-              icon={<BellOutlined />}
-              onClick={() => router.push('/notifications')}
-            />
-          </Badge>
-        </Tooltip>,
-        <Tooltip key='help' title='Trợ giúp và cấu hình'>
-          <Button
-            type='text'
-            shape='circle'
-            icon={<QuestionCircleOutlined />}
-            onClick={() => router.push('/admin/settings')}
-          />
-        </Tooltip>,
-      ]}
       avatarProps={{
         icon: <UserOutlined />,
         title: (
@@ -349,6 +355,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   label: 'Thiết lập thông báo',
                   onClick: () => router.push('/admin/settings'),
                 },
+                {
+                  key: 'theme',
+                  icon: isDark ? <SunOutlined /> : <MoonOutlined />,
+                  label: isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối',
+                  onClick: toggleMode,
+                },
                 { type: 'divider' },
                 {
                   key: 'logout',
@@ -369,12 +381,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       }}
       token={{
         header: {
-          colorBgHeader: '#ffffff',
-          colorHeaderTitle: '#10233f',
+          colorBgHeader: isDark ? '#111827' : '#ffffff',
+          colorHeaderTitle: isDark ? '#f3f4f6' : '#10233f',
           heightLayoutHeader: 64,
         },
         sider: {
-          colorMenuBackground: '#071a32',
+          colorMenuBackground: isDark ? '#020617' : '#071a32',
           colorTextMenu: 'rgba(255,255,255,.88)',
           colorTextMenuSelected: '#ffffff',
           colorBgMenuItemSelected: '#1677ff',
