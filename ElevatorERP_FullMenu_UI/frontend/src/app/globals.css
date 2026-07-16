@@ -44,12 +44,6 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 .menu-stage{flex:0 0 auto;padding:1px 6px;border-radius:999px;font-size:10px;line-height:18px;font-weight:700;background:rgba(255,255,255,.1);color:rgba(255,255,255,.62)}
 .ant-menu-item-disabled .menu-stage{background:rgba(255,255,255,.06)}
 .ant-pro-layout-header{border-bottom:1px solid #e9edf4!important;box-shadow:0 2px 10px rgba(16,24,40,.03)}
-.erp-header-content{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;min-width:0}
-.header-search-wrap{display:flex;align-items:center;flex:1;min-width:0;max-width:620px;padding-left:8px}
-.erp-header-actions{flex:0 0 auto;margin-left:auto}
-.global-search{max-width:520px;background:#f6f8fb!important;border-color:transparent!important;box-shadow:none!important}
-.global-search:hover{background:#fff!important;border-color:#d7dfeb!important}
-.search-shortcut{font-size:11px;color:#98a2b3;border:1px solid #d8dee8;border-radius:5px;padding:1px 6px;background:#fff}
 .theme-toggle-button,.shell-icon-button{color:#475467}
 .theme-toggle-button:hover,.shell-icon-button:hover{background:#f2f4f7!important;color:#1677ff!important}
 .user-dropdown-trigger{cursor:pointer;border-radius:10px;padding:4px 7px;transition:.2s}
@@ -75,7 +69,22 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 .ant-pro-sider .ant-badge-dot{
   box-shadow:0 0 0 2px #071a32;
 }
-.erp-content{min-height:calc(100vh - 64px)}
+.erp-content{position:relative;min-height:calc(100vh - 64px)}
+.erp-global-toolbar{
+  position:absolute;
+  top:14px;
+  right:360px;
+  z-index:20;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:5px;
+  border:1px solid rgba(231,236,243,.9);
+  border-radius:12px;
+  background:rgba(255,255,255,.86);
+  box-shadow:0 8px 24px rgba(16,24,40,.08);
+  backdrop-filter:blur(10px);
+}
 .erp-page-container .ant-page-header-heading{align-items:center}
 .erp-page-container .ant-pro-page-container-children-container{padding-block-start:20px!important}
 .section-gap{margin-top:16px}
@@ -163,7 +172,7 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 .demo-account-box{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:22px;padding:12px 14px;border:1px dashed #cfd8e6;border-radius:10px;background:#fafcff;font-size:12px;color:#667085}.demo-account-box b{margin-right:auto;color:#344054}.demo-account-box span{padding:3px 7px;background:#eef3f9;border-radius:5px;font-family:monospace;color:#344054}.login-footer{text-align:center;color:#98a2b3;font-size:11px;margin-top:30px}
 
 @media(max-width:1100px){
-  .header-search-wrap{max-width:360px}.global-search{max-width:320px}
+  .erp-global-toolbar{right:24px;top:62px}
   .welcome-visual{display:none}.welcome-copy{max-width:none}
   .login-page{grid-template-columns:1fr 480px}.login-brand-panel{padding:42px}.login-hero-copy h1{font-size:38px!important}
 }
@@ -171,7 +180,7 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 @media(max-width:900px){
   .erp-page-container .ant-pro-page-container-children-container{padding-inline:14px!important;padding-block-start:14px!important}
   .erp-page-container .ant-page-header{padding-inline:14px!important}
-  .header-search-wrap{display:none}.erp-header-content{justify-content:flex-end}.erp-header-actions{margin-left:0}
+  .erp-global-toolbar{top:58px;right:14px}
   .avatar-title{display:none}
   .desktop-table{display:none}.mobile-card-list{display:block}
   .filter-search{max-width:none}.filter-select{flex:1;min-width:180px}
@@ -181,7 +190,7 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 
 @media(max-width:640px){
   .erp-page-container .ant-page-header-heading{align-items:flex-start}.erp-page-container .ant-page-header-heading-extra{width:100%;margin-inline-start:0!important}.erp-page-container .ant-page-header-heading-extra>*{flex:1}
-  .erp-header-actions .theme-toggle-button{display:none!important}
+  .erp-global-toolbar{top:64px}.erp-global-toolbar .theme-toggle-button{display:none!important}
   .welcome-panel .ant-pro-card-body{padding:24px!important}.welcome-copy h2{font-size:24px!important}.welcome-copy p{font-size:13px}.welcome-panel{min-height:auto}
   .stat-card .ant-statistic-content{font-size:25px!important}.stat-card .ant-pro-card-body{padding:15px!important}.stat-icon{width:35px;height:35px}
   .mini-stat .ant-pro-card-body{padding:13px!important;gap:9px}.mini-stat-icon{width:35px;height:35px;font-size:16px}.mini-stat b{font-size:20px}.mini-stat small{font-size:10px}
@@ -235,9 +244,11 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1220;color:va
 .ant-pro-table-list-toolbar-title{font-size:15px!important;font-weight:750!important}
 
 html[data-theme='dark'] .ant-pro-layout-header{border-bottom-color:#243044!important;box-shadow:none}
-html[data-theme='dark'] .global-search{background:#0f172a!important;border-color:#263247!important}
-html[data-theme='dark'] .global-search:hover{background:#111827!important;border-color:#3b4a63!important}
-html[data-theme='dark'] .search-shortcut{color:#aab3c2;border-color:#334155;background:#111827}
+html[data-theme='dark'] .erp-global-toolbar{
+  border-color:#263247;
+  background:rgba(17,24,39,.86);
+  box-shadow:0 12px 30px rgba(0,0,0,.28);
+}
 html[data-theme='dark'] .theme-toggle-button,
 html[data-theme='dark'] .shell-icon-button{color:#d1d5db}
 html[data-theme='dark'] .theme-toggle-button:hover,

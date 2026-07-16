@@ -7,7 +7,6 @@ import {
   Badge,
   Button,
   Dropdown,
-  Input,
   Space,
   Spin,
   Tooltip,
@@ -40,7 +39,6 @@ import {
   QuestionCircleOutlined,
   ReconciliationOutlined,
   SafetyCertificateOutlined,
-  SearchOutlined,
   SettingOutlined,
   SolutionOutlined,
   SunOutlined,
@@ -286,50 +284,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         if (route.children || !route.path) return dom;
         return <Link href={route.path}>{dom}</Link>;
       }}
-      headerContentRender={() => (
-        <div className='erp-header-content'>
-          <div className='header-search-wrap'>
-            <Input
-              className='global-search'
-              prefix={<SearchOutlined />}
-              placeholder='Tìm khách hàng, công việc, dự án...'
-              onPressEnter={() => router.push('/customers')}
-              suffix={<span className='search-shortcut'>Ctrl K</span>}
-            />
-          </div>
-          <Space className='erp-header-actions' size={8}>
-            <Tooltip title={isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}>
-              <Button
-                type='text'
-                shape='circle'
-                className='theme-toggle-button'
-                icon={isDark ? <SunOutlined /> : <MoonOutlined />}
-                onClick={toggleMode}
-              />
-            </Tooltip>
-            <Tooltip title='Thông báo'>
-              <Badge dot offset={[-4, 5]}>
-                <Button
-                  type='text'
-                  shape='circle'
-                  className='shell-icon-button notification-button'
-                  icon={<BellOutlined />}
-                  onClick={() => router.push('/notifications')}
-                />
-              </Badge>
-            </Tooltip>
-            <Tooltip title='Trợ giúp và cấu hình'>
-              <Button
-                type='text'
-                shape='circle'
-                className='shell-icon-button help-button'
-                icon={<QuestionCircleOutlined />}
-                onClick={() => router.push('/admin/settings')}
-              />
-            </Tooltip>
-          </Space>
-        </div>
-      )}
       avatarProps={{
         icon: <UserOutlined />,
         title: (
@@ -400,7 +354,40 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         },
       }}
     >
-      <div className='erp-content'>{children}</div>
+      <div className='erp-content'>
+        <div className='erp-global-toolbar'>
+          <Tooltip title={isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}>
+            <Button
+              type='text'
+              shape='circle'
+              className='theme-toggle-button'
+              icon={isDark ? <SunOutlined /> : <MoonOutlined />}
+              onClick={toggleMode}
+            />
+          </Tooltip>
+          <Tooltip title='Thông báo'>
+            <Badge dot offset={[-4, 5]}>
+              <Button
+                type='text'
+                shape='circle'
+                className='shell-icon-button notification-button'
+                icon={<BellOutlined />}
+                onClick={() => router.push('/notifications')}
+              />
+            </Badge>
+          </Tooltip>
+          <Tooltip title='Trợ giúp và cấu hình'>
+            <Button
+              type='text'
+              shape='circle'
+              className='shell-icon-button help-button'
+              icon={<QuestionCircleOutlined />}
+              onClick={() => router.push('/admin/settings')}
+            />
+          </Tooltip>
+        </div>
+        {children}
+      </div>
     </ProLayout>
   );
 }
