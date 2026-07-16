@@ -39,7 +39,6 @@ import {
 } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
-import AppShell from '@/components/AppShell';
 import { api } from '@/lib/api';
 
 type CustomerRow = {
@@ -185,8 +184,7 @@ export default function Customers() {
   };
 
   return (
-    <AppShell>
-      <PageContainer
+    <PageContainer
         className='erp-page-container'
         header={{
           title: 'Đăng ký khách hàng',
@@ -346,7 +344,6 @@ export default function Customers() {
           />
           <ProFormText name='status' hidden />
         </DrawerForm>
-      </PageContainer>
-    </AppShell>
+    </PageContainer>
   );
 }

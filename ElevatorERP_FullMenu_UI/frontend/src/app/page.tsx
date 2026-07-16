@@ -31,7 +31,6 @@ import {
 } from '@ant-design/icons';
 import { PageContainer, ProCard, StatisticCard } from '@ant-design/pro-components';
 import { useRouter } from 'next/navigation';
-import AppShell from '@/components/AppShell';
 import { api } from '@/lib/api';
 
 type DashboardData = {
@@ -69,8 +68,7 @@ export default function Dashboard() {
   );
 
   return (
-    <AppShell>
-      <PageContainer
+    <PageContainer
         className='erp-page-container'
         header={{
           title: 'Tổng quan điều hành',
@@ -116,7 +114,7 @@ export default function Dashboard() {
                 title: 'Tổng khách hàng',
                 value: data?.totalCustomers ?? 0,
                 icon: <span className='stat-icon'><TeamOutlined /></span>,
-                description: <span><RiseOutlined /> Dữ liệu đang quản lý</span>,
+                description: <span className='kpi-description' data-mobile='Đang quản lý'><RiseOutlined /> Dữ liệu đang quản lý</span>,
               }}
             />
           </Col>
@@ -128,7 +126,7 @@ export default function Dashboard() {
                 title: 'Khách mới tháng này',
                 value: data?.newCustomers ?? 0,
                 icon: <span className='stat-icon'><UserAddOutlined /></span>,
-                description: 'Cần được chăm sóc đúng hạn',
+                description: <span className='kpi-description' data-mobile='Cần chăm sóc'>Cần được chăm sóc đúng hạn</span>,
               }}
             />
           </Col>
@@ -140,7 +138,7 @@ export default function Dashboard() {
                 title: 'Lịch chăm sóc sắp tới',
                 value: data?.upcomingCare ?? 0,
                 icon: <span className='stat-icon'><ClockCircleOutlined /></span>,
-                description: `${data?.completedCare ?? 0} lịch đã hoàn thành`,
+                description: <span className='kpi-description' data-mobile='Sắp tới'>{data?.completedCare ?? 0} lịch đã hoàn thành</span>,
               }}
             />
           </Col>
@@ -152,7 +150,7 @@ export default function Dashboard() {
                 title: 'Công việc quá hạn',
                 value: data?.overdueCare ?? 0,
                 icon: <span className='stat-icon'><ExclamationCircleOutlined /></span>,
-                description: 'Cần ưu tiên xử lý ngay',
+                description: <span className='kpi-description' data-mobile='Ưu tiên'>Cần ưu tiên xử lý ngay</span>,
               }}
             />
           </Col>
@@ -328,7 +326,6 @@ export default function Dashboard() {
             ))}
           </Row>
         </ProCard>
-      </PageContainer>
-    </AppShell>
+    </PageContainer>
   );
 }

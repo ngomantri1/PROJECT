@@ -45,7 +45,6 @@ import {
 import type { ProColumns } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 import { usePathname, useRouter } from 'next/navigation';
-import AppShell from '@/components/AppShell';
 
 type StatusOption = {
   value: string;
@@ -250,14 +249,12 @@ export default function ModuleWorkspace() {
 
   if (!config) {
     return (
-      <AppShell>
-        <Result
-          status='404'
-          title='Không tìm thấy chức năng'
-          subTitle='Đường dẫn này chưa được đăng ký trong cấu hình menu ERP.'
-          extra={<Button type='primary' onClick={() => router.push('/')}>Về tổng quan</Button>}
-        />
-      </AppShell>
+      <Result
+        status='404'
+        title='Không tìm thấy chức năng'
+        subTitle='Đường dẫn này chưa được đăng ký trong cấu hình menu ERP.'
+        extra={<Button type='primary' onClick={() => router.push('/')}>Về tổng quan</Button>}
+      />
     );
   }
 
@@ -416,8 +413,7 @@ export default function ModuleWorkspace() {
   });
 
   return (
-    <AppShell>
-      <PageContainer
+    <PageContainer
         className='erp-page-container'
         header={{
           title: config.title,
@@ -602,7 +598,6 @@ export default function ModuleWorkspace() {
             </>
           )}
         </Drawer>
-      </PageContainer>
-    </AppShell>
+    </PageContainer>
   );
 }

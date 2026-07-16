@@ -229,14 +229,14 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#090f1d;color:va
   .ant-pro-layout .ant-layout-sider-trigger .anticon,
   .ant-pro-sider-collapsed-button .anticon,
   .ant-pro-layout-sider-collapsed-button .anticon{font-size:12px!important}
-  .erp-page-container .ant-page-header{padding:70px 14px 14px!important}
+  .erp-page-container .ant-page-header{padding:60px 14px 14px!important}
   .erp-page-container .ant-page-header-heading{align-items:flex-start;display:block}
   .erp-page-container .ant-page-header-heading-left{display:flex!important;width:100%;min-width:0;flex-direction:column!important;align-items:flex-start!important}
   .erp-page-container .ant-page-header-heading-title{max-width:100%;font-size:20px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .erp-page-container .ant-page-header-heading-sub-title{margin-inline-start:0!important;margin-top:6px;max-width:100%;font-size:12px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .erp-page-container .ant-page-header-heading-extra{width:100%;margin-inline-start:0!important}.erp-page-container .ant-page-header-heading-extra>*{flex:1}
-  .erp-account-toolbar{top:12px;right:12px;gap:4px;padding:3px;border-radius:14px}
-  .erp-page-container .ant-page-header-heading-extra{padding-right:0;padding-top:44px}
+  .erp-account-toolbar{top:10px;right:12px;gap:4px;padding:3px;border-radius:14px}
+  .erp-page-container .ant-page-header-heading-extra{padding-right:0;padding-top:36px}
   .shell-icon-button{width:34px!important;height:34px!important}
   .shell-icon-button .anticon{font-size:15px}
   .account-trigger{min-height:36px;padding:0 4px}
@@ -255,15 +255,16 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#090f1d;color:va
   .stat-card .ant-statistic-content{font-size:22px!important;line-height:1.15}
   .stat-card .ant-statistic-content-prefix{display:block;margin:0 0 8px!important}
   .stat-card .ant-pro-field-extra{
-    display:-webkit-box;
-    min-height:30px;
+    display:block;
+    min-height:16px;
     overflow:hidden;
-    -webkit-line-clamp:2;
-    -webkit-box-orient:vertical;
     font-size:11px;
     line-height:1.35;
     margin-top:7px;
   }
+  .dashboard-kpi-row .kpi-description{font-size:0}
+  .dashboard-kpi-row .kpi-description .anticon{display:none}
+  .dashboard-kpi-row .kpi-description:after{content:attr(data-mobile);font-size:11px}
   .stat-icon{width:34px;height:34px;border-radius:10px;font-size:16px}
   .mini-stat .ant-pro-card-body{padding:13px!important;gap:9px}.mini-stat-icon{width:35px;height:35px;font-size:16px}.mini-stat b{font-size:20px}.mini-stat small{font-size:10px}
   .performance-layout{display:block}.performance-ring{text-align:center;margin-bottom:20px}.performance-detail{grid-template-columns:1fr}.business-flow{padding-inline:0}
@@ -271,9 +272,23 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#090f1d;color:va
   .filter-card .ant-pro-card-body{padding:14px!important}
   .mobile-record-card{border-radius:13px!important}
   .mobile-record-card .ant-card-body{padding:17px 18px!important}
+  .mobile-record-card .table-primary-text{
+    display:-webkit-box;
+    overflow:hidden;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    line-height:1.35;
+  }
   .role-selector{min-width:0}
   .calendar-card .ant-picker-calendar-header{flex-wrap:wrap}.calendar-card .ant-picker-calendar-header .ant-picker-calendar-mode-switch{margin-top:8px}
   .login-form-heading h2{font-size:27px!important}.demo-account-box b{width:100%;margin-bottom:4px}
+}
+
+@media(min-width:390px) and (max-width:640px){
+  .filter-row>.ant-btn{
+    width:calc(50% - 5px)!important;
+    flex:0 0 calc(50% - 5px)!important;
+  }
 }
 
 /* Full ERP navigation */
@@ -297,10 +312,28 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#090f1d;color:va
   font-weight:650;
   box-shadow:0 7px 18px rgba(22,119,255,.24);
 }
+.ant-pro-sider-menu,
+.ant-pro-layout .ant-layout-sider,
+.ant-pro-layout .ant-layout-sider-children{
+  scrollbar-width:thin;
+  scrollbar-color:rgba(148,163,184,.28) transparent;
+}
 .ant-pro-sider-menu{padding-bottom:92px!important}
-.ant-pro-sider-menu::-webkit-scrollbar{width:6px}
-.ant-pro-sider-menu::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:999px}
-.ant-pro-sider-menu::-webkit-scrollbar-track{background:transparent}
+.ant-pro-sider-menu::-webkit-scrollbar,
+.ant-pro-layout .ant-layout-sider::-webkit-scrollbar,
+.ant-pro-layout .ant-layout-sider-children::-webkit-scrollbar{width:4px;height:4px}
+.ant-pro-sider-menu::-webkit-scrollbar-thumb,
+.ant-pro-layout .ant-layout-sider::-webkit-scrollbar-thumb,
+.ant-pro-layout .ant-layout-sider-children::-webkit-scrollbar-thumb{
+  background:rgba(148,163,184,.28);
+  border-radius:999px;
+}
+.ant-pro-sider-menu:hover::-webkit-scrollbar-thumb,
+.ant-pro-layout .ant-layout-sider:hover::-webkit-scrollbar-thumb,
+.ant-pro-layout .ant-layout-sider-children:hover::-webkit-scrollbar-thumb{background:rgba(148,163,184,.46)}
+.ant-pro-sider-menu::-webkit-scrollbar-track,
+.ant-pro-layout .ant-layout-sider::-webkit-scrollbar-track,
+.ant-pro-layout .ant-layout-sider-children::-webkit-scrollbar-track{background:transparent}
 
 .quick-module-button{
   width:100%;min-height:78px;border:1px solid var(--border);border-radius:14px;background:#fff;

@@ -37,7 +37,6 @@ import {
 } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import dayjs, { Dayjs } from 'dayjs';
-import AppShell from '@/components/AppShell';
 import { api } from '@/lib/api';
 
 type CareRow = {
@@ -243,8 +242,7 @@ export default function Care() {
   ];
 
   return (
-    <AppShell>
-      <PageContainer
+    <PageContainer
         className='erp-page-container'
         header={{
           title: 'Lịch chăm sóc khách hàng',
@@ -415,7 +413,6 @@ export default function Care() {
             placeholder='Nhập kết quả trao đổi, phản hồi của khách hàng...'
           />
         </Modal>
-      </PageContainer>
-    </AppShell>
+    </PageContainer>
   );
 }

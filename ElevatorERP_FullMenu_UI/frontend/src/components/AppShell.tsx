@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Dropdown,
+  Grid,
   Spin,
   theme as antdTheme,
   Tooltip,
@@ -220,6 +221,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { isDark, toggleMode } = useThemeMode();
   const { token } = antdTheme.useToken();
+  const screens = Grid.useBreakpoint();
+  const isMobile = screens.xs === true && !screens.sm;
 
   const loadCurrentUser = useCallback(() => {
     setLoadError('');
@@ -286,7 +289,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       onCollapse={setCollapsed}
       location={{ pathname }}
       route={{ path: '/', routes: menuData }}
-      menu={{ type: 'sub' }}
+      menu={isMobile ? { type: 'sub' } : { type: 'sub', autoClose: false }}
       menuDataRender={() => menuData}
       contentStyle={{ padding: 0 }}
       pageTitleRender={false}
@@ -320,7 +323,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     >
       <div className='erp-content'>
         <div className='erp-account-toolbar' style={accountToolbarStyle}>
-          <Tooltip title={isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}>
+          <Tooltip title={isMobile ? null : isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}>
             <Button
               type='text'
               shape='circle'

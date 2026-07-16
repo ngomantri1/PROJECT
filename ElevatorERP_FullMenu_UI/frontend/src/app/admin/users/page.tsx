@@ -24,7 +24,6 @@ import {
 } from '@ant-design/icons';
 import { PageContainer, ProCard, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import AppShell from '@/components/AppShell';
 import { api } from '@/lib/api';
 
 type UserRow = {
@@ -147,8 +146,7 @@ export default function Users() {
   ];
 
   return (
-    <AppShell>
-      <PageContainer
+    <PageContainer
         className='erp-page-container'
         header={{
           title: 'Người dùng và vai trò',
@@ -222,8 +220,7 @@ export default function Users() {
             )}
           />
         </div>
-      </PageContainer>
-    </AppShell>
+    </PageContainer>
   );
 }
 
