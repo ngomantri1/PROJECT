@@ -56,6 +56,7 @@ import { ProLayout } from '@ant-design/pro-components';
 import type { MenuDataItem } from '@ant-design/pro-components';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import BrandMark from '@/components/BrandMark';
 import { useThemeMode } from '@/components/AppProviders';
 import { api } from '@/lib/api';
 
@@ -193,14 +194,6 @@ const routeDefinitions: ErpRoute[] = [
   },
 ];
 
-function BrandLogo() {
-  return (
-    <span className='brand-logo' aria-hidden='true'>
-      <VerticalAlignMiddleOutlined />
-    </span>
-  );
-}
-
 function filterRoutes(routes: ErpRoute[], me: Me): ErpRoute[] {
   return routes.flatMap((route) => {
     if (route.children) {
@@ -280,7 +273,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ProLayout
       title='Thang máy Miền Trung'
-      logo={<BrandLogo />}
+      logo={<BrandMark />}
       layout='side'
       fixedHeader
       fixSiderbar

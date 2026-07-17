@@ -7,9 +7,9 @@ import {
   LockOutlined,
   SafetyCertificateOutlined,
   UserOutlined,
-  VerticalAlignMiddleOutlined,
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
+import BrandMark from '@/components/BrandMark';
 import { api } from '@/lib/api';
 
 type LoginValues = {
@@ -41,7 +41,7 @@ export default function Login() {
       <section className='login-brand-panel'>
         <div className='login-brand-content'>
           <div className='login-brand'>
-            <span className='login-logo'><VerticalAlignMiddleOutlined /></span>
+            <BrandMark className='login-logo' />
             <span>
               <b>Thang máy Miền Trung</b>
               <small>ENTERPRISE RESOURCE PLANNING</small>
@@ -79,7 +79,7 @@ export default function Login() {
       <section className='login-form-panel'>
         <div className='login-form-card'>
           <div className='login-mobile-brand'>
-            <span className='login-logo'><VerticalAlignMiddleOutlined /></span>
+            <BrandMark className='login-logo' />
             <b>Thang máy Miền Trung</b>
           </div>
 
