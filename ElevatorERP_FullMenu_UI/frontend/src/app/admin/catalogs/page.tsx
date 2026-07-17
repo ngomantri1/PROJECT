@@ -270,7 +270,6 @@ export default function CatalogsPage() {
       title: 'Loại',
       dataIndex: 'isSystem',
       width: 120,
-      sorter: (a, b) => Number(a.isSystem) - Number(b.isSystem),
       render: (_, option) => (
         <Tag color={option.isSystem ? 'blue' : 'green'}>{option.isSystem ? 'Hệ thống' : 'Tùy biến'}</Tag>
       ),
@@ -279,7 +278,6 @@ export default function CatalogsPage() {
       title: 'Đang dùng',
       dataIndex: 'isActive',
       width: 120,
-      sorter: (a, b) => Number(a.isActive) - Number(b.isActive),
       render: (_, option) => {
         const isUpdating = updatingOptionIds.includes(option.id);
         return (

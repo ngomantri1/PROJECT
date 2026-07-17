@@ -39,7 +39,6 @@ import {
   MoonOutlined,
   NotificationOutlined,
   ProjectOutlined,
-  QuestionCircleOutlined,
   ReconciliationOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
@@ -316,16 +315,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     >
       <div className='erp-content'>
         <div className='erp-account-toolbar' style={accountToolbarStyle}>
-          <Tooltip title={isMobile ? null : isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}>
-            <Button
-              type='text'
-              shape='circle'
-              className='shell-icon-button theme-toggle-button'
-              icon={isDark ? <SunOutlined /> : <MoonOutlined />}
-              onClick={toggleMode}
-              aria-label={isDark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}
-            />
-          </Tooltip>
           <Tooltip title='Thông báo'>
             <Badge dot>
               <Button
@@ -337,16 +326,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 aria-label='Thông báo'
               />
             </Badge>
-          </Tooltip>
-          <Tooltip title='Trợ giúp và cấu hình'>
-            <Button
-              type='text'
-              shape='circle'
-              className='shell-icon-button help-button'
-              icon={<QuestionCircleOutlined />}
-              onClick={() => router.push('/admin/settings')}
-              aria-label='Trợ giúp và cấu hình'
-            />
           </Tooltip>
           <Dropdown
             trigger={['click']}

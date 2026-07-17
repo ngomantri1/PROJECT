@@ -83,6 +83,11 @@ type WorkspaceRow = {
 type WorkspaceForm = Omit<WorkspaceRow, 'id'>;
 
 const textSorter = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
+const priorityRank: Record<string, number> = {
+  Cao: 1,
+  'Trung bình': 2,
+  Thấp: 3,
+};
 
 const basicStatuses: StatusOption[] = [
   { value: 'NEW', label: 'Mới tạo', color: 'blue' },
@@ -353,7 +358,7 @@ export default function ModuleWorkspace() {
       title: 'Ưu tiên',
       dataIndex: 'priority',
       width: 110,
-      sorter: (a, b) => textSorter.compare(a.priority, b.priority),
+      sorter: (a, b) => (priorityRank[a.priority] ?? 99) - (priorityRank[b.priority] ?? 99),
       render: (value) => {
         const text = String(value);
         return <Tag color={text === 'Cao' ? 'red' : text === 'Trung bình' ? 'gold' : 'default'}>{text}</Tag>;

@@ -136,7 +136,6 @@ export default function Users() {
       title: 'Email',
       dataIndex: 'email',
       width: 230,
-      sorter: (a, b) => textSorter.compare(a.email ?? '', b.email ?? ''),
       render: (value) => String(value || '—'),
     },
     {

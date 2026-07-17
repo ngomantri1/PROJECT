@@ -30,6 +30,7 @@ import {
   FilterOutlined,
   PhoneOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SearchOutlined,
   TeamOutlined,
   UserAddOutlined,
@@ -83,6 +84,15 @@ type CatalogOption = {
   color?: string;
 };
 
+type CustomerFilters = {
+  search?: string;
+  status?: string;
+  statusGroup?: string;
+  source?: string;
+  owner?: string;
+  area?: string;
+};
+
 const textSorter = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
 
 const fallbackStatusOptions: CatalogOption[] = [
@@ -116,6 +126,13 @@ const legacyStatusLabels: Record<string, { label: string; color: string }> = {
 
 const sourceOptions = ['Marketing', 'Giới thiệu', 'Telesale', 'Khách cũ', 'Cộng tác viên', 'Khác'];
 
+const kpiGroupByTone: Record<string, string | undefined> = {
+  blue: undefined,
+  cyan: 'new',
+  violet: 'caring',
+  orange: 'quoted',
+};
+
 function statusMeta(statusOptions: CatalogOption[], value: string) {
   const option = statusOptions.find((item) => item.code === value);
   if (option) return { label: option.label, color: option.color ?? 'default' };
@@ -133,16 +150,32 @@ export default function Customers() {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>();
+  const [statusGroup, setStatusGroup] = useState<string>();
+  const [source, setSource] = useState<string>();
+  const [owner, setOwner] = useState<string>();
+  const [area, setArea] = useState<string>();
   const [catalogStatuses, setCatalogStatuses] = useState<CatalogOption[]>([]);
   const [loading, setLoading] = useState(false);
   const statusOptions = catalogStatuses.length ? catalogStatuses : fallbackStatusOptions;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (overrides?: CustomerFilters) => {
     setLoading(true);
     try {
+      const hasOverride = (key: keyof CustomerFilters) =>
+        overrides ? Object.prototype.hasOwnProperty.call(overrides, key) : false;
+      const currentSearch = hasOverride('search') ? overrides?.search : search;
+      const currentStatus = hasOverride('status') ? overrides?.status : status;
+      const currentStatusGroup = hasOverride('statusGroup') ? overrides?.statusGroup : statusGroup;
+      const currentSource = hasOverride('source') ? overrides?.source : source;
+      const currentOwner = hasOverride('owner') ? overrides?.owner : owner;
+      const currentArea = hasOverride('area') ? overrides?.area : area;
       const params = new URLSearchParams();
-      if (search.trim()) params.set('search', search.trim());
-      if (status) params.set('status', status);
+      if (currentSearch?.trim()) params.set('search', currentSearch.trim());
+      if (currentStatus) params.set('status', currentStatus);
+      if (!currentStatus && currentStatusGroup) params.set('statusGroup', currentStatusGroup);
+      if (currentSource) params.set('source', currentSource);
+      if (currentOwner) params.set('owner', currentOwner);
+      if (currentArea) params.set('area', currentArea);
       const query = params.toString();
       setData(await api<CustomerRow[]>(`/customers${query ? `?${query}` : ''}`));
     } catch (error) {
@@ -150,7 +183,7 @@ export default function Customers() {
     } finally {
       setLoading(false);
     }
-  }, [search, status]);
+  }, [area, owner, search, source, status, statusGroup]);
 
   useEffect(() => {
     void load();
@@ -174,6 +207,46 @@ export default function Customers() {
     return { total: data.length, newCount, caringCount, quotedCount };
   }, [data]);
 
+  const ownerOptions = useMemo(
+    () => Array.from(new Set(data.map((item) => item.owner).filter(Boolean)))
+      .sort(textSorter.compare)
+      .map((value) => ({ value, label: value })),
+    [data],
+  );
+
+  const areaOptions = useMemo(
+    () => Array.from(new Set(data.map((item) => item.area).filter(Boolean) as string[]))
+      .sort(textSorter.compare)
+      .map((value) => ({ value, label: value })),
+    [data],
+  );
+
+  const activeFilterCount = [search.trim(), status, statusGroup, source, owner, area].filter(Boolean).length;
+
+  const resetFilters = async () => {
+    setSearch('');
+    setStatus(undefined);
+    setStatusGroup(undefined);
+    setSource(undefined);
+    setOwner(undefined);
+    setArea(undefined);
+    setLoading(true);
+    try {
+      setData(await api<CustomerRow[]>('/customers'));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : 'Không tải được danh sách khách hàng.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyKpiFilter = async (group?: string) => {
+    const nextGroup = statusGroup === group ? undefined : group;
+    setStatus(undefined);
+    setStatusGroup(nextGroup);
+    await load({ status: undefined, statusGroup: nextGroup });
+  };
+
   const exportCustomers = () => {
     exportCsv(`danh-sach-khach-hang-${dayjs().format('YYYYMMDD-HHmm')}`, data, [
       { header: 'Mã KH', value: (item) => item.code },
@@ -192,7 +265,7 @@ export default function Customers() {
     {
       title: 'Mã KH',
       dataIndex: 'code',
-      width: 130,
+      width: 120,
       fixed: 'left',
       sorter: (a, b) => textSorter.compare(a.code, b.code),
       render: (value) => <Typography.Text copyable={{ text: String(value) }}>{String(value)}</Typography.Text>,
@@ -200,7 +273,7 @@ export default function Customers() {
     {
       title: 'Khách hàng',
       dataIndex: 'name',
-      width: 240,
+      width: 220,
       fixed: 'left',
       sorter: (a, b) => textSorter.compare(a.name, b.name),
       render: (_, item) => (
@@ -211,30 +284,34 @@ export default function Customers() {
       title: 'Số điện thoại',
       dataIndex: 'phone',
       width: 150,
-      sorter: (a, b) => textSorter.compare(a.phone, b.phone),
       render: (value) => <b className='table-primary-text'><PhoneOutlined /> {String(value)}</b>,
     },
     {
       title: 'Email',
       dataIndex: 'email',
       width: 220,
-      sorter: (a, b) => textSorter.compare(a.email ?? '', b.email ?? ''),
-      render: (value) => value ? String(value) : <Typography.Text type='secondary'>Chưa có email</Typography.Text>,
+      render: (value) => value ? (
+        <Tooltip title={String(value)}>
+          <span className='table-cell-ellipsis'>{String(value)}</span>
+        </Tooltip>
+      ) : <Typography.Text type='secondary'>Chưa có email</Typography.Text>,
     },
     {
       title: 'Khu vực',
       dataIndex: 'area',
-      width: 150,
+      width: 170,
       sorter: (a, b) => textSorter.compare(a.area ?? '', b.area ?? ''),
       render: (value) => value ? (
-        <span className='table-cell-inline'>
-          <EnvironmentOutlined />
-          <span className='table-cell-inline-text'>{String(value)}</span>
-        </span>
+        <Tooltip title={String(value)}>
+          <span className='table-cell-inline'>
+            <EnvironmentOutlined />
+            <span className='table-cell-inline-text table-cell-clamp'>{String(value)}</span>
+          </span>
+        </Tooltip>
       ) : '—',
     },
-    { title: 'Nguồn', dataIndex: 'source', width: 140, sorter: (a, b) => textSorter.compare(a.source, b.source) },
-    { title: 'Nhân viên phụ trách', dataIndex: 'owner', width: 190, sorter: (a, b) => textSorter.compare(a.owner, b.owner) },
+    { title: 'Nguồn', dataIndex: 'source', width: 130, sorter: (a, b) => textSorter.compare(a.source, b.source) },
+    { title: 'Nhân viên phụ trách', dataIndex: 'owner', width: 180, sorter: (a, b) => textSorter.compare(a.owner, b.owner) },
     {
       title: 'Trạng thái',
       dataIndex: 'status',
@@ -248,15 +325,14 @@ export default function Customers() {
     {
       title: 'Ngày tạo',
       dataIndex: 'createdAt',
-      width: 135,
-      fixed: 'right',
+      width: 130,
       sorter: (a, b) => dayjs(a.createdAt).valueOf() - dayjs(b.createdAt).valueOf(),
       render: (value) => value ? dayjs(String(value)).format('DD/MM/YYYY') : '—',
     },
     {
       title: 'Thao tác',
       valueType: 'option',
-      width: 110,
+      width: 84,
       fixed: 'right',
       align: 'center',
       render: (_, item) => [
@@ -325,8 +401,17 @@ export default function Customers() {
     <PageContainer
         className='erp-page-container'
         header={{
-          title: 'Đăng ký khách hàng',
-          subTitle: 'Quản lý khách hàng, nhu cầu ban đầu và người phụ trách',
+          title: (
+            <div className='page-title-stack'>
+              <Typography.Title level={3}>Đăng ký khách hàng</Typography.Title>
+              <Typography.Text>Quản lý khách hàng, nhu cầu ban đầu và người phụ trách</Typography.Text>
+            </div>
+          ),
+          extra: (
+            <Button type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+              Thêm khách hàng
+            </Button>
+          ),
           breadcrumb: {},
         }}
       >
@@ -338,7 +423,10 @@ export default function Customers() {
             { label: 'Báo giá / Đàm phán', value: summary.quotedCount, icon: <BankOutlined />, tone: 'orange' },
           ].map((item) => (
             <Col xs={12} lg={6} key={item.label}>
-              <ProCard className={`mini-stat mini-stat-${item.tone}`}>
+              <ProCard
+                className={`mini-stat mini-stat-${item.tone} mini-stat-interactive ${statusGroup === kpiGroupByTone[item.tone] ? 'mini-stat-active' : ''}`}
+                onClick={() => void applyKpiFilter(kpiGroupByTone[item.tone])}
+              >
                 <span className='mini-stat-icon'>{item.icon}</span>
                 <span>
                   <small>{item.label}</small>
@@ -356,26 +444,57 @@ export default function Customers() {
               onChange={(event) => setSearch(event.target.value)}
               onPressEnter={() => void load()}
               prefix={<SearchOutlined />}
-              placeholder='Tìm theo tên hoặc số điện thoại...'
+              placeholder='Tìm tên, SĐT, email hoặc mã KH...'
               allowClear
               className='filter-search'
             />
             <Select
               value={status}
-              onChange={setStatus}
+              onChange={(value) => {
+                setStatus(value);
+                setStatusGroup(undefined);
+              }}
               allowClear
               placeholder='Tất cả trạng thái'
               className='filter-select'
               options={statusOptions.map((item) => ({ value: item.code, label: item.label }))}
             />
+            <Select
+              value={source}
+              onChange={setSource}
+              allowClear
+              placeholder='Nguồn khách'
+              className='filter-select'
+              options={sourceOptions.map((item) => ({ value: item, label: item }))}
+            />
+            <Select
+              value={owner}
+              onChange={setOwner}
+              allowClear
+              showSearch
+              optionFilterProp='label'
+              placeholder='Người phụ trách'
+              className='filter-select'
+              options={ownerOptions}
+            />
+            <Select
+              value={area}
+              onChange={setArea}
+              allowClear
+              showSearch
+              optionFilterProp='label'
+              placeholder='Khu vực'
+              className='filter-select'
+              options={areaOptions}
+            />
+            <Button icon={<ReloadOutlined />} onClick={() => void resetFilters()}>
+              Đặt lại{activeFilterCount ? ` (${activeFilterCount})` : ''}
+            </Button>
             <Button type='primary' icon={<FilterOutlined />} onClick={() => void load()}>
               Áp dụng
             </Button>
             <Button icon={<DownloadOutlined />} onClick={exportCustomers}>
               Xuất CSV
-            </Button>
-            <Button type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
-              Thêm khách hàng
             </Button>
           </div>
         </ProCard>
@@ -390,7 +509,7 @@ export default function Customers() {
             cardBordered
             options={{ density: true, fullScreen: true, reload: () => void load() }}
             pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} khách hàng` }}
-            scroll={{ x: 1700 }}
+            scroll={{ x: 1560 }}
             headerTitle='Danh sách đăng ký khách hàng'
           />
         </div>

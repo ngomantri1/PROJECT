@@ -195,6 +195,10 @@ app.MapGet("/api/dashboard", async (AppDbContext db) =>
 app.MapGet("/api/customers", async (
     string? search,
     string? status,
+    string? statusGroup,
+    string? source,
+    string? owner,
+    string? area,
     AppDbContext db,
     CurrentUser current) =>
 {
@@ -208,11 +212,39 @@ app.MapGet("/api/customers", async (
     if (!string.IsNullOrWhiteSpace(search))
     {
         var normalizedSearch = search.Trim().ToLower();
-        query = query.Where(x => x.Name.ToLower().Contains(normalizedSearch) || x.Phone.Contains(search.Trim()));
+        var rawSearch = search.Trim();
+        query = query.Where(x =>
+            x.Name.ToLower().Contains(normalizedSearch)
+            || x.Code.ToLower().Contains(normalizedSearch)
+            || x.Phone.Contains(rawSearch)
+            || (x.Email != null && x.Email.ToLower().Contains(normalizedSearch)));
     }
 
     if (!string.IsNullOrWhiteSpace(status))
         query = query.Where(x => x.Status == status);
+    else if (!string.IsNullOrWhiteSpace(statusGroup))
+    {
+        var statuses = statusGroup switch
+        {
+            "new" => ["NEW"],
+            "caring" => new[] { "CONTACTED", "CARING", "WAITING_SURVEY", "SURVEYED", "VISITED_SHOWROOM", "WAITING_RESPONSE", "PAUSED" },
+            "quoted" => new[] { "QUOTED", "NEGOTIATING", "CONVERTED", "SIGNED" },
+            _ => []
+        };
+        if (statuses.Length > 0) query = query.Where(x => statuses.Contains(x.Status));
+    }
+
+    if (!string.IsNullOrWhiteSpace(source))
+        query = query.Where(x => x.Source == source);
+
+    if (!string.IsNullOrWhiteSpace(owner))
+        query = query.Where(x => x.OwnerUser.DisplayName == owner);
+
+    if (!string.IsNullOrWhiteSpace(area))
+    {
+        var normalizedArea = area.Trim().ToLower();
+        query = query.Where(x => x.Area != null && x.Area.ToLower().Contains(normalizedArea));
+    }
 
     return Results.Ok(await query
         .OrderBy(x => x.Code)
