@@ -1,6 +1,6 @@
 # BUGS
 
-> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-16**.
+> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-17**.
 
 ## 1. Current open issues
 
@@ -138,6 +138,15 @@
 - Added basic audit entries for customer/care creation, care completion, role assignment and upload.
 - Updated PowerShell start script to fail when Docker commands fail instead of printing false success URLs.
 - Verified Full Menu frontend with `npm ci`, ESLint, strict TypeScript and production build.
+- Moved `AppShell` out of individual pages into a shared `AppFrame`, so sidebar/header no longer remount when clicking sidebar menu items.
+- Added `/login` exception so the login page renders outside the ERP shell.
+- Added persistent light/dark theme switching through `AppProviders`.
+- Reworked top-right account toolbar so user, notification, help and theme controls no longer collide with page actions.
+- Removed global header business buttons and moved create/apply actions near page filters.
+- Improved desktop/mobile ERP/admin shell visual design, including dashboard hero, KPI cards, dark mode contrast, mobile cards and filter layout.
+- Made desktop sidebar groups support multiple open sections while keeping mobile compact behavior.
+- Slimmed and darkened sidebar scrollbar to avoid the oversized default browser scrollbar.
+- Documented and worked around Nginx `502 Bad Gateway` after rebuilding frontend by restarting `nginx` when upstream IP caching occurs.
 
 ## 3. Temporary workarounds
 
@@ -146,6 +155,7 @@
 - Schema changes during local prototype: recreate only a disposable local database after backup. Never delete production `.data`.
 - Docker dependency installation issue: keep the committed npmjs-based lock file; do not run unreviewed dependency upgrades.
 - Care overdue demo mismatch: re-seed disposable demo data or inspect dates manually until worker/derived status exists.
+- After rebuilding/recreating the frontend container, if `localhost` shows Nginx `502 Bad Gateway` while containers are healthy, run `docker compose restart nginx` so Nginx resolves the current frontend container IP.
 
 ## 4. High-risk code areas
 

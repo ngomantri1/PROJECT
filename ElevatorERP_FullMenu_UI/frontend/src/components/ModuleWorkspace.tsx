@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Avatar,
   Button,
   Col,
@@ -421,6 +422,14 @@ export default function ModuleWorkspace() {
           breadcrumb: {},
         }}
       >
+        <Alert
+          className='section-gap'
+          type='warning'
+          showIcon
+          message='Dữ liệu mô phỏng'
+          description='Chức năng này đang dùng dữ liệu mẫu lưu trên trình duyệt, chưa ghi vào PostgreSQL.'
+        />
+
         <Row gutter={[16, 16]}>
           {[
             { label: `Tổng ${config.entity}`, value: rows.length, icon: <FileTextOutlined />, tone: 'blue' },

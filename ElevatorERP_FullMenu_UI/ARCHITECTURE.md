@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-> Current architecture map plus the approved target direction. Last source review: **2026-07-16**.
+> Current architecture map plus the approved target direction. Last source review: **2026-07-17**.
 
 ## 1. Current repository structure
 
@@ -33,6 +33,8 @@ ElevatorERP_FullMenu_UI/
 │       │   ├── admin/users/page.tsx
 │       │   └── [...workspace]/page.tsx
 │       ├── components/AppShell.tsx
+│       ├── components/AppFrame.tsx
+│       ├── components/AppProviders.tsx
 │       ├── components/ModuleWorkspace.tsx
 │       └── lib/api.ts
 ├── deploy/nginx/default.conf
@@ -134,8 +136,22 @@ Contains all current entities:
 
 - Root metadata.
 - Ant Design SSR registry.
-- Vietnamese locale.
-- Global design tokens and component defaults.
+- Wraps the app with `AppProviders`.
+- Wraps authenticated routes with `AppFrame`.
+
+### `src/components/AppProviders.tsx`
+
+- Client-side Ant Design `ConfigProvider` and `App`.
+- Owns light/dark theme state.
+- Persists theme in `localStorage` key `elevator-erp:theme-mode`.
+- Sets `document.documentElement.dataset.theme` so global CSS can style light/dark variants.
+
+### `src/components/AppFrame.tsx`
+
+- Client-side route frame.
+- Renders `/login` without the ERP shell.
+- Renders all other routes inside `AppShell`.
+- This keeps the shell mounted while App Router swaps only the page content.
 
 ### `src/components/AppShell.tsx`
 
@@ -143,8 +159,10 @@ Contains all current entities:
 - Full business menu definitions.
 - Calls `/auth/me`.
 - Filters routes that declare a permission.
-- Handles global header, quick action, notifications, user dropdown and logout.
+- Handles account toolbar, theme toggle, notifications, help, user dropdown and logout.
 - Owns responsive sidebar collapse state.
+- Desktop sidebar menu uses `autoClose: false` so multiple module groups can remain open.
+- Mobile sidebar keeps the default compact behavior to save screen space.
 
 Only routes with an explicit `permission` property are currently filtered. Most generic V3–V9 routes are visible to any authenticated user.
 
@@ -327,9 +345,12 @@ Route pathname
 - Real pages use `useEffect`/`useCallback` to fetch.
 - Mutations await the API, show Ant Design messages, then re-fetch.
 - Dashboard fetches once on mount.
-- Menu/user shell fetches `/auth/me` once on mount.
+- `AppFrame` keeps the shell outside individual pages; menu navigation changes only the right content area.
+- Menu/user shell fetches `/auth/me` once when the authenticated shell mounts, not once per page component.
 - Generic workspaces update local React state and `localStorage` synchronously.
 - Desktop uses `ProTable`; under the CSS breakpoint the table is replaced by mobile cards.
+- Current UI shell supports polished desktop/mobile light and dark modes.
+- Global business action buttons were removed from the shell header; page-level create/apply actions live near filters/toolbars.
 
 ### Target
 
