@@ -250,7 +250,6 @@ export default function Customers() {
       dataIndex: 'createdAt',
       width: 135,
       fixed: 'right',
-      defaultSortOrder: 'descend',
       sorter: (a, b) => dayjs(a.createdAt).valueOf() - dayjs(b.createdAt).valueOf(),
       render: (value) => value ? dayjs(String(value)).format('DD/MM/YYYY') : '—',
     },

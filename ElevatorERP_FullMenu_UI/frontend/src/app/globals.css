@@ -378,6 +378,12 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0b1812;color:va
 
 .ant-table-wrapper .ant-table-thead>tr>th{font-weight:700;color:#3f5046;background:#f7faf6}
 .ant-table-wrapper .ant-table-tbody>tr:hover>td{background:#f4faf5!important}
+.ant-table-wrapper .ant-table-cell-fix-right-first:after,
+.ant-table-wrapper .ant-table-cell-fix-right-last:after,
+.ant-table-wrapper .ant-table-cell-fix-left-first:after,
+.ant-table-wrapper .ant-table-cell-fix-left-last:after{box-shadow:none!important}
+.ant-table-wrapper .ant-table-cell-fix-right-first,
+.ant-table-wrapper .ant-table-cell-fix-left-last{border-inline-color:transparent!important}
 .ant-pro-table-list-toolbar-title{font-size:15px!important;font-weight:750!important}
 
 html[data-theme='dark'] .ant-pro-layout-header{border-bottom-color:#31463a!important;box-shadow:none}

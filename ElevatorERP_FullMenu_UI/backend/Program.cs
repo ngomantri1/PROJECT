@@ -215,7 +215,7 @@ app.MapGet("/api/customers", async (
         query = query.Where(x => x.Status == status);
 
     return Results.Ok(await query
-        .OrderByDescending(x => x.CreatedAt)
+        .OrderBy(x => x.Code)
         .Select(x => new
         {
             x.Id,
