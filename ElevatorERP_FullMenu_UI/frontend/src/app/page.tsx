@@ -43,7 +43,7 @@ type DashboardData = {
   sourceStats: { name: string; value: number }[];
 };
 
-const sourceColors = ['#1677ff', '#13c2c2', '#722ed1', '#fa8c16', '#52c41a'];
+const sourceColors = ['#008848', '#12a05a', '#0f766e', '#f6a21a', '#7c3aed'];
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -158,7 +158,7 @@ export default function Dashboard() {
 
         <Row gutter={[16, 16]} className='section-gap'>
           <Col xs={24} xl={15}>
-            <ProCard title='Hiệu suất chăm sóc khách hàng' extra={<Tag color='blue'>Tháng hiện tại</Tag>}>
+            <ProCard title='Hiệu suất chăm sóc khách hàng' extra={<Tag color='green'>Tháng hiện tại</Tag>}>
               <div className='performance-layout'>
                 <div className='performance-ring'>
                   <Progress
@@ -166,7 +166,7 @@ export default function Dashboard() {
                     percent={completedPercent}
                     size={176}
                     strokeWidth={10}
-                    trailColor='#eef2f7'
+                    trailColor='#edf5ed'
                     format={(percent) => (
                       <div>
                         <b>{percent}%</b>
@@ -231,7 +231,7 @@ export default function Dashboard() {
                         percent={Math.round((item.value / maxSource) * 100)}
                         showInfo={false}
                         strokeColor={sourceColors[index % sourceColors.length]}
-                        trailColor='#eef2f6'
+                        trailColor='#edf5ed'
                         size='small'
                       />
                     </div>

@@ -56,14 +56,14 @@ export default function AppProviders({ children }: { children: React.ReactNode }
         theme={{
           algorithm: mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
           token: {
-            colorPrimary: '#1677ff',
-            colorInfo: '#1677ff',
+            colorPrimary: '#008848',
+            colorInfo: '#008848',
             colorSuccess: '#16a34a',
             colorWarning: '#f59e0b',
             colorError: '#ef4444',
-            colorText: mode === 'dark' ? '#e5e7eb' : '#172033',
-            colorTextSecondary: mode === 'dark' ? '#aab3c2' : '#667085',
-            colorBgLayout: mode === 'dark' ? '#0b1220' : '#f3f6fa',
+            colorText: mode === 'dark' ? '#e5ede8' : '#17281e',
+            colorTextSecondary: mode === 'dark' ? '#aab8b0' : '#66756b',
+            colorBgLayout: mode === 'dark' ? '#0b1812' : '#f4f8f3',
             borderRadius: 10,
             borderRadiusLG: 14,
             fontFamily:
@@ -73,8 +73,8 @@ export default function AppProviders({ children }: { children: React.ReactNode }
             Button: { controlHeight: 38, borderRadius: 9, fontWeight: 600 },
             Card: { headerFontSize: 16, paddingLG: 20 },
             Table: {
-              headerBg: mode === 'dark' ? '#111827' : '#f8fafc',
-              headerColor: mode === 'dark' ? '#d1d5db' : '#475467',
+              headerBg: mode === 'dark' ? '#12241b' : '#f7faf6',
+              headerColor: mode === 'dark' ? '#d1ded6' : '#4d5f53',
             },
             Menu: { itemBorderRadius: 9, itemMarginInline: 10 },
             Input: { controlHeight: 38 },

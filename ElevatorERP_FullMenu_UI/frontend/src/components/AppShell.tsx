@@ -302,15 +302,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       }}
       token={{
         header: {
-          colorBgHeader: isDark ? '#111827' : '#ffffff',
-          colorHeaderTitle: isDark ? '#f3f4f6' : '#10233f',
+          colorBgHeader: isDark ? '#12241b' : '#ffffff',
+          colorHeaderTitle: isDark ? '#f3f8f4' : '#11351f',
           heightLayoutHeader: 64,
         },
         sider: {
-          colorMenuBackground: isDark ? '#020617' : '#071a32',
+          colorMenuBackground: isDark ? '#082016' : '#063b2a',
           colorTextMenu: 'rgba(255,255,255,.88)',
           colorTextMenuSelected: '#ffffff',
-          colorBgMenuItemSelected: '#1677ff',
+          colorBgMenuItemSelected: '#008848',
           colorBgMenuItemHover: 'rgba(255,255,255,.11)',
           colorMenuItemDivider: 'rgba(255,255,255,.1)',
           colorTextMenuTitle: 'rgba(255,255,255,.66)',
