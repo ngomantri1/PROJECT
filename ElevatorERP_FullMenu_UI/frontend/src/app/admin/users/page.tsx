@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Avatar,
+  Button,
   Card,
   Col,
   Descriptions,
@@ -17,6 +18,7 @@ import {
 import {
   ApartmentOutlined,
   CheckCircleOutlined,
+  DownloadOutlined,
   LockOutlined,
   SafetyCertificateOutlined,
   TeamOutlined,
@@ -25,6 +27,7 @@ import {
 import { PageContainer, ProCard, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { api } from '@/lib/api';
+import { exportCsv } from '@/lib/exportCsv';
 
 type UserRow = {
   id: string;
@@ -40,6 +43,8 @@ type RoleRow = {
   id: string;
   name: string;
 };
+
+const textSorter = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
 
 export default function Users() {
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -89,6 +94,17 @@ export default function Users() {
     [users, roles],
   );
 
+  const exportUsers = () => {
+    exportCsv('danh-sach-nguoi-dung', users, [
+      { header: 'Người dùng', value: (user) => user.displayName },
+      { header: 'Tên đăng nhập', value: (user) => user.username },
+      { header: 'Email', value: (user) => user.email },
+      { header: 'Phòng ban', value: (user) => user.department },
+      { header: 'Vai trò', value: (user) => user.roles.join(', ') },
+      { header: 'Trạng thái', value: (user) => user.isActive ? 'Hoạt động' : 'Đã khóa' },
+    ]);
+  };
+
   const roleSelector = (user: UserRow) => (
     <Select
       mode='multiple'
@@ -105,6 +121,7 @@ export default function Users() {
       title: 'Người dùng',
       dataIndex: 'displayName',
       width: 260,
+      sorter: (a, b) => textSorter.compare(a.displayName, b.displayName),
       render: (_, user) => (
         <Space>
           <Avatar className='user-table-avatar'>{user.displayName.charAt(0)}</Avatar>
@@ -119,13 +136,20 @@ export default function Users() {
       title: 'Email',
       dataIndex: 'email',
       width: 230,
+      sorter: (a, b) => textSorter.compare(a.email ?? '', b.email ?? ''),
       render: (value) => String(value || '—'),
     },
     {
       title: 'Phòng ban',
       dataIndex: 'department',
       width: 190,
-      render: (value) => <span><ApartmentOutlined /> {String(value || 'Chưa phân phòng')}</span>,
+      sorter: (a, b) => textSorter.compare(a.department ?? '', b.department ?? ''),
+      render: (value) => (
+        <span className='table-cell-inline'>
+          <ApartmentOutlined />
+          <span className='table-cell-inline-text'>{String(value || 'Chưa phân phòng')}</span>
+        </span>
+      ),
     },
     {
       title: 'Vai trò hiệu lực',
@@ -137,6 +161,7 @@ export default function Users() {
       title: 'Trạng thái',
       dataIndex: 'isActive',
       width: 130,
+      sorter: (a, b) => Number(a.isActive) - Number(b.isActive),
       render: (_, user) => (
         <Tag color={user.isActive ? 'green' : 'red'} icon={user.isActive ? <CheckCircleOutlined /> : <LockOutlined />}>
           {user.isActive ? 'Hoạt động' : 'Đã khóa'}
@@ -184,6 +209,11 @@ export default function Users() {
             search={false}
             cardBordered
             headerTitle='Danh sách tài khoản'
+            toolBarRender={() => [
+              <Button key='export' icon={<DownloadOutlined />} onClick={exportUsers}>
+                Xuất CSV
+              </Button>,
+            ]}
             options={{ density: true, fullScreen: true, reload: () => void load() }}
             pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} tài khoản` }}
             scroll={{ x: 1200 }}

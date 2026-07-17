@@ -13,6 +13,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CareActivity> CareActivities => Set<CareActivity>();
+    public DbSet<CatalogCategory> CatalogCategories => Set<CatalogCategory>();
+    public DbSet<CatalogOption> CatalogOptions => Set<CatalogOption>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<StoredFile> StoredFiles => Set<StoredFile>();
 
@@ -24,6 +26,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         b.Entity<Role>().HasIndex(x => x.Code).IsUnique();
         b.Entity<Permission>().HasIndex(x => x.Code).IsUnique();
         b.Entity<Customer>().HasIndex(x => x.Code).IsUnique();
+        b.Entity<CatalogCategory>().HasIndex(x => x.Code).IsUnique();
+        b.Entity<CatalogOption>().HasIndex(x => new { x.CategoryId, x.Code }).IsUnique();
+        b.Entity<CatalogOption>()
+            .HasOne(x => x.Category)
+            .WithMany(x => x.Options)
+            .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
         b.Entity<Customer>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<CareActivity>().HasQueryFilter(x => !x.IsDeleted);
     }

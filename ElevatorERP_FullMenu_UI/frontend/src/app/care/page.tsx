@@ -22,6 +22,7 @@ import {
   CalendarOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  DownloadOutlined,
   ExclamationCircleOutlined,
   PlusOutlined,
   UnorderedListOutlined,
@@ -38,6 +39,7 @@ import {
 import type { ProColumns } from '@ant-design/pro-components';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '@/lib/api';
+import { exportCsv } from '@/lib/exportCsv';
 
 type CareRow = {
   id: string;
@@ -65,6 +67,8 @@ type CareForm = {
   scheduledAt: string;
   content: string;
 };
+
+const textSorter = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
 
 const careTypeLabels: Record<string, string> = {
   CALL: 'Gọi điện',
@@ -191,6 +195,7 @@ export default function Care() {
       title: 'Thời gian',
       dataIndex: 'scheduledAt',
       width: 165,
+      defaultSortOrder: 'ascend',
       sorter: (a, b) => dayjs(a.scheduledAt).valueOf() - dayjs(b.scheduledAt).valueOf(),
       render: (_, item) => (
         <span>
@@ -203,6 +208,7 @@ export default function Care() {
       title: 'Khách hàng',
       dataIndex: 'customer',
       width: 220,
+      sorter: (a, b) => textSorter.compare(a.customer, b.customer),
       render: (_, item) => (
         <Space>
           <Avatar className='customer-avatar'>{item.customer.charAt(0)}</Avatar>
@@ -217,14 +223,22 @@ export default function Care() {
       title: 'Loại chăm sóc',
       dataIndex: 'careType',
       width: 180,
+      sorter: (a, b) => textSorter.compare(
+        careTypeLabels[a.careType] ?? a.careType,
+        careTypeLabels[b.careType] ?? b.careType,
+      ),
       render: (_, item) => careTypeLabels[item.careType] ?? item.careType,
     },
     { title: 'Nội dung', dataIndex: 'content', ellipsis: true },
-    { title: 'Phụ trách', dataIndex: 'assignee', width: 180 },
+    { title: 'Phụ trách', dataIndex: 'assignee', width: 180, sorter: (a, b) => textSorter.compare(a.assignee, b.assignee) },
     {
       title: 'Trạng thái',
       dataIndex: 'status',
       width: 130,
+      sorter: (a, b) => textSorter.compare(
+        statusLabels[a.status]?.label ?? a.status,
+        statusLabels[b.status]?.label ?? b.status,
+      ),
       render: (_, item) => <CareStatus value={item.status} />,
     },
     {
@@ -240,6 +254,19 @@ export default function Care() {
         ] : [<Typography.Text key='done' type='secondary'>Đã xử lý</Typography.Text>],
     },
   ];
+
+  const exportCareActivities = () => {
+    exportCsv(`lich-cham-soc-${dayjs().format('YYYYMMDD-HHmm')}`, data, [
+      { header: 'Thời gian', value: (item) => dayjs(item.scheduledAt).format('DD/MM/YYYY HH:mm') },
+      { header: 'Khách hàng', value: (item) => item.customer },
+      { header: 'Số điện thoại', value: (item) => item.phone },
+      { header: 'Loại chăm sóc', value: (item) => careTypeLabels[item.careType] ?? item.careType },
+      { header: 'Nội dung', value: (item) => item.content },
+      { header: 'Phụ trách', value: (item) => item.assignee },
+      { header: 'Trạng thái', value: (item) => statusLabels[item.status]?.label ?? item.status },
+      { header: 'Kết quả', value: (item) => item.result },
+    ]);
+  };
 
   return (
     <PageContainer
@@ -286,6 +313,9 @@ export default function Care() {
               <Tag color='blue'>Sắp tới: {summary.upcoming}</Tag>
               <Tag color='red'>Quá hạn: {summary.overdue}</Tag>
               <Tag color='green'>Hoàn thành: {summary.done}</Tag>
+              <Button icon={<DownloadOutlined />} onClick={exportCareActivities}>
+                Xuất CSV
+              </Button>
               <Button type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
                 Thêm lịch
               </Button>

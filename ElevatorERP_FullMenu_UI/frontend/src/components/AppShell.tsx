@@ -187,7 +187,7 @@ const routeDefinitions: ErpRoute[] = [
         permission: 'user.manage',
       },
       { path: '/admin/roles', name: 'Vai trò và quyền', icon: <SafetyCertificateOutlined /> },
-      { path: '/admin/catalogs', name: 'Danh mục dùng chung', icon: <FolderOpenOutlined /> },
+      { path: '/admin/catalogs', name: 'Danh mục dùng chung', icon: <FolderOpenOutlined />, permission: 'role.manage' },
       { path: '/admin/audit', name: 'Nhật ký hệ thống', icon: <AuditOutlined /> },
       { path: '/admin/settings', name: 'Cấu hình', icon: <SettingOutlined /> },
     ],

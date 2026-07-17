@@ -90,6 +90,31 @@ public sealed class CareActivity : Entity
     public DateTimeOffset? NextCareAt { get; set; }
 }
 
+public sealed class CatalogCategory : Entity
+{
+    public string Code { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Module { get; set; } = "";
+    public string? Description { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsSystem { get; set; } = true;
+    public bool IsActive { get; set; } = true;
+    public ICollection<CatalogOption> Options { get; set; } = new List<CatalogOption>();
+}
+
+public sealed class CatalogOption : Entity
+{
+    public Guid CategoryId { get; set; }
+    public CatalogCategory Category { get; set; } = null!;
+    public string Code { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string? Description { get; set; }
+    public string? Color { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsSystem { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
 public sealed class AuditLog : Entity
 {
     public Guid? UserId { get; set; }

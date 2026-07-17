@@ -9,6 +9,8 @@ public static class DemoSeeder
     public static async Task SeedAsync(AppDbContext db, IConfiguration config)
     {
         await db.Database.EnsureCreatedAsync();
+        await EnsureCatalogTablesAsync(db);
+        await SeedCatalogsAsync(db);
 
         var enableDemo = bool.TryParse(config["EnableDemoSeed"], out var demo) && demo;
         if (!enableDemo || await db.Users.AnyAsync()) return;
@@ -103,6 +105,137 @@ public static class DemoSeeder
                 NextCareAt=date < DateTimeOffset.UtcNow ? date.AddDays(7) : null, IsDemo=true
             });
         }
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task EnsureCatalogTablesAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "CatalogCategories" (
+                "Id" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NULL,
+                "IsDeleted" boolean NOT NULL,
+                "IsDemo" boolean NOT NULL,
+                "Code" text NOT NULL,
+                "Name" text NOT NULL,
+                "Module" text NOT NULL,
+                "Description" text NULL,
+                "SortOrder" integer NOT NULL,
+                "IsSystem" boolean NOT NULL,
+                "IsActive" boolean NOT NULL,
+                CONSTRAINT "PK_CatalogCategories" PRIMARY KEY ("Id")
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_CatalogCategories_Code"
+                ON "CatalogCategories" ("Code");
+
+            CREATE TABLE IF NOT EXISTS "CatalogOptions" (
+                "Id" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NULL,
+                "IsDeleted" boolean NOT NULL,
+                "IsDemo" boolean NOT NULL,
+                "CategoryId" uuid NOT NULL,
+                "Code" text NOT NULL,
+                "Label" text NOT NULL,
+                "Description" text NULL,
+                "Color" text NULL,
+                "SortOrder" integer NOT NULL,
+                "IsSystem" boolean NOT NULL,
+                "IsActive" boolean NOT NULL,
+                CONSTRAINT "PK_CatalogOptions" PRIMARY KEY ("Id"),
+                CONSTRAINT "FK_CatalogOptions_CatalogCategories_CategoryId"
+                    FOREIGN KEY ("CategoryId") REFERENCES "CatalogCategories" ("Id") ON DELETE RESTRICT
+            );
+
+            CREATE INDEX IF NOT EXISTS "IX_CatalogOptions_CategoryId"
+                ON "CatalogOptions" ("CategoryId");
+
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_CatalogOptions_CategoryId_Code"
+                ON "CatalogOptions" ("CategoryId", "Code");
+            """);
+    }
+
+    private static async Task SeedCatalogsAsync(AppDbContext db)
+    {
+        async Task<CatalogCategory> Category(string code, string name, string module, string description, int sortOrder)
+        {
+            var category = await db.CatalogCategories.FirstOrDefaultAsync(x => x.Code == code);
+            if (category is not null) return category;
+
+            category = new CatalogCategory
+            {
+                Code = code,
+                Name = name,
+                Module = module,
+                Description = description,
+                SortOrder = sortOrder,
+                IsSystem = true,
+                IsActive = true
+            };
+            db.CatalogCategories.Add(category);
+            return category;
+        }
+
+        static CatalogOption Option(CatalogCategory category, string code, string label, string color, int sortOrder, bool isSystem = true) =>
+            new()
+            {
+                Category = category,
+                Code = code,
+                Label = label,
+                Color = color,
+                SortOrder = sortOrder,
+                IsSystem = isSystem,
+                IsActive = true
+            };
+
+        var customerStatus = await Category("customer_status", "Trạng thái khách hàng", "Customers", "Trạng thái hồ sơ đăng ký/nhu cầu khách hàng.", 10);
+        var lostReason = await Category("customer_lost_reason", "Lý do mất khách", "Customers", "Lý do khi hồ sơ khách hàng không thành công.", 20);
+        var customerSource = await Category("customer_source", "Nguồn khách hàng", "Customers", "Nguồn phát sinh khách hàng.", 30);
+        var customerType = await Category("customer_type", "Loại khách hàng", "Customers", "Phân loại cá nhân/doanh nghiệp.", 40);
+
+        var options = new[]
+        {
+            Option(customerStatus, "NEW", "Khách hàng mới", "blue", 10),
+            Option(customerStatus, "CONTACTED", "Đã liên hệ", "cyan", 20),
+            Option(customerStatus, "CARING", "Đang chăm sóc", "processing", 30),
+            Option(customerStatus, "WAITING_SURVEY", "Chờ khảo sát", "gold", 40),
+            Option(customerStatus, "SURVEYED", "Đã khảo sát", "purple", 50),
+            Option(customerStatus, "VISITED_SHOWROOM", "Đã xem thang mẫu", "geekblue", 60),
+            Option(customerStatus, "QUOTED", "Đã gửi báo giá", "blue", 70),
+            Option(customerStatus, "WAITING_RESPONSE", "Chờ phản hồi", "orange", 80),
+            Option(customerStatus, "NEGOTIATING", "Đang đàm phán", "orange", 90),
+            Option(customerStatus, "CONVERTED", "Đã chuyển sang hợp đồng", "green", 100),
+            Option(customerStatus, "PAUSED", "Tạm dừng chăm sóc", "default", 110),
+            Option(customerStatus, "LOST", "Không thành công", "red", 120),
+
+            Option(lostReason, "SIGNED_WITH_COMPETITOR", "Đã ký với đơn vị khác", "red", 10),
+            Option(lostReason, "PRICE_NOT_MATCH", "Giá không phù hợp", "orange", 20),
+            Option(lostReason, "NO_DEMAND", "Không còn nhu cầu", "default", 30),
+            Option(lostReason, "CANNOT_CONTACT", "Không liên hệ được", "gold", 40),
+            Option(lostReason, "TECHNICAL_NOT_FIT", "Không phù hợp kỹ thuật", "purple", 50),
+            Option(lostReason, "CUSTOMER_DELAY", "Khách tạm hoãn", "cyan", 60),
+            Option(lostReason, "OTHER", "Khác", "default", 70),
+
+            Option(customerSource, "MARKETING", "Marketing", "green", 10),
+            Option(customerSource, "REFERRAL", "Giới thiệu", "cyan", 20),
+            Option(customerSource, "TELESALE", "Telesale", "blue", 30),
+            Option(customerSource, "OLD_CUSTOMER", "Khách cũ", "purple", 40),
+            Option(customerSource, "PARTNER", "Cộng tác viên", "gold", 50),
+            Option(customerSource, "OTHER", "Khác", "default", 60, false),
+
+            Option(customerType, "PERSONAL", "Cá nhân", "green", 10),
+            Option(customerType, "BUSINESS", "Doanh nghiệp", "blue", 20)
+        };
+
+        foreach (var option in options)
+        {
+            var exists = await db.CatalogOptions.AnyAsync(x =>
+                x.Category.Code == option.Category.Code && x.Code == option.Code);
+            if (!exists) db.CatalogOptions.Add(option);
+        }
+
         await db.SaveChangesAsync();
     }
 }

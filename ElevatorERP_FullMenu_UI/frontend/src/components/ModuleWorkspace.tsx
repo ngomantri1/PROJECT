@@ -24,6 +24,7 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
   EllipsisOutlined,
   EyeOutlined,
@@ -46,6 +47,7 @@ import {
 import type { ProColumns } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 import { usePathname, useRouter } from 'next/navigation';
+import { exportCsv } from '@/lib/exportCsv';
 
 type StatusOption = {
   value: string;
@@ -79,6 +81,8 @@ type WorkspaceRow = {
 };
 
 type WorkspaceForm = Omit<WorkspaceRow, 'id'>;
+
+const textSorter = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
 
 const basicStatuses: StatusOption[] = [
   { value: 'NEW', label: 'Mới tạo', color: 'blue' },
@@ -292,18 +296,35 @@ export default function ModuleWorkspace() {
     message.success('Đã khôi phục dữ liệu mẫu');
   };
 
+  const exportRows = () => {
+    exportCsv(`${config.prefix.toLowerCase()}-danh-sach-${dayjs().format('YYYYMMDD-HHmm')}`, filteredRows, [
+      { header: 'Mã', value: (item) => item.code },
+      { header: config.entity.charAt(0).toUpperCase() + config.entity.slice(1), value: (item) => item.title },
+      { header: 'Khách hàng / Dự án liên quan', value: (item) => item.related },
+      { header: 'Phụ trách', value: (item) => item.owner },
+      { header: 'Trạng thái', value: (item) => statusMeta(config, item.status).label },
+      { header: 'Ưu tiên', value: (item) => item.priority },
+      { header: 'Ngày dự kiến', value: (item) => dayjs(item.date).format('DD/MM/YYYY') },
+      { header: 'Giá trị', value: (item) => config.showAmount ? item.amount : undefined },
+      { header: 'Tiến độ', value: (item) => config.showProgress ? `${item.progress ?? 0}%` : undefined },
+      { header: 'Ghi chú', value: (item) => item.notes },
+    ]);
+  };
+
   const columns: ProColumns<WorkspaceRow>[] = [
     {
       title: 'Mã',
       dataIndex: 'code',
       width: 145,
       fixed: 'left',
+      sorter: (a, b) => textSorter.compare(a.code, b.code),
       render: (value) => <Typography.Text copyable={{ text: String(value) }} strong>{String(value)}</Typography.Text>,
     },
     {
       title: config.entity.charAt(0).toUpperCase() + config.entity.slice(1),
       dataIndex: 'title',
       width: 280,
+      sorter: (a, b) => textSorter.compare(a.title, b.title),
       render: (_, item) => (
         <Space>
           <Avatar className='customer-avatar'>{item.title.charAt(0)}</Avatar>
@@ -314,11 +335,15 @@ export default function ModuleWorkspace() {
         </Space>
       ),
     },
-    { title: 'Phụ trách', dataIndex: 'owner', width: 170 },
+    { title: 'Phụ trách', dataIndex: 'owner', width: 170, sorter: (a, b) => textSorter.compare(a.owner, b.owner) },
     {
       title: 'Trạng thái',
       dataIndex: 'status',
       width: 150,
+      sorter: (a, b) => textSorter.compare(
+        statusMeta(config, a.status).label,
+        statusMeta(config, b.status).label,
+      ),
       render: (_, item) => {
         const meta = statusMeta(config, item.status);
         return <Tag color={meta.color}>{meta.label}</Tag>;
@@ -328,6 +353,7 @@ export default function ModuleWorkspace() {
       title: 'Ưu tiên',
       dataIndex: 'priority',
       width: 110,
+      sorter: (a, b) => textSorter.compare(a.priority, b.priority),
       render: (value) => {
         const text = String(value);
         return <Tag color={text === 'Cao' ? 'red' : text === 'Trung bình' ? 'gold' : 'default'}>{text}</Tag>;
@@ -337,6 +363,7 @@ export default function ModuleWorkspace() {
       title: 'Ngày dự kiến',
       dataIndex: 'date',
       width: 130,
+      sorter: (a, b) => dayjs(a.date).valueOf() - dayjs(b.date).valueOf(),
       render: (value) => dayjs(String(value)).format('DD/MM/YYYY'),
     },
   ];
@@ -347,6 +374,7 @@ export default function ModuleWorkspace() {
       dataIndex: 'amount',
       width: 170,
       align: 'right',
+      sorter: (a, b) => Number(a.amount ?? 0) - Number(b.amount ?? 0),
       render: (value) => <b>{formatMoney(Number(value))}</b>,
     });
   }
@@ -356,6 +384,7 @@ export default function ModuleWorkspace() {
       title: 'Tiến độ',
       dataIndex: 'progress',
       width: 170,
+      sorter: (a, b) => Number(a.progress ?? 0) - Number(b.progress ?? 0),
       render: (value) => <Progress percent={Number(value ?? 0)} size='small' />,
     });
   }
@@ -468,6 +497,7 @@ export default function ModuleWorkspace() {
               options={config.statuses}
             />
             <Button type='primary' icon={<FilterOutlined />}>Áp dụng</Button>
+            <Button icon={<DownloadOutlined />} onClick={exportRows}>Xuất CSV</Button>
             {config.createEnabled && (
               <DrawerForm<WorkspaceForm>
                 title={`Thêm ${config.entity}`}

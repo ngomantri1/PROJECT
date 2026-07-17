@@ -462,6 +462,187 @@ app.MapPut("/api/admin/users/{id:guid}/roles", async (
     return Results.Ok();
 }).RequirePermission("user.manage");
 
+app.MapGet("/api/catalogs/categories", async (AppDbContext db) =>
+    Results.Ok(await db.CatalogCategories
+        .OrderBy(x => x.SortOrder)
+        .ThenBy(x => x.Name)
+        .Select(x => new
+        {
+            x.Id,
+            x.Code,
+            x.Name,
+            x.Module,
+            x.Description,
+            x.SortOrder,
+            x.IsSystem,
+            x.IsActive,
+            optionCount = x.Options.Count(option => option.IsActive)
+        })
+        .ToListAsync()))
+    .RequireAuthorization();
+
+app.MapGet("/api/catalogs/categories/{code}/options", async (
+    string code,
+    bool? activeOnly,
+    AppDbContext db) =>
+{
+    var category = await db.CatalogCategories
+        .Include(x => x.Options)
+        .FirstOrDefaultAsync(x => x.Code == code);
+    if (category is null) return Results.NotFound();
+
+    var options = category.Options
+        .Where(x => activeOnly != true || x.IsActive)
+        .OrderBy(x => x.SortOrder)
+        .ThenBy(x => x.Label)
+        .Select(x => new
+        {
+            x.Id,
+            categoryCode = category.Code,
+            x.Code,
+            x.Label,
+            x.Description,
+            x.Color,
+            x.SortOrder,
+            x.IsSystem,
+            x.IsActive
+        });
+
+    return Results.Ok(options);
+}).RequireAuthorization();
+
+app.MapPost("/api/catalogs/categories/{code}/options", async (
+    string code,
+    CatalogOptionRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    var category = await db.CatalogCategories.FirstOrDefaultAsync(x => x.Code == code);
+    if (category is null) return Results.NotFound();
+
+    var normalizedCode = request.Code.Trim().ToUpperInvariant();
+    if (string.IsNullOrWhiteSpace(normalizedCode) || string.IsNullOrWhiteSpace(request.Label))
+        return Results.BadRequest(new { message = "Mã và tên hiển thị là bắt buộc." });
+
+    if (await db.CatalogOptions.AnyAsync(x => x.CategoryId == category.Id && x.Code == normalizedCode))
+        return Results.BadRequest(new { message = "Mã tùy chọn đã tồn tại trong danh mục này." });
+
+    var sortOrder = request.SortOrder > 0
+        ? request.SortOrder
+        : await db.CatalogOptions.Where(x => x.CategoryId == category.Id)
+            .Select(x => (int?)x.SortOrder)
+            .MaxAsync() + 10 ?? 10;
+
+    var option = new CatalogOption
+    {
+        CategoryId = category.Id,
+        Code = normalizedCode,
+        Label = request.Label.Trim(),
+        Description = request.Description?.Trim(),
+        Color = string.IsNullOrWhiteSpace(request.Color) ? "default" : request.Color.Trim(),
+        SortOrder = sortOrder,
+        IsSystem = false,
+        IsActive = true
+    };
+
+    db.CatalogOptions.Add(option);
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "CREATE_CATALOG_OPTION",
+        Module = "Administration",
+        EntityType = nameof(CatalogOption),
+        EntityId = option.Id.ToString(),
+        Details = $"{category.Code}:{option.Code}",
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/catalogs/categories/{category.Code}/options/{option.Id}", new { option.Id });
+}).RequirePermission("role.manage");
+
+app.MapPut("/api/catalogs/options/{id:guid}", async (
+    Guid id,
+    CatalogOptionRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    var option = await db.CatalogOptions.Include(x => x.Category).FirstOrDefaultAsync(x => x.Id == id);
+    if (option is null) return Results.NotFound();
+
+    var normalizedCode = request.Code.Trim().ToUpperInvariant();
+    if (string.IsNullOrWhiteSpace(normalizedCode) || string.IsNullOrWhiteSpace(request.Label))
+        return Results.BadRequest(new { message = "Mã và tên hiển thị là bắt buộc." });
+
+    if (await db.CatalogOptions.AnyAsync(x => x.Id != id && x.CategoryId == option.CategoryId && x.Code == normalizedCode))
+        return Results.BadRequest(new { message = "Mã tùy chọn đã tồn tại trong danh mục này." });
+
+    option.Code = normalizedCode;
+    option.Label = request.Label.Trim();
+    option.Description = request.Description?.Trim();
+    option.Color = string.IsNullOrWhiteSpace(request.Color) ? "default" : request.Color.Trim();
+    option.UpdatedAt = DateTimeOffset.UtcNow;
+
+    var siblings = await db.CatalogOptions
+        .Where(x => x.CategoryId == option.CategoryId && x.Id != option.Id)
+        .OrderBy(x => x.SortOrder)
+        .ThenBy(x => x.Label)
+        .ToListAsync();
+    var targetIndex = Math.Clamp(request.SortOrder <= 0 ? siblings.Count : request.SortOrder - 1, 0, siblings.Count);
+    siblings.Insert(targetIndex, option);
+    for (var index = 0; index < siblings.Count; index++)
+    {
+        siblings[index].SortOrder = (index + 1) * 10;
+    }
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "UPDATE_CATALOG_OPTION",
+        Module = "Administration",
+        EntityType = nameof(CatalogOption),
+        EntityId = option.Id.ToString(),
+        Details = $"{option.Category.Code}:{option.Code}",
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.Ok();
+}).RequirePermission("role.manage");
+
+app.MapPut("/api/catalogs/options/{id:guid}/active", async (
+    Guid id,
+    CatalogOptionActiveRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    var option = await db.CatalogOptions.Include(x => x.Category).FirstOrDefaultAsync(x => x.Id == id);
+    if (option is null) return Results.NotFound();
+
+    option.IsActive = request.IsActive;
+    option.UpdatedAt = DateTimeOffset.UtcNow;
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = request.IsActive ? "ACTIVATE_CATALOG_OPTION" : "DEACTIVATE_CATALOG_OPTION",
+        Module = "Administration",
+        EntityType = nameof(CatalogOption),
+        EntityId = option.Id.ToString(),
+        Details = $"{option.Category.Code}:{option.Code}",
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.Ok();
+}).RequirePermission("role.manage");
+
 app.MapPost("/api/files/upload", async (
     IFormFile file,
     string module,
@@ -556,3 +737,5 @@ record CareRequest(
     string Content);
 record CompleteCareRequest(string Result, DateTimeOffset? NextCareAt);
 record AssignRolesRequest(Guid[] RoleIds);
+record CatalogOptionRequest(string Code, string Label, string? Description, string? Color, int SortOrder);
+record CatalogOptionActiveRequest(bool IsActive);
