@@ -69,6 +69,11 @@ public sealed class Customer : Entity
     public string? Email { get; set; }
     public string? Address { get; set; }
     public string? Area { get; set; }
+    public string? ElevatorType { get; set; }
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public double? LocationAccuracyMeters { get; set; }
+    public string? LocationLabel { get; set; }
     public string Source { get; set; } = "Khác";
     public string Status { get; set; } = "NEW";
     public string? Notes { get; set; }

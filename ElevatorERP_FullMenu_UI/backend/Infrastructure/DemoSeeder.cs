@@ -9,6 +9,7 @@ public static class DemoSeeder
     public static async Task SeedAsync(AppDbContext db, IConfiguration config)
     {
         await db.Database.EnsureCreatedAsync();
+        await EnsureCustomerLocationColumnsAsync(db);
         await EnsureCatalogTablesAsync(db);
         await SeedCatalogsAsync(db);
 
@@ -84,7 +85,7 @@ public static class DemoSeeder
             {
                 Code=$"KH-{i+1:0000}", Name=names[i], Phone=$"09{random.Next(10000000,99999999)}",
                 Email=$"customer{i+1}@example.com", Address=$"Địa chỉ công trình số {i+1}, Thanh Hóa",
-                Area=i%3==0?"Thanh Hóa":i%3==1?"Nghệ An":"Hà Nội", Source=sources[i%sources.Length],
+                Area=i%3==0?"Thanh Hóa":i%3==1?"Nghệ An":"Hà Nội", ElevatorType=i%2==0?"BUILT":"GLASS", Source=sources[i%sources.Length],
                 Status=i%5==0?"NEGOTIATING":i%4==0?"QUOTED":"CARING", OwnerUser=i%3==0?salesManager:sales, IsDemo=true
             });
         }
@@ -157,6 +158,18 @@ public static class DemoSeeder
             """);
     }
 
+    private static async Task EnsureCustomerLocationColumnsAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE "Customers"
+                ADD COLUMN IF NOT EXISTS "Latitude" double precision NULL,
+                ADD COLUMN IF NOT EXISTS "Longitude" double precision NULL,
+                ADD COLUMN IF NOT EXISTS "LocationAccuracyMeters" double precision NULL,
+                ADD COLUMN IF NOT EXISTS "LocationLabel" text NULL,
+                ADD COLUMN IF NOT EXISTS "ElevatorType" text NULL;
+            """);
+    }
+
     private static async Task SeedCatalogsAsync(AppDbContext db)
     {
         async Task<CatalogCategory> Category(string code, string name, string module, string description, int sortOrder)
@@ -194,6 +207,7 @@ public static class DemoSeeder
         var lostReason = await Category("customer_lost_reason", "Lý do mất khách", "Customers", "Lý do khi hồ sơ khách hàng không thành công.", 20);
         var customerSource = await Category("customer_source", "Nguồn khách hàng", "Customers", "Nguồn phát sinh khách hàng.", 30);
         var customerType = await Category("customer_type", "Loại khách hàng", "Customers", "Phân loại cá nhân/doanh nghiệp.", 40);
+        var elevatorType = await Category("elevator_type", "Loại thang", "Elevators", "Phân loại dòng thang máy để dùng chung trong đăng ký, báo giá, dự án và hồ sơ thang.", 50);
 
         var options = new[]
         {
@@ -226,7 +240,10 @@ public static class DemoSeeder
             Option(customerSource, "OTHER", "Khác", "default", 60, false),
 
             Option(customerType, "PERSONAL", "Cá nhân", "green", 10),
-            Option(customerType, "BUSINESS", "Doanh nghiệp", "blue", 20)
+            Option(customerType, "BUSINESS", "Doanh nghiệp", "blue", 20),
+
+            Option(elevatorType, "BUILT", "Thang xây", "green", 10),
+            Option(elevatorType, "GLASS", "Thang kính", "blue", 20)
         };
 
         foreach (var option in options)

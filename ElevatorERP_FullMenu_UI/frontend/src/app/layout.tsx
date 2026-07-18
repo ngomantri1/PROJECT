@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import AppFrame from '@/components/AppFrame';
 import AppProviders from '@/components/AppProviders';
+import 'leaflet/dist/leaflet.css';
 import './globals.css';
 
 export const metadata: Metadata = {

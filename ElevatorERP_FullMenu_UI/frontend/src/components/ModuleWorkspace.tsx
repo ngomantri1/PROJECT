@@ -416,52 +416,53 @@ export default function ModuleWorkspace() {
     title: 'Thao tác',
     valueType: 'option',
     width: 90,
-    align: 'right',
+    align: 'center',
     render: (_, item) => [
-      <Dropdown
-        key='actions'
-        trigger={['click']}
-        menu={{
-          items: [
-            {
-              key: 'view',
-              icon: <EyeOutlined />,
-              label: 'Xem chi tiết',
-              onClick: () => setSelected(item),
-            },
-            {
-              key: 'complete',
-              icon: <CheckCircleOutlined />,
-              label: 'Đánh dấu hoàn thành',
-              onClick: () => {
-                const finalStatus = config.statuses.find((option) => completedValues.has(option.value))
-                  ?? config.statuses[config.statuses.length - 1];
-                persist(rows.map((row) => row.id === item.id ? { ...row, status: finalStatus.value, progress: config.showProgress ? 100 : row.progress } : row));
-                message.success('Đã cập nhật trạng thái');
+      <Space key='actions' size={2} className='table-actions table-actions-center'>
+        <Dropdown
+          trigger={['click']}
+          menu={{
+            items: [
+              {
+                key: 'view',
+                icon: <EyeOutlined />,
+                label: 'Xem chi tiết',
+                onClick: () => setSelected(item),
               },
-            },
-            { type: 'divider' },
-            {
-              key: 'delete',
-              danger: true,
-              icon: <DeleteOutlined />,
-              label: (
-                <Popconfirm
-                  title={`Xóa ${config.entity}?`}
-                  description='Thao tác này chỉ ảnh hưởng dữ liệu trên máy lập trình.'
-                  onConfirm={() => removeRow(item.id)}
-                  okText='Xóa'
-                  cancelText='Hủy'
-                >
-                  <span onClick={(event) => event.stopPropagation()}>Xóa</span>
-                </Popconfirm>
-              ),
-            },
-          ],
-        }}
-      >
-        <Button type='text' icon={<EllipsisOutlined />} />
-      </Dropdown>,
+              {
+                key: 'complete',
+                icon: <CheckCircleOutlined />,
+                label: 'Đánh dấu hoàn thành',
+                onClick: () => {
+                  const finalStatus = config.statuses.find((option) => completedValues.has(option.value))
+                    ?? config.statuses[config.statuses.length - 1];
+                  persist(rows.map((row) => row.id === item.id ? { ...row, status: finalStatus.value, progress: config.showProgress ? 100 : row.progress } : row));
+                  message.success('Đã cập nhật trạng thái');
+                },
+              },
+              { type: 'divider' },
+              {
+                key: 'delete',
+                danger: true,
+                icon: <DeleteOutlined />,
+                label: (
+                  <Popconfirm
+                    title={`Xóa ${config.entity}?`}
+                    description='Thao tác này chỉ ảnh hưởng dữ liệu trên máy lập trình.'
+                    onConfirm={() => removeRow(item.id)}
+                    okText='Xóa'
+                    cancelText='Hủy'
+                  >
+                    <span onClick={(event) => event.stopPropagation()}>Xóa</span>
+                  </Popconfirm>
+                ),
+              },
+            ],
+          }}
+        >
+          <Button type='text' className='table-action-button' icon={<EllipsisOutlined />} />
+        </Dropdown>
+      </Space>,
     ],
   });
 

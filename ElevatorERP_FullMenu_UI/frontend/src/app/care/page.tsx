@@ -250,13 +250,19 @@ export default function Care() {
       title: 'Thao tác',
       valueType: 'option',
       width: 130,
-      align: 'right',
+      align: 'center',
       render: (_, item) =>
         item.status !== 'DONE' ? [
-          <Button key='complete' type='link' size='small' onClick={() => setCompleteItem(item)}>
-            Hoàn thành
-          </Button>,
-        ] : [<Typography.Text key='done' type='secondary'>Đã xử lý</Typography.Text>],
+          <Space key='actions' size={2} className='table-actions table-actions-center'>
+            <Button type='link' size='small' onClick={() => setCompleteItem(item)}>
+              Hoàn thành
+            </Button>
+          </Space>,
+        ] : [
+          <Space key='actions' size={2} className='table-actions table-actions-center'>
+            <Typography.Text type='secondary'>Đã xử lý</Typography.Text>
+          </Space>,
+        ],
     },
   ];
 

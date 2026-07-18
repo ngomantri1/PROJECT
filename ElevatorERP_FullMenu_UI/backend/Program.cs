@@ -1,4 +1,8 @@
 using System.Security.Claims;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using ElevatorERP.Domain;
 using ElevatorERP.Infrastructure;
 using ElevatorERP.Security;
@@ -16,6 +20,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<PermissionService>();
+builder.Services.AddHttpClient("geo", client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("ElevatorERP/1.0");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
 
 var dataProtectionKeysPath = builder.Configuration["DataProtectionKeysPath"]
     ?? Path.Combine(builder.Environment.ContentRootPath, ".data-protection-keys");
@@ -196,9 +205,13 @@ app.MapGet("/api/customers", async (
     string? search,
     string? status,
     string? statusGroup,
+    string? customerType,
+    string? elevatorType,
     string? source,
     string? owner,
     string? area,
+    DateTimeOffset? createdFrom,
+    DateTimeOffset? createdTo,
     AppDbContext db,
     CurrentUser current) =>
 {
@@ -210,15 +223,7 @@ app.MapGet("/api/customers", async (
         query = query.Where(x => x.OwnerUserId == current.Id);
 
     if (!string.IsNullOrWhiteSpace(search))
-    {
-        var normalizedSearch = search.Trim().ToLower();
-        var rawSearch = search.Trim();
-        query = query.Where(x =>
-            x.Name.ToLower().Contains(normalizedSearch)
-            || x.Code.ToLower().Contains(normalizedSearch)
-            || x.Phone.Contains(rawSearch)
-            || (x.Email != null && x.Email.ToLower().Contains(normalizedSearch)));
-    }
+        search = search.Trim();
 
     if (!string.IsNullOrWhiteSpace(status))
         query = query.Where(x => x.Status == status);
@@ -237,6 +242,12 @@ app.MapGet("/api/customers", async (
     if (!string.IsNullOrWhiteSpace(source))
         query = query.Where(x => x.Source == source);
 
+    if (!string.IsNullOrWhiteSpace(customerType))
+        query = query.Where(x => x.CustomerType == customerType);
+
+    if (!string.IsNullOrWhiteSpace(elevatorType))
+        query = query.Where(x => x.ElevatorType == elevatorType);
+
     if (!string.IsNullOrWhiteSpace(owner))
         query = query.Where(x => x.OwnerUser.DisplayName == owner);
 
@@ -246,8 +257,13 @@ app.MapGet("/api/customers", async (
         query = query.Where(x => x.Area != null && x.Area.ToLower().Contains(normalizedArea));
     }
 
-    return Results.Ok(await query
-        .OrderBy(x => x.Code)
+    if (createdFrom is not null)
+        query = query.Where(x => x.CreatedAt >= createdFrom);
+
+    if (createdTo is not null)
+        query = query.Where(x => x.CreatedAt <= createdTo);
+
+    var rows = await query
         .Select(x => new
         {
             x.Id,
@@ -257,6 +273,11 @@ app.MapGet("/api/customers", async (
             x.Email,
             x.Address,
             x.Area,
+            x.ElevatorType,
+            x.Latitude,
+            x.Longitude,
+            x.LocationAccuracyMeters,
+            x.LocationLabel,
             x.CustomerType,
             x.Source,
             x.Status,
@@ -264,7 +285,17 @@ app.MapGet("/api/customers", async (
             owner = x.OwnerUser.DisplayName,
             x.CreatedAt
         })
-        .ToListAsync());
+        .ToListAsync();
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        var normalizedSearch = SearchText.Normalize(search);
+        rows = rows
+            .Where(x => SearchText.Normalize($"{x.Name} {x.Code} {x.Phone} {x.Email}").Contains(normalizedSearch))
+            .ToList();
+    }
+
+    return Results.Ok(rows.OrderByDescending(x => CustomerCodeSort.Key(x.Code)).ThenByDescending(x => x.Code));
 }).RequirePermission("customer.view");
 
 app.MapPost("/api/customers", async (
@@ -282,11 +313,16 @@ app.MapPost("/api/customers", async (
     {
         Code = $"KH-{count:000000}",
         CustomerType = request.CustomerType,
+        ElevatorType = request.ElevatorType?.Trim(),
         Name = request.Name.Trim(),
         Phone = request.Phone.Trim(),
         Email = request.Email?.Trim(),
         Address = request.Address?.Trim(),
         Area = request.Area?.Trim(),
+        Latitude = request.Latitude,
+        Longitude = request.Longitude,
+        LocationAccuracyMeters = request.LocationAccuracyMeters,
+        LocationLabel = request.LocationLabel?.Trim(),
         Source = request.Source,
         Status = request.Status,
         Notes = request.Notes?.Trim(),
@@ -330,11 +366,16 @@ app.MapPut("/api/customers/{id:guid}", async (
         return Results.Forbid();
 
     customer.CustomerType = request.CustomerType;
+    customer.ElevatorType = request.ElevatorType?.Trim();
     customer.Name = request.Name.Trim();
     customer.Phone = request.Phone.Trim();
     customer.Email = request.Email?.Trim();
     customer.Address = request.Address?.Trim();
     customer.Area = request.Area?.Trim();
+    customer.Latitude = request.Latitude;
+    customer.Longitude = request.Longitude;
+    customer.LocationAccuracyMeters = request.LocationAccuracyMeters;
+    customer.LocationLabel = request.LocationLabel?.Trim();
     customer.Source = request.Source;
     customer.Status = request.Status;
     customer.Notes = request.Notes?.Trim();
@@ -349,6 +390,48 @@ app.MapPut("/api/customers/{id:guid}", async (
         EntityType = nameof(Customer),
         EntityId = customer.Id.ToString(),
         Details = customer.Code,
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}).RequirePermission("customer.update");
+
+app.MapPut("/api/customers/{id:guid}/status", async (
+    Guid id,
+    CustomerStatusRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (string.IsNullOrWhiteSpace(request.Status))
+        return Results.BadRequest(new { message = "Trạng thái là bắt buộc." });
+
+    var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == id);
+    if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
+
+    var canUpdateAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canUpdateAll && customer.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    var nextStatus = request.Status.Trim();
+    if (customer.Status == nextStatus) return Results.NoContent();
+
+    var previousStatus = customer.Status;
+    customer.Status = nextStatus;
+    customer.UpdatedAt = DateTimeOffset.UtcNow;
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "UPDATE_STATUS",
+        Module = "Customers",
+        EntityType = nameof(Customer),
+        EntityId = customer.Id.ToString(),
+        Details = $"{customer.Code}: {previousStatus} -> {nextStatus}",
         IpAddress = http.Connection.RemoteIpAddress?.ToString()
     });
     await db.SaveChangesAsync();
@@ -796,6 +879,90 @@ app.MapPost("/api/files/upload", async (
     return Results.Ok(new { storedFile.Id, storedFile.OriginalName, storedFile.SizeBytes });
 }).DisableAntiforgery().RequirePermission("file.upload");
 
+app.MapGet("/api/geo/search", async (
+    string q,
+    string? area,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken cancellationToken) =>
+{
+    var query = q.Trim();
+    if (query.Length < 2)
+        return Results.Ok(Array.Empty<GeoSearchResult>());
+
+    var boundedQuery = query.Length > 120 ? query[..120] : query;
+    var searchText = string.IsNullOrWhiteSpace(area)
+        ? boundedQuery
+        : $"{boundedQuery} {area.Trim()}";
+
+    var client = httpClientFactory.CreateClient("geo");
+
+    var parameters = GeoSearch.BuildQueryString(new Dictionary<string, string>
+    {
+        ["format"] = "jsonv2",
+        ["q"] = searchText,
+        ["limit"] = "6",
+        ["addressdetails"] = "1",
+        ["countrycodes"] = "vn",
+        ["accept-language"] = "vi"
+    });
+
+    try
+    {
+        using var response = await client.GetAsync($"https://nominatim.openstreetmap.org/search?{parameters}", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            return Results.Json(Array.Empty<GeoSearchResult>());
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var results = document.RootElement
+            .EnumerateArray()
+            .Select((item, index) => GeoSearch.CreateResult(item, index))
+            .Where(result => result is not null)
+            .Cast<GeoSearchResult>()
+            .ToArray();
+
+        return Results.Ok(results);
+    }
+    catch
+    {
+        return Results.Json(Array.Empty<GeoSearchResult>());
+    }
+}).RequireAuthorization();
+
+app.MapPost("/api/geo/resolve-link", async (
+    GeoLinkResolveRequest request,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Text))
+        return Results.BadRequest(new { message = "Vui lòng nhập link Google Maps hoặc tọa độ." });
+
+    var parsed = GeoSearch.ParseSharedLocation(request.Text);
+    if (parsed is not null) return Results.Ok(parsed);
+
+    if (!Uri.TryCreate(request.Text.Trim(), UriKind.Absolute, out var uri)
+        || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+    {
+        return Results.BadRequest(new { message = "Không đọc được tọa độ từ nội dung đã nhập." });
+    }
+
+    var client = httpClientFactory.CreateClient("geo");
+    try
+    {
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Get, uri);
+        using var response = await client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var resolvedUrl = response.RequestMessage?.RequestUri?.ToString();
+        var resolved = GeoSearch.ParseSharedLocation(resolvedUrl);
+        return resolved is null
+            ? Results.BadRequest(new { message = "Link này không chứa tọa độ rõ ràng. Hãy mở Google Maps, bấm Chia sẻ tại đúng điểm ghim rồi copy lại link." })
+            : Results.Ok(resolved);
+    }
+    catch
+    {
+        return Results.BadRequest(new { message = "Không mở được link để đọc tọa độ." });
+    }
+}).RequireAuthorization();
+
 app.Run();
 
 record LoginRequest(string Username, string Password, bool RememberMe = false);
@@ -806,9 +973,15 @@ record CustomerRequest(
     string? Email,
     string? Address,
     string? Area,
+    string? ElevatorType,
+    double? Latitude,
+    double? Longitude,
+    double? LocationAccuracyMeters,
+    string? LocationLabel,
     string Source,
     string Status,
     string? Notes);
+record CustomerStatusRequest(string Status);
 record CareRequest(
     Guid CustomerId,
     Guid? AssigneeUserId,
@@ -819,3 +992,263 @@ record CompleteCareRequest(string Result, DateTimeOffset? NextCareAt);
 record AssignRolesRequest(Guid[] RoleIds);
 record CatalogOptionRequest(string Code, string Label, string? Description, string? Color, int SortOrder);
 record CatalogOptionActiveRequest(bool IsActive);
+record GeoLinkResolveRequest(string Text);
+record GeoSearchResult(
+    string Id,
+    string Title,
+    string Subtitle,
+    string Type,
+    double? Latitude,
+    double? Longitude,
+    string Label,
+    string Provider,
+    string? PlaceId);
+
+static class SearchText
+{
+    public static string Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+
+        var normalized = value.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+        foreach (var character in normalized)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(character);
+            if (category != UnicodeCategory.NonSpacingMark)
+                builder.Append(character == 'đ' ? 'd' : character);
+        }
+
+        return builder.ToString().Normalize(NormalizationForm.FormC);
+    }
+}
+
+static class CustomerCodeSort
+{
+    public static int Key(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return 0;
+        var digits = new string(code.Reverse().TakeWhile(char.IsDigit).Reverse().ToArray());
+        return int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : 0;
+    }
+}
+
+static class GeoSearch
+{
+    public static string BuildQueryString(IReadOnlyDictionary<string, string> parameters)
+    {
+        return string.Join("&", parameters.Select(parameter =>
+            $"{Uri.EscapeDataString(parameter.Key)}={Uri.EscapeDataString(parameter.Value)}"));
+    }
+
+    public static GeoSearchResult? CreateResult(JsonElement item, int index)
+    {
+        var displayName = GetJsonString(item, "display_name");
+        var latitudeText = GetJsonString(item, "lat");
+        var longitudeText = GetJsonString(item, "lon");
+        if (string.IsNullOrWhiteSpace(displayName)
+            || !double.TryParse(latitudeText, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude)
+            || !double.TryParse(longitudeText, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
+        {
+            return null;
+        }
+
+        var name = GetJsonString(item, "name");
+        var type = GetJsonString(item, "type") ?? GetJsonString(item, "class") ?? "địa điểm";
+        var title = string.IsNullOrWhiteSpace(name)
+            ? displayName.Split(',', 2)[0].Trim()
+            : name.Trim();
+        var subtitle = displayName.StartsWith(title, StringComparison.OrdinalIgnoreCase)
+            ? displayName[title.Length..].Trim(' ', ',')
+            : displayName;
+
+        return new GeoSearchResult(
+            GetJsonString(item, "place_id") ?? $"{latitude.ToString(CultureInfo.InvariantCulture)}:{longitude.ToString(CultureInfo.InvariantCulture)}:{index}",
+            title,
+            subtitle,
+            type,
+            latitude,
+            longitude,
+            displayName,
+            "nominatim",
+            null);
+    }
+
+    static string? GetJsonString(JsonElement item, string propertyName)
+    {
+        return item.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+    }
+
+    public static GeoSearchResult? ParseSharedLocation(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        var input = Uri.UnescapeDataString(text.Trim());
+        var coordinate = TryMatchCoordinate(input, @"@(?<lat>-?\d+(?:\.\d+)?),(?<lng>-?\d+(?:\.\d+)?)")
+            ?? TryMatchCoordinate(input, @"[?&](?:query|q|ll|center)=(?<lat>-?\d+(?:\.\d+)?),(?<lng>-?\d+(?:\.\d+)?)")
+            ?? TryMatchCoordinate(input, @"(?<![\d.])(?<lat>-?\d{1,2}(?:\.\d+)?)\s*,\s*(?<lng>-?\d{1,3}(?:\.\d+)?)(?![\d.])")
+            ?? TryMatchDmsCoordinate(input);
+
+        if (coordinate is null) return null;
+
+        var (latitude, longitude) = coordinate.Value;
+        if (latitude is < -90 or > 90 || longitude is < -180 or > 180) return null;
+
+        var label = input.Length > 180 ? input[..180] : input;
+        return new GeoSearchResult(
+            $"shared:{latitude.ToString(CultureInfo.InvariantCulture)}:{longitude.ToString(CultureInfo.InvariantCulture)}",
+            "Vị trí từ link/tọa độ",
+            $"{latitude.ToString("F6", CultureInfo.InvariantCulture)}, {longitude.ToString("F6", CultureInfo.InvariantCulture)}",
+            "tọa độ",
+            latitude,
+            longitude,
+            label,
+            "shared",
+            null);
+    }
+
+    static (double Latitude, double Longitude)? TryMatchCoordinate(string input, string pattern)
+    {
+        var match = Regex.Match(input, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success) return null;
+
+        return double.TryParse(match.Groups["lat"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude)
+            && double.TryParse(match.Groups["lng"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude)
+            ? (latitude, longitude)
+            : null;
+    }
+
+    static (double Latitude, double Longitude)? TryMatchDmsCoordinate(string input)
+    {
+        var match = Regex.Match(
+            input,
+            @"(?<latDeg>\d{1,2})[°\s]+(?<latMin>\d{1,2})['′\s]+(?<latSec>\d{1,2}(?:\.\d+)?)[""″]?\s*(?<latHem>[NS])\s+(?<lngDeg>\d{1,3})[°\s]+(?<lngMin>\d{1,2})['′\s]+(?<lngSec>\d{1,2}(?:\.\d+)?)[""″]?\s*(?<lngHem>[EW])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success) return null;
+
+        static double Convert(string degrees, string minutes, string seconds, string hemisphere)
+        {
+            var value = double.Parse(degrees, CultureInfo.InvariantCulture)
+                + double.Parse(minutes, CultureInfo.InvariantCulture) / 60
+                + double.Parse(seconds, CultureInfo.InvariantCulture) / 3600;
+            return hemisphere.Equals("S", StringComparison.OrdinalIgnoreCase)
+                || hemisphere.Equals("W", StringComparison.OrdinalIgnoreCase)
+                ? -value
+                : value;
+        }
+
+        return (
+            Convert(match.Groups["latDeg"].Value, match.Groups["latMin"].Value, match.Groups["latSec"].Value, match.Groups["latHem"].Value),
+            Convert(match.Groups["lngDeg"].Value, match.Groups["lngMin"].Value, match.Groups["lngSec"].Value, match.Groups["lngHem"].Value)
+        );
+    }
+
+    public static async Task<GeoSearchResult[]> SearchGooglePlacesAsync(
+        HttpClient client,
+        string query,
+        string apiKey,
+        CancellationToken cancellationToken)
+    {
+        var parameters = BuildQueryString(new Dictionary<string, string>
+        {
+            ["input"] = query,
+            ["language"] = "vi",
+            ["components"] = "country:vn",
+            ["key"] = apiKey
+        });
+
+        try
+        {
+            using var response = await client.GetAsync($"https://maps.googleapis.com/maps/api/place/autocomplete/json?{parameters}", cancellationToken);
+            if (!response.IsSuccessStatusCode) return [];
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            if (!document.RootElement.TryGetProperty("predictions", out var predictions)
+                || predictions.ValueKind != JsonValueKind.Array)
+                return [];
+
+            return predictions
+                .EnumerateArray()
+                .Take(6)
+                .Select(CreateGoogleSuggestion)
+                .Where(result => result is not null)
+                .Cast<GeoSearchResult>()
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public static async Task<GeoSearchResult?> ResolveGooglePlaceAsync(
+        HttpClient client,
+        string placeId,
+        string apiKey,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(placeId)) return null;
+        var parameters = BuildQueryString(new Dictionary<string, string>
+        {
+            ["place_id"] = placeId,
+            ["fields"] = "place_id,name,formatted_address,geometry,types",
+            ["language"] = "vi",
+            ["key"] = apiKey
+        });
+
+        try
+        {
+            using var response = await client.GetAsync($"https://maps.googleapis.com/maps/api/place/details/json?{parameters}", cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            if (!document.RootElement.TryGetProperty("result", out var result)
+                || !result.TryGetProperty("geometry", out var geometry)
+                || !geometry.TryGetProperty("location", out var location)
+                || !location.TryGetProperty("lat", out var latitudeProperty)
+                || !location.TryGetProperty("lng", out var longitudeProperty))
+                return null;
+
+            var latitude = latitudeProperty.GetDouble();
+            var longitude = longitudeProperty.GetDouble();
+            var label = GetJsonString(result, "formatted_address") ?? GetJsonString(result, "name") ?? placeId;
+            var title = GetJsonString(result, "name") ?? label.Split(',', 2)[0].Trim();
+            var subtitle = label.StartsWith(title, StringComparison.OrdinalIgnoreCase)
+                ? label[title.Length..].Trim(' ', ',')
+                : label;
+            var type = result.TryGetProperty("types", out var types) && types.ValueKind == JsonValueKind.Array
+                ? types.EnumerateArray().Select(typeItem => typeItem.GetString()).FirstOrDefault(typeItem => !string.IsNullOrWhiteSpace(typeItem)) ?? "place"
+                : "place";
+
+            return new GeoSearchResult(placeId, title, subtitle, type, latitude, longitude, label, "google", placeId);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    static GeoSearchResult? CreateGoogleSuggestion(JsonElement prediction)
+    {
+        var placeId = GetJsonString(prediction, "place_id");
+        var description = GetJsonString(prediction, "description");
+        if (string.IsNullOrWhiteSpace(placeId) || string.IsNullOrWhiteSpace(description))
+            return null;
+
+        var title = description.Split(',', 2)[0].Trim();
+        var subtitle = description.StartsWith(title, StringComparison.OrdinalIgnoreCase)
+            ? description[title.Length..].Trim(' ', ',')
+            : description;
+        var type = prediction.TryGetProperty("types", out var types) && types.ValueKind == JsonValueKind.Array
+            ? types.EnumerateArray().Select(typeItem => typeItem.GetString()).FirstOrDefault(typeItem => !string.IsNullOrWhiteSpace(typeItem)) ?? "place"
+            : "place";
+
+        return new GeoSearchResult(placeId, title, subtitle, type, null, null, description, "google", placeId);
+    }
+}

@@ -294,10 +294,13 @@ export default function CatalogsPage() {
       title: 'Thao tác',
       valueType: 'option',
       width: 110,
+      align: 'center',
       render: (_, option) => [
-        <Button key='edit' type='link' size='small' icon={<EditOutlined />} onClick={() => openEdit(option)}>
-          Sửa
-        </Button>,
+        <Space key='actions' size={2} className='table-actions table-actions-center'>
+          <Button type='link' size='small' icon={<EditOutlined />} onClick={() => openEdit(option)}>
+            Sửa
+          </Button>
+        </Space>,
       ],
     },
   ];
