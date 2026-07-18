@@ -98,11 +98,11 @@ const textSorter = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' 
 const fallbackStatusOptions: CatalogOption[] = [
   { code: 'NEW', label: 'Khách hàng mới', color: 'blue' },
   { code: 'CONTACTED', label: 'Đã liên hệ', color: 'cyan' },
-  { code: 'CARING', label: 'Đang chăm sóc', color: 'processing' },
-  { code: 'WAITING_SURVEY', label: 'Chờ khảo sát', color: 'gold' },
+  { code: 'CARING', label: 'Đang chăm sóc', color: 'green' },
+  { code: 'WAITING_SURVEY', label: 'Chờ khảo sát', color: 'purple' },
   { code: 'SURVEYED', label: 'Đã khảo sát', color: 'purple' },
   { code: 'VISITED_SHOWROOM', label: 'Đã xem thang mẫu', color: 'geekblue' },
-  { code: 'QUOTED', label: 'Đã gửi báo giá', color: 'blue' },
+  { code: 'QUOTED', label: 'Đã gửi báo giá', color: 'cyan' },
   { code: 'WAITING_RESPONSE', label: 'Chờ phản hồi', color: 'orange' },
   { code: 'NEGOTIATING', label: 'Đang đàm phán', color: 'orange' },
   { code: 'CONVERTED', label: 'Đã chuyển sang hợp đồng', color: 'green' },
@@ -115,10 +115,10 @@ const fallbackStatusOptions: CatalogOption[] = [
 const legacyStatusLabels: Record<string, { label: string; color: string }> = {
   NEW: { label: 'Mới tiếp nhận', color: 'blue' },
   CONTACTED: { label: 'Đã liên hệ', color: 'cyan' },
-  WAITING_SURVEY: { label: 'Chờ khảo sát', color: 'gold' },
+  WAITING_SURVEY: { label: 'Chờ khảo sát', color: 'purple' },
   SURVEYED: { label: 'Đã khảo sát', color: 'purple' },
-  CARING: { label: 'Đang chăm sóc', color: 'processing' },
-  QUOTED: { label: 'Đã gửi báo giá', color: 'geekblue' },
+  CARING: { label: 'Đang chăm sóc', color: 'green' },
+  QUOTED: { label: 'Đã gửi báo giá', color: 'cyan' },
   NEGOTIATING: { label: 'Đang đàm phán', color: 'orange' },
   SIGNED: { label: 'Đã ký hợp đồng', color: 'green' },
   LOST: { label: 'Không thành công', color: 'red' },
@@ -284,7 +284,7 @@ export default function Customers() {
       title: 'Số điện thoại',
       dataIndex: 'phone',
       width: 150,
-      render: (value) => <b className='table-primary-text'><PhoneOutlined /> {String(value)}</b>,
+      render: (value) => <span className='table-phone-text'><PhoneOutlined /> {String(value)}</span>,
     },
     {
       title: 'Email',
@@ -424,7 +424,7 @@ export default function Customers() {
           ].map((item) => (
             <Col xs={12} lg={6} key={item.label}>
               <ProCard
-                className={`mini-stat mini-stat-${item.tone} mini-stat-interactive ${statusGroup === kpiGroupByTone[item.tone] ? 'mini-stat-active' : ''}`}
+                className={`mini-stat mini-stat-${item.tone} mini-stat-interactive ${kpiGroupByTone[item.tone] && statusGroup === kpiGroupByTone[item.tone] ? 'mini-stat-active' : ''}`}
                 onClick={() => void applyKpiFilter(kpiGroupByTone[item.tone])}
               >
                 <span className='mini-stat-icon'>{item.icon}</span>

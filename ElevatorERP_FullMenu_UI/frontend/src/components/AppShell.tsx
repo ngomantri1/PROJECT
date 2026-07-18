@@ -209,6 +209,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loadError, setLoadError] = useState('');
   const [collapsed, setCollapsed] = useState(false);
+  const [openMenuKeys, setOpenMenuKeys] = useState<string[]>([]);
   const pathname = usePathname();
   const router = useRouter();
   const { isDark, toggleMode } = useThemeMode();
@@ -231,6 +232,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [loadCurrentUser]);
 
   const menuData = useMemo(() => (me ? filterRoutes(routeDefinitions, me) : []), [me]);
+  const topLevelMenuKeys = useMemo(
+    () => new Set(menuData.filter((item) => item.path && item.children?.length).map((item) => String(item.path))),
+    [menuData]
+  );
+
+  useEffect(() => {
+    if (!menuData.length || collapsed) return;
+    const activeGroup = menuData.find((item) =>
+      item.path && item.children?.some((child) => child.path && pathname.startsWith(String(child.path)))
+    );
+    if (activeGroup?.path) setOpenMenuKeys([String(activeGroup.path)]);
+  }, [collapsed, menuData, pathname]);
+
+  const handleMenuOpenChange = useCallback((keys: false | string[]) => {
+    if (!keys) {
+      setOpenMenuKeys([]);
+      return;
+    }
+
+    const latestTopLevelKey = [...keys].reverse().find((key) => topLevelMenuKeys.has(key));
+    setOpenMenuKeys(latestTopLevelKey ? [latestTopLevelKey] : keys);
+  }, [topLevelMenuKeys]);
 
   if (loadError) {
     return (
@@ -281,7 +304,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       onCollapse={setCollapsed}
       location={{ pathname }}
       route={{ path: '/', routes: menuData }}
-      menu={isMobile ? { type: 'sub' } : { type: 'sub', autoClose: false }}
+      menu={isMobile ? { type: 'sub' } : { type: 'sub' }}
+      openKeys={isMobile || collapsed ? false : openMenuKeys}
+      onOpenChange={handleMenuOpenChange}
       menuDataRender={() => menuData}
       contentStyle={{ padding: 0 }}
       pageTitleRender={false}

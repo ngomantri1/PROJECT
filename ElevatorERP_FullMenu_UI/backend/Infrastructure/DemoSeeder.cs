@@ -199,11 +199,11 @@ public static class DemoSeeder
         {
             Option(customerStatus, "NEW", "Khách hàng mới", "blue", 10),
             Option(customerStatus, "CONTACTED", "Đã liên hệ", "cyan", 20),
-            Option(customerStatus, "CARING", "Đang chăm sóc", "processing", 30),
-            Option(customerStatus, "WAITING_SURVEY", "Chờ khảo sát", "gold", 40),
+            Option(customerStatus, "CARING", "Đang chăm sóc", "green", 30),
+            Option(customerStatus, "WAITING_SURVEY", "Chờ khảo sát", "purple", 40),
             Option(customerStatus, "SURVEYED", "Đã khảo sát", "purple", 50),
             Option(customerStatus, "VISITED_SHOWROOM", "Đã xem thang mẫu", "geekblue", 60),
-            Option(customerStatus, "QUOTED", "Đã gửi báo giá", "blue", 70),
+            Option(customerStatus, "QUOTED", "Đã gửi báo giá", "cyan", 70),
             Option(customerStatus, "WAITING_RESPONSE", "Chờ phản hồi", "orange", 80),
             Option(customerStatus, "NEGOTIATING", "Đang đàm phán", "orange", 90),
             Option(customerStatus, "CONVERTED", "Đã chuyển sang hợp đồng", "green", 100),
@@ -231,9 +231,21 @@ public static class DemoSeeder
 
         foreach (var option in options)
         {
-            var exists = await db.CatalogOptions.AnyAsync(x =>
+            var existing = await db.CatalogOptions.FirstOrDefaultAsync(x =>
                 x.Category.Code == option.Category.Code && x.Code == option.Code);
-            if (!exists) db.CatalogOptions.Add(option);
+            if (existing is null)
+            {
+                db.CatalogOptions.Add(option);
+                continue;
+            }
+
+            if (!option.IsSystem) continue;
+
+            existing.Label = option.Label;
+            existing.Color = option.Color;
+            existing.SortOrder = option.SortOrder;
+            existing.IsSystem = true;
+            existing.IsActive = true;
         }
 
         await db.SaveChangesAsync();
