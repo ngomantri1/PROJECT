@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-> Source of truth for AI coding. Last source review: **2026-07-17**. Read this file before changing code.
+> Source of truth for AI coding. Last source review: **2026-07-18**. Read this file before changing code.
 
 ## 1. Project overview
 
@@ -31,6 +31,9 @@ The current package is a **functional foundation plus a full-menu UI prototype**
 - Dashboard statistics for customers and care activities.
 - Customer registration: list/search/filter/create.
 - Customer care: list/calendar/create/complete.
+- Shared catalog administration for customer status, lost reason, source and type.
+- Customer list filtering by search, status/status group, source, owner and area.
+- Customer CSV export is implemented in the frontend from the current loaded rows.
 - User-role assignment.
 - File upload with basic allow-listing and stored metadata.
 - Basic audit records.
@@ -40,6 +43,8 @@ The current package is a **functional foundation plus a full-menu UI prototype**
 
 Most V3–V9 routes use `ModuleWorkspace.tsx` and persist sample rows to browser `localStorage`.
 They are useful for layout and interaction testing only. They are **not evidence that the related business module, API, permission, workflow, audit or database schema is complete**.
+
+Current UI-only routes such as `/quotations`, `/contracts`, `/projects/list` and most accounting/technical/HR pages show a thin dismissible **Dữ liệu mô phỏng** banner in development. That banner means the page is not backed by PostgreSQL for its business records. The banner is hidden in production builds.
 
 There is intentionally no Live/Demo/Planned label in the menu. All menu items are open for the sole developer, but implementation status must still be determined from source and tests.
 
@@ -61,13 +66,14 @@ There is intentionally no Live/Demo/Planned label in the menu. All menu items ar
 
 - The ERP/admin shell is a persistent shared layout, not a wrapper mounted inside each page.
 - `AppFrame` wraps authenticated routes with `AppShell`; `/login` is intentionally outside the shell.
-- `AppShell` owns the sidebar, account toolbar, theme toggle, notification/help actions, user menu and `/auth/me` loading.
+- `AppShell` owns the sidebar, account toolbar, notification action, user menu, account-menu theme toggle and `/auth/me` loading.
 - Route changes from the sidebar should update only the right content area. The sidebar/header must not remount on normal menu navigation.
-- Desktop sidebar should allow multiple module groups to stay open at the same time (`autoClose: false`).
-- Mobile sidebar may keep default compact/accordion behavior to save space.
+- Desktop sidebar should behave like an ERP accordion: only one top-level module group is open at a time, and the active route's group is opened automatically.
+- Mobile sidebar may keep default compact behavior to save space.
 - Desktop and mobile support light/dark themes through `AppProviders` and `localStorage` key `elevator-erp:theme-mode`.
-- The top-right account toolbar is the accepted location for theme, notifications, help and user menu.
-- Business action buttons belong near page filters/workspace actions, not in the global header where they can collide with account controls.
+- The top-right account toolbar is intentionally compact: notification plus user menu. Theme switching remains available inside the account menu.
+- Primary page business actions belong in the page header on the right, not in the global shell header and not inside the filter bar.
+- Filter bars should contain search/filter/reset/apply/export actions. They should not contain create-new buttons.
 - The dashboard and mobile shell have been polished as an ERP/admin interface; avoid reverting it to a marketing/landing-page layout.
 
 ### Chosen target architecture, not fully implemented
@@ -108,6 +114,7 @@ Development-only workspace flow:
 3. Sample rows are generated in the browser.
 4. Create/update/delete writes only to `localStorage` key `elevator-erp:workspace:{pathname}`.
 5. This path must be replaced by a real module service/API before production.
+6. Workspace pages show a development-only dismissible demo-data banner unless the session has hidden it.
 
 ## 5. Coding rules
 
@@ -142,12 +149,17 @@ Development-only workspace flow:
 - Use the shared API layer and consistent error parsing.
 - After mutation, either safely update cache/state or re-fetch; avoid duplicate requests and double-submit.
 - Keep desktop table/mobile card parity.
+- List pages should follow the shared ERP structure: two-line page header, primary action on the header right, KPI row, filter bar, data table card with title, pagination/export where applicable.
+- Table header typography is 600; primary entity name is 600; phone is 500; ordinary metadata is 400; money is 600 and right-aligned.
+- Table hover is subtle and selected rows use a left indicator. Business status must be shown by tags, not by coloring the whole row.
+- Sort icons should be shown only on columns where sorting is meaningful; do not enable hidden sort behavior without a visible sorter.
+- CSV export is acceptable for "Xuất Excel" workflows during the current stage because Excel opens CSV reliably, but future permission/audit requirements still apply.
 - Long forms use `StepsForm` or structured sections; mobile actions remain reachable.
 - Do not manipulate DOM directly when React/Ant Design can own the state.
 - Browser-only APIs must run in client components/effects, never during server rendering.
 - Keep the admin shell in shared layout. Do not reintroduce per-page `<AppShell>` wrappers.
 - Preserve sidebar/header state across route navigation unless the user logs out or enters `/login`.
-- On desktop, do not auto-close other expanded sidebar module groups when clicking a menu item.
+- On desktop, keep only one top-level sidebar module group open at a time. Do not remount the shell while doing this.
 - On mobile, keep controls compact and reachable; full-width actions are acceptable on narrow screens.
 
 ## 6. Naming rules
@@ -268,4 +280,5 @@ Mobile construction photos should initially use standard camera/file input, clie
 - Never enable demo seeding in production.
 - Never run `docker compose down -v` or delete `.data` when data must be preserved.
 - Never claim a V3–V9 module is complete until its API, schema/migration, permissions, audit, workflow and tests are implemented.
-- Never move business page action buttons back into the global shell header if they collide with account controls.
+- Never move primary page create actions back into the filter bar or global shell header.
+- Never remove the demo-data distinction for localStorage-backed modules.

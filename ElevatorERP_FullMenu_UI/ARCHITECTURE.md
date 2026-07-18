@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-> Current architecture map plus the approved target direction. Last source review: **2026-07-17**.
+> Current architecture map plus the approved target direction. Last source review: **2026-07-18**.
 
 ## 1. Current repository structure
 
@@ -121,6 +121,8 @@ Contains all current entities:
 - Calls `Database.EnsureCreatedAsync()`.
 - Exits unless `EnableDemoSeed=true`.
 - Seeds departments, permissions, roles, users, 20 customers and 45 care activities.
+- Seeds shared catalog categories/options for customer statuses, lost reasons, sources and customer types.
+- Updates existing system catalog options on startup when their label/color/sort order changes.
 - Uses deterministic sample random seed.
 
 ### `backend/Security/SecurityServices.cs`
@@ -159,10 +161,10 @@ Contains all current entities:
 - Full business menu definitions.
 - Calls `/auth/me`.
 - Filters routes that declare a permission.
-- Handles account toolbar, theme toggle, notifications, help, user dropdown and logout.
+- Handles account toolbar, notification action, user dropdown, account-menu theme toggle and logout.
 - Owns responsive sidebar collapse state.
-- Desktop sidebar menu uses `autoClose: false` so multiple module groups can remain open.
-- Mobile sidebar keeps the default compact behavior to save screen space.
+- Desktop sidebar uses controlled `openKeys` so only one top-level module group is open at a time and the active route's group is opened automatically.
+- Mobile sidebar keeps compact behavior to save screen space.
 
 Only routes with an explicit `permission` property are currently filtered. Most generic V3–V9 routes are visible to any authenticated user.
 
@@ -171,8 +173,10 @@ Only routes with an explicit `permission` property are currently filtered. Most 
 - `app/login/page.tsx`: cookie login.
 - `app/page.tsx`: dashboard from `/dashboard`.
 - `app/customers/page.tsx`: customer list/filter/create.
-- `app/care/page.tsx`: care list/calendar/create/complete.
+- `app/customers/page.tsx`: also includes customer CSV export, status/source/owner/area filters, table actions and catalog-backed status tags.
+- `app/care/page.tsx`: care list/calendar/create/complete, CSV export and month/year calendar navigation.
 - `app/admin/users/page.tsx`: user/role list and role assignment.
+- `app/admin/catalogs/page.tsx`: shared catalog category/option administration, including active toggle and sort order management.
 
 ### Generic development workspace
 
@@ -180,6 +184,7 @@ Only routes with an explicit `permission` property are currently filtered. Most 
 - `ModuleWorkspace.tsx` maps 38 business paths to generic configuration.
 - Sample data and mutations persist in browser `localStorage`.
 - It provides KPI cards, filters, responsive table/card, create, details, status update, delete and reset.
+- Its current UI follows the shared ERP list pattern: two-line page header, create action on the header right, KPI row, filter bar, table card title, CSV export and a thin dismissible demo-data banner in development.
 - It has no backend domain model, permission enforcement, audit or server persistence.
 
 ### `src/lib/api.ts`
@@ -202,6 +207,11 @@ POST /api/customers
 GET  /api/care-activities
 POST /api/care-activities
 PUT  /api/care-activities/{id}/complete
+GET  /api/catalogs/categories
+GET  /api/catalogs/categories/{code}/options
+POST /api/catalogs/categories/{code}/options
+PUT  /api/catalogs/options/{id}
+PUT  /api/catalogs/options/{id}/active
 GET  /api/admin/roles
 GET  /api/admin/users
 PUT  /api/admin/users/{id}/roles
@@ -336,6 +346,18 @@ Route pathname
 → React state
 → local create/update/delete
 → localStorage persistence
+→ development-only demo banner explains that the records are not saved to PostgreSQL
+```
+
+### Catalog option update
+
+```text
+Catalog administration page
+→ GET category list/options
+→ create/edit/toggle option
+→ API writes CatalogOption to PostgreSQL
+→ frontend updates local category/options state without refreshing the left category list
+→ customer form/status tags read catalog options from API
 ```
 
 ## 8. UI update flow
@@ -350,7 +372,11 @@ Route pathname
 - Generic workspaces update local React state and `localStorage` synchronously.
 - Desktop uses `ProTable`; under the CSS breakpoint the table is replaced by mobile cards.
 - Current UI shell supports polished desktop/mobile light and dark modes.
-- Global business action buttons were removed from the shell header; page-level create/apply actions live near filters/toolbars.
+- Global business action buttons were removed from the shell header.
+- Page-level create actions live in the right side of the page header.
+- Filter bars contain search/filter/reset/apply/export only.
+- Table styling is centralized in `globals.css` for sorter visibility, sticky/fixed-column shadows, hover/selected colors, toolbar icon sizing and typography.
+- The customer table uses separate columns for customer code, name, phone and email to support future export/filter workflows.
 
 ### Target
 

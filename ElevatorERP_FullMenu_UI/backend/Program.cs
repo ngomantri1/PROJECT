@@ -257,8 +257,10 @@ app.MapGet("/api/customers", async (
             x.Email,
             x.Address,
             x.Area,
+            x.CustomerType,
             x.Source,
             x.Status,
+            x.Notes,
             owner = x.OwnerUser.DisplayName,
             x.CreatedAt
         })
@@ -307,6 +309,52 @@ app.MapPost("/api/customers", async (
 
     return Results.Created($"/api/customers/{customer.Id}", new { customer.Id, customer.Code });
 }).RequirePermission("customer.create");
+
+app.MapPut("/api/customers/{id:guid}", async (
+    Guid id,
+    CustomerRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Phone))
+        return Results.BadRequest(new { message = "Tên khách hàng và số điện thoại là bắt buộc." });
+
+    var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == id);
+    if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
+
+    var canUpdateAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canUpdateAll && customer.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    customer.CustomerType = request.CustomerType;
+    customer.Name = request.Name.Trim();
+    customer.Phone = request.Phone.Trim();
+    customer.Email = request.Email?.Trim();
+    customer.Address = request.Address?.Trim();
+    customer.Area = request.Area?.Trim();
+    customer.Source = request.Source;
+    customer.Status = request.Status;
+    customer.Notes = request.Notes?.Trim();
+    customer.UpdatedAt = DateTimeOffset.UtcNow;
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "UPDATE",
+        Module = "Customers",
+        EntityType = nameof(Customer),
+        EntityId = customer.Id.ToString(),
+        Details = customer.Code,
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}).RequirePermission("customer.update");
 
 app.MapGet("/api/care-activities", async (
     DateTimeOffset? from,

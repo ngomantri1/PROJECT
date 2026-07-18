@@ -25,6 +25,7 @@ import {
   DownloadOutlined,
   EllipsisOutlined,
   EnvironmentOutlined,
+  EditOutlined,
   FileProtectOutlined,
   FileTextOutlined,
   FilterOutlined,
@@ -60,6 +61,8 @@ type CustomerRow = {
   email?: string;
   address?: string;
   area?: string;
+  customerType: 'PERSONAL' | 'BUSINESS';
+  notes?: string;
   source: string;
   owner: string;
   status: string;
@@ -148,6 +151,7 @@ export default function Customers() {
   const router = useRouter();
   const [data, setData] = useState<CustomerRow[]>([]);
   const [open, setOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<CustomerRow>();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>();
   const [statusGroup, setStatusGroup] = useState<string>();
@@ -261,11 +265,21 @@ export default function Customers() {
     ]);
   };
 
+  const openCreateDrawer = () => {
+    setEditingCustomer(undefined);
+    setOpen(true);
+  };
+
+  const openEditDrawer = (customer: CustomerRow) => {
+    setEditingCustomer(customer);
+    setOpen(true);
+  };
+
   const columns: ProColumns<CustomerRow>[] = [
     {
       title: 'Mã KH',
       dataIndex: 'code',
-      width: 120,
+      width: 112,
       fixed: 'left',
       sorter: (a, b) => textSorter.compare(a.code, b.code),
       render: (value) => <Typography.Text copyable={{ text: String(value) }}>{String(value)}</Typography.Text>,
@@ -273,7 +287,7 @@ export default function Customers() {
     {
       title: 'Khách hàng',
       dataIndex: 'name',
-      width: 220,
+      width: 210,
       fixed: 'left',
       sorter: (a, b) => textSorter.compare(a.name, b.name),
       render: (_, item) => (
@@ -283,7 +297,7 @@ export default function Customers() {
     {
       title: 'Số điện thoại',
       dataIndex: 'phone',
-      width: 150,
+      width: 145,
       render: (value) => <span className='table-phone-text'><PhoneOutlined /> {String(value)}</span>,
     },
     {
@@ -310,12 +324,12 @@ export default function Customers() {
         </Tooltip>
       ) : '—',
     },
-    { title: 'Nguồn', dataIndex: 'source', width: 130, sorter: (a, b) => textSorter.compare(a.source, b.source) },
-    { title: 'Nhân viên phụ trách', dataIndex: 'owner', width: 180, sorter: (a, b) => textSorter.compare(a.owner, b.owner) },
+    { title: 'Nguồn', dataIndex: 'source', width: 120, sorter: (a, b) => textSorter.compare(a.source, b.source) },
+    { title: 'Nhân viên phụ trách', dataIndex: 'owner', width: 165, sorter: (a, b) => textSorter.compare(a.owner, b.owner) },
     {
       title: 'Trạng thái',
       dataIndex: 'status',
-      width: 165,
+      width: 160,
       sorter: (a, b) => textSorter.compare(
         statusMeta(statusOptions, a.status).label,
         statusMeta(statusOptions, b.status).label,
@@ -325,74 +339,83 @@ export default function Customers() {
     {
       title: 'Ngày tạo',
       dataIndex: 'createdAt',
-      width: 130,
+      width: 118,
       sorter: (a, b) => dayjs(a.createdAt).valueOf() - dayjs(b.createdAt).valueOf(),
       render: (value) => value ? dayjs(String(value)).format('DD/MM/YYYY') : '—',
     },
     {
       title: 'Thao tác',
       valueType: 'option',
-      width: 84,
-      fixed: 'right',
-      align: 'center',
+      width: 96,
+      align: 'right',
       render: (_, item) => [
-        <Dropdown
-          key='actions'
-          trigger={['click']}
-          menu={{
-            items: [
-              {
-                key: 'care',
-                icon: <CalendarOutlined />,
-                label: 'Ghi chăm sóc',
-                onClick: () => router.push(`/care?customerId=${item.id}`),
-              },
-              {
-                key: 'quotation',
-                icon: <FileTextOutlined />,
-                label: 'Tạo báo giá',
-                onClick: () => router.push(`/quotations?customerId=${item.id}`),
-              },
-              {
-                key: 'contract',
-                icon: <FileProtectOutlined />,
-                label: 'Tạo hợp đồng',
-                onClick: () => router.push(`/contracts?customerId=${item.id}`),
-              },
-              {
-                key: 'portal',
-                icon: <TeamOutlined />,
-                label: 'Quản lý portal',
-                disabled: true,
-              },
-              { type: 'divider' },
-              {
-                key: 'delete',
-                icon: <DeleteOutlined />,
-                label: 'Xóa khách hàng',
-                danger: true,
-                disabled: true,
-              },
-            ],
-          }}
-        >
-          <Tooltip title='Thao tác'>
-            <Button type='text' className='table-action-button' icon={<EllipsisOutlined />} />
+        <Space key='actions' size={2} className='table-actions'>
+          <Tooltip title='Sửa thông tin'>
+            <Button type='text' className='table-action-button' icon={<EditOutlined />} onClick={() => openEditDrawer(item)} />
           </Tooltip>
-        </Dropdown>,
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                {
+                  key: 'care',
+                  icon: <CalendarOutlined />,
+                  label: 'Ghi chăm sóc',
+                  onClick: () => router.push(`/care?customerId=${item.id}`),
+                },
+                {
+                  key: 'quotation',
+                  icon: <FileTextOutlined />,
+                  label: 'Tạo báo giá',
+                  onClick: () => router.push(`/quotations?customerId=${item.id}`),
+                },
+                {
+                  key: 'contract',
+                  icon: <FileProtectOutlined />,
+                  label: 'Tạo hợp đồng',
+                  onClick: () => router.push(`/contracts?customerId=${item.id}`),
+                },
+                {
+                  key: 'portal',
+                  icon: <TeamOutlined />,
+                  label: 'Quản lý portal',
+                  disabled: true,
+                },
+                { type: 'divider' },
+                {
+                  key: 'delete',
+                  icon: <DeleteOutlined />,
+                  label: 'Xóa khách hàng',
+                  danger: true,
+                  disabled: true,
+                },
+              ],
+            }}
+          >
+            <Tooltip title='Thao tác khác'>
+              <Button type='text' className='table-action-button' icon={<EllipsisOutlined />} />
+            </Tooltip>
+          </Dropdown>
+        </Space>,
       ],
     },
   ];
 
   const save = async (values: CustomerForm) => {
     try {
-      await api('/customers', { method: 'POST', body: JSON.stringify(values) });
-      message.success('Đã tạo đăng ký khách hàng');
+      if (editingCustomer) {
+        await api(`/customers/${editingCustomer.id}`, { method: 'PUT', body: JSON.stringify(values) });
+        message.success('Đã cập nhật đăng ký khách hàng');
+      } else {
+        await api('/customers', { method: 'POST', body: JSON.stringify(values) });
+        message.success('Đã tạo đăng ký khách hàng');
+      }
       setOpen(false);
+      setEditingCustomer(undefined);
       await load();
       return true;
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Không tạo được khách hàng.');
+      message.error(error instanceof Error ? error.message : 'Không lưu được khách hàng.');
       return false;
     }
   };
@@ -408,7 +431,7 @@ export default function Customers() {
             </div>
           ),
           extra: (
-            <Button type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+            <Button type='primary' icon={<PlusOutlined />} onClick={openCreateDrawer}>
               Thêm khách hàng
             </Button>
           ),
@@ -509,7 +532,7 @@ export default function Customers() {
             cardBordered
             options={{ density: true, fullScreen: true, reload: () => void load() }}
             pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} khách hàng` }}
-            scroll={{ x: 1560 }}
+            scroll={{ x: 1530 }}
             headerTitle='Danh sách đăng ký khách hàng'
           />
         </div>
@@ -538,6 +561,9 @@ export default function Customers() {
                     <Descriptions.Item label='Nguồn'>{customer.source}</Descriptions.Item>
                     <Descriptions.Item label='Phụ trách'>{customer.owner}</Descriptions.Item>
                   </Descriptions>
+                  <Button block icon={<EditOutlined />} onClick={() => openEditDrawer(customer)}>
+                    Sửa thông tin
+                  </Button>
                 </Card>
               </List.Item>
             )}
@@ -545,14 +571,28 @@ export default function Customers() {
         </div>
 
         <DrawerForm<CustomerForm>
-          title='Thêm đăng ký khách hàng'
+          key={editingCustomer?.id ?? 'create-customer'}
+          title={editingCustomer ? 'Sửa đăng ký khách hàng' : 'Thêm đăng ký khách hàng'}
           open={open}
-          onOpenChange={setOpen}
+          onOpenChange={(visible) => {
+            setOpen(visible);
+            if (!visible) setEditingCustomer(undefined);
+          }}
           width={760}
-          initialValues={{ customerType: 'PERSONAL', source: 'Marketing', status: 'NEW' }}
+          initialValues={editingCustomer ? {
+            customerType: editingCustomer.customerType,
+            name: editingCustomer.name,
+            phone: editingCustomer.phone,
+            email: editingCustomer.email,
+            area: editingCustomer.area,
+            source: editingCustomer.source,
+            address: editingCustomer.address,
+            notes: editingCustomer.notes,
+            status: editingCustomer.status,
+          } : { customerType: 'PERSONAL', source: 'Marketing', status: 'NEW' }}
           onFinish={save}
           drawerProps={{ destroyOnClose: true }}
-          submitter={{ searchConfig: { submitText: 'Lưu đăng ký', resetText: 'Hủy' } }}
+          submitter={{ searchConfig: { submitText: editingCustomer ? 'Lưu thay đổi' : 'Lưu đăng ký', resetText: 'Hủy' } }}
         >
           <div className='form-section-heading'>Thông tin khách hàng</div>
           <ProFormRadio.Group

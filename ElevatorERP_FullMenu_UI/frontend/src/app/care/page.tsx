@@ -250,7 +250,7 @@ export default function Care() {
       title: 'Thao tác',
       valueType: 'option',
       width: 130,
-      fixed: 'right',
+      align: 'right',
       render: (_, item) =>
         item.status !== 'DONE' ? [
           <Button key='complete' type='link' size='small' onClick={() => setCompleteItem(item)}>

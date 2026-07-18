@@ -416,7 +416,7 @@ export default function ModuleWorkspace() {
     title: 'Thao tác',
     valueType: 'option',
     width: 90,
-    fixed: 'right',
+    align: 'right',
     render: (_, item) => [
       <Dropdown
         key='actions'

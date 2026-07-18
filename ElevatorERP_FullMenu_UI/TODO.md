@@ -8,7 +8,7 @@
 - Move from generic `localStorage` workspaces to real business modules one roadmap stage at a time.
 - Preserve the approved business rules while restructuring the backend into a real Modular Monolith.
 - Keep Docker Compose and Rider workflows working after every meaningful change.
-- Preserve the approved ERP/admin shell behavior: persistent shared shell, desktop multi-open sidebar groups, compact mobile drawer, and light/dark theme support.
+- Preserve the approved ERP/admin shell behavior: persistent shared shell, desktop one-open-group sidebar accordion, compact mobile drawer, primary page actions in page headers, and light/dark theme support.
 
 ## 1.1 Recently completed UI shell baseline
 
@@ -16,10 +16,19 @@
 - [x] Keep `/login` outside the ERP shell.
 - [x] Add light/dark theme switching with persisted user preference.
 - [x] Move account controls to the top-right toolbar.
-- [x] Remove page business actions from the global header and place them near filters/toolbars.
+- [x] Remove page business actions from the global header.
+- [x] Move primary create actions to the right side of each page header for customers, care and generic workspace pages.
 - [x] Polish desktop dashboard, tables, cards and sidebar scrollbar for ERP/admin shell use.
 - [x] Polish mobile dashboard/module layouts, KPI cards, filter actions, account toolbar and sidebar sizing.
-- [x] Configure desktop sidebar groups to remain open when clicking another menu item; keep mobile behavior compact.
+- [x] Configure desktop sidebar accordion so only one top-level menu group is open at a time; keep mobile behavior compact.
+- [x] Standardize customer list table columns for code, name, phone, email, area, source, owner, status, created date and action.
+- [x] Add CSV export to list pages that currently have loaded client-side rows.
+- [x] Add shared catalog administration UI and API for customer statuses, lost reasons, sources and customer types.
+- [x] Make catalog active toggles update the right content without reloading the left category list.
+- [x] Standardize sortable columns and visible sorter icons across the main list tables.
+- [x] Add thin dismissible development-only demo-data banner for localStorage-backed workspace pages.
+- [x] Add table card titles for generic workspace list pages.
+- [x] Add month/year calendar toolbar with previous/today/next navigation.
 - Verification evidence: `npm run lint` and `npm run build` passed after the shell changes.
 
 ## 2. P0 — must complete before expanding features
@@ -88,15 +97,19 @@
 - [ ] Enforce full status transitions and failure reason.
 - [ ] Add duplicate phone/tax-code detection policy.
 - [ ] Add server pagination and sorting.
+- [ ] Replace client-side CSV export with server-side export when data volume, permissions and audit requirements are implemented.
+- [ ] Add statistics for customer intake by time, source, status, owner and outcome from authoritative PostgreSQL data.
+- [ ] Define how a signed contract converts a customer registration into contract/project records, and how repeat elevator purchases are represented.
 
 ### Care schedule
 
 - [ ] Add date/status/assignee filters to UI and API.
-- [ ] Add week view, today, upcoming, overdue and employee views.
+- [ ] Add week view, upcoming, overdue and employee views.
 - [ ] Allow participants and attachments.
 - [ ] Allow next-care creation from completion flow.
 - [ ] Automatically derive/update overdue status.
 - [ ] Add reminders through worker and notifications.
+- [ ] Make "+n lịch khác" in calendar cells open a popover/drawer with the hidden schedules.
 
 ## 6. V3 — quotations and contracts
 
@@ -145,6 +158,7 @@
 ## 10. Refactor candidates
 
 - [ ] Replace generic `ModuleWorkspace` with module-specific components as each API is implemented.
+- [ ] Extract shared UI building blocks: `PageHeaderSection`, `PageFilterBar`, `DataTableCard`, `DemoDataBanner`, `StatusTag`, `PriorityTag` and `CalendarToolbar`.
 - [ ] Extract `AppHeaderActions` / `UserDropdown` from `AppShell` if the shell grows further.
 - [ ] Consider moving route/menu definitions into a typed registry shared by permissions, breadcrumbs and page guards.
 - [ ] Centralize status codes/labels instead of duplicating them in pages and backend seed logic.
@@ -182,7 +196,8 @@
 - [ ] Restart containers without data/session loss.
 - [ ] Production startup with `ENABLE_DEMO_SEED=false`.
 - [ ] Desktop/mobile layouts for all real pages, including regression checks for persistent shell navigation.
-- [ ] Verify sidebar desktop multi-open behavior and mobile compact behavior after menu changes.
+- [ ] Verify sidebar desktop one-open-group accordion behavior and mobile compact behavior after menu changes.
+- [ ] Visual regression for page header action placement, filter bars, demo banners, table toolbar icons and calendar toolbar on 1920, 1366, tablet and mobile widths.
 - [ ] Camera upload and unreliable-network retry.
 - [ ] Nginx API routing, upload size and future websocket upgrade.
 - [ ] Backup restore into a clean environment.

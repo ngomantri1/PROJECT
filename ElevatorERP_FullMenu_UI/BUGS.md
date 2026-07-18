@@ -1,6 +1,6 @@
 # BUGS
 
-> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-17**.
+> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-18**.
 
 ## 1. Current open issues
 
@@ -94,6 +94,18 @@
   - Risk: stale or manually edited data can break UI assumptions.
   - Workaround: use “Khôi phục dữ liệu” or clear the route-specific localStorage key.
 
+- **Client-side CSV export is not yet a permissioned/audited export system.**
+  - Area: `frontend/src/lib/exportCsv.ts`, customers, care and generic workspace pages.
+  - Cause: export uses currently loaded frontend rows.
+  - Risk: future large datasets, hidden columns, permissions and audit requirements are not enforced server-side.
+  - Required fix: implement backend export endpoints with permission checks, audit entries and streaming for large datasets.
+
+- **Demo-data banner hidden state is session-scoped and shared across workspace routes.**
+  - Area: `ModuleWorkspace.tsx`.
+  - Cause: one `sessionStorage` key hides the thin demo banner for all generic workspace pages.
+  - Risk: developer may forget a later generic route is still localStorage-backed during the same browser session.
+  - Workaround: open a new session or clear `elevator-erp:hide-demo-banner`.
+
 - **Global search is placeholder behavior.**
   - Area: `AppShell.tsx`.
   - Current behavior: Enter always navigates to `/customers` and does not use the query.
@@ -118,6 +130,7 @@
 - `Program.cs` is a large composition root plus all endpoints and DTOs.
 - All entities are in one file.
 - Status labels/codes are duplicated between backend seed and frontend pages.
+- Several UI patterns are now standardized by convention/CSS but not yet extracted into shared components (`PageHeaderSection`, `PageFilterBar`, `DataTableCard`, `DemoDataBanner`, `StatusTag`).
 - Soft-delete query filters exist only for Customer and CareActivity although base `Entity` contains `IsDeleted`.
 - Generic workspace fields are too broad to represent domain-specific rules.
 - Frontend full-menu route has a large first-load bundle and should be split as real modules are implemented.
@@ -141,12 +154,30 @@
 - Moved `AppShell` out of individual pages into a shared `AppFrame`, so sidebar/header no longer remount when clicking sidebar menu items.
 - Added `/login` exception so the login page renders outside the ERP shell.
 - Added persistent light/dark theme switching through `AppProviders`.
-- Reworked top-right account toolbar so user, notification, help and theme controls no longer collide with page actions.
-- Removed global header business buttons and moved create/apply actions near page filters.
+- Reworked top-right account toolbar so account/notification controls no longer collide with page actions; theme switching now lives in the account menu.
+- Removed global header business buttons; current create actions belong in page headers and apply/export actions belong in filter/tool areas.
 - Improved desktop/mobile ERP/admin shell visual design, including dashboard hero, KPI cards, dark mode contrast, mobile cards and filter layout.
 - Made desktop sidebar groups support multiple open sections while keeping mobile compact behavior.
 - Slimmed and darkened sidebar scrollbar to avoid the oversized default browser scrollbar.
 - Documented and worked around Nginx `502 Bad Gateway` after rebuilding frontend by restarting `nginx` when upstream IP caching occurs.
+- Reworked the sidebar behavior to a one-open-group desktop accordion and kept the shell mounted during navigation.
+- Replaced the hand-drawn placeholder sidebar logo with a repo-native SVG brand mark aligned to the public website logo direction.
+- Standardized the green brand palette: neutral light background, dark green sidebar, green primary actions, red/orange still reserved for error/warning.
+- Lightened dark mode background and strengthened dark status tags for readability.
+- Split customer table contact information into separate code/name/phone/email columns for future filtering and CSV export.
+- Added customer table action menu and fixed sticky action/date column overlap by standardizing fixed-column shadows.
+- Fixed customer KPI active state where "Tổng khách hàng" looked selected when no KPI filter was active.
+- Fixed ProTable toolbar icon alignment and normalized its 32px click target.
+- Added visible sorters only to meaningful table columns and removed unnecessary sorters from email/phone/type/active columns where appropriate.
+- Added frontend CSV export buttons to customers, care and generic workspace list pages.
+- Added catalog administration for customer statuses/sources/types/lost reasons and fixed active toggle UI refresh without reloading the left category list.
+- Vietnamese labels are used for catalog-facing UI options such as badge colors.
+- Removed invalid `processing` badge color from the customer status color selector and standardized customer status colors in frontend fallback and backend seed.
+- Added seed update behavior for existing system catalog options so label/color/sort order changes apply to old local databases.
+- Moved primary create actions to page headers for customers, care and generic workspace pages; filter bars no longer contain create-new buttons.
+- Replaced large generic workspace demo alerts with thin dismissible development-only demo-data banners.
+- Added list card titles for generic workspace tables such as báo giá and hợp đồng.
+- Added calendar previous/today/next navigation and month/year mode switch; calendar cells now show at most three schedules plus a "+n lịch khác" indicator.
 
 ## 3. Temporary workarounds
 
