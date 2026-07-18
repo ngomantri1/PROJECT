@@ -1026,6 +1026,7 @@
                                             <ComboBoxItem Content="5. Quản lý vốn đa tầng" Tag="MultiChain" />
                                             <ComboBoxItem Content="6. Thua thắng đều lên mức" Tag="IncreaseEveryRound" />
                                             <ComboBoxItem Content="7. Thắng đánh lên, thua giữ nguyên mức" Tag="WinUpLoseKeep" />
+                                            <ComboBoxItem Content="8. Thắng đánh lên, thua đánh xuống" Tag="WinUpLoseDown" />
                                         </ComboBox>
                                     </Grid>
                                     <!--  CHUỖI TIỀN (CSV)  -->
@@ -1047,18 +1048,6 @@
                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
                                         Text="1000,2000,4000,8000,16000"
                                         TextWrapping="Wrap" />
-
-                                    <CheckBox
-                                        x:Name="ChkS7ResetOnProfit"
-                                        Grid.Row="4"
-                                        Grid.Column="1"
-                                        Margin="{StaticResource ValueFieldMargin}"
-                                        VerticalAlignment="Center"
-                                        Checked="ChkS7ResetOnProfit_Changed"
-                                        Content="Có lãi quay về mức đầu"
-                                        Foreground="#222"
-                                        Unchecked="ChkS7ResetOnProfit_Changed"
-                                        Visibility="Collapsed" />
 
                                     <!--  ĐẶT KHI CÒN (GIÂY)  -->
                                     <TextBlock

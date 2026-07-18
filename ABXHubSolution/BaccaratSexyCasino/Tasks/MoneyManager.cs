@@ -95,8 +95,6 @@ namespace BaccaratSexyCasino.Tasks
                     _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
                     break;
 
-                // MoneyManager.cs - trong OnRoundResult(bool win)
-
                 case "WinUpLoseKeep":
                     {
                         _needDoubleNext = false; // không dùng Victor2 ở strategy này
@@ -108,18 +106,35 @@ namespace BaccaratSexyCasino.Tasks
                             // thắng => tăng mức
                             _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
                             MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: WIN => step {before} -> {_i}");
-
-                            // sau khi thắng: nếu total tạm đã dương => reset level 1 và reset tổng tạm
-                            if (MoneyHelper.ConsumeS7ResetFlag())
-                            {
-                                _i = 0;
-                                MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: _s7TempNetDelta>0 => reset step -> 0");
-                            }
                         }
                         else
                         {
                             // thua => giữ nguyên mức
                             MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: LOSS => keep step={_i}");
+                        }
+
+                        break;
+                    }
+
+                case "WinUpLoseDown":
+                    {
+                        _needDoubleNext = false; // không dùng Victor2 ở strategy này
+
+                        if (win.Value)
+                        {
+                            var before = _i;
+
+                            // thắng => tăng mức, hết chuỗi quay về mức 1
+                            _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                            MoneyHelper.Logger?.Invoke($"[S8] MoneyManager: WIN => step {before} -> {_i}");
+                        }
+                        else
+                        {
+                            var before = _i;
+
+                            // thua => lùi 1 mức, không thấp hơn mức 1
+                            _i = Math.Max(0, _i - 1);
+                            MoneyHelper.Logger?.Invoke($"[S8] MoneyManager: LOSS => step {before} -> {_i}");
                         }
 
                         break;
