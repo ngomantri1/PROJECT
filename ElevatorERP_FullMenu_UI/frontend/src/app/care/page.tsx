@@ -24,7 +24,9 @@ import {
   ClockCircleOutlined,
   DownloadOutlined,
   ExclamationCircleOutlined,
+  LeftOutlined,
   PlusOutlined,
+  RightOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
 import {
@@ -102,6 +104,8 @@ export default function Care() {
   const [completeItem, setCompleteItem] = useState<CareRow | null>(null);
   const [completeResult, setCompleteResult] = useState('');
   const [completing, setCompleting] = useState(false);
+  const [calendarDate, setCalendarDate] = useState<Dayjs>(dayjs());
+  const [calendarMode, setCalendarMode] = useState<'month' | 'year'>('month');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -172,7 +176,8 @@ export default function Care() {
   };
 
   const calendarCell = (date: Dayjs) => {
-    const items = data.filter((item) => dayjs(item.scheduledAt).isSame(date, 'day')).slice(0, 3);
+    const dayItems = data.filter((item) => dayjs(item.scheduledAt).isSame(date, 'day'));
+    const items = dayItems.slice(0, 3);
     return (
       <ul className='calendar-event-list'>
         {items.map((item) => (
@@ -183,8 +188,8 @@ export default function Care() {
             />
           </li>
         ))}
-        {data.filter((item) => dayjs(item.scheduledAt).isSame(date, 'day')).length > 3 && (
-          <li className='calendar-more'>+ thêm lịch</li>
+        {dayItems.length > 3 && (
+          <li className='calendar-more'>+{dayItems.length - 3} lịch khác</li>
         )}
       </ul>
     );
@@ -272,8 +277,17 @@ export default function Care() {
     <PageContainer
         className='erp-page-container'
         header={{
-          title: 'Lịch chăm sóc khách hàng',
-          subTitle: 'Lập lịch, theo dõi và ghi nhận kết quả chăm sóc',
+          title: (
+            <div className='page-title-stack'>
+              <Typography.Title level={3}>Lịch chăm sóc khách hàng</Typography.Title>
+              <Typography.Text>Lập lịch, theo dõi và ghi nhận kết quả chăm sóc</Typography.Text>
+            </div>
+          ),
+          extra: (
+            <Button type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+              Thêm lịch
+            </Button>
+          ),
           breadcrumb: {},
         }}
       >
@@ -316,16 +330,43 @@ export default function Care() {
               <Button icon={<DownloadOutlined />} onClick={exportCareActivities}>
                 Xuất CSV
               </Button>
-              <Button type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
-                Thêm lịch
-              </Button>
             </Space>
           </Space>
         </ProCard>
 
         {view === 'calendar' ? (
           <ProCard className='section-gap calendar-card' loading={loading}>
-            <Calendar cellRender={calendarCell} />
+            <div className='calendar-toolbar'>
+              <Space>
+                <Button icon={<LeftOutlined />} onClick={() => setCalendarDate((value) => value.subtract(1, calendarMode))} />
+                <Button onClick={() => setCalendarDate(dayjs())}>Hôm nay</Button>
+                <Button icon={<RightOutlined />} onClick={() => setCalendarDate((value) => value.add(1, calendarMode))} />
+              </Space>
+              <Typography.Text strong>
+                {calendarMode === 'month'
+                  ? `Tháng ${calendarDate.format('MM/YYYY')}`
+                  : `Năm ${calendarDate.format('YYYY')}`}
+              </Typography.Text>
+              <Segmented
+                value={calendarMode}
+                onChange={(value) => setCalendarMode(value as 'month' | 'year')}
+                options={[
+                  { label: 'Tháng', value: 'month' },
+                  { label: 'Năm', value: 'year' },
+                ]}
+              />
+            </div>
+            <Calendar
+              value={calendarDate}
+              mode={calendarMode}
+              onChange={setCalendarDate}
+              onPanelChange={(value, mode) => {
+                setCalendarDate(value);
+                setCalendarMode(mode);
+              }}
+              headerRender={() => null}
+              cellRender={calendarCell}
+            />
           </ProCard>
         ) : (
           <>

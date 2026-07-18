@@ -225,6 +225,8 @@ export default function ModuleWorkspace() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>();
   const [selected, setSelected] = useState<WorkspaceRow | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [showDemoBanner, setShowDemoBanner] = useState(false);
 
   const storageKey = `elevator-erp:workspace:${pathname}`;
 
@@ -241,6 +243,11 @@ export default function ModuleWorkspace() {
     }
     setRows(seedRows(pathname, config));
   }, [config, pathname, storageKey]);
+
+  useEffect(() => {
+    if (!config || process.env.NODE_ENV === 'production') return;
+    setShowDemoBanner(window.sessionStorage.getItem('elevator-erp:hide-demo-banner') !== '1');
+  }, [config]);
 
   const persist = (nextRows: WorkspaceRow[]) => {
     setRows(nextRows);
@@ -290,6 +297,7 @@ export default function ModuleWorkspace() {
     };
     persist([next, ...rows]);
     message.success(`Đã tạo ${config.entity}`);
+    setCreateOpen(false);
     return true;
   };
 
@@ -299,6 +307,16 @@ export default function ModuleWorkspace() {
     setSearch('');
     setStatus(undefined);
     message.success('Đã khôi phục dữ liệu mẫu');
+  };
+
+  const resetFilters = () => {
+    setSearch('');
+    setStatus(undefined);
+  };
+
+  const hideDemoBanner = () => {
+    setShowDemoBanner(false);
+    window.sessionStorage.setItem('elevator-erp:hide-demo-banner', '1');
   };
 
   const exportRows = () => {
@@ -451,18 +469,30 @@ export default function ModuleWorkspace() {
     <PageContainer
         className='erp-page-container'
         header={{
-          title: config.title,
-          subTitle: config.subtitle,
+          title: (
+            <div className='page-title-stack'>
+              <Typography.Title level={3}>{config.title}</Typography.Title>
+              <Typography.Text>{config.subtitle}</Typography.Text>
+            </div>
+          ),
+          extra: config.createEnabled ? (
+            <Button type='primary' icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+              Thêm {config.entity}
+            </Button>
+          ) : undefined,
           breadcrumb: {},
         }}
       >
-        <Alert
-          className='section-gap'
-          type='warning'
-          showIcon
-          message='Dữ liệu mô phỏng'
-          description='Chức năng này đang dùng dữ liệu mẫu lưu trên trình duyệt, chưa ghi vào PostgreSQL.'
-        />
+        {showDemoBanner && (
+          <Alert
+            className='section-gap demo-data-banner'
+            type='warning'
+            showIcon
+            closable
+            onClose={hideDemoBanner}
+            message='Đang sử dụng dữ liệu mô phỏng - dữ liệu chưa được lưu vào PostgreSQL.'
+          />
+        )}
 
         <Row gutter={[16, 16]}>
           {[
@@ -501,74 +531,9 @@ export default function ModuleWorkspace() {
               className='filter-select'
               options={config.statuses}
             />
+            <Button onClick={resetFilters}>Đặt lại</Button>
             <Button type='primary' icon={<FilterOutlined />}>Áp dụng</Button>
             <Button icon={<DownloadOutlined />} onClick={exportRows}>Xuất CSV</Button>
-            {config.createEnabled && (
-              <DrawerForm<WorkspaceForm>
-                title={`Thêm ${config.entity}`}
-                width={560}
-                trigger={<Button type='primary' icon={<PlusOutlined />}>Thêm mới</Button>}
-                onFinish={createRow}
-                initialValues={{
-                  status: config.statuses[0].value,
-                  owner: owners[0],
-                  date: dayjs().format('YYYY-MM-DD'),
-                  priority: 'Trung bình',
-                  progress: 0,
-                }}
-                drawerProps={{ destroyOnClose: true }}
-              >
-                <ProFormText
-                  name='code'
-                  label='Mã hồ sơ'
-                  placeholder='Để trống để hệ thống tự sinh mã'
-                />
-                <ProFormText
-                  name='title'
-                  label={`Tên ${config.entity}`}
-                  rules={[{ required: true, message: `Nhập tên ${config.entity}` }]}
-                />
-                <ProFormText name='related' label='Khách hàng / Dự án liên quan' rules={[{ required: true }]} />
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <ProFormSelect
-                      name='owner'
-                      label='Người phụ trách'
-                      options={owners.map((owner) => ({ value: owner, label: owner }))}
-                      rules={[{ required: true }]}
-                    />
-                  </Col>
-                  <Col span={12}>
-                    <ProFormSelect
-                      name='status'
-                      label='Trạng thái'
-                      options={config.statuses}
-                      rules={[{ required: true }]}
-                    />
-                  </Col>
-                </Row>
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <ProFormDatePicker name='date' label='Ngày dự kiến' width='md' rules={[{ required: true }]} />
-                  </Col>
-                  <Col span={12}>
-                    <ProFormSelect
-                      name='priority'
-                      label='Mức ưu tiên'
-                      options={['Cao', 'Trung bình', 'Thấp'].map((value) => ({ value, label: value }))}
-                      rules={[{ required: true }]}
-                    />
-                  </Col>
-                </Row>
-                {config.showAmount && (
-                  <ProFormDigit name='amount' label='Giá trị' min={0} fieldProps={{ addonAfter: 'VNĐ' }} />
-                )}
-                {config.showProgress && (
-                  <ProFormDigit name='progress' label='Tiến độ' min={0} max={100} fieldProps={{ addonAfter: '%' }} />
-                )}
-                <ProFormTextArea name='notes' label='Ghi chú' fieldProps={{ rows: 4 }} />
-              </DrawerForm>
-            )}
           </div>
         </ProCard>
 
@@ -579,6 +544,7 @@ export default function ModuleWorkspace() {
             columns={columns}
             search={false}
             cardBordered
+            headerTitle={`Danh sách ${config.entity}`}
             options={{ density: true, fullScreen: true, reload: resetData }}
             pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} bản ghi` }}
             scroll={{ x: 1180 }}
@@ -613,6 +579,74 @@ export default function ModuleWorkspace() {
             })}
           </Space>
         </div>
+
+        {config.createEnabled && (
+          <DrawerForm<WorkspaceForm>
+            title={`Thêm ${config.entity}`}
+            width={560}
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            onFinish={createRow}
+            initialValues={{
+              status: config.statuses[0].value,
+              owner: owners[0],
+              date: dayjs().format('YYYY-MM-DD'),
+              priority: 'Trung bình',
+              progress: 0,
+            }}
+            drawerProps={{ destroyOnClose: true }}
+          >
+            <ProFormText
+              name='code'
+              label='Mã hồ sơ'
+              placeholder='Để trống để hệ thống tự sinh mã'
+            />
+            <ProFormText
+              name='title'
+              label={`Tên ${config.entity}`}
+              rules={[{ required: true, message: `Nhập tên ${config.entity}` }]}
+            />
+            <ProFormText name='related' label='Khách hàng / Dự án liên quan' rules={[{ required: true }]} />
+            <Row gutter={16}>
+              <Col span={12}>
+                <ProFormSelect
+                  name='owner'
+                  label='Người phụ trách'
+                  options={owners.map((owner) => ({ value: owner, label: owner }))}
+                  rules={[{ required: true }]}
+                />
+              </Col>
+              <Col span={12}>
+                <ProFormSelect
+                  name='status'
+                  label='Trạng thái'
+                  options={config.statuses}
+                  rules={[{ required: true }]}
+                />
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={12}>
+                <ProFormDatePicker name='date' label='Ngày dự kiến' width='md' rules={[{ required: true }]} />
+              </Col>
+              <Col span={12}>
+                <ProFormSelect
+                  name='priority'
+                  label='Mức ưu tiên'
+                  options={['Cao', 'Trung bình', 'Thấp'].map((value) => ({ value, label: value }))}
+                  rules={[{ required: true }]}
+                />
+              </Col>
+            </Row>
+            {config.showAmount && (
+              <ProFormDigit name='amount' label='Giá trị' min={0} fieldProps={{ addonAfter: 'VNĐ' }} />
+            )}
+            {config.showProgress && (
+              <ProFormDigit name='progress' label='Tiến độ' min={0} max={100} fieldProps={{ addonAfter: '%' }} />
+            )}
+            <ProFormTextArea name='notes' label='Ghi chú' fieldProps={{ rows: 4 }} />
+          </DrawerForm>
+        )}
 
         <Drawer
           title={selected ? `${selected.code} · ${selected.title}` : 'Chi tiết'}

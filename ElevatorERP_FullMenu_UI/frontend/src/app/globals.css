@@ -165,6 +165,8 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0f1211;color:va
 .filter-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .filter-search{flex:1;min-width:260px;max-width:520px}
 .filter-select{width:220px}
+.demo-data-banner{padding:8px 14px!important;border-radius:8px!important}
+.demo-data-banner .ant-alert-message{font-size:13px;color:#594214}
 .form-section-heading{font-weight:700;font-size:15px;color:#1e3325;margin:4px 0 16px;padding-bottom:9px;border-bottom:1px solid #e6eee6}
 .native-textarea{display:block;width:100%;margin-top:8px;border:1px solid #d9dfe8;border-radius:9px;padding:10px 12px;resize:vertical;outline:none}
 .native-textarea:focus{border-color:var(--brand-600);box-shadow:0 0 0 2px rgba(0,136,72,.12)}
@@ -196,7 +198,7 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0f1211;color:va
 .roadmap-card .ant-timeline{margin-top:10px}
 
 /* Customer / care */
-.care-toolbar-card{box-shadow:none!important}.calendar-card .ant-pro-card-body{padding:12px 18px 18px!important}.calendar-event-list{padding:0;margin:0;list-style:none;display:grid;gap:2px}.calendar-event-list li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}.calendar-more{color:var(--brand-600)!important;font-weight:600}
+.care-toolbar-card{box-shadow:none!important}.calendar-card .ant-pro-card-body{padding:12px 18px 18px!important}.calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}.calendar-event-list{padding:0;margin:0;list-style:none;display:grid;gap:2px}.calendar-event-list li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}.calendar-more{color:var(--brand-600)!important;font-weight:600;cursor:pointer}
 .permission-note{background:linear-gradient(90deg,#f6fbf7,#fff)!important}.permission-note-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:var(--brand-50);color:var(--brand-600);font-size:19px}
 
 /* Catalog administration */
@@ -401,7 +403,7 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0f1211;color:va
 .ant-table-wrapper .ant-table-column-sorter-up.active,
 .ant-table-wrapper .ant-table-column-sorter-down.active{color:var(--brand-600)}
 .ant-table-wrapper .ant-table-tbody>tr>td{border-bottom-color:#e7eee8!important}
-.ant-table-wrapper .ant-table-tbody>tr:hover>td{background:rgba(22,160,93,.05)!important}
+.ant-table-wrapper .ant-table-tbody>tr:hover>td{background:rgba(22,160,93,.04)!important}
 .ant-table-wrapper .ant-table-tbody>tr.ant-table-row-selected>td{background:rgba(22,160,93,.08)!important}
 .ant-table-wrapper .ant-table-tbody>tr.ant-table-row-selected>td:first-child{box-shadow:inset 3px 0 0 #16a05d}
 .ant-table-wrapper .ant-table-cell-fix-right-first:after,
@@ -520,6 +522,6 @@ html[data-theme='dark'] .welcome-panel{background:linear-gradient(115deg,#14201b
 html[data-theme='dark'] .welcome-panel:before{background:linear-gradient(90deg,rgba(255,255,255,.025),transparent 45%,rgba(255,255,255,.05))}
 html[data-theme='dark'] .ant-table-wrapper .ant-table-thead>tr>th{color:#dce4df;background:#1b211e;border-bottom-color:#2a312e!important}
 html[data-theme='dark'] .ant-table-wrapper .ant-table-tbody>tr>td{border-bottom-color:#2a312e!important}
-html[data-theme='dark'] .ant-table-wrapper .ant-table-tbody>tr:hover>td{background:rgba(22,160,93,.08)!important}
+html[data-theme='dark'] .ant-table-wrapper .ant-table-tbody>tr:hover>td{background:rgba(22,160,93,.07)!important}
 html[data-theme='dark'] .ant-table-wrapper .ant-table-tbody>tr.ant-table-row-selected>td{background:rgba(22,160,93,.12)!important}
 html[data-theme='dark'] .ant-pro-table-list-toolbar-setting-item:hover{background:rgba(22,160,93,.16)!important;color:#66d08f!important}
