@@ -9,7 +9,15 @@
 ## Current Work
 - Validate post-fix behavior after removing JS stale-drop gate (`roundId < curRound`).
 - Enforce and monitor bet gate `prog >= 3` together with changing-shoe/bootstrap guards.
-- Investigate cases where UI still computes normally but JS does not place real chips.
+- Investigate and retest cases where UI computes normally but JS does not place all real chips.
+- Retest 30k split placement after JS chip-step validation patch:
+  - expected split: `20 + 10`,
+  - verify both chip steps reflect on target side,
+  - verify `[BETQ][DONE] ok=1` only when observed stake delta matches intended amount.
+- Retest popup open into game after watchdog patch:
+  - if `popup-frame` authority reaches `/player/webMain.jsp`,
+  - `ArmPopupTransitWatch(...)` must log `skip recovery reason=recent-game-signal`,
+  - no forced navigate to `https://new.wencheng.cc/home/thirdg.html`.
 - Re-verify CDP-only sequence append behavior after latest policy lock:
   - DOM should bootstrap only,
   - post-bootstrap append should come only from CDP/network winner packets.
@@ -25,6 +33,9 @@
 - Add stronger correlation by `jobId` between:
   - send/queue/run/done events,
   - pending row lifecycle in C# history.
+- Decide long-term C# behavior when JS reports partial split failure:
+  - if intended 30k but observed 20k, pending should reflect actual placed amount or be voided,
+  - do not finalize a 30k pending row as if full amount was accepted.
 - Keep stale-drop path disabled during current testing window.
 - Retest these reset paths:
   - `roadinfo-shoe-change`
@@ -52,6 +63,13 @@
   - finalizes only one row,
   - keeps the rest pending,
   - never writes `RESET-DUP/B o qua`.
+- Confirm chip 10k scan and placement:
+  - `cwScanChips()` should expose denomination key `10` in DOM mode,
+  - if visible but placement fails, logs should show target-click/stake-reflect failure, not scan failure.
+- Confirm popup watchdog does not reload a successful iframe game:
+  - accepted authority tick exists before watchdog timeout,
+  - watchdog skips recovery,
+  - wrapper URL staying at `qh61.com/home/thirdg.html` is not treated as failure by itself.
 
 ## Need Retest
 - First app open into table:
@@ -134,3 +152,13 @@
   - recovery attempt count and outcome.
 - Add UI status hint when running with stale carried snapshot only:
   - distinguish "live game authority active" vs "carrying previous snapshot while context lost".
+
+## Update (2026-07-08)
+- Done:
+  - identified why intended 30k could become only 20k real placement: split plan reached 20k, then 10k step did not reflect on target side.
+  - added JS validation/retry around each DOM split chip click in `v4_js_xoc_dia_live.js`.
+  - identified why app reloaded after successful game load: popup watchdog looked only at top-level URL and ignored fresh iframe authority/tick.
+  - patched `MainWindow.xaml.cs` so watchdog skips recovery when `HasRecentGameSignal(...)` is true.
+- Need live retest:
+  - run one 30k bet and confirm real table shows full 30k before confirm/finalize,
+  - run one app login/open-game flow and confirm no second forced load after frame authority starts.

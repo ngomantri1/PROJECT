@@ -946,7 +946,6 @@ Ví dụ không hợp lệ:
             public string BetSeq { get; set; } = "";       // giá trị ô "CHUỖI CẦU"
             public string BetPatterns { get; set; } = "";  // giá trị ô "CÁC THẾ CẦU"
             public string MoneyStrategy { get; set; } = "IncreaseWhenLose";//IncreaseWhenLose
-            public bool S7ResetOnProfit { get; set; } = true;
             public bool AutoResetStakeOnNonNegativeWin { get; set; } = false;
             public double CutProfit { get; set; } = 0; // 0 = tắt cắt lãi
             public double CutLoss { get; set; } = 0; // 0 = tắt cắt lỗ
@@ -3018,10 +3017,6 @@ try{
                 SyncDecisionSecondsFromConfig();
                 if (CmbMoneyStrategy != null) ApplyMoneyStrategyToUI(_cfg.MoneyStrategy ?? "IncreaseWhenLose");
                 LoadStakeCsvForCurrentMoneyStrategy();
-                if (ChkS7ResetOnProfit != null) ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
-                if (!IsAnyTabRunning() || IsActiveTabRunning())
-                    MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
-                UpdateS7ResetOptionUI();
 
                 if (TxtSideRatio != null)
                 {
@@ -3092,8 +3087,6 @@ try{
             cfg.UseTrial = IsTrialModeRequestedOrActive();
             cfg.LeaseClientId = _leaseClientId;
             cfg.MoneyStrategy = GetMoneyStrategyFromUI();
-            if (ChkS7ResetOnProfit != null)
-                cfg.S7ResetOnProfit = (ChkS7ResetOnProfit.IsChecked == true);
             if (ChkAutoResetStakeOnNonNegativeWin != null)
                 cfg.AutoResetStakeOnNonNegativeWin = (ChkAutoResetStakeOnNonNegativeWin.IsChecked == true);
 
@@ -4357,36 +4350,6 @@ try{
                    ?? "IncreaseWhenLose";
         }
 
-        private void UpdateS7ResetOptionUI()
-        {
-            try
-            {
-                var isS7 = string.Equals(GetMoneyStrategyFromUI(), "WinUpLoseKeep", StringComparison.OrdinalIgnoreCase);
-                if (ChkS7ResetOnProfit != null)
-                {
-                    ChkS7ResetOnProfit.Visibility = isS7 ? Visibility.Visible : Visibility.Collapsed;
-                    if (isS7)
-                        ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
-                }
-                if (!IsAnyTabRunning() || IsActiveTabRunning())
-                    MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
-            }
-            catch { }
-        }
-
-        private async void ChkS7ResetOnProfit_Changed(object sender, RoutedEventArgs e)
-        {
-            if (!_uiReady || _tabSwitching) return;
-            _cfg.S7ResetOnProfit = (ChkS7ResetOnProfit?.IsChecked == true);
-            if (!IsAnyTabRunning() || IsActiveTabRunning())
-            {
-                MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
-                MoneyHelper.ResetTempProfitForWinUpLoseKeep();
-            }
-
-                await SaveConfigAsync();
-        }
-
         private async void ChkAutoResetStakeOnNonNegativeWin_Changed(object sender, RoutedEventArgs e)
         {
             if (!_uiReady || _tabSwitching) return;
@@ -4400,11 +4363,8 @@ try{
         {
             if (!_uiReady || _tabSwitching) return;
             _cfg.MoneyStrategy = GetMoneyStrategyFromUI();
-            if (!IsAnyTabRunning() || IsActiveTabRunning())
-                BaccaratSexyCasino2.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             // NEW: mỗi “Quản lý vốn” có chuỗi tiền riêng → nạp lại ô StakeCsv
             LoadStakeCsvForCurrentMoneyStrategy();
-            UpdateS7ResetOptionUI();
             await SaveConfigAsync();
             Log($"[MoneyStrategy] updated: {_cfg.MoneyStrategy}");
         }
@@ -17461,7 +17421,6 @@ try{
             tab.ActiveTask = task;
             _dec = new DecisionState(); // reset trạng thái cho task mới
             tab.DecisionState = new DecisionState();
-            BaccaratSexyCasino2.Tasks.MoneyHelper.ResetTempProfitForWinUpLoseKeep();
             var ctx = BuildContext(tab, runId, useRawWinAmount);
             ctx.Log?.Invoke($"[TASK][RUN] start | tab={tab.Id} | run={runId} | task={task.DisplayName}");
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
@@ -17667,7 +17626,6 @@ try{
                 activeTab.RunAutoResetStakeOnNonNegativeWin = _cfg.AutoResetStakeOnNonNegativeWin;
                 activeTab.AutoResetStakeRequested = false;
                 activeTab.IsRunning = true;
-                MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
                 _winTotal = activeTab.WinTotal;
                 if (LblWin != null) LblWin.Text = activeTab.WinTotal.ToString("N0");
                 _dec = new DecisionState();
@@ -18233,11 +18191,6 @@ try{
 
             tab.WinTotal += net;
             tab.Stats.TotalProfit += net;
-            try
-            {
-                BaccaratSexyCasino2.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
-            }
-            catch { /* ignore */ }
 
             if (tab.RunAutoResetStakeOnNonNegativeWin && tab.WinTotal >= 0)
             {

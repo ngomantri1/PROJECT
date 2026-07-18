@@ -95,6 +95,36 @@
   - optimistic pending row is still created from `PlaceBet(...)`,
   - if JS returns `ok=0` or click delta is zero, UI/history can still drift from real chip placement.
 
+## Latest Updates (2026-07-08)
+- Investigated live bet execution in `v4_js_xoc_dia_live.js`:
+  - `cwBet(side, amount)` receives `amount` in chip units from app (`30` means 30k, `100` means 100k).
+  - DOM mode treats amount as raw chip unit (`X = raw`).
+  - non-DOM/Cocos mode scales by 1000 (`X = raw * 1000`).
+  - chip plan is built greedily from visible denominations descending.
+  - Example: 30k is expected to split as `20 + 10` when both chips are visible.
+  - Example: 100k should use chip `100` if visible; otherwise split by available chips.
+- Confirm button behavior:
+  - JS does not simply click confirm by time.
+  - DOM flow checks whether stake/side amount changed after chip placement.
+  - Confirm is allowed only after the selected bet amount is observed or accepted by the game UI.
+- Live log `D:\NOTE\OneDrive\Desktop\log\20260708.log` showed 30k intended but only 20k real:
+  - C# logged send/pending amount 30 optimistically.
+  - JS split intent into `20 + 10`.
+  - the `10` chip step failed to reflect on the target side, so JS returned `ok=0`.
+  - likely not a chip-scan failure because missing chip scan would log "không focus được chip 10"; observed log was "click cửa không ghi nhận tiền".
+- Patched `v4_js_xoc_dia_live.js`:
+  - DOM split placement retries each chip step,
+  - validates side/total stake change after each split click,
+  - fails clearly when a split denomination does not reflect,
+  - confirm fallback can succeed when expected stake is already visible even if confirm button is not found.
+- Investigated app log `%LocalAppData%\BaccaratSexyCasino2\logs\20260708.log` for popup reload issue:
+  - game frame reached `webMain.jsp` / `singleBacTable.jsp` authority and emitted accepted ticks,
+  - popup watchdog still navigated top-level popup back to `https://new.wencheng.cc/home/thirdg.html`,
+  - root cause: `ArmPopupTransitWatch(...)` checked only top-level `CoreWebView2.Source`, while the actual game lived inside a child frame.
+- Patched `MainWindow.xaml.cs`:
+  - `ArmPopupTransitWatch(...)` now skips recovery if `HasRecentGameSignal(...)` reports a fresh game tick/snapshot.
+  - This prevents killing a valid iframe game session just because the wrapper URL remains `thirdg.html`.
+
 ## Coding Rules
 - Do not let JS local/fallback become authority when C# already has authority.
 - Do not use network/text fallback as pool authority for Canvas.
@@ -120,6 +150,8 @@
   - valid pending rows must not be lost,
   - DOM fallback must not use wrong table.
 - Bet send and bet execution must remain on a consistent round basis, especially if stale guards are re-enabled later.
+- Popup transit watchdog must treat recent frame authority/tick as success, not only top-level popup URL.
+- C# pending/history must not treat `[BET-SEND][OK]` as proof that money reached the game table.
 
 ## WebSocket / Network Flow
 - JS captures WebSocket/XHR hints and sends `abx: net_probe`.

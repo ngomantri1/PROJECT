@@ -145,6 +145,30 @@
 - Important diagnostic interpretation:
   - `BET ACK` currently means JS queue job finished, not guaranteed game/server accepted money.
 
+## Bet Execution / Chip Split Notes (2026-07-08)
+- `TaskUtil.PlaceBet(...)` sends an intent amount in app chip units:
+  - `30` means 30k,
+  - `100` means 100k.
+- `v4_js_xoc_dia_live.js` owns actual chip execution:
+  - `cwBet(side, amount)` normalizes amount,
+  - scans available chip denominations,
+  - builds a greedy split plan from largest visible denomination to smallest,
+  - focuses a chip denomination, then clicks the target betting area.
+- Runtime denomination interpretation:
+  - DOM mode: raw amount is already chip unit (`30` -> 30),
+  - non-DOM/Cocos mode: raw amount is scaled to casino numeric value (`30` -> 30000).
+- Typical split examples:
+  - 30k -> `20 + 10` if no exact 30 chip exists and both chips are visible,
+  - 100k -> `100` if chip 100 is visible, otherwise split by available chips.
+- Confirm flow:
+  - JS validates visible stake movement after chip clicks,
+  - confirm button should be clicked only after the table reflects the intended side amount,
+  - missing confirm button can be tolerated only when the expected stake is already visible.
+- Diagnostic interpretation:
+  - `[BET-SEND][OK]` means C# sent/queued the intent and may have recorded pending optimistically.
+  - `[BETQ][DONE] ok=0` means JS execution failed or could not prove real placement.
+  - `click cửa không ghi nhận tiền` for `denom=10` means the chip step did not reflect on the target side; this is different from not finding/scanning chip 10.
+
 ## Popup Refresh / Context Guard (2026-05-23)
 - `MainWindow.xaml.cs` popup flow now keeps local refresh state:
   - `_popupRefreshArmed`
@@ -161,6 +185,22 @@
 - Operational gap still open:
   - if provider/site drops context from `webMain.jsp` to `gamehall/thirdg` and never returns to game iframe,
   - system currently keeps last accepted snapshot/tick loop but has no forced auto-recovery to re-enter the game frame.
+
+## Popup Transit Watchdog (2026-07-08)
+- `NewWindowRequested(...)` can defer popup activation when the opened target is a wrapper/gateway URL.
+- `PopupWeb_NavigationCompleted(...)` may arm `ArmPopupTransitWatch(...)` while the top-level popup URL is still `thirdg.html`.
+- Important WebView2 detail:
+  - `CoreWebView2.Source` is only the top-level popup URL,
+  - the real game can already be active in a child frame at `/player/webMain.jsp` with a nested `/player/singleBacTable.jsp`.
+- Previous failure mode:
+  - watchdog waited `PopupTransitWatchdogSeconds` (12s),
+  - top-level source still looked non-game,
+  - watchdog called `Stop()` and `Navigate(recoverUrl)`,
+  - this unloaded a valid game iframe and left the popup stuck on `new.wencheng.cc/home/thirdg.html`.
+- Current guard:
+  - before recovery navigation, `ArmPopupTransitWatch(...)` also checks `HasRecentGameSignal(...)`,
+  - recent accepted game tick/snapshot is considered success,
+  - recovery is skipped and watchdog is cancelled when frame authority is already live.
 
 ## UI Validation Notes (2026-05-20)
 - Pattern validator limits in `MainWindow.xaml.cs`:
