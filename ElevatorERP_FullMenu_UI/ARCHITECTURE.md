@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-> Current architecture map plus the approved target direction. Last source review: **2026-07-18**.
+> Current architecture map plus the approved target direction. Last source review: **2026-07-19**.
 
 ## 1. Current repository structure
 
@@ -35,6 +35,7 @@ ElevatorERP_FullMenu_UI/
 │       ├── components/AppShell.tsx
 │       ├── components/AppFrame.tsx
 │       ├── components/AppProviders.tsx
+│       ├── components/LocationPickerMap.tsx
 │       ├── components/ModuleWorkspace.tsx
 │       └── lib/api.ts
 ├── deploy/nginx/default.conf
@@ -104,10 +105,14 @@ Contains all current entities:
 - `RolePermission`
 - `Customer`
 - `CareActivity`
+- `CatalogCategory`
+- `CatalogOption`
 - `AuditLog`
 - `StoredFile`
 
 `Entity` provides `Guid Id`, UTC timestamps, `IsDeleted`, and `IsDemo`.
+
+`Customer` currently includes basic registration data plus `CustomerType`, `ElevatorType`, optional latitude/longitude, optional location accuracy metadata and optional cleaned location label.
 
 ### `backend/Infrastructure/AppDbContext.cs`
 
@@ -121,8 +126,9 @@ Contains all current entities:
 - Calls `Database.EnsureCreatedAsync()`.
 - Exits unless `EnableDemoSeed=true`.
 - Seeds departments, permissions, roles, users, 20 customers and 45 care activities.
-- Seeds shared catalog categories/options for customer statuses, lost reasons, sources and customer types.
+- Seeds shared catalog categories/options for customer statuses, lost reasons, sources, customer types and elevator types.
 - Updates existing system catalog options on startup when their label/color/sort order changes.
+- Uses `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for prototype customer location/elevator-type columns because EF Core migrations are not in place yet. This is a local prototype workaround, not the target migration strategy.
 - Uses deterministic sample random seed.
 
 ### `backend/Security/SecurityServices.cs`
@@ -172,8 +178,9 @@ Only routes with an explicit `permission` property are currently filtered. Most 
 
 - `app/login/page.tsx`: cookie login.
 - `app/page.tsx`: dashboard from `/dashboard`.
-- `app/customers/page.tsx`: customer list/filter/create.
-- `app/customers/page.tsx`: also includes customer CSV export, status/source/owner/area filters, table actions and catalog-backed status tags.
+- `app/customers/page.tsx`: customer list/search/advanced-filter/create/edit/status update.
+- `app/customers/page.tsx`: also includes customer CSV export, catalog-backed status/group/elevator-type tags, table column settings, compact KPI/filter/table layout, address/location pin display and the customer location modal.
+- `components/LocationPickerMap.tsx`: Leaflet/OpenStreetMap map wrapper for picking a customer location by map click and displaying the current pin.
 - `app/care/page.tsx`: care list/calendar/create/complete, CSV export and month/year calendar navigation.
 - `app/admin/users/page.tsx`: user/role list and role assignment.
 - `app/admin/catalogs/page.tsx`: shared catalog category/option administration, including active toggle and sort order management.
@@ -204,6 +211,8 @@ GET  /api/auth/me
 GET  /api/dashboard
 GET  /api/customers
 POST /api/customers
+PUT  /api/customers/{id}
+PUT  /api/customers/{id}/status
 GET  /api/care-activities
 POST /api/care-activities
 PUT  /api/care-activities/{id}/complete
@@ -216,6 +225,8 @@ GET  /api/admin/roles
 GET  /api/admin/users
 PUT  /api/admin/users/{id}/roles
 POST /api/files/upload
+GET  /api/geo/search
+POST /api/geo/resolve-link
 ```
 
 ## 6. Dependency direction
@@ -311,6 +322,47 @@ Drawer form
 → frontend re-fetches customer list
 ```
 
+### Customer edit and inline status
+
+```text
+Customer list row
+→ edit icon opens the same drawer with existing values
+→ PUT /api/customers/{id}
+→ backend validates required fields and owner/data-scope update permission
+→ update Customer + AuditLog
+→ SaveChanges
+→ frontend re-fetches customer list
+```
+
+```text
+Customer status badge
+→ dropdown selects catalog status
+→ PUT /api/customers/{id}/status
+→ backend checks update permission/ownership
+→ update status + AuditLog
+→ SaveChanges
+→ frontend re-fetches customer list
+```
+
+The current status endpoint writes the selected status directly. Full transition rules and failure reasons are not implemented yet.
+
+### Customer location pinning
+
+```text
+Customer drawer
+→ Ghim vị trí opens Modal
+→ AutoComplete calls GET /api/geo/search?q=...&area=...
+→ backend calls OpenStreetMap/Nominatim with Vietnam and optional area bias
+→ user selects suggestion, clicks the map, uses browser geolocation, pastes Google Maps link/coordinates, or manually edits coordinates
+→ pasted links/coordinates call POST /api/geo/resolve-link
+→ frontend stores latitude/longitude/locationLabel in the customer form
+→ POST/PUT /api/customers persists location metadata
+→ customer table renders a small pin inside the Địa chỉ column
+→ pin opens Google Maps in a new tab by coordinates
+```
+
+The UI intentionally hides radius/accuracy from users. `LocationAccuracyMeters` remains only for compatibility and future dispatch/geofence use.
+
 ### Care completion
 
 ```text
@@ -377,6 +429,11 @@ Catalog administration page
 - Filter bars contain search/filter/reset/apply/export only.
 - Table styling is centralized in `globals.css` for sorter visibility, sticky/fixed-column shadows, hover/selected colors, toolbar icon sizing and typography.
 - The customer table uses separate columns for customer code, name, phone and email to support future export/filter workflows.
+- Customer search auto-loads after debounce and uses normalized text matching in the backend response set.
+- Customer advanced filters are in a right drawer and include status, customer group, elevator type, source, owner, area/address and created date range.
+- Customer list default ordering is numeric customer code descending from the backend; the code column shows default descending sort in the table.
+- Customer table column settings hide **Nhóm KH** and **Loại thang** by default, while still allowing the user to enable them from the gear menu.
+- The customer location modal uses a compact top search/link area, a one-line coordinate strip and a Leaflet map. Vĩ độ/Kinh độ are read-only by default and switch to manual input only when the user chooses **Sửa tọa độ**.
 
 ### Target
 

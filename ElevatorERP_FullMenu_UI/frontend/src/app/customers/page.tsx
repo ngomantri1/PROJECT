@@ -13,12 +13,15 @@ import {
   Dropdown,
   Drawer,
   DatePicker,
+  Empty,
   Input,
+  InputNumber,
   List,
   Modal,
   Row,
   Select,
   Space,
+  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -28,15 +31,21 @@ import {
   AimOutlined,
   BankOutlined,
   CalendarOutlined,
+  CameraOutlined,
   CheckOutlined,
+  CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EllipsisOutlined,
   EnvironmentOutlined,
   EditOutlined,
+  FileImageOutlined,
+  FilePdfOutlined,
   FileProtectOutlined,
   FileTextOutlined,
   FilterOutlined,
+  LinkOutlined,
+  PaperClipOutlined,
   PhoneOutlined,
   PlusOutlined,
   PushpinOutlined,
@@ -67,6 +76,7 @@ import { api } from '@/lib/api';
 import { exportCsv } from '@/lib/exportCsv';
 
 const LocationPickerMap = dynamic(() => import('@/components/LocationPickerMap'), { ssr: false });
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 type CustomerRow = {
   id: string;
@@ -86,6 +96,8 @@ type CustomerRow = {
   source: string;
   owner: string;
   status: string;
+  technicalSpecsJson?: string;
+  attachmentLinksJson?: string;
   createdAt?: string;
 };
 
@@ -104,6 +116,8 @@ type CustomerForm = {
   locationLabel?: string;
   notes?: string;
   status: string;
+  technicalSpecsJson?: string;
+  attachmentLinksJson?: string;
 };
 
 type CustomerLocation = {
@@ -111,6 +125,50 @@ type CustomerLocation = {
   longitude: number;
   accuracyMeters?: number;
   label?: string;
+};
+
+type CustomerSaveResponse = {
+  id: string;
+  code: string;
+};
+
+type FileUploadResponse = {
+  id: string;
+  originalName: string;
+  sizeBytes: number;
+};
+
+type ElevatorFloorHeight = {
+  id: string;
+  floorName: string;
+  heightMm?: number;
+};
+
+type ElevatorSpec = {
+  id: string;
+  name: string;
+  floors?: number;
+  capacityKg?: number;
+  elevatorType?: string;
+  counterweightPosition?: string;
+  shaftWidthMm?: number;
+  shaftDepthMm?: number;
+  pitDepthMm?: number;
+  machineRoomHeightMm?: number;
+  overheadHeightMm?: number;
+  floorHeights: ElevatorFloorHeight[];
+  technicalNotes?: string;
+};
+
+type CustomerAttachment = {
+  id: string;
+  storedFileId?: string;
+  name: string;
+  type: 'IMAGE' | 'DOCUMENT' | 'LINK';
+  category: string;
+  sizeBytes?: number;
+  url?: string;
+  createdAt: string;
 };
 
 type GeoLocationSuggestion = {
@@ -185,6 +243,14 @@ const fallbackElevatorTypeOptions: CatalogOption[] = [
   { code: 'GLASS', label: 'Thang kính', color: 'blue' },
 ];
 
+const counterweightOptions = [
+  { value: 'BACK', label: 'Sau' },
+  { value: 'SIDE', label: 'Hông' },
+  { value: 'NONE', label: 'Không đối trọng' },
+];
+
+const attachmentCategoryOptions = ['Ảnh khảo sát', 'Bản vẽ', 'Nhu cầu khách hàng', 'Tài liệu pháp lý', 'Khác'];
+
 const kpiGroupByTone: Record<string, string | undefined> = {
   blue: undefined,
   cyan: 'new',
@@ -213,13 +279,68 @@ function CustomerTypeTag({ value, typeOptions }: { value: string; typeOptions: C
   return <CatalogTag value={value} options={typeOptions} />;
 }
 
+function createId(prefix: string) {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createElevatorSpec(index: number): ElevatorSpec {
+  return {
+    id: createId('elevator'),
+    name: `Thang máy ${index}`,
+    floors: 2,
+    counterweightPosition: 'BACK',
+    floorHeights: [
+      { id: createId('floor'), floorName: 'Tầng 1', heightMm: 3600 },
+      { id: createId('floor'), floorName: 'Tầng 2', heightMm: 3600 },
+    ],
+  };
+}
+
+function cloneElevatorSpec(source: ElevatorSpec, index: number): ElevatorSpec {
+  return {
+    ...source,
+    id: createId('elevator'),
+    name: `${source.name || `Thang máy ${index}`} - Bản sao`,
+    floorHeights: source.floorHeights.map((floor) => ({ ...floor, id: createId('floor') })),
+  };
+}
+
+function formatFileSize(sizeBytes?: number) {
+  if (!sizeBytes) return '';
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${Math.round(sizeBytes / 1024)} KB`;
+  return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function parseJsonArray<T>(value?: string): T[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function Customers() {
   const router = useRouter();
   const customerFormRef = useRef<ProFormInstance<CustomerForm> | undefined>(undefined);
+  const attachmentFileInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentFileByIdRef = useRef<Record<string, File>>({});
   const [data, setData] = useState<CustomerRow[]>([]);
   const [open, setOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow>();
   const [customerLocation, setCustomerLocation] = useState<CustomerLocation>();
+  const [technicalDrawerOpen, setTechnicalDrawerOpen] = useState(false);
+  const [elevatorSpecs, setElevatorSpecs] = useState<ElevatorSpec[]>([]);
+  const [activeElevatorSpecId, setActiveElevatorSpecId] = useState<string>();
+  const [attachments, setAttachments] = useState<CustomerAttachment[]>([]);
+  const [attachmentLinkModalOpen, setAttachmentLinkModalOpen] = useState(false);
+  const [attachmentLinkDraft, setAttachmentLinkDraft] = useState('');
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [draftLocation, setDraftLocation] = useState<CustomerLocation>();
   const [locationSearch, setLocationSearch] = useState('');
@@ -255,6 +376,7 @@ export default function Customers() {
   const statusOptions = catalogStatuses.length ? catalogStatuses : fallbackStatusOptions;
   const customerTypeOptions = catalogCustomerTypes.length ? catalogCustomerTypes : fallbackCustomerTypeOptions;
   const elevatorTypeOptions = catalogElevatorTypes.length ? catalogElevatorTypes : fallbackElevatorTypeOptions;
+  const activeElevatorSpec = elevatorSpecs.find((item) => item.id === activeElevatorSpecId) ?? elevatorSpecs[0];
   const locationSuggestionOptions = useMemo(
     () => locationSuggestions.map((item) => ({
       value: item.id,
@@ -475,6 +597,10 @@ export default function Customers() {
   const openCreateDrawer = () => {
     setEditingCustomer(undefined);
     setCustomerLocation(undefined);
+    setElevatorSpecs([]);
+    setActiveElevatorSpecId(undefined);
+    setAttachments([]);
+    attachmentFileByIdRef.current = {};
     setOpen(true);
   };
 
@@ -490,7 +616,146 @@ export default function Customers() {
         }
         : undefined,
     );
+    const specs = parseJsonArray<ElevatorSpec>(customer.technicalSpecsJson);
+    setElevatorSpecs(specs);
+    setActiveElevatorSpecId(specs[0]?.id);
+    setAttachments(parseJsonArray<CustomerAttachment>(customer.attachmentLinksJson));
+    attachmentFileByIdRef.current = {};
     setOpen(true);
+  };
+
+  const resetSupplementalCustomerData = () => {
+    setTechnicalDrawerOpen(false);
+    setElevatorSpecs([]);
+    setActiveElevatorSpecId(undefined);
+    setAttachments([]);
+    attachmentFileByIdRef.current = {};
+    setAttachmentLinkModalOpen(false);
+    setAttachmentLinkDraft('');
+  };
+
+  const openTechnicalConfig = () => {
+    if (!elevatorSpecs.length) {
+      const firstSpec = createElevatorSpec(1);
+      setElevatorSpecs([firstSpec]);
+      setActiveElevatorSpecId(firstSpec.id);
+    } else if (!activeElevatorSpecId || !elevatorSpecs.some((item) => item.id === activeElevatorSpecId)) {
+      setActiveElevatorSpecId(elevatorSpecs[0].id);
+    }
+    setTechnicalDrawerOpen(true);
+  };
+
+  const updateElevatorSpec = (id: string, patch: Partial<ElevatorSpec>) => {
+    setElevatorSpecs((items) => items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+
+  const addElevatorSpec = () => {
+    setElevatorSpecs((items) => {
+      const next = createElevatorSpec(items.length + 1);
+      setActiveElevatorSpecId(next.id);
+      return [...items, next];
+    });
+  };
+
+  const duplicateElevatorSpec = (id: string) => {
+    setElevatorSpecs((items) => {
+      const source = items.find((item) => item.id === id);
+      if (!source) return items;
+      const copy = cloneElevatorSpec(source, items.length + 1);
+      setActiveElevatorSpecId(copy.id);
+      message.success('Đã nhân bản cấu hình thang.');
+      return [...items, copy];
+    });
+  };
+
+  const removeElevatorSpec = (id: string) => {
+    setElevatorSpecs((items) => {
+      const next = items.filter((item) => item.id !== id);
+      setActiveElevatorSpecId(next[0]?.id);
+      if (!next.length) setTechnicalDrawerOpen(false);
+      return next;
+    });
+  };
+
+  const addElevatorFloor = (specId: string) => {
+    setElevatorSpecs((items) => items.map((item) => {
+      if (item.id !== specId) return item;
+      const nextFloor = item.floorHeights.length + 1;
+      return {
+        ...item,
+        floors: Math.max(item.floors ?? 0, nextFloor),
+        floorHeights: [
+          ...item.floorHeights,
+          { id: createId('floor'), floorName: `Tầng ${nextFloor}`, heightMm: 3600 },
+        ],
+      };
+    }));
+  };
+
+  const updateElevatorFloor = (specId: string, floorId: string, patch: Partial<ElevatorFloorHeight>) => {
+    setElevatorSpecs((items) => items.map((item) => (
+      item.id === specId
+        ? {
+          ...item,
+          floorHeights: item.floorHeights.map((floor) => (floor.id === floorId ? { ...floor, ...patch } : floor)),
+        }
+        : item
+    )));
+  };
+
+  const removeElevatorFloor = (specId: string, floorId: string) => {
+    setElevatorSpecs((items) => items.map((item) => (
+      item.id === specId
+        ? { ...item, floorHeights: item.floorHeights.filter((floor) => floor.id !== floorId) }
+        : item
+    )));
+  };
+
+  const addAttachmentFiles = (files: FileList | null, source: 'file' | 'camera') => {
+    if (!files?.length) return;
+    const nextAttachments = Array.from(files).map<CustomerAttachment>((file) => {
+      const id = createId('attachment');
+      attachmentFileByIdRef.current[id] = file;
+      return {
+        id,
+        name: file.name,
+        type: file.type.startsWith('image/') ? 'IMAGE' : 'DOCUMENT',
+        category: source === 'camera' ? 'Ảnh khảo sát' : 'Khác',
+        sizeBytes: file.size,
+        createdAt: new Date().toISOString(),
+      };
+    });
+    setAttachments((items) => [...items, ...nextAttachments]);
+    message.success(`Đã thêm ${nextAttachments.length} tài liệu/ảnh vào hồ sơ.`);
+  };
+
+  const addAttachmentLink = () => {
+    const url = attachmentLinkDraft.trim();
+    if (!url) {
+      message.warning('Vui lòng nhập đường dẫn tài liệu.');
+      return;
+    }
+
+    try {
+      new URL(url);
+    } catch {
+      message.error('Đường dẫn không hợp lệ.');
+      return;
+    }
+
+    setAttachments((items) => [
+      ...items,
+      {
+        id: createId('attachment'),
+        name: url.replace(/^https?:\/\//, ''),
+        type: 'LINK',
+        category: 'Nhu cầu khách hàng',
+        url,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    setAttachmentLinkDraft('');
+    setAttachmentLinkModalOpen(false);
   };
 
   const reverseLookupLocation = async (latitude: number, longitude: number) => {
@@ -778,6 +1043,44 @@ export default function Customers() {
     ) : <Typography.Text type='secondary'>—</Typography.Text>;
   };
 
+  const uploadPendingAttachments = async (customerId: string, currentAttachments: CustomerAttachment[]) => {
+    const pendingAttachments = currentAttachments.filter((attachment) =>
+      !attachment.storedFileId && attachmentFileByIdRef.current[attachment.id],
+    );
+    if (!pendingAttachments.length) return currentAttachments;
+
+    const uploadedAttachments = await Promise.all(pendingAttachments.map(async (attachment) => {
+      const file = attachmentFileByIdRef.current[attachment.id];
+      const formData = new FormData();
+      formData.append('file', file);
+      const params = new URLSearchParams({ module: 'customers', recordId: customerId });
+      const response = await fetch(`${API_BASE}/files/upload?${params.toString()}`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      if (response.status === 401) {
+        if (typeof window !== 'undefined' && !location.pathname.startsWith('/login')) location.href = '/login';
+        throw new Error('Chưa đăng nhập');
+      }
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP ${response.status}`);
+      }
+      const uploaded = await response.json() as FileUploadResponse;
+      delete attachmentFileByIdRef.current[attachment.id];
+      return {
+        ...attachment,
+        storedFileId: uploaded.id,
+        name: uploaded.originalName || attachment.name,
+        sizeBytes: uploaded.sizeBytes || attachment.sizeBytes,
+      };
+    }));
+
+    const uploadedById = new Map(uploadedAttachments.map((attachment) => [attachment.id, attachment]));
+    return currentAttachments.map((attachment) => uploadedById.get(attachment.id) ?? attachment);
+  };
+
   const columns: ProColumns<CustomerRow>[] = [
     {
       title: 'Mã KH',
@@ -922,24 +1225,38 @@ export default function Customers() {
   ];
 
   const save = async (values: CustomerForm) => {
-    const payload = {
+    const buildPayload = (currentAttachments: CustomerAttachment[]) => ({
       ...values,
       latitude: customerLocation?.latitude ?? null,
       longitude: customerLocation?.longitude ?? null,
       locationAccuracyMeters: customerLocation?.accuracyMeters ?? null,
       locationLabel: customerLocation?.label ?? null,
-    };
+      technicalSpecsJson: elevatorSpecs.length ? JSON.stringify(elevatorSpecs) : null,
+      attachmentLinksJson: currentAttachments.length ? JSON.stringify(currentAttachments) : null,
+    });
+
     try {
+      let savedCustomerId = editingCustomer?.id;
       if (editingCustomer) {
-        await api(`/customers/${editingCustomer.id}`, { method: 'PUT', body: JSON.stringify(payload) });
-        message.success('Đã cập nhật đăng ký khách hàng');
+        await api(`/customers/${editingCustomer.id}`, { method: 'PUT', body: JSON.stringify(buildPayload(attachments)) });
       } else {
-        await api('/customers', { method: 'POST', body: JSON.stringify(payload) });
-        message.success('Đã tạo đăng ký khách hàng');
+        const created = await api<CustomerSaveResponse>('/customers', { method: 'POST', body: JSON.stringify(buildPayload(attachments)) });
+        savedCustomerId = created.id;
       }
+
+      if (savedCustomerId) {
+        const uploadedAttachments = await uploadPendingAttachments(savedCustomerId, attachments);
+        if (uploadedAttachments !== attachments) {
+          await api(`/customers/${savedCustomerId}`, { method: 'PUT', body: JSON.stringify(buildPayload(uploadedAttachments)) });
+          setAttachments(uploadedAttachments);
+        }
+      }
+
+      message.success(editingCustomer ? 'Đã cập nhật đăng ký khách hàng' : 'Đã tạo đăng ký khách hàng');
       setOpen(false);
       setEditingCustomer(undefined);
       setCustomerLocation(undefined);
+      resetSupplementalCustomerData();
       await load();
       return true;
     } catch (error) {
@@ -1222,9 +1539,10 @@ export default function Customers() {
             if (!visible) {
               setEditingCustomer(undefined);
               setCustomerLocation(undefined);
+              resetSupplementalCustomerData();
             }
           }}
-          width={760}
+          width='min(1120px, calc(100vw - 40px))'
           initialValues={editingCustomer ? {
             customerType: editingCustomer.customerType,
             name: editingCustomer.name,
@@ -1241,91 +1559,445 @@ export default function Customers() {
           drawerProps={{ destroyOnClose: true, className: 'customer-form-drawer' }}
           submitter={{ searchConfig: { submitText: editingCustomer ? 'Lưu thay đổi' : 'Lưu đăng ký', resetText: 'Hủy' } }}
         >
-          <div className='form-section-heading'>Thông tin khách hàng</div>
-          <ProFormRadio.Group
-            name='customerType'
-            label='Nhóm khách hàng'
-            formItemProps={{ className: 'customer-type-field' }}
-            options={customerTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
-          />
-          <ProForm.Group>
-            <ProFormText
-              name='name'
-              label='Tên khách hàng'
-              width='md'
-              placeholder='Nhập họ tên hoặc tên doanh nghiệp'
-              rules={[{ required: true, message: 'Vui lòng nhập tên khách hàng' }]}
-            />
-            <ProFormText
-              name='phone'
-              label='Số điện thoại'
-              width='md'
-              placeholder='Ví dụ: 0912 345 678'
-              rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
-            />
-          </ProForm.Group>
-          <ProForm.Group>
-            <ProFormText name='email' label='Email' width='md' rules={[{ type: 'email' }]} />
-            <ProFormText name='area' label='Khu vực' width='md' placeholder='Tỉnh/thành, quận/huyện' />
-          </ProForm.Group>
+          <div className='customer-form-layout'>
+            <div className='customer-form-main'>
+              <div className='form-section-heading'>Thông tin khách hàng</div>
+              <ProFormRadio.Group
+                name='customerType'
+                label='Nhóm khách hàng'
+                formItemProps={{ className: 'customer-type-field' }}
+                options={customerTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
+              />
+              <ProForm.Group>
+                <ProFormText
+                  name='name'
+                  label='Tên khách hàng'
+                  width='md'
+                  placeholder='Nhập họ tên hoặc tên doanh nghiệp'
+                  rules={[{ required: true, message: 'Vui lòng nhập tên khách hàng' }]}
+                />
+                <ProFormText
+                  name='phone'
+                  label='Số điện thoại'
+                  width='md'
+                  placeholder='Ví dụ: 0912 345 678'
+                  rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
+                />
+              </ProForm.Group>
+              <ProForm.Group>
+                <ProFormText name='email' label='Email' width='md' rules={[{ type: 'email' }]} />
+                <ProFormText name='area' label='Khu vực' width='md' placeholder='Tỉnh/thành, quận/huyện' />
+              </ProForm.Group>
 
-          <div className='form-section-heading'>Nhu cầu và nguồn khách</div>
-          <ProForm.Group>
-            <ProFormSelect
-              name='source'
-              label='Nguồn khách hàng'
-              width='md'
-              options={sourceOptions.map((value) => ({ value, label: value }))}
-            />
-            <ProFormSelect
-              name='elevatorType'
-              label='Loại thang máy'
-              width='md'
-              placeholder='Chọn loại thang'
-              options={elevatorTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
-              rules={[{ required: true, message: 'Vui lòng chọn loại thang máy' }]}
-            />
-          </ProForm.Group>
-          <ProFormTextArea
-            name='address'
-            label='Địa chỉ công trình'
-            placeholder='Nhập địa chỉ dự kiến lắp đặt thang máy'
-            fieldProps={{ rows: 2 }}
-          />
-          <div className='location-pin-panel'>
-            <div>
-              <Typography.Text strong>Vị trí triển khai</Typography.Text>
-              <Typography.Text type='secondary'>
-                Ghim tọa độ để kỹ thuật có thể mở bản đồ khi khảo sát/lắp đặt.
-              </Typography.Text>
+              <div className='form-section-heading'>Nhu cầu và nguồn khách</div>
+              <ProForm.Group>
+                <ProFormSelect
+                  name='source'
+                  label='Nguồn khách hàng'
+                  width='md'
+                  options={sourceOptions.map((value) => ({ value, label: value }))}
+                />
+                <ProFormSelect
+                  name='elevatorType'
+                  label='Loại thang máy'
+                  width='md'
+                  placeholder='Chọn loại thang'
+                  options={elevatorTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
+                  rules={[{ required: true, message: 'Vui lòng chọn loại thang máy' }]}
+                />
+              </ProForm.Group>
+              <ProFormTextArea
+                name='address'
+                label='Địa chỉ công trình'
+                placeholder='Nhập địa chỉ dự kiến lắp đặt thang máy'
+                fieldProps={{ rows: 2 }}
+              />
+              <div className='location-pin-panel'>
+                <div>
+                  <Typography.Text strong>Vị trí triển khai</Typography.Text>
+                  <Typography.Text type='secondary'>
+                    Ghim tọa độ để kỹ thuật có thể mở bản đồ khi khảo sát/lắp đặt.
+                  </Typography.Text>
+                </div>
+                <Space wrap>
+                  <Button icon={<PushpinOutlined />} onClick={openLocationPicker}>
+                    {customerLocation ? 'Sửa vị trí ghim' : 'Ghim vị trí'}
+                  </Button>
+                  {customerLocation && (
+                    <Button icon={<DeleteOutlined />} onClick={() => setCustomerLocation(undefined)}>
+                      Xóa ghim
+                    </Button>
+                  )}
+                </Space>
+                {customerLocation && (
+                  <div className='location-pin-summary'>
+                    <EnvironmentOutlined />
+                    <span>
+                      {customerLocation.label || 'Đã ghim vị trí'} · {customerLocation.latitude.toFixed(6)}, {customerLocation.longitude.toFixed(6)}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <ProFormTextArea
+                name='notes'
+                label='Yêu cầu / Ghi chú ban đầu'
+                placeholder='Loại thang, số tầng, tải trọng, thời gian dự kiến...'
+                fieldProps={{ rows: 2 }}
+              />
             </div>
-            <Space wrap>
-              <Button icon={<PushpinOutlined />} onClick={openLocationPicker}>
-                {customerLocation ? 'Sửa vị trí ghim' : 'Ghim vị trí'}
-              </Button>
-              {customerLocation && (
-                <Button icon={<DeleteOutlined />} onClick={() => setCustomerLocation(undefined)}>
-                  Xóa ghim
+
+            <aside className='customer-form-aside'>
+              <div className='customer-aside-title'>Hồ sơ khảo sát</div>
+              <div className='customer-supplement-section'>
+            <div className='customer-supplement-heading'>
+              <span>
+                <SlidersOutlined />
+                Cấu hình thông số kỹ thuật thang máy
+                <Badge count={elevatorSpecs.length} showZero size='small' className='section-count-badge' />
+              </span>
+              <Typography.Text type='secondary'>Hỗ trợ một khách hàng nhiều cấu hình thang</Typography.Text>
+            </div>
+            {elevatorSpecs.length ? (
+              <div className='elevator-spec-summary-list'>
+                {elevatorSpecs.map((spec) => (
+                  <div key={spec.id} className='elevator-spec-summary-item'>
+                    <div>
+                      <Typography.Text strong>{spec.name}</Typography.Text>
+                      <Typography.Text type='secondary'>
+                        {spec.floors ? `${spec.floors} tầng` : 'Chưa nhập số tầng'}
+                        {spec.capacityKg ? ` · ${spec.capacityKg} kg` : ''}
+                        {spec.elevatorType ? ` · ${statusMeta(elevatorTypeOptions, spec.elevatorType).label}` : ''}
+                      </Typography.Text>
+                    </div>
+                    <Space size={6}>
+                      <Tooltip title='Nhân bản cấu hình này'>
+                        <Button aria-label='Nhân bản cấu hình thang' icon={<CopyOutlined />} onClick={() => duplicateElevatorSpec(spec.id)} />
+                      </Tooltip>
+                      <Tooltip title='Sửa cấu hình'>
+                        <Button
+                          aria-label='Sửa cấu hình thang'
+                          icon={<EditOutlined />}
+                          onClick={() => {
+                            setActiveElevatorSpecId(spec.id);
+                            setTechnicalDrawerOpen(true);
+                          }}
+                        />
+                      </Tooltip>
+                    </Space>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className='customer-empty-panel'>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description='Chưa có cấu hình thông số kỹ thuật thang máy.'
+                />
+                <Button icon={<PlusOutlined />} onClick={openTechnicalConfig}>
+                  Tạo cấu hình kỹ thuật
                 </Button>
-              )}
-            </Space>
-            {customerLocation && (
-              <div className='location-pin-summary'>
-                <EnvironmentOutlined />
-                <span>
-                  {customerLocation.label || 'Đã ghim vị trí'} · {customerLocation.latitude.toFixed(6)}, {customerLocation.longitude.toFixed(6)}
-                </span>
+              </div>
+            )}
+            {elevatorSpecs.length > 0 && (
+              <div className='customer-supplement-footer'>
+                <Button icon={<PlusOutlined />} onClick={addElevatorSpec}>
+                  Thêm thang
+                </Button>
+                <Button type='primary' icon={<SlidersOutlined />} onClick={openTechnicalConfig}>
+                  Mở cấu hình chi tiết
+                </Button>
               </div>
             )}
           </div>
-          <ProFormTextArea
-            name='notes'
-            label='Yêu cầu / Ghi chú ban đầu'
-            placeholder='Loại thang, số tầng, tải trọng, thời gian dự kiến...'
-            fieldProps={{ rows: 3 }}
-          />
+
+          <div className='customer-supplement-section'>
+            <div className='customer-supplement-heading'>
+              <span>
+                <PaperClipOutlined />
+                Tài liệu / Ảnh khảo sát
+                <Badge count={attachments.length} showZero size='small' className='section-count-badge' />
+              </span>
+              <Space size={8} wrap>
+                <Button icon={<LinkOutlined />} onClick={() => setAttachmentLinkModalOpen(true)}>
+                  Link
+                </Button>
+                <Button icon={<CameraOutlined />} onClick={() => attachmentCameraInputRef.current?.click()}>
+                  Chụp ảnh
+                </Button>
+                <Button icon={<PaperClipOutlined />} onClick={() => attachmentFileInputRef.current?.click()}>
+                  Tệp
+                </Button>
+              </Space>
+            </div>
+            <input
+              ref={attachmentFileInputRef}
+              className='customer-file-input'
+              type='file'
+              multiple
+              hidden
+              accept='image/*,.pdf,.doc,.docx,.xls,.xlsx'
+              onChange={(event) => {
+                addAttachmentFiles(event.target.files, 'file');
+                event.target.value = '';
+              }}
+            />
+            <input
+              ref={attachmentCameraInputRef}
+              className='customer-file-input'
+              type='file'
+              hidden
+              accept='image/*'
+              capture='environment'
+              onChange={(event) => {
+                addAttachmentFiles(event.target.files, 'camera');
+                event.target.value = '';
+              }}
+            />
+            {attachments.length ? (
+              <div className='attachment-list'>
+                {attachments.map((attachment) => (
+                  <div key={attachment.id} className='attachment-item'>
+                    <span className='attachment-type-icon'>
+                      {attachment.type === 'IMAGE' ? <FileImageOutlined /> : attachment.type === 'LINK' ? <LinkOutlined /> : <FilePdfOutlined />}
+                    </span>
+                    <div className='attachment-copy'>
+                      {attachment.url || attachment.storedFileId ? (
+                        <a href={attachment.url ?? `${API_BASE}/files/${attachment.storedFileId}`} target='_blank' rel='noreferrer'>{attachment.name}</a>
+                      ) : (
+                        <Typography.Text strong>{attachment.name}</Typography.Text>
+                      )}
+                      <Typography.Text type='secondary'>
+                        {attachment.type === 'IMAGE' ? 'Ảnh' : attachment.type === 'LINK' ? 'Link' : 'Tài liệu'}
+                        {attachment.sizeBytes ? ` · ${formatFileSize(attachment.sizeBytes)}` : ''}
+                      </Typography.Text>
+                    </div>
+                    <Select
+                      className='attachment-category-select'
+                      value={attachment.category}
+                      options={attachmentCategoryOptions.map((value) => ({ value, label: value }))}
+                      onChange={(category) => setAttachments((items) => items.map((item) => (
+                        item.id === attachment.id ? { ...item, category } : item
+                      )))}
+                    />
+                    <Tooltip title='Xóa tài liệu'>
+                      <Button
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => {
+                          delete attachmentFileByIdRef.current[attachment.id];
+                          setAttachments((items) => items.filter((item) => item.id !== attachment.id));
+                        }}
+                      />
+                    </Tooltip>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className='customer-empty-panel compact'>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description='Chưa có tài liệu hoặc hình ảnh khảo sát.'
+                />
+              </div>
+            )}
+          </div>
+            </aside>
+          </div>
           <ProFormText name='status' hidden />
         </DrawerForm>
+        <Drawer
+          title={(
+            <span className='technical-drawer-title'>
+              <SlidersOutlined />
+              Cấu hình kỹ thuật thang máy
+            </span>
+          )}
+          open={technicalDrawerOpen}
+          onClose={() => setTechnicalDrawerOpen(false)}
+          width='min(1040px, calc(100vw - 64px))'
+          getContainer={() => document.body}
+          zIndex={1300}
+          className='technical-config-drawer'
+          extra={(
+            <Space>
+              {activeElevatorSpec && (
+                <Button icon={<CopyOutlined />} onClick={() => duplicateElevatorSpec(activeElevatorSpec.id)}>
+                  Nhân bản thang
+                </Button>
+              )}
+              <Button type='primary' icon={<PlusOutlined />} onClick={addElevatorSpec}>
+                Thêm thang
+              </Button>
+            </Space>
+          )}
+          footer={activeElevatorSpec ? (
+            <div className='technical-drawer-footer'>
+              <Button danger icon={<DeleteOutlined />} onClick={() => removeElevatorSpec(activeElevatorSpec.id)}>
+                Xóa thang này
+              </Button>
+              <Space>
+                <Button onClick={() => setTechnicalDrawerOpen(false)}>Đóng</Button>
+                <Button type='primary' onClick={() => setTechnicalDrawerOpen(false)}>Lưu cấu hình</Button>
+              </Space>
+            </div>
+          ) : null}
+        >
+          {activeElevatorSpec ? (
+            <>
+              <Tabs
+                activeKey={activeElevatorSpec.id}
+                onChange={setActiveElevatorSpecId}
+                items={elevatorSpecs.map((spec) => ({
+                  key: spec.id,
+                  label: `${spec.name || 'Thang máy'}${spec.floors ? ` (${spec.floors} tầng)` : ''}`,
+                }))}
+              />
+              <div className='technical-config-body'>
+                <div className='technical-grid five-columns'>
+                  <label>
+                    <span>Tên cấu hình thang máy *</span>
+                    <Input
+                      value={activeElevatorSpec.name}
+                      onChange={(event) => updateElevatorSpec(activeElevatorSpec.id, { name: event.target.value })}
+                      placeholder='Thang máy 1'
+                    />
+                  </label>
+                  <label>
+                    <span>Số tầng</span>
+                    <InputNumber
+                      min={1}
+                      value={activeElevatorSpec.floors}
+                      onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { floors: value ?? undefined })}
+                      placeholder='Ví dụ: 5'
+                    />
+                  </label>
+                  <label>
+                    <span>Tải trọng (kg)</span>
+                    <InputNumber
+                      min={100}
+                      step={50}
+                      value={activeElevatorSpec.capacityKg}
+                      onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { capacityKg: value ?? undefined })}
+                      placeholder='Ví dụ: 450'
+                    />
+                  </label>
+                  <label>
+                    <span>Loại thang quan tâm</span>
+                    <Select
+                      allowClear
+                      value={activeElevatorSpec.elevatorType}
+                      placeholder='Chưa chọn'
+                      options={elevatorTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
+                      onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { elevatorType: value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Vị trí đối trọng</span>
+                    <Select
+                      allowClear
+                      value={activeElevatorSpec.counterweightPosition}
+                      options={counterweightOptions}
+                      onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { counterweightPosition: value })}
+                    />
+                  </label>
+                </div>
+
+                <div className='technical-section-title'>Thông tin hố thang</div>
+                <div className='technical-grid five-columns'>
+                  <label>
+                    <span>Rộng thông thủy (mm)</span>
+                    <InputNumber value={activeElevatorSpec.shaftWidthMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { shaftWidthMm: value ?? undefined })} placeholder='Ví dụ: 1500' />
+                  </label>
+                  <label>
+                    <span>Sâu thông thủy (mm)</span>
+                    <InputNumber value={activeElevatorSpec.shaftDepthMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { shaftDepthMm: value ?? undefined })} placeholder='Ví dụ: 1500' />
+                  </label>
+                  <label>
+                    <span>Hố pit (mm)</span>
+                    <InputNumber value={activeElevatorSpec.pitDepthMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { pitDepthMm: value ?? undefined })} placeholder='Ví dụ: 1400' />
+                  </label>
+                  <label>
+                    <span>Chiều cao phòng máy (mm)</span>
+                    <InputNumber value={activeElevatorSpec.machineRoomHeightMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { machineRoomHeightMm: value ?? undefined })} placeholder='Ví dụ: 1200' />
+                  </label>
+                  <label>
+                    <span>Chiều cao OH (mm)</span>
+                    <InputNumber value={activeElevatorSpec.overheadHeightMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { overheadHeightMm: value ?? undefined })} placeholder='Ví dụ: 4200' />
+                  </label>
+                </div>
+
+                <div className='technical-table-heading'>
+                  <span>Chiều cao từng tầng thực tế</span>
+                  <Button icon={<PlusOutlined />} onClick={() => addElevatorFloor(activeElevatorSpec.id)}>
+                    Thêm tầng
+                  </Button>
+                </div>
+                <div className='floor-height-table'>
+                  <div className='floor-height-row head'>
+                    <span>Tên tầng</span>
+                    <span>Chiều cao (mm)</span>
+                    <span>Xóa</span>
+                  </div>
+                  {activeElevatorSpec.floorHeights.map((floor) => (
+                    <div key={floor.id} className='floor-height-row'>
+                      <Input
+                        value={floor.floorName}
+                        onChange={(event) => updateElevatorFloor(activeElevatorSpec.id, floor.id, { floorName: event.target.value })}
+                      />
+                      <InputNumber
+                        min={0}
+                        value={floor.heightMm}
+                        onChange={(value) => updateElevatorFloor(activeElevatorSpec.id, floor.id, { heightMm: value ?? undefined })}
+                      />
+                      <Tooltip title='Xóa tầng'>
+                        <Button
+                          type='text'
+                          danger
+                          className='floor-delete-button'
+                          icon={<DeleteOutlined />}
+                          onClick={() => removeElevatorFloor(activeElevatorSpec.id, floor.id)}
+                        />
+                      </Tooltip>
+                    </div>
+                  ))}
+                </div>
+
+                <label className='technical-note-field'>
+                  <span>Ghi chú kỹ thuật</span>
+                  <Input.TextArea
+                    rows={3}
+                    value={activeElevatorSpec.technicalNotes}
+                    placeholder='Điểm cần lưu ý khi khảo sát, giới hạn mặt bằng, phương án đề xuất...'
+                    onChange={(event) => updateElevatorSpec(activeElevatorSpec.id, { technicalNotes: event.target.value })}
+                  />
+                </label>
+              </div>
+            </>
+          ) : (
+            <div className='customer-empty-panel'>
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='Chưa có cấu hình kỹ thuật.' />
+              <Button type='primary' icon={<PlusOutlined />} onClick={addElevatorSpec}>
+                Tạo cấu hình đầu tiên
+              </Button>
+            </div>
+          )}
+        </Drawer>
+        <Modal
+          title='Thêm link tài liệu'
+          open={attachmentLinkModalOpen}
+          onCancel={() => setAttachmentLinkModalOpen(false)}
+          onOk={addAttachmentLink}
+          okText='Thêm link'
+          cancelText='Hủy'
+          destroyOnHidden
+        >
+          <Input
+            value={attachmentLinkDraft}
+            onChange={(event) => setAttachmentLinkDraft(event.target.value)}
+            prefix={<LinkOutlined />}
+            placeholder='https://...'
+          />
+        </Modal>
         <Modal
           title={(
             <span className='location-modal-title'>

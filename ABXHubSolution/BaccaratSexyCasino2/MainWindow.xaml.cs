@@ -739,8 +739,13 @@ namespace BaccaratSexyCasino2
         private readonly ConcurrentDictionary<string, long> _logThrottleLastMs = new();
                                                                  // --- UI mode monitor ---
         private DateTime _lastGameTickUtc = DateTime.MinValue;
+        private DateTime _lastRealGameSignalUtc = DateTime.MinValue;
+        private string _lastRealGameSignalReason = "";
         private DateTime _lastHomeTickUtc = DateTime.MinValue;
         private DateTime _lastTickDiagLogUtc = DateTime.MinValue;
+        private DateTime _lastPopupStuckDiagLogUtc = DateTime.MinValue;
+        private DateTime _popupStuckSinceUtc = DateTime.MinValue;
+        private DateTime _lastPopupStuckRecoveryArmUtc = DateTime.MinValue;
         private DateTime _lastStatusGuardLogUtc = DateTime.MinValue;
         private DateTime _lastStatusApplyLogUtc = DateTime.MinValue;
         private DateTime _lastSyntheticStatusSkipLogUtc = DateTime.MinValue;
@@ -755,6 +760,8 @@ namespace BaccaratSexyCasino2
         private static readonly TimeSpan GameTickFresh = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HomeTickFresh = TimeSpan.FromSeconds(1.5);
         private static readonly TimeSpan UiCountdownHoldFresh = TimeSpan.FromMilliseconds(1500);
+        private const int PopupPullStuckDetectSeconds = 10;
+        private const int PopupPullStuckRecoveryCooldownSeconds = 35;
         // Master switch: đặt false để bỏ qua kiểm tra Trial/License (không UI, không config, true kiểm tra bình thường)
         private bool CheckLicense = true;
 
@@ -3624,6 +3631,9 @@ try{
                     {
                         ResetPlayerFlowGameCache("main-host-change");
                         _lastGameTickUtc = DateTime.MinValue;
+                        _lastRealGameSignalUtc = DateTime.MinValue;
+                        _lastRealGameSignalReason = "";
+                        _popupStuckSinceUtc = DateTime.MinValue;
                         lock (_snapLock) { _lastSnap = null; }
                     }
 
@@ -5212,6 +5222,8 @@ try{
                         }));
                     }
 
+                    MarkRealGameSignalIfAny(snap, source);
+                    ObservePopupStuckState(snap, source);
                     _lastGameTickUtc = DateTime.UtcNow;
                     if ((_lastGameTickUtc - _lastTickDiagLogUtc) > TimeSpan.FromSeconds(2))
                     {
@@ -5231,7 +5243,10 @@ try{
                         var poolDiag = $"B={(snap?.totals?.B?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")},P={(snap?.totals?.P?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")},T={(snap?.totals?.T?.ToString("N0", CultureInfo.InvariantCulture) ?? "-")}";
                         var tableDiag = string.IsNullOrWhiteSpace(snap?.totals?.TB) ? "-" : Shrink(snap.totals.TB, 48);
                         var tableAmountDiag = snap?.totals?.TA?.ToString("N0", CultureInfo.InvariantCulture) ?? "-";
-                        Log($"[TickDiag] src={source} | ctx={ctxDiag} | score={(snap?.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | signals={sigDiag} | dataMode={dataModeDiag} | dataFrame={dataFrameDiag} | table={tableDiag} | tableAmount={tableAmountDiag} | poolSrc={poolSrcDiag} | pool={poolDiag} | prog={progDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag}");
+                        var realGameAgeDiag = _lastRealGameSignalUtc == DateTime.MinValue
+                            ? "-"
+                            : Math.Max(0, (DateTime.UtcNow - _lastRealGameSignalUtc).TotalSeconds).ToString("0.0", CultureInfo.InvariantCulture) + "s";
+                        Log($"[TickDiag] src={source} | ctx={ctxDiag} | score={(snap?.contextScore?.ToString(CultureInfo.InvariantCulture) ?? "-")} | signals={sigDiag} | dataMode={dataModeDiag} | dataFrame={dataFrameDiag} | table={tableDiag} | tableAmount={tableAmountDiag} | poolSrc={poolSrcDiag} | pool={poolDiag} | prog={progDiag} | progSrc={progSourceDiag} | progTail={progTailDiag} | seqLen={seqLen} | statusSrc={statusSourceDiag} | statusTail={statusTailDiag} | status={statusDiag} | realGameAge={realGameAgeDiag} | realGameSignal={(string.IsNullOrWhiteSpace(_lastRealGameSignalReason) ? "-" : _lastRealGameSignalReason)}");
                     }
                     return;
                 }
@@ -16069,14 +16084,160 @@ try{
             }
         }
 
+        private bool IsRealGameSignalSnapshot(CwSnapshot? snap, string source, out string reason)
+        {
+            reason = "none";
+            if (snap == null)
+                return false;
+
+            var href = snap.href ?? "";
+            var dataHref = snap.dataHref ?? "";
+            var ctx = snap.contextId ?? "";
+            var signals = snap.signals ?? "";
+            var framePath = snap.framePath ?? "";
+            var dataFrame = snap.dataFramePath ?? "";
+            var sourceText = source ?? "";
+
+            if (IsPopupThirdgEntryUrl(href) &&
+                sourceText.IndexOf("pull", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                reason = "popup-pull-thirdg";
+                return false;
+            }
+
+            bool looksFrame =
+                sourceText.IndexOf("frame", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                !string.IsNullOrWhiteSpace(framePath) ||
+                !string.IsNullOrWhiteSpace(dataFrame);
+
+            bool looksGameUrl =
+                TextContainsIgnoreCase(href, "singleBacTable.jsp") ||
+                TextContainsIgnoreCase(dataHref, "singleBacTable.jsp") ||
+                TextContainsIgnoreCase(ctx, "singleBacTable.jsp") ||
+                TextContainsIgnoreCase(framePath, "singleBacTable.jsp") ||
+                TextContainsIgnoreCase(dataFrame, "singleBacTable.jsp") ||
+                TextContainsIgnoreCase(href, "webMain.jsp") ||
+                TextContainsIgnoreCase(dataHref, "webMain.jsp") ||
+                TextContainsIgnoreCase(ctx, "webMain.jsp") ||
+                TextContainsIgnoreCase(framePath, "webMain.jsp") ||
+                TextContainsIgnoreCase(dataFrame, "webMain.jsp");
+
+            bool hasGameSignals =
+                TextContainsIgnoreCase(signals, "gameMain") ||
+                TextContainsIgnoreCase(signals, "zoneBet") ||
+                TextContainsIgnoreCase(signals, "singleBac") ||
+                TextContainsIgnoreCase(signals, "betArea");
+
+            bool hasLiveFields =
+                snap.prog.HasValue ||
+                !string.IsNullOrWhiteSpace(snap.status) ||
+                PoolValueCount(snap.totals) > 0;
+
+            if (looksFrame && (looksGameUrl || hasGameSignals) && hasLiveFields)
+            {
+                reason = $"frame-game url={(looksGameUrl ? 1 : 0)} signals={(hasGameSignals ? 1 : 0)} live={(hasLiveFields ? 1 : 0)}";
+                return true;
+            }
+
+            var score = snap.contextScore ?? 0;
+            if (looksGameUrl && hasLiveFields && score >= 30)
+            {
+                reason = $"score-game score={score}";
+                return true;
+            }
+
+            reason = $"not-game src={(string.IsNullOrWhiteSpace(sourceText) ? "-" : sourceText)} score={score} href={TrimHrefForLog(href)}";
+            return false;
+        }
+
+        private void MarkRealGameSignalIfAny(CwSnapshot? snap, string source)
+        {
+            if (!IsRealGameSignalSnapshot(snap, source, out var reason))
+                return;
+
+            _lastRealGameSignalUtc = DateTime.UtcNow;
+            _lastRealGameSignalReason = reason;
+            _popupStuckSinceUtc = DateTime.MinValue;
+        }
+
+        private void ObservePopupStuckState(CwSnapshot? snap, string source)
+        {
+            if (!IsPopupBetViewActive() || _popupWeb?.CoreWebView2 == null || snap == null)
+                return;
+
+            var href = snap.href ?? "";
+            var popupPull = (source ?? "").IndexOf("popup-pull", StringComparison.OrdinalIgnoreCase) >= 0;
+            var thirdg = IsPopupThirdgEntryUrl(href);
+            var score = snap.contextScore ?? 0;
+            var hasIncomingLive =
+                snap.prog.HasValue ||
+                !string.IsNullOrWhiteSpace(snap.status) ||
+                IsRealGameSignalSnapshot(snap, source ?? "", out _);
+
+            if (!popupPull || !thirdg || score > 0 || hasIncomingLive)
+            {
+                if (_popupStuckSinceUtc != DateTime.MinValue)
+                {
+                    var stuckFor = DateTime.UtcNow - _popupStuckSinceUtc;
+                    Log("[PopupWeb][STUCK-DETECT][CLEAR] reason=signal-or-context-returned | stuckFor=" +
+                        stuckFor.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) +
+                        "s | src=" + (string.IsNullOrWhiteSpace(source) ? "-" : source) +
+                        " | score=" + score.ToString(CultureInfo.InvariantCulture) +
+                        " | href=" + TrimHrefForLog(href));
+                }
+                _popupStuckSinceUtc = DateTime.MinValue;
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            if (_popupStuckSinceUtc == DateTime.MinValue)
+                _popupStuckSinceUtc = now;
+
+            var stuckAge = now - _popupStuckSinceUtc;
+            var realAge = _lastRealGameSignalUtc == DateTime.MinValue
+                ? TimeSpan.MaxValue
+                : now - _lastRealGameSignalUtc;
+
+            if ((now - _lastPopupStuckDiagLogUtc) > TimeSpan.FromSeconds(5))
+            {
+                _lastPopupStuckDiagLogUtc = now;
+                Log("[PopupWeb][STUCK-DETECT] state=popup-pull-thirdg-no-game | stuckFor=" +
+                    stuckAge.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) +
+                    "s | realGameAge=" +
+                    (_lastRealGameSignalUtc == DateTime.MinValue ? "-" : realAge.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s") +
+                    " | lastReal=" + (string.IsNullOrWhiteSpace(_lastRealGameSignalReason) ? "-" : _lastRealGameSignalReason) +
+                    " | seqLen=" + ((snap.seq ?? "").Length).ToString(CultureInfo.InvariantCulture) +
+                    " | seqEvt=" + (string.IsNullOrWhiteSpace(snap.seqEvent) ? "-" : snap.seqEvent) +
+                    " | poolCnt=" + PoolValueCount(snap.totals).ToString(CultureInfo.InvariantCulture) +
+                    " | href=" + TrimHrefForLog(href));
+            }
+
+            if (stuckAge < TimeSpan.FromSeconds(PopupPullStuckDetectSeconds))
+                return;
+            if (realAge <= TimeSpan.FromSeconds(6))
+                return;
+            if (_popupTransitWatchCts != null)
+                return;
+            if ((now - _lastPopupStuckRecoveryArmUtc) < TimeSpan.FromSeconds(PopupPullStuckRecoveryCooldownSeconds))
+                return;
+
+            _lastPopupStuckRecoveryArmUtc = now;
+            Log("[PopupWeb][STUCK-DETECT] action=arm-recovery-watch | reason=popup-pull-thirdg-no-game | stuckFor=" +
+                stuckAge.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) +
+                "s | realGameAge=" +
+                (_lastRealGameSignalUtc == DateTime.MinValue ? "-" : realAge.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s") +
+                " | href=" + TrimHrefForLog(href));
+            ArmPopupTransitWatch("popup-pull-thirdg-stuck", href);
+        }
+
         private bool HasRecentGameSignal(out string reason)
         {
             reason = "none";
             var now = DateTime.UtcNow;
-            var tickAge = now - _lastGameTickUtc;
-            if (_lastGameTickUtc != DateTime.MinValue && tickAge <= TimeSpan.FromSeconds(4))
+            var tickAge = now - _lastRealGameSignalUtc;
+            if (_lastRealGameSignalUtc != DateTime.MinValue && tickAge <= TimeSpan.FromSeconds(4))
             {
-                reason = $"tick-age={tickAge.TotalSeconds:0.0}s";
+                reason = $"real-game-age={tickAge.TotalSeconds:0.0}s | {_lastRealGameSignalReason}";
                 return true;
             }
 
@@ -16086,11 +16247,11 @@ try{
                 !string.IsNullOrWhiteSpace(snap?.status) ||
                 !string.IsNullOrWhiteSpace(snap?.seq);
             if (hasSnapData &&
-                _lastGameTickUtc != DateTime.MinValue &&
+                _lastRealGameSignalUtc != DateTime.MinValue &&
                 tickAge <= TimeSpan.FromSeconds(15))
             {
                 var seqLen = snap?.seq?.Length ?? 0;
-                reason = $"snap seqLen={seqLen} tickAge={tickAge.TotalSeconds:0.0}s";
+                reason = $"snap seqLen={seqLen} realGameAge={tickAge.TotalSeconds:0.0}s | {_lastRealGameSignalReason}";
                 return true;
             }
             return false;
@@ -16393,7 +16554,7 @@ try{
             if (betWeb?.CoreWebView2 == null)
                 return (false, "bet-web-null");
             var src = GetBetWebViewSource(betWeb);
-            var tickAge = now - _lastGameTickUtc;
+            var tickAge = now - _lastRealGameSignalUtc;
             bool srcGameReady = IsLikelyBetGameReadyUrl(src);
             if (!srcGameReady && tickAge > TimeSpan.FromSeconds(6))
                 return (false, $"bet-src-not-game src={src}");
@@ -16404,12 +16565,12 @@ try{
                 if ((nowMs - lastMs) >= 1500)
                 {
                     _logThrottleLastMs["BETPIPE_ALLOW_TICK"] = nowMs;
-                    Log("[BetPipe] allow-by-recent-tick | src=" + src + " | tickAge=" + tickAge.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s");
+                    Log("[BetPipe] allow-by-recent-real-game-signal | src=" + src + " | age=" + tickAge.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s | signal=" + (string.IsNullOrWhiteSpace(_lastRealGameSignalReason) ? "-" : _lastRealGameSignalReason));
                 }
             }
 
             if (tickAge > TimeSpan.FromSeconds(6))
-                return (false, $"tick-stale age={tickAge.TotalSeconds:0.0}s");
+                return (false, $"real-game-signal-stale age={tickAge.TotalSeconds:0.0}s");
 
             var snap = CloneAuthoritativeRawSnap();
             bool hasSnapData =

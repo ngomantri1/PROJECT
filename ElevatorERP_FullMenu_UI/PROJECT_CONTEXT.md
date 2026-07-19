@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-> Source of truth for AI coding. Last source review: **2026-07-18**. Read this file before changing code.
+> Source of truth for AI coding. Last source review: **2026-07-19**. Read this file before changing code.
 
 ## 1. Project overview
 
@@ -29,11 +29,14 @@ The current package is a **functional foundation plus a full-menu UI prototype**
 - Cookie login/logout/current user.
 - Users, roles, additive permissions and simple data scopes.
 - Dashboard statistics for customers and care activities.
-- Customer registration: list/search/filter/create.
+- Customer registration: list/search/filter/create/edit, inline status update and location pin metadata.
 - Customer care: list/calendar/create/complete.
-- Shared catalog administration for customer status, lost reason, source and type.
-- Customer list filtering by search, status/status group, source, owner and area.
+- Shared catalog administration for customer status, lost reason, source, customer group and elevator type.
+- Customer list filtering by normalized search, status/status group, customer group, elevator type, source, owner, area/address and created date range.
 - Customer CSV export is implemented in the frontend from the current loaded rows.
+- Free geocoding helper endpoints for customer location pinning:
+  - `/api/geo/search` uses OpenStreetMap/Nominatim with Vietnam/area bias.
+  - `/api/geo/resolve-link` parses pasted Google Maps links or manual coordinates into latitude/longitude.
 - User-role assignment.
 - File upload with basic allow-listing and stored metadata.
 - Basic audit records.
@@ -74,7 +77,15 @@ There is intentionally no Live/Demo/Planned label in the menu. All menu items ar
 - The top-right account toolbar is intentionally compact: notification plus user menu. Theme switching remains available inside the account menu.
 - Primary page business actions belong in the page header on the right, not in the global shell header and not inside the filter bar.
 - Filter bars should contain search/filter/reset/apply/export actions. They should not contain create-new buttons.
+- List search should update results automatically after a short debounce where practical; heavy/secondary filters belong in an advanced filter drawer.
+- Advanced filter drawers should group conditions by business meaning, use a fixed footer, and keep the primary apply action visually dominant.
+- Data table cards use a compact toolbar: title on the left, table tools on the right, table header close below the toolbar.
+- Table action columns should be centered/right-aligned consistently through shared table action classes; do not hand-position row icons per page.
 - The dashboard and mobile shell have been polished as an ERP/admin interface; avoid reverting it to a marketing/landing-page layout.
+- Customer status in the customer list is an editable colored badge. Keep the color for scanability and keep the dropdown indicator inside the badge.
+- Customer address/location display uses the **Địa chỉ** column. If latitude/longitude exists, show a small pin icon that opens Google Maps in a new tab.
+- Customer table columns **Nhóm KH** and **Loại thang** exist but are hidden by default through table column settings to keep the default list compact.
+- Customer location pinning must remain usable without paid Google APIs. The approved free flow is OSM search plus optional pasted Google Maps link/coordinate parsing.
 
 ### Chosen target architecture, not fully implemented
 
@@ -106,6 +117,18 @@ Important current gaps:
 9. EF Core reads/writes PostgreSQL.
 10. Mutating real APIs save audit entries where implemented.
 11. UI refreshes by re-fetching the affected API after a successful mutation.
+
+Customer registration flow:
+
+1. Customer page loads `/api/customers`; backend defaults to numeric customer code descending.
+2. Main search runs with debounce and normalized Vietnamese text so partial/diacritic-light input can match names, phones, emails and codes.
+3. Advanced filters live in a drawer: status, customer group, elevator type, source, owner, area/address and created date range.
+4. Create uses `POST /api/customers`; edit uses `PUT /api/customers/{id}`; inline status uses `PUT /api/customers/{id}/status`.
+5. The form stores customer group (`PERSONAL`/`BUSINESS`) but the UI-facing label is **Nhóm khách hàng** to avoid disrespectful wording.
+6. Elevator type is catalog-backed by `elevator_type` and currently includes `BUILT`/`GLASS`.
+7. Customer location pinning uses OSM search, browser geolocation, map click, pasted Google Maps link/coordinates, or manual coordinate edit.
+8. The list shows location as a pin inside the **Địa chỉ** column; clicking it opens Google Maps by coordinates.
+9. The location radius/accuracy field is hidden from the normal UI and kept only as internal metadata.
 
 Development-only workspace flow:
 
@@ -150,6 +173,7 @@ Development-only workspace flow:
 - After mutation, either safely update cache/state or re-fetch; avoid duplicate requests and double-submit.
 - Keep desktop table/mobile card parity.
 - List pages should follow the shared ERP structure: two-line page header, primary action on the header right, KPI row, filter bar, data table card with title, pagination/export where applicable.
+- Customer list default ordering is numeric customer code descending (`KH-000024` before `KH-000023`). Backend default and visible table sort indicator must stay consistent.
 - Table header typography is 600; primary entity name is 600; phone is 500; ordinary metadata is 400; money is 600 and right-aligned.
 - Table hover is subtle and selected rows use a left indicator. Business status must be shown by tags, not by coloring the whole row.
 - Sort icons should be shown only on columns where sorting is meaningful; do not enable hidden sort behavior without a visible sorter.
@@ -282,3 +306,5 @@ Mobile construction photos should initially use standard camera/file input, clie
 - Never claim a V3–V9 module is complete until its API, schema/migration, permissions, audit, workflow and tests are implemented.
 - Never move primary page create actions back into the filter bar or global shell header.
 - Never remove the demo-data distinction for localStorage-backed modules.
+- Never require a paid Google Maps/Places API key for the approved free customer location workflow unless the business explicitly accepts the cost and changes the architecture.
+- Never reintroduce the visible customer location radius/bán kính field into the normal registration modal unless there is a real dispatch/geofence requirement.

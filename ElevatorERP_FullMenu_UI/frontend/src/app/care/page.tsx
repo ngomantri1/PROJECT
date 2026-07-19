@@ -9,6 +9,7 @@ import {
   Card,
   Col,
   Descriptions,
+  Input,
   List,
   Modal,
   Row,
@@ -255,7 +256,7 @@ export default function Care() {
         item.status !== 'DONE' ? [
           <Space key='actions' size={2} className='table-actions table-actions-center'>
             <Button type='link' size='small' onClick={() => setCompleteItem(item)}>
-              Hoàn thành
+              <CheckCircleOutlined /> Hoàn thành
             </Button>
           </Space>,
         ] : [
@@ -415,7 +416,7 @@ export default function Care() {
                         <Descriptions.Item label='Nội dung'>{item.content}</Descriptions.Item>
                       </Descriptions>
                       {item.status !== 'DONE' && (
-                        <Button block onClick={() => setCompleteItem(item)}>Ghi nhận hoàn thành</Button>
+                        <Button block icon={<CheckCircleOutlined />} onClick={() => setCompleteItem(item)}>Ghi nhận hoàn thành</Button>
                       )}
                     </Card>
                   </List.Item>
@@ -429,9 +430,9 @@ export default function Care() {
           title='Tạo lịch chăm sóc khách hàng'
           open={open}
           onOpenChange={setOpen}
-          width={620}
+          width='min(640px, calc(100vw - 40px))'
           onFinish={save}
-          drawerProps={{ destroyOnClose: true }}
+          drawerProps={{ destroyOnClose: true, className: 'business-form-drawer' }}
           submitter={{ searchConfig: { submitText: 'Lưu lịch', resetText: 'Hủy' } }}
         >
           <div className='form-section-heading'>Thông tin lịch chăm sóc</div>
@@ -477,13 +478,14 @@ export default function Care() {
           onOk={() => void complete()}
           confirmLoading={completing}
           okText='Xác nhận hoàn thành'
+          cancelText='Hủy'
+          className='business-result-modal'
         >
           <Typography.Paragraph type='secondary'>
             Khách hàng: <b>{completeItem?.customer}</b>
           </Typography.Paragraph>
           <Typography.Text strong>Kết quả thực hiện</Typography.Text>
-          <textarea
-            className='native-textarea'
+          <Input.TextArea
             rows={5}
             value={completeResult}
             onChange={(event) => setCompleteResult(event.target.value)}

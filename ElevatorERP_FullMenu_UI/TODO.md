@@ -31,6 +31,23 @@
 - [x] Add month/year calendar toolbar with previous/today/next navigation.
 - Verification evidence: `npm run lint` and `npm run build` passed after the shell changes.
 
+## 1.2 Recently completed customer registration UX/API baseline
+
+- [x] Add edit action to the customer registration list and persist edits through `PUT /api/customers/{id}`.
+- [x] Add inline editable customer status badge using catalog-backed colors and `PUT /api/customers/{id}/status`.
+- [x] Standardize table action alignment and compact table card toolbar spacing across list pages.
+- [x] Move secondary customer filters into an advanced filter drawer; keep main search as live/debounced search.
+- [x] Add created date range, customer group, elevator type, source, owner and area/address filters to the customer advanced filter.
+- [x] Add normalized Vietnamese-friendly search so partial input without full diacritics can still match customer data.
+- [x] Add catalog-backed **Loại thang máy** to customer form, list, detail/mobile card, CSV and advanced filter.
+- [x] Add customer location pinning with OpenStreetMap search, map click, browser current location, pasted Google Maps link/coordinates and manual coordinate edit.
+- [x] Keep the customer location workflow free by avoiding Google Places/Maps API key dependency.
+- [x] Hide visible customer location radius/bán kính from the normal location modal.
+- [x] Show customer location pin inside the **Địa chỉ** column and open Google Maps by coordinates when clicked.
+- [x] Rename customer-facing "Loại khách" display label to **Nhóm khách hàng** and hide **Nhóm KH** plus **Loại thang** by default in table column settings.
+- [x] Fix dashboard welcome panel contrast/fog so text is readable on a professional ERP/admin shell background.
+- Verification evidence: `npm run lint` and `npm run build` passed after the customer/location changes.
+
 ## 2. P0 — must complete before expanding features
 
 - [ ] Run and record a clean baseline on the developer machine:
@@ -90,13 +107,15 @@
 ### Customer registration
 
 - [ ] Add customer detail page.
-- [ ] Add edit and soft-delete APIs.
+- [ ] Add soft-delete API and restore/audit behavior.
 - [ ] Add contacts, tax code and multiple construction addresses.
-- [ ] Add elevator need/specification fields from the approved summary.
+- [ ] Add full elevator need/specification fields from the approved summary; current source only stores catalog-backed elevator type.
 - [ ] Add attachments through a real document service.
-- [ ] Enforce full status transitions and failure reason.
+- [ ] Enforce full status transitions, failure reason and lost reason rules; current inline status update writes the selected catalog status directly.
 - [ ] Add duplicate phone/tax-code detection policy.
-- [ ] Add server pagination and sorting.
+- [ ] Add server pagination and formal server sorting contract; current customer API returns all visible rows ordered by customer code descending.
+- [ ] Replace prototype `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` schema workaround for customer location/elevator type with real EF Core migrations.
+- [ ] Add backend tests for customer edit, inline status update, location metadata and elevator type filter.
 - [ ] Replace client-side CSV export with server-side export when data volume, permissions and audit requirements are implemented.
 - [ ] Add statistics for customer intake by time, source, status, owner and outcome from authoritative PostgreSQL data.
 - [ ] Define how a signed contract converts a customer registration into contract/project records, and how repeat elevator purchases are represented.
@@ -163,6 +182,8 @@
 - [ ] Consider moving route/menu definitions into a typed registry shared by permissions, breadcrumbs and page guards.
 - [ ] Centralize status codes/labels instead of duplicating them in pages and backend seed logic.
 - [ ] Centralize responsive table/card patterns.
+- [ ] Extract shared list-table action alignment and compact table toolbar styles into reusable components/classes rather than page-specific fixes.
+- [ ] Extract customer location picker into a reusable, tested component if project/site modules also need pinned deployment locations.
 - [ ] Introduce a real upload API helper that supports `FormData` without forcing JSON headers.
 - [ ] Add request cancellation/stale-response protection.
 - [ ] Reduce frontend first-load bundle size; generic workspace currently loads a large ProComponents bundle.
@@ -183,7 +204,8 @@
 
 ### Functional
 
-- [ ] Customer create/search/status/soft-delete/concurrent code generation.
+- [ ] Customer create/edit/search/status/location/elevator-type/soft-delete/concurrent code generation.
+- [ ] Geo helper tests for OSM query fallback, pasted decimal coordinates, DMS coordinates, Google Maps `@lat,lng` URLs and shortened-link failure messages.
 - [ ] Care create/complete/next-care/overdue calculation.
 - [ ] User role assignment and self-lockout protection.
 - [ ] Project creation gate and one-to-many elevator relation.

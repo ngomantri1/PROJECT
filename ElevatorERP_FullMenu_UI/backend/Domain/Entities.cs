@@ -77,6 +77,8 @@ public sealed class Customer : Entity
     public string Source { get; set; } = "Khác";
     public string Status { get; set; } = "NEW";
     public string? Notes { get; set; }
+    public string? TechnicalSpecsJson { get; set; }
+    public string? AttachmentLinksJson { get; set; }
     public Guid OwnerUserId { get; set; }
     public AppUser OwnerUser { get; set; } = null!;
 }

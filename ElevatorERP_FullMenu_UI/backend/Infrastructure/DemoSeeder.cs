@@ -166,7 +166,9 @@ public static class DemoSeeder
                 ADD COLUMN IF NOT EXISTS "Longitude" double precision NULL,
                 ADD COLUMN IF NOT EXISTS "LocationAccuracyMeters" double precision NULL,
                 ADD COLUMN IF NOT EXISTS "LocationLabel" text NULL,
-                ADD COLUMN IF NOT EXISTS "ElevatorType" text NULL;
+                ADD COLUMN IF NOT EXISTS "ElevatorType" text NULL,
+                ADD COLUMN IF NOT EXISTS "TechnicalSpecsJson" text NULL,
+                ADD COLUMN IF NOT EXISTS "AttachmentLinksJson" text NULL;
             """);
     }
 

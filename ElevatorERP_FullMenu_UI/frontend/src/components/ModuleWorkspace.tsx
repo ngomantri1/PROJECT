@@ -532,8 +532,8 @@ export default function ModuleWorkspace() {
               className='filter-select'
               options={config.statuses}
             />
+            <Typography.Text className='filter-result-count'>{filteredRows.length} bản ghi</Typography.Text>
             <Button onClick={resetFilters}>Đặt lại</Button>
-            <Button type='primary' icon={<FilterOutlined />}>Áp dụng</Button>
             <Button icon={<DownloadOutlined />} onClick={exportRows}>Xuất CSV</Button>
           </div>
         </ProCard>
@@ -584,7 +584,7 @@ export default function ModuleWorkspace() {
         {config.createEnabled && (
           <DrawerForm<WorkspaceForm>
             title={`Thêm ${config.entity}`}
-            width={560}
+            width='min(640px, calc(100vw - 40px))'
             open={createOpen}
             onOpenChange={setCreateOpen}
             onFinish={createRow}
@@ -595,8 +595,10 @@ export default function ModuleWorkspace() {
               priority: 'Trung bình',
               progress: 0,
             }}
-            drawerProps={{ destroyOnClose: true }}
+            drawerProps={{ destroyOnClose: true, className: 'business-form-drawer' }}
+            submitter={{ searchConfig: { submitText: `Lưu ${config.entity}`, resetText: 'Hủy' } }}
           >
+            <div className='form-section-heading'>Thông tin {config.entity}</div>
             <ProFormText
               name='code'
               label='Mã hồ sơ'
@@ -609,7 +611,7 @@ export default function ModuleWorkspace() {
             />
             <ProFormText name='related' label='Khách hàng / Dự án liên quan' rules={[{ required: true }]} />
             <Row gutter={16}>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <ProFormSelect
                   name='owner'
                   label='Người phụ trách'
@@ -617,7 +619,7 @@ export default function ModuleWorkspace() {
                   rules={[{ required: true }]}
                 />
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <ProFormSelect
                   name='status'
                   label='Trạng thái'
@@ -627,10 +629,10 @@ export default function ModuleWorkspace() {
               </Col>
             </Row>
             <Row gutter={16}>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <ProFormDatePicker name='date' label='Ngày dự kiến' width='md' rules={[{ required: true }]} />
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <ProFormSelect
                   name='priority'
                   label='Mức ưu tiên'
@@ -651,10 +653,11 @@ export default function ModuleWorkspace() {
 
         <Drawer
           title={selected ? `${selected.code} · ${selected.title}` : 'Chi tiết'}
-          width={560}
+          width='min(640px, calc(100vw - 40px))'
           open={Boolean(selected)}
           onClose={() => setSelected(null)}
           extra={<Button icon={<EditOutlined />}>Chỉnh sửa</Button>}
+          className='business-detail-drawer'
         >
           {selected && (
             <>

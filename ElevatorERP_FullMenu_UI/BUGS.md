@@ -1,6 +1,6 @@
 # BUGS
 
-> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-18**.
+> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-19**.
 
 ## 1. Current open issues
 
@@ -14,6 +14,7 @@
 
 - **No EF Core migrations.**
   - Area: `DemoSeeder.SeedAsync()` calls `EnsureCreatedAsync()`.
+  - Current workaround: customer location and elevator-type prototype columns are added with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `DemoSeeder`.
   - Risk: no controlled schema evolution or safe production deployment.
   - Workaround: acceptable only for disposable local demo databases.
 
@@ -55,9 +56,20 @@
   - Area: `care/page.tsx` sends `nextCareAt: null`.
   - Gap: approved workflow asks whether to create the next care schedule.
 
-- **Customer status cannot be progressed through real APIs.**
-  - Area: backend only supports list/create.
-  - Gap: no edit, transition validation, soft-delete endpoint or failure reason enforcement.
+- **Customer status update is implemented but not a full workflow.**
+  - Area: `PUT /api/customers/{id}/status`.
+  - Current behavior: writes the selected catalog status directly after permission/ownership check.
+  - Gap: no allowed transition matrix, lost/failure reason enforcement or transition-specific permission.
+
+- **Customer soft delete is still absent.**
+  - Area: customer API.
+  - Gap: customer create/edit/status exist, but no soft-delete/restore endpoint is implemented yet.
+
+- **Customer location/geocoding is best-effort and network-dependent.**
+  - Area: `/api/geo/search`, `/api/geo/resolve-link`, `customers/page.tsx`.
+  - Cause: free flow depends on OpenStreetMap/Nominatim availability, browser geolocation permission and whether a pasted Google Maps link exposes coordinates after redirect.
+  - Workaround: user can paste plain decimal coordinates or manually edit Vĩ độ/Kinh độ in the location modal.
+  - Required fix: add provider abstraction, rate limiting/cache and automated parser tests before relying on it for dispatch-critical workflows.
 
 - **Role assignment can remove the current admin’s final role.**
   - Area: `PUT /api/admin/users/{id}/roles`.
@@ -174,6 +186,20 @@
 - Vietnamese labels are used for catalog-facing UI options such as badge colors.
 - Removed invalid `processing` badge color from the customer status color selector and standardized customer status colors in frontend fallback and backend seed.
 - Added seed update behavior for existing system catalog options so label/color/sort order changes apply to old local databases.
+- Added customer edit support through row action and `PUT /api/customers/{id}`.
+- Added inline customer status dropdown with colored badge and fixed dropdown chevron styling so status remains scannable.
+- Fixed repeated table action alignment issues by standardizing action cell classes; customer, quotations and other list pages should use centered/right-aligned action controls consistently.
+- Reworked customer list layout so date/status/action columns do not overlap and table toolbar spacing is compact.
+- Changed customer default list ordering to numeric customer code descending and aligned the visible code-column default sort indicator.
+- Moved customer secondary filters into an advanced filter drawer and made main search auto-load with debounce.
+- Added normalized customer search for Vietnamese-friendly partial matching.
+- Added catalog-backed elevator type (`elevator_type`) to customer form/list/filter/export and seeded `Thang xây`/`Thang kính`.
+- Renamed customer-facing "Loại khách" display label to **Nhóm khách hàng** and hid **Nhóm KH** plus **Loại thang** by default in table column settings.
+- Renamed the customer table area column to **Địa chỉ** and showed location pin inside that column when coordinates exist.
+- Added free customer location pinning with OpenStreetMap search, Leaflet map click, browser geolocation, pasted Google Maps link/coordinate parsing and manual coordinate edit.
+- Removed the visible location radius/bán kính field from the normal location modal.
+- Reworked the map modal from too small, then too large, into a bounded ERP/admin shell modal with compact search/link area, coordinate strip and fixed footer.
+- Fixed dashboard welcome panel text contrast and reduced the washed/foggy visual treatment.
 - Moved primary create actions to page headers for customers, care and generic workspace pages; filter bars no longer contain create-new buttons.
 - Replaced large generic workspace demo alerts with thin dismissible development-only demo-data banners.
 - Added list card titles for generic workspace tables such as báo giá and hợp đồng.
@@ -186,6 +212,7 @@
 - Schema changes during local prototype: recreate only a disposable local database after backup. Never delete production `.data`.
 - Docker dependency installation issue: keep the committed npmjs-based lock file; do not run unreviewed dependency upgrades.
 - Care overdue demo mismatch: re-seed disposable demo data or inspect dates manually until worker/derived status exists.
+- Customer location search mismatch: if OSM does not find a building/address, open Google Maps, copy share link or copy coordinates, paste into the location modal, or use **Sửa tọa độ** to enter latitude/longitude manually.
 - After rebuilding/recreating the frontend container, if `localhost` shows Nginx `502 Bad Gateway` while containers are healthy, run `docker compose restart nginx` so Nginx resolves the current frontend container IP.
 
 ## 4. High-risk code areas

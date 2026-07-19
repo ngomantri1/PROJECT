@@ -282,6 +282,8 @@ app.MapGet("/api/customers", async (
             x.Source,
             x.Status,
             x.Notes,
+            x.TechnicalSpecsJson,
+            x.AttachmentLinksJson,
             owner = x.OwnerUser.DisplayName,
             x.CreatedAt
         })
@@ -326,6 +328,8 @@ app.MapPost("/api/customers", async (
         Source = request.Source,
         Status = request.Status,
         Notes = request.Notes?.Trim(),
+        TechnicalSpecsJson = request.TechnicalSpecsJson?.Trim(),
+        AttachmentLinksJson = request.AttachmentLinksJson?.Trim(),
         OwnerUserId = current.Id.Value
     };
 
@@ -379,6 +383,8 @@ app.MapPut("/api/customers/{id:guid}", async (
     customer.Source = request.Source;
     customer.Status = request.Status;
     customer.Notes = request.Notes?.Trim();
+    customer.TechnicalSpecsJson = request.TechnicalSpecsJson?.Trim();
+    customer.AttachmentLinksJson = request.AttachmentLinksJson?.Trim();
     customer.UpdatedAt = DateTimeOffset.UtcNow;
 
     db.AuditLogs.Add(new AuditLog
@@ -826,7 +832,9 @@ app.MapPost("/api/files/upload", async (
         ["image/webp"] = ".webp",
         ["application/pdf"] = ".pdf",
         ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] = ".docx",
-        ["application/msword"] = ".doc"
+        ["application/msword"] = ".doc",
+        ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] = ".xlsx",
+        ["application/vnd.ms-excel"] = ".xls"
     };
     if (!extensionByContentType.TryGetValue(file.ContentType, out var extension))
         return Results.BadRequest(new { message = "Định dạng file không được hỗ trợ." });
@@ -878,6 +886,37 @@ app.MapPost("/api/files/upload", async (
 
     return Results.Ok(new { storedFile.Id, storedFile.OriginalName, storedFile.SizeBytes });
 }).DisableAntiforgery().RequirePermission("file.upload");
+
+app.MapGet("/api/files/{id:guid}", async (
+    Guid id,
+    IConfiguration configuration,
+    CurrentUser current,
+    AppDbContext db) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+
+    var storedFile = await db.StoredFiles.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+    if (storedFile is null) return Results.NotFound(new { message = "Không tìm thấy file." });
+
+    if (storedFile.Module.Equals("customers", StringComparison.OrdinalIgnoreCase)
+        && Guid.TryParse(storedFile.RecordId, out var customerId))
+    {
+        var customer = await db.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == customerId && !x.IsDeleted);
+        if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
+
+        var canViewAll = await db.UserRoles.AnyAsync(x =>
+            x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+        if (!canViewAll && customer.OwnerUserId != current.Id.Value)
+            return Results.Forbid();
+    }
+
+    var root = Path.GetFullPath(configuration["UploadRoot"] ?? "uploads");
+    var fullPath = Path.GetFullPath(Path.Combine(root, storedFile.RelativePath));
+    if (!fullPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(fullPath))
+        return Results.NotFound(new { message = "File không còn tồn tại trên máy chủ." });
+
+    return Results.File(fullPath, storedFile.ContentType, storedFile.OriginalName);
+}).RequireAuthorization();
 
 app.MapGet("/api/geo/search", async (
     string q,
@@ -980,7 +1019,9 @@ record CustomerRequest(
     string? LocationLabel,
     string Source,
     string Status,
-    string? Notes);
+    string? Notes,
+    string? TechnicalSpecsJson,
+    string? AttachmentLinksJson);
 record CustomerStatusRequest(string Status);
 record CareRequest(
     Guid CustomerId,
