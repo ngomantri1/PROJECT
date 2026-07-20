@@ -12,6 +12,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<ConsultationProfile> ConsultationProfiles => Set<ConsultationProfile>();
     public DbSet<CareActivity> CareActivities => Set<CareActivity>();
     public DbSet<Quotation> Quotations => Set<Quotation>();
     public DbSet<CatalogCategory> CatalogCategories => Set<CatalogCategory>();
@@ -27,6 +28,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         b.Entity<Role>().HasIndex(x => x.Code).IsUnique();
         b.Entity<Permission>().HasIndex(x => x.Code).IsUnique();
         b.Entity<Customer>().HasIndex(x => x.Code).IsUnique();
+        b.Entity<ConsultationProfile>().HasIndex(x => x.Code).IsUnique();
         b.Entity<Quotation>().HasIndex(x => x.Code).IsUnique();
         b.Entity<CatalogCategory>().HasIndex(x => x.Code).IsUnique();
         b.Entity<CatalogOption>().HasIndex(x => new { x.CategoryId, x.Code }).IsUnique();
@@ -35,7 +37,23 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .WithMany(x => x.Options)
             .HasForeignKey(x => x.CategoryId)
             .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ConsultationProfile>()
+            .HasOne(x => x.Customer)
+            .WithMany(x => x.ConsultationProfiles)
+            .HasForeignKey(x => x.CustomerId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ConsultationProfile>()
+            .HasOne(x => x.OwnerUser)
+            .WithMany()
+            .HasForeignKey(x => x.OwnerUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<Quotation>()
+            .HasOne(x => x.ConsultationProfile)
+            .WithMany(x => x.Quotations)
+            .HasForeignKey(x => x.ConsultationProfileId)
+            .OnDelete(DeleteBehavior.Restrict);
         b.Entity<Customer>().HasQueryFilter(x => !x.IsDeleted);
+        b.Entity<ConsultationProfile>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<CareActivity>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<Quotation>().HasQueryFilter(x => !x.IsDeleted);
     }

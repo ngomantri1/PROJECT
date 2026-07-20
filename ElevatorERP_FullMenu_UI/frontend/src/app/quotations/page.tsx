@@ -40,6 +40,8 @@ import { exportCsv } from '@/lib/exportCsv';
 type CustomerRow = {
   id: string;
   code: string;
+  customerId: string;
+  customerCode?: string;
   name: string;
   phone: string;
   technicalSpecsJson?: string;
@@ -69,6 +71,7 @@ type QuotationRow = {
   status: string;
   validUntil?: string;
   customerId: string;
+  consultationProfileId?: string;
   customerCode: string;
   customer: string;
   phone: string;
@@ -87,7 +90,7 @@ type QuotationRow = {
 };
 
 type QuotationForm = {
-  customerId: string;
+  consultationProfileId: string;
   title: string;
   validUntil?: string;
   status: string;
@@ -164,16 +167,16 @@ export default function Quotations() {
   const [updatingStatusId, setUpdatingStatusId] = useState<string>();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>();
-  const [routeCustomerId, setRouteCustomerId] = useState<string>();
+  const [routeConsultationProfileId, setRouteConsultationProfileId] = useState<string>();
   const [selectedSpecIds, setSelectedSpecIds] = useState<string[]>([]);
   const [costLines, setCostLines] = useState<QuotationCostLine[]>([makeDefaultCostLine()]);
 
-  const selectedCustomerId = Form.useWatch('customerId', form);
+  const selectedConsultationProfileId = Form.useWatch('consultationProfileId', form);
   const discountAmount = Form.useWatch('discountAmount', form) ?? 0;
   const vatRate = Form.useWatch('vatRate', form) ?? 10;
 
-  const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
-  const routeCustomer = customers.find((customer) => customer.id === routeCustomerId);
+  const selectedCustomer = customers.find((customer) => customer.id === selectedConsultationProfileId);
+  const routeCustomer = customers.find((customer) => customer.id === routeConsultationProfileId);
   const customerSpecs = useMemo(
     () => parseJsonArray<ElevatorSpec>(selectedCustomer?.technicalSpecsJson),
     [selectedCustomer?.technicalSpecsJson],
@@ -197,7 +200,7 @@ export default function Quotations() {
       const params = new URLSearchParams();
       if (search.trim()) params.set('search', search.trim());
       if (status) params.set('status', status);
-      if (routeCustomerId) params.set('customerId', routeCustomerId);
+      if (routeConsultationProfileId) params.set('consultationProfileId', routeConsultationProfileId);
       const query = params.toString();
       setRows(await api<QuotationRow[]>(`/quotations${query ? `?${query}` : ''}`));
     } catch (error) {
@@ -205,11 +208,12 @@ export default function Quotations() {
     } finally {
       setLoading(false);
     }
-  }, [routeCustomerId, search, status]);
+  }, [routeConsultationProfileId, search, status]);
 
   useEffect(() => {
-    const customerId = new URLSearchParams(window.location.search).get('customerId') ?? undefined;
-    setRouteCustomerId(customerId);
+    const params = new URLSearchParams(window.location.search);
+    const consultationProfileId = params.get('consultationProfileId') ?? params.get('customerId') ?? undefined;
+    setRouteConsultationProfileId(consultationProfileId);
   }, []);
 
   useEffect(() => {
@@ -218,10 +222,10 @@ export default function Quotations() {
   }, [load]);
 
   useEffect(() => {
-    api<CustomerRow[]>('/customers')
+    api<CustomerRow[]>('/consultation-profiles')
       .then(setCustomers)
       .catch((error: unknown) =>
-        message.error(error instanceof Error ? error.message : 'Không tải được danh sách khách hàng.'),
+        message.error(error instanceof Error ? error.message : 'Không tải được danh sách hồ sơ tư vấn.'),
       );
   }, []);
 
@@ -244,7 +248,7 @@ export default function Quotations() {
   const openCreate = () => {
     form.resetFields();
     form.setFieldsValue({
-      customerId: routeCustomerId,
+      consultationProfileId: routeConsultationProfileId,
       status: 'DRAFT',
       validUntil: dayjs().add(15, 'day').format('YYYY-MM-DD'),
       discountAmount: 0,
@@ -272,6 +276,7 @@ export default function Quotations() {
         method: 'POST',
         body: JSON.stringify({
           ...values,
+          customerId: selectedCustomer?.customerId,
           validUntil: values.validUntil ? dayjs(values.validUntil).endOf('day').toISOString() : null,
           elevatorSpecsJson: JSON.stringify(selectedSpecs),
           costLinesJson: JSON.stringify(costLines),
@@ -439,7 +444,7 @@ export default function Quotations() {
       }}
     >
       <Space direction='vertical' size={16} style={{ width: '100%' }}>
-        <div className='quotation-kpi-grid'>
+        <div className='quotation-kpi-grid erp-kpi-grid'>
           {[
             { label: 'Tổng báo giá', value: summary.total, icon: <FileTextOutlined />, tone: 'blue' },
             { label: 'Chờ duyệt', value: summary.pending, icon: <FilterOutlined />, tone: 'orange' },
@@ -476,7 +481,7 @@ export default function Quotations() {
             />
             <Typography.Text className='filter-result-count'>{rows.length} báo giá</Typography.Text>
             {routeCustomer && (
-              <Tag closable onClose={() => setRouteCustomerId(undefined)}>
+              <Tag closable onClose={() => setRouteConsultationProfileId(undefined)}>
                 {routeCustomer.code} - {routeCustomer.name}
               </Tag>
             )}
@@ -559,11 +564,11 @@ export default function Quotations() {
           <div className='quotation-form-layout'>
             <div className='quotation-form-main'>
               <div className='form-section-heading'>Thông tin báo giá</div>
-              <Form.Item name='customerId' label='Khách hàng' rules={[{ required: true, message: 'Vui lòng chọn khách hàng' }]}>
+              <Form.Item name='consultationProfileId' label='Hồ sơ tư vấn' rules={[{ required: true, message: 'Vui lòng chọn hồ sơ tư vấn' }]}>
                 <Select
                   showSearch
                   optionFilterProp='label'
-                  placeholder='Chọn khách hàng'
+                  placeholder='Chọn hồ sơ tư vấn'
                   options={customers.map((customer) => ({
                     value: customer.id,
                     label: `${customer.code} - ${customer.name} - ${customer.phone}`,
@@ -608,7 +613,7 @@ export default function Quotations() {
                 </Checkbox.Group>
               ) : (
                 <div className='quotation-empty-inline'>
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='Khách hàng chưa có cấu hình thang.' />
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='Hồ sơ tư vấn chưa có cấu hình thang.' />
                 </div>
               )}
 

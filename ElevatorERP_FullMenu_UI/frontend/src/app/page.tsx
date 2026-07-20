@@ -255,7 +255,7 @@ export default function Dashboard() {
                 current={1}
                 responsive
                 items={[
-                  { title: 'Đăng ký KH', description: 'Tiếp nhận nhu cầu', icon: <CustomerServiceOutlined /> },
+                  { title: 'Hồ sơ tư vấn', description: 'Tiếp nhận nhu cầu', icon: <CustomerServiceOutlined /> },
                   { title: 'Chăm sóc', description: 'Theo dõi và khảo sát', icon: <CalendarOutlined /> },
                   { title: 'Báo giá & HĐ', description: 'Duyệt và ký kết', icon: <FileTextOutlined /> },
                   { title: 'Dự án', description: 'Điều phối thi công', icon: <ProjectOutlined /> },

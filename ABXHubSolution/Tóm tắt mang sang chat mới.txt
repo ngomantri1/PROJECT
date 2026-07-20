@@ -1,6 +1,6 @@
 Hãy phân tích toàn bộ project hiện tại và tự động tạo các file context chuẩn cho AI coding.
 
-Tạo các file sau:
+Tạo các file sau vào thư mục docs:
 
 - PROJECT_CONTEXT.md
 - ARCHITECTURE.md

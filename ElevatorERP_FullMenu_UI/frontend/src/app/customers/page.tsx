@@ -70,7 +70,7 @@ import type { ProFormInstance } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { exportCsv } from '@/lib/exportCsv';
 
@@ -80,16 +80,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 type CustomerRow = {
   id: string;
   code: string;
+  customerId?: string;
+  customerCode?: string;
   name: string;
   phone: string;
   email?: string;
   address?: string;
   area?: string;
   elevatorType?: string;
-  latitude?: number;
-  longitude?: number;
-  locationAccuracyMeters?: number;
-  locationLabel?: string;
   customerType: 'PERSONAL' | 'BUSINESS';
   notes?: string;
   source: string;
@@ -100,7 +98,20 @@ type CustomerRow = {
   createdAt?: string;
 };
 
+type CustomerMasterRow = {
+  id: string;
+  code: string;
+  name: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  area?: string;
+  customerType: 'PERSONAL' | 'BUSINESS';
+  source?: string;
+};
+
 type CustomerForm = {
+  customerId?: string;
   customerType: 'PERSONAL' | 'BUSINESS';
   name: string;
   phone: string;
@@ -109,10 +120,6 @@ type CustomerForm = {
   elevatorType?: string;
   source: string;
   address?: string;
-  latitude?: number;
-  longitude?: number;
-  locationAccuracyMeters?: number;
-  locationLabel?: string;
   notes?: string;
   status: string;
   technicalSpecsJson?: string;
@@ -130,6 +137,11 @@ type CustomerSaveResponse = {
   id: string;
   code: string;
 };
+
+function normalizePhone(value?: string) {
+  const digits = value?.replace(/[^\d]/g, '') ?? '';
+  return digits.startsWith('84') && digits.length > 9 ? `0${digits.slice(2)}` : digits;
+}
 
 type FileUploadResponse = {
   id: string;
@@ -155,6 +167,11 @@ type ElevatorSpec = {
   pitDepthMm?: number;
   machineRoomHeightMm?: number;
   overheadHeightMm?: number;
+  installationAddress?: string;
+  latitude?: number;
+  longitude?: number;
+  locationAccuracyMeters?: number;
+  locationLabel?: string;
   floorHeights: ElevatorFloorHeight[];
   technicalNotes?: string;
 };
@@ -206,7 +223,7 @@ type CustomerFilters = {
 const textSorter = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
 
 const fallbackStatusOptions: CatalogOption[] = [
-  { code: 'NEW', label: 'Khách hàng mới', color: 'blue' },
+  { code: 'NEW', label: 'Mới tiếp nhận', color: 'blue' },
   { code: 'CONTACTED', label: 'Đã liên hệ', color: 'cyan' },
   { code: 'CARING', label: 'Đang chăm sóc', color: 'green' },
   { code: 'WAITING_SURVEY', label: 'Chờ khảo sát', color: 'purple' },
@@ -332,6 +349,7 @@ function parseJsonArray<T>(value?: string): T[] {
 
 export default function Customers() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const customerFormRef = useRef<ProFormInstance<CustomerForm> | undefined>(undefined);
   const attachmentFileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentCameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -340,9 +358,11 @@ export default function Customers() {
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const [data, setData] = useState<CustomerRow[]>([]);
+  const [masterCustomers, setMasterCustomers] = useState<CustomerMasterRow[]>([]);
   const [open, setOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow>();
-  const [customerLocation, setCustomerLocation] = useState<CustomerLocation>();
+  const [selectedExistingCustomerId, setSelectedExistingCustomerId] = useState<string>();
+  const [duplicateConsultationCustomer, setDuplicateConsultationCustomer] = useState<CustomerMasterRow>();
   const [technicalDrawerOpen, setTechnicalDrawerOpen] = useState(false);
   const [elevatorSpecs, setElevatorSpecs] = useState<ElevatorSpec[]>([]);
   const [activeElevatorSpecId, setActiveElevatorSpecId] = useState<string>();
@@ -354,6 +374,7 @@ export default function Customers() {
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [locationModalOpen, setLocationModalOpen] = useState(false);
+  const [locationTargetElevatorSpecId, setLocationTargetElevatorSpecId] = useState<string>();
   const [draftLocation, setDraftLocation] = useState<CustomerLocation>();
   const [locationSearch, setLocationSearch] = useState('');
   const [sharedLocationText, setSharedLocationText] = useState('');
@@ -390,6 +411,14 @@ export default function Customers() {
   const customerTypeOptions = catalogCustomerTypes.length ? catalogCustomerTypes : fallbackCustomerTypeOptions;
   const elevatorTypeOptions = catalogElevatorTypes.length ? catalogElevatorTypes : fallbackElevatorTypeOptions;
   const activeElevatorSpec = elevatorSpecs.find((item) => item.id === activeElevatorSpecId) ?? elevatorSpecs[0];
+  const masterCustomerOptions = useMemo(
+    () => masterCustomers.map((customer) => ({
+      value: customer.id,
+      label: `${customer.code} - ${customer.name} - ${customer.phone}`,
+    })),
+    [masterCustomers],
+  );
+  const selectedExistingCustomer = masterCustomers.find((customer) => customer.id === selectedExistingCustomerId);
   const locationSuggestionOptions = useMemo(
     () => locationSuggestions.map((item) => ({
       value: item.id,
@@ -433,9 +462,9 @@ export default function Customers() {
       if (currentCreatedFrom) params.set('createdFrom', currentCreatedFrom);
       if (currentCreatedTo) params.set('createdTo', currentCreatedTo);
       const query = params.toString();
-      setData(await api<CustomerRow[]>(`/customers${query ? `?${query}` : ''}`));
+      setData(await api<CustomerRow[]>(`/consultation-profiles${query ? `?${query}` : ''}`));
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Không tải được danh sách khách hàng.');
+      message.error(error instanceof Error ? error.message : 'Không tải được danh sách hồ sơ tư vấn.');
     } finally {
       setLoading(false);
     }
@@ -469,6 +498,12 @@ export default function Customers() {
     api<CatalogOption[]>('/catalogs/categories/elevator_type/options?activeOnly=true')
       .then(setCatalogElevatorTypes)
       .catch(() => setCatalogElevatorTypes(fallbackElevatorTypeOptions));
+  }, []);
+
+  useEffect(() => {
+    api<CustomerMasterRow[]>('/customers')
+      .then(setMasterCustomers)
+      .catch(() => setMasterCustomers([]));
   }, []);
 
   useEffect(() => () => {
@@ -608,8 +643,8 @@ export default function Customers() {
   };
 
   const exportCustomers = () => {
-    exportCsv(`danh-sach-khach-hang-${dayjs().format('YYYYMMDD-HHmm')}`, data, [
-      { header: 'Mã KH', value: (item) => item.code },
+    exportCsv(`danh-sach-ho-so-tu-van-${dayjs().format('YYYYMMDD-HHmm')}`, data, [
+      { header: 'Mã hồ sơ', value: (item) => item.code },
       { header: 'Khách hàng', value: (item) => item.name },
       { header: 'Số điện thoại', value: (item) => item.phone },
       { header: 'Email', value: (item) => item.email },
@@ -623,9 +658,10 @@ export default function Customers() {
     ]);
   };
 
-  const openCreateDrawer = () => {
+  const openCreateDrawer = (existingCustomerId?: string) => {
     setEditingCustomer(undefined);
-    setCustomerLocation(undefined);
+    setSelectedExistingCustomerId(existingCustomerId);
+    setDuplicateConsultationCustomer(undefined);
     setElevatorSpecs([]);
     setActiveElevatorSpecId(undefined);
     setAttachments([]);
@@ -635,22 +671,52 @@ export default function Customers() {
 
   const openEditDrawer = (customer: CustomerRow) => {
     setEditingCustomer(customer);
-    setCustomerLocation(
-      typeof customer.latitude === 'number' && typeof customer.longitude === 'number'
-        ? {
-          latitude: customer.latitude,
-          longitude: customer.longitude,
-          accuracyMeters: customer.locationAccuracyMeters,
-          label: customer.locationLabel,
-        }
-        : undefined,
-    );
+    setSelectedExistingCustomerId(customer.customerId);
+    setDuplicateConsultationCustomer(undefined);
     const specs = parseJsonArray<ElevatorSpec>(customer.technicalSpecsJson);
     setElevatorSpecs(specs);
     setActiveElevatorSpecId(specs[0]?.id);
     setAttachments(parseJsonArray<CustomerAttachment>(customer.attachmentLinksJson));
     attachmentFileByIdRef.current = {};
     setOpen(true);
+  };
+
+  useEffect(() => {
+    const requestedCustomerId = searchParams.get('customerId');
+    if (!requestedCustomerId || open || editingCustomer || !masterCustomers.some((customer) => customer.id === requestedCustomerId)) return;
+    openCreateDrawer(requestedCustomerId);
+    router.replace('/customers');
+  }, [editingCustomer, masterCustomers, open, router, searchParams]);
+
+  const applyExistingCustomer = (customerId?: string) => {
+    setSelectedExistingCustomerId(customerId);
+    setDuplicateConsultationCustomer(undefined);
+    if (!customerId) return;
+    const customer = masterCustomers.find((item) => item.id === customerId);
+    if (!customer) return;
+
+    customerFormRef.current?.setFieldsValue({
+      customerId,
+      customerType: customer.customerType,
+      name: customer.name,
+      phone: customer.phone,
+      email: customer.email,
+      area: customer.area,
+      address: customer.address,
+    });
+  };
+
+  const clearSelectedCustomerIfPhoneChanged = (nextPhone: string) => {
+    if (!selectedExistingCustomerId) return;
+    const selectedCustomer = masterCustomers.find((item) => item.id === selectedExistingCustomerId);
+    if (!selectedCustomer || normalizePhone(selectedCustomer.phone) === normalizePhone(nextPhone)) return;
+    setSelectedExistingCustomerId(undefined);
+    customerFormRef.current?.setFieldValue('customerId', undefined);
+  };
+
+  const selectDuplicateCustomerForConsultation = (customer: CustomerMasterRow) => {
+    applyExistingCustomer(customer.id);
+    customerFormRef.current?.setFields([{ name: 'phone', errors: [] }]);
   };
 
   const resetSupplementalCustomerData = () => {
@@ -902,15 +968,31 @@ export default function Customers() {
     }
   };
 
-  const openLocationPicker = () => {
-    setDraftLocation(customerLocation);
-    setLocationSearch(customerLocation?.label ?? '');
+  const openLocationPicker = (specId?: string) => {
+    const targetSpec = elevatorSpecs.find((item) => item.id === (specId ?? activeElevatorSpecId));
+    if (!targetSpec) {
+      message.warning('Vui lòng chọn cấu hình thang trước khi ghim vị trí.');
+      return;
+    }
+
+    const currentLocation = typeof targetSpec.latitude === 'number' && typeof targetSpec.longitude === 'number'
+      ? {
+        latitude: targetSpec.latitude,
+        longitude: targetSpec.longitude,
+        accuracyMeters: targetSpec.locationAccuracyMeters,
+        label: targetSpec.locationLabel,
+      }
+      : undefined;
+
+    setLocationTargetElevatorSpecId(targetSpec.id);
+    setDraftLocation(currentLocation);
+    setLocationSearch(targetSpec.installationAddress ?? currentLocation?.label ?? '');
     setSharedLocationText('');
     setLastResolvedSharedLocation('');
     setCoordinateEditing(false);
     setCoordinateDraft({
-      latitude: customerLocation?.latitude.toFixed(6) ?? '',
-      longitude: customerLocation?.longitude.toFixed(6) ?? '',
+      latitude: currentLocation?.latitude.toFixed(6) ?? '',
+      longitude: currentLocation?.longitude.toFixed(6) ?? '',
     });
     setLocationModalOpen(true);
   };
@@ -1088,11 +1170,11 @@ export default function Customers() {
     if (customer.status === nextStatus) return;
     setUpdatingStatusId(customer.id);
     try {
-      await api(`/customers/${customer.id}/status`, {
+      await api(`/consultation-profiles/${customer.id}/status`, {
         method: 'PUT',
         body: JSON.stringify({ status: nextStatus }),
       });
-      message.success('Đã cập nhật trạng thái khách hàng');
+      message.success('Đã cập nhật trạng thái hồ sơ tư vấn');
       await load();
     } catch (error) {
       message.error(error instanceof Error ? error.message : 'Không cập nhật được trạng thái.');
@@ -1137,12 +1219,6 @@ export default function Customers() {
 
   const renderCustomerAddress = (customer: CustomerRow) => {
     const displayAddress = customer.address || customer.area;
-    const hasLocation = typeof customer.latitude === 'number' && typeof customer.longitude === 'number';
-    const locationText = customer.locationLabel
-      || (hasLocation ? `${customer.latitude?.toFixed(6)}, ${customer.longitude?.toFixed(6)}` : undefined);
-    const mapUrl = hasLocation
-      ? `https://www.google.com/maps/search/?api=1&query=${customer.latitude},${customer.longitude}`
-      : undefined;
 
     return displayAddress ? (
       <Tooltip title={displayAddress}>
@@ -1151,25 +1227,12 @@ export default function Customers() {
             <EnvironmentOutlined />
             <span className='table-cell-inline-text table-cell-clamp'>{displayAddress}</span>
           </span>
-          {hasLocation && mapUrl && (
-            <Tooltip title={`Mở Google Maps: ${locationText}`}>
-              <a
-                href={mapUrl}
-                target='_blank'
-                rel='noreferrer'
-                className='table-address-pin'
-                onClick={(event) => event.stopPropagation()}
-              >
-                <PushpinOutlined />
-              </a>
-            </Tooltip>
-          )}
         </span>
       </Tooltip>
     ) : <Typography.Text type='secondary'>—</Typography.Text>;
   };
 
-  const uploadPendingAttachments = async (customerId: string, currentAttachments: CustomerAttachment[]) => {
+  const uploadPendingAttachments = async (consultationProfileId: string, currentAttachments: CustomerAttachment[]) => {
     const pendingAttachments = currentAttachments.filter((attachment) =>
       !attachment.storedFileId && attachmentFileByIdRef.current[attachment.id],
     );
@@ -1179,7 +1242,7 @@ export default function Customers() {
       const file = attachmentFileByIdRef.current[attachment.id];
       const formData = new FormData();
       formData.append('file', file);
-      const params = new URLSearchParams({ module: 'customers', recordId: customerId });
+      const params = new URLSearchParams({ module: 'consultation-profiles', recordId: consultationProfileId });
       const response = await fetch(`${API_BASE}/files/upload?${params.toString()}`, {
         method: 'POST',
         credentials: 'include',
@@ -1209,7 +1272,7 @@ export default function Customers() {
 
   const columns: ProColumns<CustomerRow>[] = [
     {
-      title: 'Mã KH',
+      title: 'Mã hồ sơ',
       dataIndex: 'code',
       width: 112,
       fixed: 'left',
@@ -1310,19 +1373,19 @@ export default function Customers() {
                   key: 'care',
                   icon: <CalendarOutlined />,
                   label: 'Ghi chăm sóc',
-                  onClick: () => router.push(`/care?customerId=${item.id}`),
+                  onClick: () => router.push(`/care?customerId=${item.customerId ?? item.id}`),
                 },
                 {
                   key: 'quotation',
                   icon: <FileTextOutlined />,
                   label: 'Tạo báo giá',
-                  onClick: () => router.push(`/quotations?customerId=${item.id}`),
+                  onClick: () => router.push(`/quotations?consultationProfileId=${item.id}`),
                 },
                 {
                   key: 'contract',
                   icon: <FileProtectOutlined />,
                   label: 'Tạo hợp đồng',
-                  onClick: () => router.push(`/contracts?customerId=${item.id}`),
+                  onClick: () => router.push(`/contracts?customerId=${item.customerId ?? item.id}`),
                 },
                 {
                   key: 'portal',
@@ -1334,7 +1397,7 @@ export default function Customers() {
                 {
                   key: 'delete',
                   icon: <DeleteOutlined />,
-                  label: 'Xóa khách hàng',
+                  label: 'Hủy hồ sơ tư vấn',
                   danger: true,
                   disabled: true,
                 },
@@ -1353,40 +1416,78 @@ export default function Customers() {
   const save = async (values: CustomerForm) => {
     const buildPayload = (currentAttachments: CustomerAttachment[]) => ({
       ...values,
-      latitude: customerLocation?.latitude ?? null,
-      longitude: customerLocation?.longitude ?? null,
-      locationAccuracyMeters: customerLocation?.accuracyMeters ?? null,
-      locationLabel: customerLocation?.label ?? null,
+      latitude: null,
+      longitude: null,
+      locationAccuracyMeters: null,
+      locationLabel: null,
       technicalSpecsJson: elevatorSpecs.length ? JSON.stringify(elevatorSpecs) : null,
       attachmentLinksJson: currentAttachments.length ? JSON.stringify(currentAttachments) : null,
     });
 
+    const duplicateCustomer = !editingCustomer
+      ? masterCustomers.find((customer) => normalizePhone(customer.phone) === normalizePhone(values.phone))
+      : undefined;
+    const selectedCustomerId = values.customerId ?? selectedExistingCustomerId;
+
+    if (duplicateCustomer && duplicateCustomer.id !== selectedCustomerId) {
+      setDuplicateConsultationCustomer(duplicateCustomer);
+      customerFormRef.current?.setFields([
+        {
+          name: 'phone',
+          errors: [`Số điện thoại đã tồn tại ở khách hàng ${duplicateCustomer.code} - ${duplicateCustomer.name}.`],
+        },
+      ]);
+      message.error(`Không thể tạo khách hàng mới vì SĐT đã thuộc ${duplicateCustomer.code} - ${duplicateCustomer.name}.`);
+      return false;
+    }
+
     try {
       let savedCustomerId = editingCustomer?.id;
       if (editingCustomer) {
-        await api(`/customers/${editingCustomer.id}`, { method: 'PUT', body: JSON.stringify(buildPayload(attachments)) });
+        await api(`/consultation-profiles/${editingCustomer.id}`, { method: 'PUT', body: JSON.stringify(buildPayload(attachments)) });
       } else {
-        const created = await api<CustomerSaveResponse>('/customers', { method: 'POST', body: JSON.stringify(buildPayload(attachments)) });
+        const created = await api<CustomerSaveResponse>('/consultation-profiles', { method: 'POST', body: JSON.stringify(buildPayload(attachments)) });
         savedCustomerId = created.id;
       }
 
       if (savedCustomerId) {
         const uploadedAttachments = await uploadPendingAttachments(savedCustomerId, attachments);
         if (uploadedAttachments !== attachments) {
-          await api(`/customers/${savedCustomerId}`, { method: 'PUT', body: JSON.stringify(buildPayload(uploadedAttachments)) });
+          await api(`/consultation-profiles/${savedCustomerId}`, { method: 'PUT', body: JSON.stringify(buildPayload(uploadedAttachments)) });
           setAttachments(uploadedAttachments);
         }
       }
 
-      message.success(editingCustomer ? 'Đã cập nhật đăng ký khách hàng' : 'Đã tạo đăng ký khách hàng');
+      message.success(editingCustomer ? 'Đã cập nhật hồ sơ tư vấn' : 'Đã tạo hồ sơ tư vấn');
       setOpen(false);
       setEditingCustomer(undefined);
-      setCustomerLocation(undefined);
       resetSupplementalCustomerData();
       await load();
+      api<CustomerMasterRow[]>('/customers').then(setMasterCustomers).catch(() => undefined);
       return true;
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Không lưu được khách hàng.');
+      if (error instanceof Error && error.message.includes('Số điện thoại')) {
+        let matchedCustomer = masterCustomers.find((customer) => normalizePhone(customer.phone) === normalizePhone(values.phone));
+        if (!matchedCustomer) {
+          try {
+            const refreshedCustomers = await api<CustomerMasterRow[]>('/customers');
+            setMasterCustomers(refreshedCustomers);
+            matchedCustomer = refreshedCustomers.find((customer) => normalizePhone(customer.phone) === normalizePhone(values.phone));
+          } catch {
+            // The original API error remains the fallback when the customer list cannot be refreshed.
+          }
+        }
+        if (matchedCustomer && matchedCustomer.id !== selectedCustomerId) {
+          setDuplicateConsultationCustomer(matchedCustomer);
+          customerFormRef.current?.setFields([
+            {
+              name: 'phone',
+              errors: [`Số điện thoại đã tồn tại ở khách hàng ${matchedCustomer.code} - ${matchedCustomer.name}.`],
+            },
+          ]);
+        }
+      }
+      message.error(error instanceof Error ? error.message : 'Không lưu được hồ sơ tư vấn.');
       return false;
     }
   };
@@ -1397,21 +1498,21 @@ export default function Customers() {
         header={{
           title: (
             <div className='page-title-stack'>
-              <Typography.Title level={3}>Đăng ký khách hàng</Typography.Title>
-              <Typography.Text>Quản lý khách hàng, nhu cầu ban đầu và người phụ trách</Typography.Text>
+              <Typography.Title level={3}>Hồ sơ tư vấn thang máy</Typography.Title>
+              <Typography.Text>Quản lý nhu cầu thang máy, kỹ thuật sơ khai, báo giá và người phụ trách</Typography.Text>
             </div>
           ),
           extra: (
-            <Button type='primary' icon={<PlusOutlined />} onClick={openCreateDrawer}>
-              Thêm khách hàng
+            <Button type='primary' icon={<PlusOutlined />} onClick={() => openCreateDrawer()}>
+              Thêm hồ sơ tư vấn
             </Button>
           ),
           breadcrumb: {},
         }}
       >
-        <Row gutter={[16, 16]}>
+        <Row gutter={[16, 16]} className='erp-kpi-row'>
           {[
-            { label: 'Tổng khách hàng', value: summary.total, icon: <TeamOutlined />, tone: 'blue' },
+            { label: 'Tổng hồ sơ tư vấn', value: summary.total, icon: <TeamOutlined />, tone: 'blue' },
             { label: 'Mới tiếp nhận', value: summary.newCount, icon: <UserAddOutlined />, tone: 'cyan' },
             { label: 'Đang chăm sóc', value: summary.caringCount, icon: <PhoneOutlined />, tone: 'violet' },
             { label: 'Báo giá / Đàm phán', value: summary.quotedCount, icon: <BankOutlined />, tone: 'orange' },
@@ -1437,7 +1538,7 @@ export default function Customers() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               prefix={<SearchOutlined />}
-              placeholder='Tìm tên, SĐT, email hoặc mã KH...'
+              placeholder='Tìm mã hồ sơ, tên, SĐT hoặc email...'
               allowClear
               className='customer-search-input'
             />
@@ -1449,7 +1550,7 @@ export default function Customers() {
             <Button icon={<ReloadOutlined />} onClick={() => void resetFilters()}>
               Đặt lại
             </Button>
-            <Typography.Text className='filter-result-count'>{data.length} khách hàng</Typography.Text>
+            <Typography.Text className='filter-result-count'>{data.length} hồ sơ</Typography.Text>
             <Button icon={<DownloadOutlined />} onClick={exportCustomers}>
               Xuất CSV
             </Button>
@@ -1490,7 +1591,7 @@ export default function Customers() {
           )}
         >
           <Typography.Text className='advanced-filter-description'>
-            Áp dụng nhiều điều kiện cùng lúc cho danh sách khách hàng hiện tại.
+            Áp dụng nhiều điều kiện cùng lúc cho danh sách hồ sơ tư vấn hiện tại.
           </Typography.Text>
           <div className='advanced-filter-section'>
             <div className='advanced-filter-section-title'>Phân loại</div>
@@ -1604,12 +1705,12 @@ export default function Customers() {
               pageSize: customerTablePage.pageSize,
               showSizeChanger: true,
               pageSizeOptions: [10, 20, 50, 100],
-              showTotal: (total) => `${total} khách hàng`,
+              showTotal: (total) => `${total} hồ sơ`,
               onChange: (current, pageSize) => setCustomerTablePage({ current, pageSize }),
               onShowSizeChange: (_, pageSize) => setCustomerTablePage({ current: 1, pageSize }),
             }}
             scroll={{ x: 1510 }}
-            headerTitle='Danh sách đăng ký khách hàng'
+            headerTitle='Danh sách hồ sơ tư vấn'
           />
         </div>
 
@@ -1617,7 +1718,7 @@ export default function Customers() {
           <List
             loading={loading}
             dataSource={data}
-            locale={{ emptyText: 'Chưa có khách hàng' }}
+            locale={{ emptyText: 'Chưa có hồ sơ tư vấn' }}
             renderItem={(customer) => (
               <List.Item>
                 <Card className='mobile-record-card'>
@@ -1633,17 +1734,6 @@ export default function Customers() {
                   </Space>
                   <Descriptions size='small' column={1} className='mobile-descriptions'>
                     <Descriptions.Item label='Địa chỉ'>{customer.address || customer.area || '—'}</Descriptions.Item>
-                    <Descriptions.Item label='Vị trí'>
-                      {typeof customer.latitude === 'number' && typeof customer.longitude === 'number' ? (
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${customer.latitude},${customer.longitude}`}
-                          target='_blank'
-                          rel='noreferrer'
-                        >
-                          Đã ghim vị trí
-                        </a>
-                      ) : 'Chưa ghim'}
-                    </Descriptions.Item>
                     <Descriptions.Item label='Nhóm khách hàng'>
                       <CustomerTypeTag value={customer.customerType} typeOptions={customerTypeOptions} />
                     </Descriptions.Item>
@@ -1664,9 +1754,9 @@ export default function Customers() {
         </div>
 
         <DrawerForm<CustomerForm>
-          key={editingCustomer?.id ?? 'create-customer'}
+          key={editingCustomer?.id ?? 'consultation-form'}
           formRef={customerFormRef}
-          title={editingCustomer ? 'Sửa đăng ký khách hàng' : 'Thêm đăng ký khách hàng'}
+          title={editingCustomer ? 'Sửa hồ sơ tư vấn' : 'Thêm hồ sơ tư vấn'}
           open={open}
           onOpenChange={(visible) => {
             setOpen(visible);
@@ -1674,12 +1764,14 @@ export default function Customers() {
               closeCameraCapture();
               setDeleteElevatorSpecCandidate(undefined);
               setEditingCustomer(undefined);
-              setCustomerLocation(undefined);
+              setSelectedExistingCustomerId(undefined);
+              setDuplicateConsultationCustomer(undefined);
               resetSupplementalCustomerData();
             }
           }}
           width='min(1120px, calc(100vw - 40px))'
           initialValues={editingCustomer ? {
+            customerId: editingCustomer.customerId,
             customerType: editingCustomer.customerType,
             name: editingCustomer.name,
             phone: editingCustomer.phone,
@@ -1690,14 +1782,59 @@ export default function Customers() {
             address: editingCustomer.address,
             notes: editingCustomer.notes,
             status: editingCustomer.status,
+          } : selectedExistingCustomer ? {
+            customerId: selectedExistingCustomer.id,
+            customerType: selectedExistingCustomer.customerType,
+            name: selectedExistingCustomer.name,
+            phone: selectedExistingCustomer.phone,
+            email: selectedExistingCustomer.email,
+            area: selectedExistingCustomer.area,
+            address: selectedExistingCustomer.address,
+            source: selectedExistingCustomer.source || 'Marketing',
+            status: 'NEW',
           } : { customerType: 'PERSONAL', source: 'Marketing', status: 'NEW' }}
           onFinish={save}
           drawerProps={{ destroyOnClose: true, className: 'customer-form-drawer', rootClassName: 'customer-form-drawer-root' }}
-          submitter={{ searchConfig: { submitText: editingCustomer ? 'Lưu thay đổi' : 'Lưu đăng ký', resetText: 'Hủy' } }}
+          submitter={{ searchConfig: { submitText: editingCustomer ? 'Lưu thay đổi' : 'Lưu hồ sơ', resetText: 'Hủy' } }}
         >
           <div className='customer-form-layout'>
             <div className='customer-form-main'>
               <div className='form-section-heading'>Thông tin khách hàng</div>
+              {!editingCustomer && (
+                <>
+                  <ProFormSelect
+                    name='customerId'
+                    label='Tìm/chọn khách hàng đã có'
+                    placeholder='Nhập tên, mã KH hoặc số điện thoại để tìm khách cũ'
+                    showSearch
+                    allowClear
+                    options={masterCustomerOptions}
+                    fieldProps={{
+                      optionFilterProp: 'label',
+                      onChange: (value) => applyExistingCustomer(value as string | undefined),
+                    }}
+                  />
+                  {duplicateConsultationCustomer && (
+                    <Alert
+                      className='customer-duplicate-alert consultation-duplicate-alert'
+                      type='error'
+                      showIcon
+                      message={(
+                        <span>
+                          <b>Số điện thoại đã tồn tại.</b> Thuộc khách hàng <b>{duplicateConsultationCustomer.code} - {duplicateConsultationCustomer.name}</b>.
+                          <Button
+                            type='link'
+                            size='small'
+                            onClick={() => selectDuplicateCustomerForConsultation(duplicateConsultationCustomer)}
+                          >
+                            Chọn khách hàng này
+                          </Button>
+                        </span>
+                      )}
+                    />
+                  )}
+                </>
+              )}
               <ProFormRadio.Group
                 name='customerType'
                 label='Nhóm khách hàng'
@@ -1717,6 +1854,12 @@ export default function Customers() {
                   label='Số điện thoại'
                   width='md'
                   placeholder='Ví dụ: 0912 345 678'
+                  fieldProps={{
+                    onChange: (event) => {
+                      clearSelectedCustomerIfPhoneChanged(event.target.value);
+                      if (duplicateConsultationCustomer) setDuplicateConsultationCustomer(undefined);
+                    },
+                  }}
                   rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
                 />
               </ProForm.Group>
@@ -1744,36 +1887,10 @@ export default function Customers() {
               </ProForm.Group>
               <ProFormTextArea
                 name='address'
-                label='Địa chỉ công trình'
-                placeholder='Nhập địa chỉ dự kiến lắp đặt thang máy'
+                label='Địa chỉ liên hệ'
+                placeholder='Nhập địa chỉ liên hệ của khách hàng'
                 fieldProps={{ rows: 2 }}
               />
-              <div className='location-pin-panel'>
-                <div>
-                  <Typography.Text strong>Vị trí triển khai</Typography.Text>
-                  <Typography.Text type='secondary'>
-                    Ghim tọa độ để kỹ thuật có thể mở bản đồ khi khảo sát/lắp đặt.
-                  </Typography.Text>
-                </div>
-                <Space wrap>
-                  <Button icon={<PushpinOutlined />} onClick={openLocationPicker}>
-                    {customerLocation ? 'Sửa vị trí ghim' : 'Ghim vị trí'}
-                  </Button>
-                  {customerLocation && (
-                    <Button icon={<DeleteOutlined />} onClick={() => setCustomerLocation(undefined)}>
-                      Xóa ghim
-                    </Button>
-                  )}
-                </Space>
-                {customerLocation && (
-                  <div className='location-pin-summary'>
-                    <EnvironmentOutlined />
-                    <span>
-                      {customerLocation.label || 'Đã ghim vị trí'} · {customerLocation.latitude.toFixed(6)}, {customerLocation.longitude.toFixed(6)}
-                    </span>
-                  </div>
-                )}
-              </div>
               <ProFormTextArea
                 name='notes'
                 label='Yêu cầu / Ghi chú ban đầu'
@@ -2141,6 +2258,67 @@ export default function Customers() {
                   ))}
                 </div>
 
+                <div className='technical-section-title'>Vị trí lắp đặt</div>
+                <div className='technical-install-location'>
+                  <label className='technical-note-field'>
+                    <span>Địa chỉ công trình / vị trí đặt thang</span>
+                    <Input.TextArea
+                      rows={2}
+                      value={activeElevatorSpec.installationAddress}
+                      placeholder='Nhập địa chỉ nơi lắp đặt thang máy'
+                      onChange={(event) => updateElevatorSpec(activeElevatorSpec.id, { installationAddress: event.target.value })}
+                    />
+                  </label>
+                  <div className='technical-location-panel'>
+                    <div>
+                      <Typography.Text strong>Vị trí ghim triển khai</Typography.Text>
+                      <Typography.Text type='secondary'>
+                        Ghim tọa độ riêng cho thang này để kỹ thuật mở bản đồ khi khảo sát/lắp đặt.
+                      </Typography.Text>
+                    </div>
+                    <Space wrap>
+                      <Button
+                        onClick={() => {
+                          const contactAddress = customerFormRef.current?.getFieldValue('address')?.trim();
+                          if (!contactAddress) {
+                            message.warning('Chưa có địa chỉ liên hệ để sao chép.');
+                            return;
+                          }
+                          updateElevatorSpec(activeElevatorSpec.id, { installationAddress: contactAddress });
+                        }}
+                      >
+                        Dùng địa chỉ liên hệ
+                      </Button>
+                      <Button icon={<PushpinOutlined />} onClick={() => openLocationPicker(activeElevatorSpec.id)}>
+                        {typeof activeElevatorSpec.latitude === 'number' && typeof activeElevatorSpec.longitude === 'number'
+                          ? 'Sửa vị trí ghim'
+                          : 'Ghim vị trí'}
+                      </Button>
+                      {typeof activeElevatorSpec.latitude === 'number' && typeof activeElevatorSpec.longitude === 'number' && (
+                        <Button
+                          icon={<DeleteOutlined />}
+                          onClick={() => updateElevatorSpec(activeElevatorSpec.id, {
+                            latitude: undefined,
+                            longitude: undefined,
+                            locationAccuracyMeters: undefined,
+                            locationLabel: undefined,
+                          })}
+                        >
+                          Xóa ghim
+                        </Button>
+                      )}
+                    </Space>
+                    {typeof activeElevatorSpec.latitude === 'number' && typeof activeElevatorSpec.longitude === 'number' && (
+                      <div className='location-pin-summary'>
+                        <EnvironmentOutlined />
+                        <span>
+                          {activeElevatorSpec.locationLabel || 'Đã ghim vị trí'} · {activeElevatorSpec.latitude.toFixed(6)}, {activeElevatorSpec.longitude.toFixed(6)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <label className='technical-note-field'>
                   <span>Ghi chú kỹ thuật</span>
                   <Input.TextArea
@@ -2253,13 +2431,22 @@ export default function Customers() {
             </span>
           )}
           open={locationModalOpen}
-          onCancel={() => setLocationModalOpen(false)}
+          onCancel={() => {
+            setLocationModalOpen(false);
+            setLocationTargetElevatorSpecId(undefined);
+          }}
           width='min(1080px, calc(100vw - 96px))'
           style={{ top: 48 }}
           className='location-picker-modal'
           destroyOnHidden
           footer={[
-            <Button key='cancel' onClick={() => setLocationModalOpen(false)}>
+            <Button
+              key='cancel'
+              onClick={() => {
+                setLocationModalOpen(false);
+                setLocationTargetElevatorSpecId(undefined);
+              }}
+            >
               Hủy bỏ
             </Button>,
             <Tooltip key='confirm' title={!draftLocation ? 'Chọn vị trí trên bản đồ hoặc từ gợi ý địa chỉ để xác nhận.' : ''}>
@@ -2270,11 +2457,16 @@ export default function Customers() {
                   disabled={!draftLocation}
                   onClick={() => {
                     if (!draftLocation) return;
-                    setCustomerLocation(draftLocation);
-                    if (draftLocation.label) {
-                      customerFormRef.current?.setFieldsValue({ address: draftLocation.label });
+                    if (locationTargetElevatorSpecId) {
+                      updateElevatorSpec(locationTargetElevatorSpecId, {
+                        latitude: draftLocation.latitude,
+                        longitude: draftLocation.longitude,
+                        locationAccuracyMeters: draftLocation.accuracyMeters,
+                        locationLabel: draftLocation.label,
+                      });
                     }
                     setLocationModalOpen(false);
+                    setLocationTargetElevatorSpecId(undefined);
                   }}
                 >
                   Xác nhận ghim vị trí

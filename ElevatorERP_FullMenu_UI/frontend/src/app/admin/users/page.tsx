@@ -178,7 +178,7 @@ export default function Users() {
           breadcrumb: {},
         }}
       >
-        <Row gutter={[16, 16]}>
+        <Row gutter={[16, 16]} className='erp-kpi-row'>
           {[
             { label: 'Tổng tài khoản', value: summary.total, icon: <TeamOutlined />, tone: 'blue' },
             { label: 'Đang hoạt động', value: summary.active, icon: <CheckCircleOutlined />, tone: 'green' },

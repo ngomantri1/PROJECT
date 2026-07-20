@@ -284,6 +284,9 @@ app.MapGet("/api/customers", async (
             x.Notes,
             x.TechnicalSpecsJson,
             x.AttachmentLinksJson,
+            consultationProfileCount = db.ConsultationProfiles.Count(profile => profile.CustomerId == x.Id),
+            quotationCount = db.Quotations.Count(quotation => quotation.CustomerId == x.Id),
+            careActivityCount = db.CareActivities.Count(activity => activity.CustomerId == x.Id),
             owner = x.OwnerUser.DisplayName,
             x.CreatedAt
         })
@@ -310,6 +313,10 @@ app.MapPost("/api/customers", async (
     if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Phone))
         return Results.BadRequest(new { message = "Tên khách hàng và số điện thoại là bắt buộc." });
 
+    var phone = request.Phone.Trim();
+    if (await db.Customers.AnyAsync(x => x.Phone == phone))
+        return Results.BadRequest(new { message = "Số điện thoại đã tồn tại trong hệ thống. Vui lòng mở khách hàng đã có hoặc tạo hồ sơ tư vấn từ khách hàng này." });
+
     var count = await db.Customers.IgnoreQueryFilters().CountAsync() + 1;
     var customer = new Customer
     {
@@ -317,7 +324,7 @@ app.MapPost("/api/customers", async (
         CustomerType = request.CustomerType,
         ElevatorType = request.ElevatorType?.Trim(),
         Name = request.Name.Trim(),
-        Phone = request.Phone.Trim(),
+        Phone = phone,
         Email = request.Email?.Trim(),
         Address = request.Address?.Trim(),
         Area = request.Area?.Trim(),
@@ -364,6 +371,10 @@ app.MapPut("/api/customers/{id:guid}", async (
     var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == id);
     if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
 
+    var phone = request.Phone.Trim();
+    if (await db.Customers.AnyAsync(x => x.Id != id && x.Phone == phone))
+        return Results.BadRequest(new { message = "Số điện thoại đã tồn tại trong hệ thống." });
+
     var canUpdateAll = await db.UserRoles.AnyAsync(x =>
         x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
     if (!canUpdateAll && customer.OwnerUserId != current.Id.Value)
@@ -372,7 +383,7 @@ app.MapPut("/api/customers/{id:guid}", async (
     customer.CustomerType = request.CustomerType;
     customer.ElevatorType = request.ElevatorType?.Trim();
     customer.Name = request.Name.Trim();
-    customer.Phone = request.Phone.Trim();
+    customer.Phone = phone;
     customer.Email = request.Email?.Trim();
     customer.Address = request.Address?.Trim();
     customer.Area = request.Area?.Trim();
@@ -402,6 +413,51 @@ app.MapPut("/api/customers/{id:guid}", async (
 
     return Results.NoContent();
 }).RequirePermission("customer.update");
+
+app.MapDelete("/api/customers/{id:guid}", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+
+    var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == id);
+    if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
+
+    var canDeleteAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canDeleteAll && customer.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    var consultationProfileCount = await db.ConsultationProfiles.CountAsync(x => x.CustomerId == id);
+    var quotationCount = await db.Quotations.CountAsync(x => x.CustomerId == id);
+    var careActivityCount = await db.CareActivities.CountAsync(x => x.CustomerId == id);
+    if (consultationProfileCount > 0 || quotationCount > 0 || careActivityCount > 0)
+    {
+        return Results.Conflict(new
+        {
+            message = "Không thể xóa khách hàng đã phát sinh hồ sơ tư vấn, lịch chăm sóc hoặc báo giá. Hãy giữ khách hàng để bảo toàn lịch sử nghiệp vụ."
+        });
+    }
+
+    customer.IsDeleted = true;
+    customer.UpdatedAt = DateTimeOffset.UtcNow;
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "DELETE",
+        Module = "Customers",
+        EntityType = nameof(Customer),
+        EntityId = customer.Id.ToString(),
+        Details = customer.Code,
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}).RequirePermission("customer.delete");
 
 app.MapPut("/api/customers/{id:guid}/status", async (
     Guid id,
@@ -445,15 +501,323 @@ app.MapPut("/api/customers/{id:guid}/status", async (
     return Results.NoContent();
 }).RequirePermission("customer.update");
 
+app.MapGet("/api/consultation-profiles", async (
+    string? search,
+    string? status,
+    string? statusGroup,
+    string? customerType,
+    string? elevatorType,
+    string? source,
+    string? owner,
+    string? area,
+    DateTimeOffset? createdFrom,
+    DateTimeOffset? createdTo,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    var query = db.ConsultationProfiles
+        .Include(x => x.Customer)
+        .Include(x => x.OwnerUser)
+        .AsQueryable();
+    var isManager = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+
+    if (!isManager && current.Id is not null)
+        query = query.Where(x => x.OwnerUserId == current.Id);
+
+    if (!string.IsNullOrWhiteSpace(search))
+        search = search.Trim();
+
+    if (!string.IsNullOrWhiteSpace(status))
+        query = query.Where(x => x.Status == status);
+    else if (!string.IsNullOrWhiteSpace(statusGroup))
+    {
+        var statuses = statusGroup switch
+        {
+            "new" => ["NEW"],
+            "caring" => new[] { "CONTACTED", "CARING", "WAITING_SURVEY", "SURVEYED", "VISITED_SHOWROOM", "WAITING_RESPONSE", "PAUSED" },
+            "quoted" => new[] { "QUOTED", "NEGOTIATING", "CONVERTED", "SIGNED" },
+            _ => []
+        };
+        if (statuses.Length > 0) query = query.Where(x => statuses.Contains(x.Status));
+    }
+
+    if (!string.IsNullOrWhiteSpace(source))
+        query = query.Where(x => x.Source == source);
+
+    if (!string.IsNullOrWhiteSpace(customerType))
+        query = query.Where(x => x.Customer.CustomerType == customerType);
+
+    if (!string.IsNullOrWhiteSpace(elevatorType))
+        query = query.Where(x => x.ElevatorType == elevatorType);
+
+    if (!string.IsNullOrWhiteSpace(owner))
+        query = query.Where(x => x.OwnerUser.DisplayName == owner);
+
+    if (!string.IsNullOrWhiteSpace(area))
+    {
+        var normalizedArea = area.Trim().ToLower();
+        query = query.Where(x => x.Area != null && x.Area.ToLower().Contains(normalizedArea));
+    }
+
+    if (createdFrom is not null)
+        query = query.Where(x => x.CreatedAt >= createdFrom);
+
+    if (createdTo is not null)
+        query = query.Where(x => x.CreatedAt <= createdTo);
+
+    var rows = await query
+        .Select(x => new
+        {
+            x.Id,
+            x.Code,
+            x.CustomerId,
+            customerCode = x.Customer.Code,
+            x.Customer.Name,
+            x.Customer.Phone,
+            x.Customer.Email,
+            Address = x.Customer.Address,
+            x.Area,
+            x.ElevatorType,
+            x.Latitude,
+            x.Longitude,
+            x.LocationAccuracyMeters,
+            x.LocationLabel,
+            x.Customer.CustomerType,
+            x.ProfileType,
+            x.Source,
+            x.Status,
+            x.Notes,
+            x.TechnicalSpecsJson,
+            x.AttachmentLinksJson,
+            x.IsKpiEligible,
+            x.KpiCountedAt,
+            owner = x.OwnerUser.DisplayName,
+            x.CreatedAt
+        })
+        .ToListAsync();
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        var normalizedSearch = SearchText.Normalize(search);
+        rows = rows
+            .Where(x => SearchText.Normalize($"{x.Code} {x.customerCode} {x.Name} {x.Phone} {x.Email}").Contains(normalizedSearch))
+            .ToList();
+    }
+
+    return Results.Ok(rows.OrderByDescending(x => CustomerCodeSort.Key(x.Code)).ThenByDescending(x => x.Code));
+}).RequirePermission("customer.view");
+
+app.MapPost("/api/consultation-profiles", async (
+    ConsultationProfileRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Phone))
+        return Results.BadRequest(new { message = "Tên khách hàng và số điện thoại là bắt buộc." });
+
+    var phone = request.Phone.Trim();
+    var email = request.Email?.Trim();
+    var customer = request.CustomerId is not null
+        ? await db.Customers.FirstOrDefaultAsync(x => x.Id == request.CustomerId)
+        : null;
+    if (request.CustomerId is not null && customer is null)
+        return Results.NotFound(new { message = "Không tìm thấy khách hàng đã chọn." });
+    if (request.CustomerId is null && await db.Customers.AnyAsync(x => x.Phone == phone))
+        return Results.BadRequest(new { message = "Số điện thoại đã tồn tại trong hệ thống. Vui lòng chọn khách hàng đã có để tạo hồ sơ tư vấn mới." });
+
+    var isNewCustomer = customer is null;
+    if (customer is null)
+    {
+        var customerCount = await db.Customers.IgnoreQueryFilters().CountAsync() + 1;
+        customer = new Customer
+        {
+            Code = $"KH-{customerCount:000000}",
+            CustomerType = request.CustomerType,
+            Name = request.Name.Trim(),
+            Phone = phone,
+            Email = email,
+            Address = request.Address?.Trim(),
+            Area = request.Area?.Trim(),
+            ElevatorType = request.ElevatorType?.Trim(),
+            Source = request.Source,
+            Status = request.Status,
+            Notes = request.Notes?.Trim(),
+            OwnerUserId = current.Id.Value
+        };
+        db.Customers.Add(customer);
+    }
+    else
+    {
+        if (await db.Customers.AnyAsync(x => x.Id != customer.Id && x.Phone == phone))
+            return Results.BadRequest(new { message = "Số điện thoại đã tồn tại trong hệ thống." });
+
+        customer.CustomerType = request.CustomerType;
+        customer.Name = request.Name.Trim();
+        customer.Phone = phone;
+        customer.Email = email;
+        customer.Address = request.Address?.Trim();
+        customer.Area = request.Area?.Trim();
+        customer.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    var profileCount = await db.ConsultationProfiles.IgnoreQueryFilters().CountAsync() + 1;
+    var now = DateTimeOffset.UtcNow;
+    var profile = new ConsultationProfile
+    {
+        Code = $"HSTV-{profileCount:000000}",
+        Customer = customer,
+        ProfileType = isNewCustomer ? "NEW_CUSTOMER" : "EXISTING_CUSTOMER_NEW_NEED",
+        Source = request.Source,
+        Status = string.IsNullOrWhiteSpace(request.Status) ? "NEW" : request.Status.Trim(),
+        OwnerUserId = current.Id.Value,
+        ProjectAddress = null,
+        Area = request.Area?.Trim(),
+        ElevatorType = request.ElevatorType?.Trim(),
+        Latitude = null,
+        Longitude = null,
+        LocationAccuracyMeters = null,
+        LocationLabel = null,
+        Notes = request.Notes?.Trim(),
+        TechnicalSpecsJson = request.TechnicalSpecsJson?.Trim(),
+        AttachmentLinksJson = request.AttachmentLinksJson?.Trim(),
+        IsKpiEligible = request.IsKpiEligible ?? true,
+        KpiCountedAt = request.IsKpiEligible == false ? null : now
+    };
+
+    db.ConsultationProfiles.Add(profile);
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "CREATE",
+        Module = "ConsultationProfiles",
+        EntityType = nameof(ConsultationProfile),
+        EntityId = profile.Id.ToString(),
+        Details = profile.Code,
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/consultation-profiles/{profile.Id}", new { profile.Id, profile.Code, profile.CustomerId });
+}).RequirePermission("customer.create");
+
+app.MapPut("/api/consultation-profiles/{id:guid}", async (
+    Guid id,
+    ConsultationProfileRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Phone))
+        return Results.BadRequest(new { message = "Tên khách hàng và số điện thoại là bắt buộc." });
+
+    var profile = await db.ConsultationProfiles
+        .Include(x => x.Customer)
+        .FirstOrDefaultAsync(x => x.Id == id);
+    if (profile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+
+    var canUpdateAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canUpdateAll && profile.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    profile.Customer.CustomerType = request.CustomerType;
+    profile.Customer.Name = request.Name.Trim();
+    profile.Customer.Phone = request.Phone.Trim();
+    profile.Customer.Email = request.Email?.Trim();
+    profile.Customer.Address = request.Address?.Trim();
+    profile.Customer.Area = request.Area?.Trim();
+    profile.Customer.UpdatedAt = DateTimeOffset.UtcNow;
+
+    profile.Source = request.Source;
+    profile.Status = request.Status;
+    profile.ProjectAddress = null;
+    profile.Area = request.Area?.Trim();
+    profile.ElevatorType = request.ElevatorType?.Trim();
+    profile.Latitude = null;
+    profile.Longitude = null;
+    profile.LocationAccuracyMeters = null;
+    profile.LocationLabel = null;
+    profile.Notes = request.Notes?.Trim();
+    profile.TechnicalSpecsJson = request.TechnicalSpecsJson?.Trim();
+    profile.AttachmentLinksJson = request.AttachmentLinksJson?.Trim();
+    profile.IsKpiEligible = request.IsKpiEligible ?? profile.IsKpiEligible;
+    profile.KpiCountedAt = profile.IsKpiEligible ? profile.KpiCountedAt ?? profile.CreatedAt : null;
+    profile.UpdatedAt = DateTimeOffset.UtcNow;
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "UPDATE",
+        Module = "ConsultationProfiles",
+        EntityType = nameof(ConsultationProfile),
+        EntityId = profile.Id.ToString(),
+        Details = profile.Code,
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}).RequirePermission("customer.update");
+
+app.MapPut("/api/consultation-profiles/{id:guid}/status", async (
+    Guid id,
+    CustomerStatusRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (string.IsNullOrWhiteSpace(request.Status))
+        return Results.BadRequest(new { message = "Trạng thái là bắt buộc." });
+
+    var profile = await db.ConsultationProfiles.FirstOrDefaultAsync(x => x.Id == id);
+    if (profile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+
+    var canUpdateAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canUpdateAll && profile.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    var nextStatus = request.Status.Trim();
+    if (profile.Status == nextStatus) return Results.NoContent();
+
+    var previousStatus = profile.Status;
+    profile.Status = nextStatus;
+    profile.UpdatedAt = DateTimeOffset.UtcNow;
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "UPDATE_STATUS",
+        Module = "ConsultationProfiles",
+        EntityType = nameof(ConsultationProfile),
+        EntityId = profile.Id.ToString(),
+        Details = $"{profile.Code}: {previousStatus} -> {nextStatus}",
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}).RequirePermission("customer.update");
+
 app.MapGet("/api/quotations", async (
     string? search,
     string? status,
     Guid? customerId,
+    Guid? consultationProfileId,
     AppDbContext db,
     CurrentUser current) =>
 {
     var query = db.Quotations
         .Include(x => x.Customer)
+        .Include(x => x.ConsultationProfile)
         .Include(x => x.OwnerUser)
         .AsQueryable();
 
@@ -469,6 +833,9 @@ app.MapGet("/api/quotations", async (
     if (customerId is not null)
         query = query.Where(x => x.CustomerId == customerId);
 
+    if (consultationProfileId is not null)
+        query = query.Where(x => x.ConsultationProfileId == consultationProfileId);
+
     var rows = await query
         .Select(x => new
         {
@@ -479,6 +846,8 @@ app.MapGet("/api/quotations", async (
             x.Status,
             x.ValidUntil,
             x.CustomerId,
+            x.ConsultationProfileId,
+            consultationProfileCode = x.ConsultationProfile != null ? x.ConsultationProfile.Code : "",
             customerCode = x.Customer.Code,
             customer = x.Customer.Name,
             phone = x.Customer.Phone,
@@ -515,15 +884,33 @@ app.MapPost("/api/quotations", async (
     HttpContext http) =>
 {
     if (current.Id is null) return Results.Unauthorized();
-    if (request.CustomerId == Guid.Empty)
-        return Results.BadRequest(new { message = "Khách hàng là bắt buộc." });
 
-    var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == request.CustomerId);
-    if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
+    ConsultationProfile? consultationProfile = null;
+    Customer? customer = null;
+    if (request.ConsultationProfileId is not null && request.ConsultationProfileId != Guid.Empty)
+    {
+        consultationProfile = await db.ConsultationProfiles
+            .Include(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.Id == request.ConsultationProfileId);
+        if (consultationProfile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+        customer = consultationProfile.Customer;
+    }
+    else
+    {
+        if (request.CustomerId == Guid.Empty)
+            return Results.BadRequest(new { message = "Hồ sơ tư vấn là bắt buộc." });
+        customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == request.CustomerId);
+        if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
+        consultationProfile = await db.ConsultationProfiles
+            .Where(x => x.CustomerId == customer.Id)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync();
+    }
 
     var canAccessAll = await db.UserRoles.AnyAsync(x =>
         x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
-    if (!canAccessAll && customer.OwnerUserId != current.Id.Value)
+    var ownerUserId = consultationProfile?.OwnerUserId ?? customer.OwnerUserId;
+    if (!canAccessAll && ownerUserId != current.Id.Value)
         return Results.Forbid();
 
     if (string.IsNullOrWhiteSpace(request.Title))
@@ -541,7 +928,8 @@ app.MapPost("/api/quotations", async (
     var quotation = new Quotation
     {
         Code = code,
-        CustomerId = request.CustomerId,
+        CustomerId = customer.Id,
+        ConsultationProfileId = consultationProfile?.Id,
         OwnerUserId = current.Id.Value,
         Title = request.Title.Trim(),
         VersionNo = 1,
@@ -558,6 +946,12 @@ app.MapPost("/api/quotations", async (
     };
 
     db.Quotations.Add(quotation);
+    if (consultationProfile is not null && consultationProfile.Status is "NEW" or "CONTACTED" or "CARING" or "WAITING_SURVEY" or "SURVEYED" or "WAITING_RESPONSE")
+    {
+        consultationProfile.Status = "QUOTED";
+        consultationProfile.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     if (customer.Status is "NEW" or "CONTACTED" or "CARING" or "WAITING_SURVEY" or "SURVEYED" or "WAITING_RESPONSE")
     {
         customer.Status = "QUOTED";
@@ -591,7 +985,9 @@ app.MapPut("/api/quotations/{id:guid}/status", async (
     if (string.IsNullOrWhiteSpace(request.Status))
         return Results.BadRequest(new { message = "Trạng thái là bắt buộc." });
 
-    var quotation = await db.Quotations.FirstOrDefaultAsync(x => x.Id == id);
+    var quotation = await db.Quotations
+        .Include(x => x.ConsultationProfile)
+        .FirstOrDefaultAsync(x => x.Id == id);
     if (quotation is null) return Results.NotFound(new { message = "Không tìm thấy báo giá." });
 
     var canAccessAll = await db.UserRoles.AnyAsync(x =>
@@ -604,6 +1000,17 @@ app.MapPut("/api/quotations/{id:guid}/status", async (
     quotation.UpdatedAt = DateTimeOffset.UtcNow;
     quotation.SentAt = quotation.Status == "SENT" && quotation.SentAt is null ? DateTimeOffset.UtcNow : quotation.SentAt;
     quotation.ApprovedAt = quotation.Status == "APPROVED" && quotation.ApprovedAt is null ? DateTimeOffset.UtcNow : quotation.ApprovedAt;
+    if (quotation.ConsultationProfile is not null)
+    {
+        quotation.ConsultationProfile.Status = quotation.Status switch
+        {
+            "SENT" => "QUOTED",
+            "ACCEPTED" => "NEGOTIATING",
+            "REJECTED" => "LOST",
+            _ => quotation.ConsultationProfile.Status
+        };
+        quotation.ConsultationProfile.UpdatedAt = DateTimeOffset.UtcNow;
+    }
 
     db.AuditLogs.Add(new AuditLog
     {
@@ -1085,6 +1492,17 @@ app.MapGet("/api/files/{id:guid}", async (
         if (!canViewAll && customer.OwnerUserId != current.Id.Value)
             return Results.Forbid();
     }
+    else if (storedFile.Module.Equals("consultation-profiles", StringComparison.OrdinalIgnoreCase)
+        && Guid.TryParse(storedFile.RecordId, out var consultationProfileId))
+    {
+        var profile = await db.ConsultationProfiles.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == consultationProfileId && !x.IsDeleted);
+        if (profile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+
+        var canViewAll = await db.UserRoles.AnyAsync(x =>
+            x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+        if (!canViewAll && profile.OwnerUserId != current.Id.Value)
+            return Results.Forbid();
+    }
 
     var root = Path.GetFullPath(configuration["UploadRoot"] ?? "uploads");
     var fullPath = Path.GetFullPath(Path.Combine(root, storedFile.RelativePath));
@@ -1199,8 +1617,28 @@ record CustomerRequest(
     string? TechnicalSpecsJson,
     string? AttachmentLinksJson);
 record CustomerStatusRequest(string Status);
+record ConsultationProfileRequest(
+    Guid? CustomerId,
+    string CustomerType,
+    string Name,
+    string Phone,
+    string? Email,
+    string? Address,
+    string? Area,
+    string? ElevatorType,
+    double? Latitude,
+    double? Longitude,
+    double? LocationAccuracyMeters,
+    string? LocationLabel,
+    string Source,
+    string Status,
+    string? Notes,
+    string? TechnicalSpecsJson,
+    string? AttachmentLinksJson,
+    bool? IsKpiEligible);
 record QuotationRequest(
     Guid CustomerId,
+    Guid? ConsultationProfileId,
     string Title,
     DateTimeOffset? ValidUntil,
     string Status,

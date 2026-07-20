@@ -94,8 +94,14 @@ const routeDefinitions: ErpRoute[] = [
     icon: <CustomerServiceOutlined />,
     children: [
       {
+        path: '/business/customers',
+        name: 'Khách hàng',
+        icon: <CustomerServiceOutlined />,
+        permission: 'customer.view',
+      },
+      {
         path: '/customers',
-        name: 'Đăng ký khách hàng',
+        name: 'Hồ sơ tư vấn',
         icon: <UserAddOutlined />,
         permission: 'customer.view',
       },

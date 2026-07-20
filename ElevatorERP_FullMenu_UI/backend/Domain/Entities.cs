@@ -81,6 +81,33 @@ public sealed class Customer : Entity
     public string? AttachmentLinksJson { get; set; }
     public Guid OwnerUserId { get; set; }
     public AppUser OwnerUser { get; set; } = null!;
+    public ICollection<ConsultationProfile> ConsultationProfiles { get; set; } = new List<ConsultationProfile>();
+}
+
+public sealed class ConsultationProfile : Entity
+{
+    public string Code { get; set; } = "";
+    public Guid CustomerId { get; set; }
+    public Customer Customer { get; set; } = null!;
+    public string ProfileType { get; set; } = "NEW_CUSTOMER";
+    public string Source { get; set; } = "Khác";
+    public string Status { get; set; } = "NEW";
+    public Guid OwnerUserId { get; set; }
+    public AppUser OwnerUser { get; set; } = null!;
+    public string? ProjectAddress { get; set; }
+    public string? Area { get; set; }
+    public string? ElevatorType { get; set; }
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public double? LocationAccuracyMeters { get; set; }
+    public string? LocationLabel { get; set; }
+    public string? Notes { get; set; }
+    public string? TechnicalSpecsJson { get; set; }
+    public string? AttachmentLinksJson { get; set; }
+    public bool IsKpiEligible { get; set; } = true;
+    public DateTimeOffset? KpiCountedAt { get; set; }
+    public string? KpiExcludedReason { get; set; }
+    public ICollection<Quotation> Quotations { get; set; } = new List<Quotation>();
 }
 
 public sealed class CareActivity : Entity
@@ -102,6 +129,8 @@ public sealed class Quotation : Entity
     public string Code { get; set; } = "";
     public Guid CustomerId { get; set; }
     public Customer Customer { get; set; } = null!;
+    public Guid? ConsultationProfileId { get; set; }
+    public ConsultationProfile? ConsultationProfile { get; set; }
     public Guid OwnerUserId { get; set; }
     public AppUser OwnerUser { get; set; } = null!;
     public string Title { get; set; } = "";

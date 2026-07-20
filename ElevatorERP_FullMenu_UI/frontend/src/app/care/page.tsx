@@ -41,6 +41,7 @@ import {
 } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import dayjs, { Dayjs } from 'dayjs';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { exportCsv } from '@/lib/exportCsv';
 
@@ -97,9 +98,12 @@ function CareStatus({ value }: { value: string }) {
 }
 
 export default function Care() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [data, setData] = useState<CareRow[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [open, setOpen] = useState(false);
+  const [prefilledCustomerId, setPrefilledCustomerId] = useState<string>();
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
   const [loading, setLoading] = useState(false);
   const [completeItem, setCompleteItem] = useState<CareRow | null>(null);
@@ -127,6 +131,14 @@ export default function Care() {
         message.error(error instanceof Error ? error.message : 'Không tải được danh sách khách hàng.'),
       );
   }, [load]);
+
+  useEffect(() => {
+    const requestedCustomerId = searchParams.get('customerId');
+    if (!requestedCustomerId || open || !customers.some((customer) => customer.id === requestedCustomerId)) return;
+    setPrefilledCustomerId(requestedCustomerId);
+    setOpen(true);
+    router.replace('/care');
+  }, [customers, open, router, searchParams]);
 
   const summary = useMemo(
     () => ({
@@ -291,14 +303,17 @@ export default function Care() {
             </div>
           ),
           extra: (
-            <Button type='primary' icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+            <Button type='primary' icon={<PlusOutlined />} onClick={() => {
+              setPrefilledCustomerId(undefined);
+              setOpen(true);
+            }}>
               Thêm lịch
             </Button>
           ),
           breadcrumb: {},
         }}
       >
-        <Row gutter={[16, 16]}>
+        <Row gutter={[16, 16]} className='erp-kpi-row'>
           {[
             { label: 'Tổng lịch', value: summary.total, icon: <CalendarOutlined />, tone: 'blue' },
             { label: 'Sắp tới', value: summary.upcoming, icon: <ClockCircleOutlined />, tone: 'cyan' },
@@ -427,11 +442,13 @@ export default function Care() {
         )}
 
         <DrawerForm<CareForm>
+          key={prefilledCustomerId ?? 'new-care'}
           title='Tạo lịch chăm sóc khách hàng'
           open={open}
           onOpenChange={setOpen}
           width='min(640px, calc(100vw - 40px))'
           onFinish={save}
+          initialValues={{ customerId: prefilledCustomerId }}
           drawerProps={{ destroyOnClose: true, className: 'business-form-drawer' }}
           submitter={{ searchConfig: { submitText: 'Lưu lịch', resetText: 'Hủy' } }}
         >
