@@ -21,7 +21,6 @@ import {
   Row,
   Select,
   Space,
-  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -165,9 +164,11 @@ type CustomerAttachment = {
   storedFileId?: string;
   name: string;
   type: 'IMAGE' | 'DOCUMENT' | 'LINK';
+  source?: 'CAMERA' | 'UPLOAD' | 'LINK';
   category: string;
   sizeBytes?: number;
   url?: string;
+  capturedAt?: string;
   createdAt: string;
 };
 
@@ -308,6 +309,10 @@ function cloneElevatorSpec(source: ElevatorSpec, index: number): ElevatorSpec {
   };
 }
 
+function formatElevatorSpecLabel(spec: ElevatorSpec) {
+  return `${spec.name || 'Thang máy'}${spec.floors ? ` (${spec.floors} tầng)` : ''}`;
+}
+
 function formatFileSize(sizeBytes?: number) {
   if (!sizeBytes) return '';
   if (sizeBytes < 1024) return `${sizeBytes} B`;
@@ -331,6 +336,9 @@ export default function Customers() {
   const attachmentFileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentCameraInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentFileByIdRef = useRef<Record<string, File>>({});
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const [data, setData] = useState<CustomerRow[]>([]);
   const [open, setOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow>();
@@ -338,9 +346,13 @@ export default function Customers() {
   const [technicalDrawerOpen, setTechnicalDrawerOpen] = useState(false);
   const [elevatorSpecs, setElevatorSpecs] = useState<ElevatorSpec[]>([]);
   const [activeElevatorSpecId, setActiveElevatorSpecId] = useState<string>();
+  const [deleteElevatorSpecCandidate, setDeleteElevatorSpecCandidate] = useState<ElevatorSpec>();
   const [attachments, setAttachments] = useState<CustomerAttachment[]>([]);
   const [attachmentLinkModalOpen, setAttachmentLinkModalOpen] = useState(false);
   const [attachmentLinkDraft, setAttachmentLinkDraft] = useState('');
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  const [cameraStarting, setCameraStarting] = useState(false);
+  const [cameraError, setCameraError] = useState('');
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [draftLocation, setDraftLocation] = useState<CustomerLocation>();
   const [locationSearch, setLocationSearch] = useState('');
@@ -361,6 +373,7 @@ export default function Customers() {
   const [owner, setOwner] = useState<string>();
   const [area, setArea] = useState<string>();
   const [createdRange, setCreatedRange] = useState<[Dayjs, Dayjs]>();
+  const [customerTablePage, setCustomerTablePage] = useState({ current: 1, pageSize: 10 });
   const [draftStatus, setDraftStatus] = useState<string>();
   const [draftCustomerType, setDraftCustomerType] = useState<string>();
   const [draftElevatorType, setDraftElevatorType] = useState<string>();
@@ -436,6 +449,17 @@ export default function Customers() {
   }, [load]);
 
   useEffect(() => {
+    setCustomerTablePage((page) => ({ ...page, current: 1 }));
+  }, [area, createdRange, customerType, elevatorType, owner, search, source, status, statusGroup]);
+
+  useEffect(() => {
+    setCustomerTablePage((page) => {
+      const maxPage = Math.max(1, Math.ceil(data.length / page.pageSize));
+      return page.current > maxPage ? { ...page, current: maxPage } : page;
+    });
+  }, [data.length]);
+
+  useEffect(() => {
     api<CatalogOption[]>('/catalogs/categories/customer_status/options?activeOnly=true')
       .then(setCatalogStatuses)
       .catch(() => setCatalogStatuses(fallbackStatusOptions));
@@ -445,6 +469,11 @@ export default function Customers() {
     api<CatalogOption[]>('/catalogs/categories/elevator_type/options?activeOnly=true')
       .then(setCatalogElevatorTypes)
       .catch(() => setCatalogElevatorTypes(fallbackElevatorTypeOptions));
+  }, []);
+
+  useEffect(() => () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -677,6 +706,11 @@ export default function Customers() {
     });
   };
 
+  const confirmRemoveElevatorSpec = (spec: ElevatorSpec) => {
+    if (elevatorSpecs.length <= 1) return;
+    setDeleteElevatorSpecCandidate(spec);
+  };
+
   const addElevatorFloor = (specId: string) => {
     setElevatorSpecs((items) => items.map((item) => {
       if (item.id !== specId) return item;
@@ -716,17 +750,108 @@ export default function Customers() {
     const nextAttachments = Array.from(files).map<CustomerAttachment>((file) => {
       const id = createId('attachment');
       attachmentFileByIdRef.current[id] = file;
+      const isCamera = source === 'camera';
       return {
         id,
         name: file.name,
         type: file.type.startsWith('image/') ? 'IMAGE' : 'DOCUMENT',
-        category: source === 'camera' ? 'Ảnh khảo sát' : 'Khác',
+        source: isCamera ? 'CAMERA' : 'UPLOAD',
+        category: isCamera ? 'Ảnh khảo sát' : 'Khác',
         sizeBytes: file.size,
+        capturedAt: isCamera ? new Date().toISOString() : undefined,
         createdAt: new Date().toISOString(),
       };
     });
     setAttachments((items) => [...items, ...nextAttachments]);
-    message.success(`Đã thêm ${nextAttachments.length} tài liệu/ảnh vào hồ sơ.`);
+    message.success(source === 'camera' ? 'Đã thêm ảnh chụp khảo sát vào hồ sơ.' : `Đã thêm ${nextAttachments.length} tài liệu/ảnh vào hồ sơ.`);
+  };
+
+  const stopCameraCapture = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
+  };
+
+  const closeCameraCapture = () => {
+    stopCameraCapture();
+    setCameraModalOpen(false);
+    setCameraStarting(false);
+    setCameraError('');
+  };
+
+  const openCameraCapture = async () => {
+    setCameraError('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      message.warning('Trình duyệt không hỗ trợ mở camera trực tiếp, hệ thống sẽ dùng chế độ chụp ảnh mặc định.');
+      attachmentCameraInputRef.current?.click();
+      return;
+    }
+
+    setCameraModalOpen(true);
+    setCameraStarting(true);
+    try {
+      stopCameraCapture();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1600 },
+          height: { ideal: 1200 },
+        },
+      });
+      cameraStreamRef.current = stream;
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.srcObject = stream;
+        await cameraVideoRef.current.play();
+      }
+    } catch (error) {
+      setCameraError(error instanceof Error ? error.message : 'Không mở được camera.');
+      message.warning('Không mở được camera trực tiếp, bạn có thể dùng trình chọn ảnh của thiết bị.');
+      attachmentCameraInputRef.current?.click();
+    } finally {
+      setCameraStarting(false);
+    }
+  };
+
+  const captureSurveyPhoto = async () => {
+    const video = cameraVideoRef.current;
+    const canvas = cameraCanvasRef.current;
+    if (!video || !canvas || !video.videoWidth || !video.videoHeight) {
+      message.warning('Camera chưa sẵn sàng để chụp ảnh.');
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+    if (!blob) {
+      message.error('Không tạo được ảnh từ camera.');
+      return;
+    }
+
+    const codePrefix = editingCustomer?.code ? `${editingCustomer.code}_` : '';
+    const filename = `${codePrefix}anh-khao-sat_${dayjs().format('YYYYMMDD_HHmmss')}.jpg`;
+    const file = new File([blob], filename, { type: 'image/jpeg', lastModified: Date.now() });
+    const id = createId('attachment');
+    const now = new Date().toISOString();
+    attachmentFileByIdRef.current[id] = file;
+    setAttachments((items) => [
+      ...items,
+      {
+        id,
+        name: filename,
+        type: 'IMAGE',
+        source: 'CAMERA',
+        category: 'Ảnh khảo sát',
+        sizeBytes: file.size,
+        capturedAt: now,
+        createdAt: now,
+      },
+    ]);
+    message.success('Đã chụp và thêm ảnh khảo sát vào hồ sơ.');
+    closeCameraCapture();
   };
 
   const addAttachmentLink = () => {
@@ -749,6 +874,7 @@ export default function Customers() {
         id: createId('attachment'),
         name: url.replace(/^https?:\/\//, ''),
         type: 'LINK',
+        source: 'LINK',
         category: 'Nhu cầu khách hàng',
         url,
         createdAt: new Date().toISOString(),
@@ -1473,7 +1599,15 @@ export default function Customers() {
                 elevatorType: { show: false },
               },
             }}
-            pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} khách hàng` }}
+            pagination={{
+              current: customerTablePage.current,
+              pageSize: customerTablePage.pageSize,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50, 100],
+              showTotal: (total) => `${total} khách hàng`,
+              onChange: (current, pageSize) => setCustomerTablePage({ current, pageSize }),
+              onShowSizeChange: (_, pageSize) => setCustomerTablePage({ current: 1, pageSize }),
+            }}
             scroll={{ x: 1510 }}
             headerTitle='Danh sách đăng ký khách hàng'
           />
@@ -1537,6 +1671,8 @@ export default function Customers() {
           onOpenChange={(visible) => {
             setOpen(visible);
             if (!visible) {
+              closeCameraCapture();
+              setDeleteElevatorSpecCandidate(undefined);
               setEditingCustomer(undefined);
               setCustomerLocation(undefined);
               resetSupplementalCustomerData();
@@ -1556,7 +1692,7 @@ export default function Customers() {
             status: editingCustomer.status,
           } : { customerType: 'PERSONAL', source: 'Marketing', status: 'NEW' }}
           onFinish={save}
-          drawerProps={{ destroyOnClose: true, className: 'customer-form-drawer' }}
+          drawerProps={{ destroyOnClose: true, className: 'customer-form-drawer', rootClassName: 'customer-form-drawer-root' }}
           submitter={{ searchConfig: { submitText: editingCustomer ? 'Lưu thay đổi' : 'Lưu đăng ký', resetText: 'Hủy' } }}
         >
           <div className='customer-form-layout'>
@@ -1721,7 +1857,7 @@ export default function Customers() {
                 <Button icon={<LinkOutlined />} onClick={() => setAttachmentLinkModalOpen(true)}>
                   Link
                 </Button>
-                <Button icon={<CameraOutlined />} onClick={() => attachmentCameraInputRef.current?.click()}>
+                <Button icon={<CameraOutlined />} onClick={() => void openCameraCapture()}>
                   Chụp ảnh
                 </Button>
                 <Button icon={<PaperClipOutlined />} onClick={() => attachmentFileInputRef.current?.click()}>
@@ -1750,6 +1886,7 @@ export default function Customers() {
               capture='environment'
               onChange={(event) => {
                 addAttachmentFiles(event.target.files, 'camera');
+                closeCameraCapture();
                 event.target.value = '';
               }}
             />
@@ -1767,7 +1904,7 @@ export default function Customers() {
                         <Typography.Text strong>{attachment.name}</Typography.Text>
                       )}
                       <Typography.Text type='secondary'>
-                        {attachment.type === 'IMAGE' ? 'Ảnh' : attachment.type === 'LINK' ? 'Link' : 'Tài liệu'}
+                        {attachment.source === 'CAMERA' ? 'Ảnh chụp hiện trường' : attachment.type === 'IMAGE' ? 'Ảnh tải lên' : attachment.type === 'LINK' ? 'Link' : 'Tài liệu'}
                         {attachment.sizeBytes ? ` · ${formatFileSize(attachment.sizeBytes)}` : ''}
                       </Typography.Text>
                     </div>
@@ -1818,23 +1955,9 @@ export default function Customers() {
           getContainer={() => document.body}
           zIndex={1300}
           className='technical-config-drawer'
-          extra={(
-            <Space>
-              {activeElevatorSpec && (
-                <Button icon={<CopyOutlined />} onClick={() => duplicateElevatorSpec(activeElevatorSpec.id)}>
-                  Nhân bản thang
-                </Button>
-              )}
-              <Button type='primary' icon={<PlusOutlined />} onClick={addElevatorSpec}>
-                Thêm thang
-              </Button>
-            </Space>
-          )}
           footer={activeElevatorSpec ? (
             <div className='technical-drawer-footer'>
-              <Button danger icon={<DeleteOutlined />} onClick={() => removeElevatorSpec(activeElevatorSpec.id)}>
-                Xóa thang này
-              </Button>
+              <span />
               <Space>
                 <Button onClick={() => setTechnicalDrawerOpen(false)}>Đóng</Button>
                 <Button type='primary' onClick={() => setTechnicalDrawerOpen(false)}>Lưu cấu hình</Button>
@@ -1844,14 +1967,71 @@ export default function Customers() {
         >
           {activeElevatorSpec ? (
             <>
-              <Tabs
-                activeKey={activeElevatorSpec.id}
-                onChange={setActiveElevatorSpecId}
-                items={elevatorSpecs.map((spec) => ({
-                  key: spec.id,
-                  label: `${spec.name || 'Thang máy'}${spec.floors ? ` (${spec.floors} tầng)` : ''}`,
-                }))}
-              />
+              <div className='technical-tab-row'>
+                <div className='technical-tab-list'>
+                  {elevatorSpecs.map((spec) => (
+                    <button
+                      key={spec.id}
+                      type='button'
+                      title={formatElevatorSpecLabel(spec)}
+                      className={`technical-tab-button ${spec.id === activeElevatorSpec.id ? 'active' : ''}`}
+                      onClick={() => setActiveElevatorSpecId(spec.id)}
+                    >
+                      <span>{formatElevatorSpecLabel(spec)}</span>
+                    </button>
+                  ))}
+                  <Button className='technical-add-tab' icon={<PlusOutlined />} onClick={addElevatorSpec}>
+                    Thêm thang
+                  </Button>
+                </div>
+                <div className='technical-mobile-toolbar'>
+                  <Select
+                    className='technical-mobile-spec-select'
+                    value={activeElevatorSpec.id}
+                    onChange={setActiveElevatorSpecId}
+                    options={elevatorSpecs.map((spec) => ({
+                      value: spec.id,
+                      label: formatElevatorSpecLabel(spec),
+                    }))}
+                  />
+                  <Tooltip title='Thêm thang'>
+                    <Button aria-label='Thêm thang' icon={<PlusOutlined />} onClick={addElevatorSpec} />
+                  </Tooltip>
+                </div>
+                <Dropdown
+                  trigger={['click']}
+                  overlayClassName='technical-action-dropdown'
+                  overlayStyle={{ zIndex: 1700 }}
+                  getPopupContainer={() => document.body}
+                  menu={{
+                    onClick: ({ key }) => {
+                      if (key === 'duplicate') duplicateElevatorSpec(activeElevatorSpec.id);
+                      if (key === 'delete') confirmRemoveElevatorSpec(activeElevatorSpec);
+                    },
+                    items: [
+                      {
+                        key: 'duplicate',
+                        icon: <CopyOutlined />,
+                        label: 'Nhân bản thang này',
+                      },
+                      {
+                        key: 'delete',
+                        icon: <DeleteOutlined />,
+                        label: elevatorSpecs.length <= 1 ? 'Cần giữ ít nhất một thang' : 'Xóa thang này',
+                        danger: elevatorSpecs.length > 1,
+                        disabled: elevatorSpecs.length <= 1,
+                      },
+                    ],
+                  }}
+                >
+                  <Button
+                    className='technical-more-action'
+                    aria-label='Mở thao tác thang'
+                    title='Thao tác với thang đang chọn'
+                    icon={<EllipsisOutlined />}
+                  />
+                </Dropdown>
+              </div>
               <div className='technical-config-body'>
                 <div className='technical-grid five-columns'>
                   <label>
@@ -1952,7 +2132,6 @@ export default function Customers() {
                       <Tooltip title='Xóa tầng'>
                         <Button
                           type='text'
-                          danger
                           className='floor-delete-button'
                           icon={<DeleteOutlined />}
                           onClick={() => removeElevatorFloor(activeElevatorSpec.id, floor.id)}
@@ -1982,6 +2161,74 @@ export default function Customers() {
             </div>
           )}
         </Drawer>
+        <Modal
+          title='Xóa cấu hình thang?'
+          open={Boolean(deleteElevatorSpecCandidate)}
+          onCancel={() => setDeleteElevatorSpecCandidate(undefined)}
+          okText='Xóa thang'
+          cancelText='Hủy'
+          okButtonProps={{ danger: true }}
+          zIndex={1700}
+          destroyOnHidden
+          onOk={() => {
+            if (!deleteElevatorSpecCandidate) return;
+            removeElevatorSpec(deleteElevatorSpecCandidate.id);
+            setDeleteElevatorSpecCandidate(undefined);
+          }}
+        >
+          {deleteElevatorSpecCandidate?.name || 'Thang máy'} sẽ bị xóa khỏi hồ sơ khảo sát. Thay đổi được ghi khi bấm Lưu cấu hình.
+        </Modal>
+        <Modal
+          title={(
+            <span className='camera-capture-title'>
+              <CameraOutlined />
+              Chụp ảnh khảo sát
+            </span>
+          )}
+          open={cameraModalOpen}
+          onCancel={closeCameraCapture}
+          width='min(720px, calc(100vw - 40px))'
+          className='camera-capture-modal'
+          destroyOnHidden
+          footer={[
+            <Button key='fallback' onClick={() => attachmentCameraInputRef.current?.click()}>
+              Chọn từ camera thiết bị
+            </Button>,
+            <Button key='cancel' onClick={closeCameraCapture}>
+              Hủy
+            </Button>,
+            <Button
+              key='capture'
+              type='primary'
+              icon={<CameraOutlined />}
+              loading={cameraStarting}
+              disabled={Boolean(cameraError)}
+              onClick={() => void captureSurveyPhoto()}
+            >
+              Chụp ảnh
+            </Button>,
+          ]}
+        >
+          <Typography.Text className='camera-capture-description'>
+            Dùng camera để chụp ảnh hiện trường khảo sát. Ảnh sau khi chụp sẽ tự gắn vào hồ sơ với loại Ảnh khảo sát.
+          </Typography.Text>
+          {cameraError ? (
+            <Alert
+              type='warning'
+              showIcon
+              className='camera-capture-alert'
+              message='Không mở được camera trực tiếp'
+              description='Bạn có thể dùng nút Chọn từ camera thiết bị để mở camera/file picker mặc định của điện thoại.'
+            />
+          ) : null}
+          <div className='camera-preview-frame'>
+            {cameraStarting ? (
+              <div className='camera-preview-placeholder'>Đang mở camera...</div>
+            ) : null}
+            <video ref={cameraVideoRef} className='camera-preview-video' autoPlay playsInline muted />
+            <canvas ref={cameraCanvasRef} hidden />
+          </div>
+        </Modal>
         <Modal
           title='Thêm link tài liệu'
           open={attachmentLinkModalOpen}

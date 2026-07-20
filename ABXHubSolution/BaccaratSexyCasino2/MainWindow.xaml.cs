@@ -3795,6 +3795,7 @@ try{
                 // Không gắn WebMessageReceived ở đây (đã gắn trong EnsureWebReadyAsync)
                 // Giữ nguyên hành vi popup/new window như trình duyệt thật để không làm hỏng flow mở game/provider
                 Web.CoreWebView2.NewWindowRequested += NewWindowRequested;
+                Web.CoreWebView2.ProcessFailed += Web_ProcessFailed;
 
                 // Theo dõi điều hướng để đồng bộ nền/trạng thái
                 Web.NavigationCompleted += Web_NavigationCompleted;
@@ -6574,12 +6575,61 @@ try{
             }
         }
 
+        private static string BuildProcessFailedLogDetail(CoreWebView2ProcessFailedEventArgs e)
+        {
+            try
+            {
+                string ReadProp(string name)
+                {
+                    try
+                    {
+                        var prop = e.GetType().GetProperty(name);
+                        var value = prop?.GetValue(e);
+                        return value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
+                    }
+                    catch
+                    {
+                        return "";
+                    }
+                }
+
+                var parts = new List<string>();
+                var reason = ReadProp("Reason");
+                var exitCode = ReadProp("ExitCode");
+                var desc = ReadProp("ProcessDescription");
+                if (!string.IsNullOrWhiteSpace(reason)) parts.Add("reason=" + reason);
+                if (!string.IsNullOrWhiteSpace(exitCode)) parts.Add("exitCode=" + exitCode);
+                if (!string.IsNullOrWhiteSpace(desc)) parts.Add("desc=" + Shrink(desc, 120));
+                return parts.Count == 0 ? "" : " | " + string.Join(" | ", parts);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private void Web_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+        {
+            try
+            {
+                var src = Web?.CoreWebView2?.Source ?? Web?.Source?.ToString() ?? "";
+                Log("[Web][PROCESS-FAILED] kind=" + e.ProcessFailedKind.ToString() +
+                    BuildProcessFailedLogDetail(e) +
+                    " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+            }
+            catch (Exception ex)
+            {
+                Log("[Web][PROCESS-FAILED][ERR] " + ex.Message);
+            }
+        }
+
         private void PopupWeb_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
         {
             try
             {
                 var src = GetBetWebViewSource(_popupWeb);
                 Log("[PopupWeb][PROCESS-FAILED] kind=" + e.ProcessFailedKind.ToString() +
+                    BuildProcessFailedLogDetail(e) +
                     " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
                 if (!IsLikelyBetGameReadyUrl(src))
                     ArmPopupTransitWatch("process-failed", src);
@@ -15147,6 +15197,7 @@ try{
                 {
                     if (Web != null && Web.CoreWebView2 != null)
                     {
+                        try { Web.CoreWebView2.ProcessFailed -= Web_ProcessFailed; } catch { }
                         try { Web.CoreWebView2.Stop(); } catch { }
                         try { Web.CoreWebView2.Navigate("about:blank"); } catch { }
                     }
@@ -19859,6 +19910,7 @@ try{
                 {
                     // cái này CÓ tên nên gỡ được
                     try { Web.NavigationCompleted -= Web_NavigationCompleted; } catch { }
+                    try { Web.CoreWebView2.ProcessFailed -= Web_ProcessFailed; } catch { }
 
                     // đẩy web về trắng trước khi dispose để nó ngưng mấy request nền
                     try

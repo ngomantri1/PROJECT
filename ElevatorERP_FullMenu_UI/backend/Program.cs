@@ -445,6 +445,182 @@ app.MapPut("/api/customers/{id:guid}/status", async (
     return Results.NoContent();
 }).RequirePermission("customer.update");
 
+app.MapGet("/api/quotations", async (
+    string? search,
+    string? status,
+    Guid? customerId,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    var query = db.Quotations
+        .Include(x => x.Customer)
+        .Include(x => x.OwnerUser)
+        .AsQueryable();
+
+    var isManager = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+
+    if (!isManager && current.Id is not null)
+        query = query.Where(x => x.OwnerUserId == current.Id);
+
+    if (!string.IsNullOrWhiteSpace(status))
+        query = query.Where(x => x.Status == status.Trim());
+
+    if (customerId is not null)
+        query = query.Where(x => x.CustomerId == customerId);
+
+    var rows = await query
+        .Select(x => new
+        {
+            x.Id,
+            x.Code,
+            x.Title,
+            x.VersionNo,
+            x.Status,
+            x.ValidUntil,
+            x.CustomerId,
+            customerCode = x.Customer.Code,
+            customer = x.Customer.Name,
+            phone = x.Customer.Phone,
+            owner = x.OwnerUser.DisplayName,
+            x.ElevatorSpecsJson,
+            x.CostLinesJson,
+            x.SubtotalAmount,
+            x.DiscountAmount,
+            x.VatRate,
+            x.VatAmount,
+            x.TotalAmount,
+            x.Notes,
+            x.SentAt,
+            x.ApprovedAt,
+            x.CreatedAt
+        })
+        .ToListAsync();
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        var normalizedSearch = SearchText.Normalize(search);
+        rows = rows
+            .Where(x => SearchText.Normalize($"{x.Code} {x.Title} {x.customerCode} {x.customer} {x.phone} {x.owner}").Contains(normalizedSearch))
+            .ToList();
+    }
+
+    return Results.Ok(rows.OrderByDescending(x => x.CreatedAt));
+}).RequirePermission("customer.view");
+
+app.MapPost("/api/quotations", async (
+    QuotationRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (request.CustomerId == Guid.Empty)
+        return Results.BadRequest(new { message = "Khách hàng là bắt buộc." });
+
+    var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == request.CustomerId);
+    if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
+
+    var canAccessAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canAccessAll && customer.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    if (string.IsNullOrWhiteSpace(request.Title))
+        return Results.BadRequest(new { message = "Tên báo giá là bắt buộc." });
+
+    var count = await db.Quotations.IgnoreQueryFilters().CountAsync() + 1;
+    var code = $"BG-{DateTimeOffset.UtcNow:yyyy}-{count:000000}";
+    var subtotal = Math.Max(request.SubtotalAmount, 0);
+    var discount = Math.Clamp(request.DiscountAmount, 0, subtotal);
+    var vatRate = Math.Clamp(request.VatRate, 0, 20);
+    var taxable = subtotal - discount;
+    var vatAmount = Math.Round(taxable * vatRate / 100, 0, MidpointRounding.AwayFromZero);
+    var total = taxable + vatAmount;
+
+    var quotation = new Quotation
+    {
+        Code = code,
+        CustomerId = request.CustomerId,
+        OwnerUserId = current.Id.Value,
+        Title = request.Title.Trim(),
+        VersionNo = 1,
+        Status = string.IsNullOrWhiteSpace(request.Status) ? "DRAFT" : request.Status.Trim(),
+        ValidUntil = request.ValidUntil,
+        ElevatorSpecsJson = request.ElevatorSpecsJson?.Trim(),
+        CostLinesJson = request.CostLinesJson?.Trim(),
+        SubtotalAmount = subtotal,
+        DiscountAmount = discount,
+        VatRate = vatRate,
+        VatAmount = vatAmount,
+        TotalAmount = total,
+        Notes = request.Notes?.Trim()
+    };
+
+    db.Quotations.Add(quotation);
+    if (customer.Status is "NEW" or "CONTACTED" or "CARING" or "WAITING_SURVEY" or "SURVEYED" or "WAITING_RESPONSE")
+    {
+        customer.Status = "QUOTED";
+        customer.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "CREATE",
+        Module = "Quotations",
+        EntityType = nameof(Quotation),
+        EntityId = quotation.Id.ToString(),
+        Details = quotation.Code,
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/quotations/{quotation.Id}", new { quotation.Id, quotation.Code });
+}).RequirePermission("customer.update");
+
+app.MapPut("/api/quotations/{id:guid}/status", async (
+    Guid id,
+    QuotationStatusRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (string.IsNullOrWhiteSpace(request.Status))
+        return Results.BadRequest(new { message = "Trạng thái là bắt buộc." });
+
+    var quotation = await db.Quotations.FirstOrDefaultAsync(x => x.Id == id);
+    if (quotation is null) return Results.NotFound(new { message = "Không tìm thấy báo giá." });
+
+    var canAccessAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canAccessAll && quotation.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    var previousStatus = quotation.Status;
+    quotation.Status = request.Status.Trim();
+    quotation.UpdatedAt = DateTimeOffset.UtcNow;
+    quotation.SentAt = quotation.Status == "SENT" && quotation.SentAt is null ? DateTimeOffset.UtcNow : quotation.SentAt;
+    quotation.ApprovedAt = quotation.Status == "APPROVED" && quotation.ApprovedAt is null ? DateTimeOffset.UtcNow : quotation.ApprovedAt;
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "UPDATE_STATUS",
+        Module = "Quotations",
+        EntityType = nameof(Quotation),
+        EntityId = quotation.Id.ToString(),
+        Details = $"{quotation.Code}: {previousStatus} -> {quotation.Status}",
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}).RequirePermission("customer.update");
+
 app.MapGet("/api/care-activities", async (
     DateTimeOffset? from,
     DateTimeOffset? to,
@@ -1023,6 +1199,20 @@ record CustomerRequest(
     string? TechnicalSpecsJson,
     string? AttachmentLinksJson);
 record CustomerStatusRequest(string Status);
+record QuotationRequest(
+    Guid CustomerId,
+    string Title,
+    DateTimeOffset? ValidUntil,
+    string Status,
+    string? ElevatorSpecsJson,
+    string? CostLinesJson,
+    decimal SubtotalAmount,
+    decimal DiscountAmount,
+    decimal VatRate,
+    decimal? VatAmount,
+    decimal? TotalAmount,
+    string? Notes);
+record QuotationStatusRequest(string Status);
 record CareRequest(
     Guid CustomerId,
     Guid? AssigneeUserId,

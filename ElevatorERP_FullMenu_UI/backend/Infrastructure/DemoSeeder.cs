@@ -11,6 +11,7 @@ public static class DemoSeeder
         await db.Database.EnsureCreatedAsync();
         await EnsureCustomerLocationColumnsAsync(db);
         await EnsureCatalogTablesAsync(db);
+        await EnsureQuotationTablesAsync(db);
         await SeedCatalogsAsync(db);
 
         var enableDemo = bool.TryParse(config["EnableDemoSeed"], out var demo) && demo;
@@ -169,6 +170,50 @@ public static class DemoSeeder
                 ADD COLUMN IF NOT EXISTS "ElevatorType" text NULL,
                 ADD COLUMN IF NOT EXISTS "TechnicalSpecsJson" text NULL,
                 ADD COLUMN IF NOT EXISTS "AttachmentLinksJson" text NULL;
+            """);
+    }
+
+    private static async Task EnsureQuotationTablesAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "Quotations" (
+                "Id" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NULL,
+                "IsDeleted" boolean NOT NULL,
+                "IsDemo" boolean NOT NULL,
+                "Code" text NOT NULL,
+                "CustomerId" uuid NOT NULL,
+                "OwnerUserId" uuid NOT NULL,
+                "Title" text NOT NULL,
+                "VersionNo" integer NOT NULL,
+                "Status" text NOT NULL,
+                "ValidUntil" timestamp with time zone NULL,
+                "ElevatorSpecsJson" text NULL,
+                "CostLinesJson" text NULL,
+                "SubtotalAmount" numeric NOT NULL,
+                "DiscountAmount" numeric NOT NULL,
+                "VatRate" numeric NOT NULL,
+                "VatAmount" numeric NOT NULL,
+                "TotalAmount" numeric NOT NULL,
+                "Notes" text NULL,
+                "SentAt" timestamp with time zone NULL,
+                "ApprovedAt" timestamp with time zone NULL,
+                CONSTRAINT "PK_Quotations" PRIMARY KEY ("Id"),
+                CONSTRAINT "FK_Quotations_Customers_CustomerId"
+                    FOREIGN KEY ("CustomerId") REFERENCES "Customers" ("Id") ON DELETE RESTRICT,
+                CONSTRAINT "FK_Quotations_Users_OwnerUserId"
+                    FOREIGN KEY ("OwnerUserId") REFERENCES "Users" ("Id") ON DELETE RESTRICT
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Quotations_Code"
+                ON "Quotations" ("Code");
+
+            CREATE INDEX IF NOT EXISTS "IX_Quotations_CustomerId"
+                ON "Quotations" ("CustomerId");
+
+            CREATE INDEX IF NOT EXISTS "IX_Quotations_OwnerUserId"
+                ON "Quotations" ("OwnerUserId");
             """);
     }
 

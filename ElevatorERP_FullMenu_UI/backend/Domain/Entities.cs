@@ -97,6 +97,29 @@ public sealed class CareActivity : Entity
     public DateTimeOffset? NextCareAt { get; set; }
 }
 
+public sealed class Quotation : Entity
+{
+    public string Code { get; set; } = "";
+    public Guid CustomerId { get; set; }
+    public Customer Customer { get; set; } = null!;
+    public Guid OwnerUserId { get; set; }
+    public AppUser OwnerUser { get; set; } = null!;
+    public string Title { get; set; } = "";
+    public int VersionNo { get; set; } = 1;
+    public string Status { get; set; } = "DRAFT";
+    public DateTimeOffset? ValidUntil { get; set; }
+    public string? ElevatorSpecsJson { get; set; }
+    public string? CostLinesJson { get; set; }
+    public decimal SubtotalAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal VatRate { get; set; } = 10;
+    public decimal VatAmount { get; set; }
+    public decimal TotalAmount { get; set; }
+    public string? Notes { get; set; }
+    public DateTimeOffset? SentAt { get; set; }
+    public DateTimeOffset? ApprovedAt { get; set; }
+}
+
 public sealed class CatalogCategory : Entity
 {
     public string Code { get; set; } = "";
