@@ -1,19 +1,24 @@
 # PROJECT_CONTEXT
 
-> Source of truth for AI coding. Last source review: **2026-07-19**. Read this file before changing code.
+> Source of truth for AI coding. Last source review: **2026-07-21**. Read this file before changing code.
 
 ## 1. Project overview
 
 ElevatorERP is an internal ERP for **Công ty Thang máy Miền Trung**, expected to serve about 100 users across management, sales, operations, engineering, KCS, accounting, HR, installation, maintenance and repair teams.
 
-The system manages the full elevator lifecycle:
+The system manages the full customer and elevator lifecycle:
 
-`Đăng ký khách hàng → Lịch chăm sóc → Khảo sát → Báo giá → Hợp đồng → Dự án → Hồ sơ thang máy → Thi công → KCS → Kiểm định → Nghiệm thu → Bàn giao → Bảo hành → Bảo trì → Sự cố sửa chữa`
+`Khách hàng → Hồ sơ tư vấn → Cấu hình thang tư vấn → Báo giá → Hợp đồng → Thang máy tài sản → Triển khai → KCS → Kiểm định → Nghiệm thu → Bàn giao → Bảo hành → Bảo trì → Sự cố sửa chữa`
 
 Core domain decisions:
 
 - Do **not** use the term or entity **“Cơ hội bán hàng”**.
-- The sales intake function is **“Đăng ký khách hàng”**.
+- The long-lived identity master is **Khách hàng**; normalized phone number is the duplicate-prevention key.
+- A customer can have many **Hồ sơ tư vấn** at different times.
+- A consultation profile can have zero or many preliminary elevator configurations. Creating a configuration is optional when saving the profile.
+- A preliminary configuration belongs to exactly one consultation profile. Other profiles' configurations are read-only references, but may be copied into the current profile.
+- A preliminary configuration is not a physical elevator asset.
+- An accepted quotation/signed contract creates a **Thang máy tài sản** snapshot used by implementation, warranty and maintenance.
 - A project may be created only from a signed contract or an explicitly approved exceptional deployment.
 - One project can contain many elevators.
 - Project is the cross-department coordination center.
@@ -29,12 +34,16 @@ The current package is a **functional foundation plus a full-menu UI prototype**
 - Cookie login/logout/current user.
 - Users, roles, additive permissions and simple data scopes.
 - Dashboard statistics for customers and care activities.
-- Customer registration: list/search/filter/create/edit, inline status update and location pin metadata.
+- Customer master: list/search/filter/create/edit/delete safeguards, inline status update and normalized-phone duplicate prevention.
+- Consultation profiles: list/create/edit/status/detail/history, KPI metadata and preliminary elevator configurations.
+- Customer 360 aggregate APIs for overview, profiles, preliminary configurations, physical elevator assets, care and history.
+- Configuration copy API for reusing an existing elevator configuration in another consultation profile.
+- Quotation confirmation API that creates an idempotent physical `CustomerElevator` asset snapshot.
 - Customer care: list/calendar/create/complete.
 - Shared catalog administration for customer status, lost reason, source, customer group and elevator type.
-- Customer list filtering by normalized search, status/status group, customer group, elevator type, source, owner, area/address and created date range.
+- Customer list filtering by normalized search, status/status group, customer group, source, owner, address and created date range.
 - Customer CSV export is implemented in the frontend from the current loaded rows.
-- Free geocoding helper endpoints for customer location pinning:
+- Free geocoding helper endpoints for per-elevator installation pinning:
   - `/api/geo/search` uses OpenStreetMap/Nominatim with Vietnam/area bias.
   - `/api/geo/resolve-link` parses pasted Google Maps links or manual coordinates into latitude/longitude.
 - User-role assignment.
@@ -83,9 +92,23 @@ There is intentionally no Live/Demo/Planned label in the menu. All menu items ar
 - Table action columns should be centered/right-aligned consistently through shared table action classes; do not hand-position row icons per page.
 - The dashboard and mobile shell have been polished as an ERP/admin interface; avoid reverting it to a marketing/landing-page layout.
 - Customer status in the customer list is an editable colored badge. Keep the color for scanability and keep the dropdown indicator inside the badge.
-- Customer address/location display uses the **Địa chỉ** column. If latitude/longitude exists, show a small pin icon that opens Google Maps in a new tab.
-- Customer table columns **Nhóm KH** and **Loại thang** exist but are hidden by default through table column settings to keep the default list compact.
-- Customer location pinning must remain usable without paid Google APIs. The approved free flow is OSM search plus optional pasted Google Maps link/coordinate parsing.
+- Customer address is contact information only. Do not store installation area or installation coordinates on the customer master.
+- Installation address, pin coordinates and derived area belong to each preliminary elevator configuration and later to its physical asset snapshot.
+- Installation area is read-only and derived from the pin at ward/commune plus province level.
+- Installation pinning must remain usable without paid Google APIs. The approved free flow is OSM search plus optional pasted Google Maps link/coordinate parsing.
+
+### Customer 360 and sales domain decisions
+
+- The business menu is: **Khách hàng**, **Hồ sơ tư vấn**, **Lịch chăm sóc khách hàng**, **Báo giá**, **Hợp đồng**.
+- Customer 360 is the cross-process read model for one customer. Its tabs are: **Tổng quan**, **Hồ sơ tư vấn**, **Thang máy**, **Báo giá**, **Hợp đồng**, **Công nợ**, **Tiến độ**, **Bảo trì**, **Chăm sóc**, **Lịch sử**.
+- Customer name and customer code open Customer 360. Consultation profile code opens/focuses that profile's detail context.
+- Customer 360 uses URL tab state (`?tab=`), so links must open the intended business tab without losing customer context.
+- The **Thang máy** tab is for physical assets only. Preliminary configurations remain under their source consultation profile and must not inflate the asset count.
+- Receivables, progress and maintenance in Customer 360 are aggregate/read-oriented views. Mutations remain in the owning contract, asset, accounting or maintenance module.
+- Survey documents/images are optional and belong to an individual elevator configuration, not globally to the customer or consultation profile.
+- If a preliminary configuration is created, its technical fields, floor rows, installation address and installation pin are required; technical notes and attachments remain optional.
+- KPI is counted from eligible consultation profiles, not unique customer masters. Sending a quotation is a consultation milestone; sales commission is derived from a successful contract.
+- Authorization target: an account receives one or more Rules. Each Rule contains action permissions and per-module data scope (`OWN`, `TEAM`, `DEPARTMENT`, `BRANCH`, `COMPANY`, `CUSTOM`). Actions are additive; scope is evaluated per module.
 
 ### Chosen target architecture, not fully implemented
 
@@ -118,17 +141,16 @@ Important current gaps:
 10. Mutating real APIs save audit entries where implemented.
 11. UI refreshes by re-fetching the affected API after a successful mutation.
 
-Customer registration flow:
+Customer master and consultation flow:
 
 1. Customer page loads `/api/customers`; backend defaults to numeric customer code descending.
 2. Main search runs with debounce and normalized Vietnamese text so partial/diacritic-light input can match names, phones, emails and codes.
-3. Advanced filters live in a drawer: status, customer group, elevator type, source, owner, area/address and created date range.
-4. Create uses `POST /api/customers`; edit uses `PUT /api/customers/{id}`; inline status uses `PUT /api/customers/{id}/status`.
+3. Customer advanced filters use customer identity/contact fields. Elevator type is filtered on consultation profiles through their owned configurations, not on the customer master.
+4. Customer create uses `POST /api/customers`; edit uses `PUT /api/customers/{id}`; inline status uses `PUT /api/customers/{id}/status`.
 5. The form stores customer group (`PERSONAL`/`BUSINESS`) but the UI-facing label is **Nhóm khách hàng** to avoid disrespectful wording.
-6. Elevator type is catalog-backed by `elevator_type` and currently includes `BUILT`/`GLASS`.
-7. Customer location pinning uses OSM search, browser geolocation, map click, pasted Google Maps link/coordinates, or manual coordinate edit.
-8. The list shows location as a pin inside the **Địa chỉ** column; clicking it opens Google Maps by coordinates.
-9. The location radius/accuracy field is hidden from the normal UI and kept only as internal metadata.
+6. Consultation creation either selects an existing customer or creates a new customer after normalized-phone duplicate validation.
+7. A consultation profile may be saved without a technical configuration. When configurations are added, each owns its type, installation address, pin, derived area, floor rows and optional survey attachments.
+8. Customer code/name opens Customer 360; consultation code opens the matching profile context.
 
 Development-only workspace flow:
 
@@ -291,7 +313,10 @@ Mobile construction photos should initially use standard camera/file input, clie
 ## 12. Things that must never be broken
 
 - Never introduce “Cơ hội bán hàng”.
-- Never rename “Đăng ký khách hàng” back to opportunity/lead without a business decision.
+- Never merge **Khách hàng**, **Hồ sơ tư vấn**, preliminary elevator configuration and **Thang máy tài sản** into one record.
+- Never count a physical elevator asset before quotation/contract conversion has succeeded.
+- Never allow one consultation profile to edit or delete configurations owned by another profile; copying is the supported reuse operation.
+- Never move installation address, installation pin or installation area back to the customer master.
 - Never allow project creation before signed contract or exceptional approval.
 - Never model one project as exactly one elevator.
 - Never use frontend menu visibility as the only authorization control.
@@ -306,5 +331,5 @@ Mobile construction photos should initially use standard camera/file input, clie
 - Never claim a V3–V9 module is complete until its API, schema/migration, permissions, audit, workflow and tests are implemented.
 - Never move primary page create actions back into the filter bar or global shell header.
 - Never remove the demo-data distinction for localStorage-backed modules.
-- Never require a paid Google Maps/Places API key for the approved free customer location workflow unless the business explicitly accepts the cost and changes the architecture.
-- Never reintroduce the visible customer location radius/bán kính field into the normal registration modal unless there is a real dispatch/geofence requirement.
+- Never require a paid Google Maps/Places API key for the approved free installation-location workflow unless the business explicitly accepts the cost and changes the architecture.
+- Never expose location radius/accuracy in normal configuration UI unless there is a real dispatch/geofence requirement.

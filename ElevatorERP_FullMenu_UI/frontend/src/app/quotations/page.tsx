@@ -34,6 +34,7 @@ import {
 import { PageContainer, ProCard, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
+import AppStatusTag from '@/components/AppStatusTag';
 import { api } from '@/lib/api';
 import { exportCsv } from '@/lib/exportCsv';
 
@@ -382,7 +383,7 @@ export default function Quotations() {
       sorter: (a, b) => textSorter.compare(statusMeta(a.status).label, statusMeta(b.status).label),
       render: (_, item) => {
         const meta = statusMeta(item.status);
-        return <Tag color={meta.color}>{meta.label}</Tag>;
+        return <AppStatusTag value={item.status} label={meta.label} color={meta.color} />;
       },
     },
     { title: 'Phụ trách', dataIndex: 'owner', width: 160, sorter: (a, b) => textSorter.compare(a.owner, b.owner) },
@@ -535,7 +536,7 @@ export default function Quotations() {
                           </small>
                         </span>
                       </Space>
-                      <Tag color={meta.color}>{meta.label}</Tag>
+                      <AppStatusTag value={item.status} label={meta.label} color={meta.color} />
                     </Space>
                   </ProCard>
                 </List.Item>
@@ -720,7 +721,11 @@ export default function Quotations() {
               </Descriptions.Item>
               <Descriptions.Item label='Phiên bản'>V{detail.versionNo}</Descriptions.Item>
               <Descriptions.Item label='Trạng thái'>
-                <Tag color={statusMeta(detail.status).color}>{statusMeta(detail.status).label}</Tag>
+                <AppStatusTag
+                  value={detail.status}
+                  label={statusMeta(detail.status).label}
+                  color={statusMeta(detail.status).color}
+                />
               </Descriptions.Item>
               <Descriptions.Item label='Tạm tính'>{formatMoney(detail.subtotalAmount)}</Descriptions.Item>
               <Descriptions.Item label='Chiết khấu'>{formatMoney(detail.discountAmount)}</Descriptions.Item>

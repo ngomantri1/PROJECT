@@ -64,21 +64,24 @@ export default function AppProviders({ children }: { children: React.ReactNode }
             colorText: mode === 'dark' ? '#f3f5f4' : '#17281e',
             colorTextSecondary: mode === 'dark' ? '#9da7a1' : '#66756b',
             colorBgLayout: mode === 'dark' ? '#0f1211' : '#f4f8f3',
-            borderRadius: 10,
-            borderRadiusLG: 14,
+            fontSize: 14,
+            fontWeightStrong: 600,
+            controlHeight: 32,
+            borderRadius: 6,
+            borderRadiusLG: 8,
             fontFamily:
-              "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+              "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif",
           },
           components: {
-            Button: { controlHeight: 38, borderRadius: 9, fontWeight: 600 },
-            Card: { headerFontSize: 16, paddingLG: 20 },
+            Button: { controlHeight: 32, borderRadius: 6, fontWeight: 400 },
+            Card: { headerFontSize: 16, paddingLG: 24 },
             Table: {
               headerBg: mode === 'dark' ? '#1b211e' : '#f7faf6',
               headerColor: mode === 'dark' ? '#dce4df' : '#4d5f53',
             },
-            Menu: { itemBorderRadius: 9, itemMarginInline: 10 },
-            Input: { controlHeight: 38 },
-            Select: { controlHeight: 38 },
+            Menu: { itemBorderRadius: 6, itemMarginInline: 8 },
+            Input: { controlHeight: 32 },
+            Select: { controlHeight: 32 },
           },
         }}
       >

@@ -11,7 +11,6 @@ import {
   Row,
   Select,
   Space,
-  Tag,
   Typography,
   message,
 } from 'antd';
@@ -26,6 +25,7 @@ import {
 } from '@ant-design/icons';
 import { PageContainer, ProCard, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
+import AppStatusTag from '@/components/AppStatusTag';
 import { api } from '@/lib/api';
 import { exportCsv } from '@/lib/exportCsv';
 
@@ -162,9 +162,12 @@ export default function Users() {
       width: 130,
       sorter: (a, b) => Number(a.isActive) - Number(b.isActive),
       render: (_, user) => (
-        <Tag color={user.isActive ? 'green' : 'red'} icon={user.isActive ? <CheckCircleOutlined /> : <LockOutlined />}>
-          {user.isActive ? 'Hoạt động' : 'Đã khóa'}
-        </Tag>
+        <AppStatusTag
+          value={user.isActive ? 'ACTIVE' : 'INACTIVE'}
+          label={user.isActive ? 'Hoạt động' : 'Đã khóa'}
+          color={user.isActive ? 'green' : 'red'}
+          icon={user.isActive ? <CheckCircleOutlined /> : <LockOutlined />}
+        />
       ),
     },
   ];
@@ -235,9 +238,11 @@ export default function Users() {
                         <div className='muted-text'>{user.username}</div>
                       </div>
                     </Space>
-                    <Tag color={user.isActive ? 'green' : 'red'}>
-                      {user.isActive ? 'Hoạt động' : 'Đã khóa'}
-                    </Tag>
+                    <AppStatusTag
+                      value={user.isActive ? 'ACTIVE' : 'INACTIVE'}
+                      label={user.isActive ? 'Hoạt động' : 'Đã khóa'}
+                      color={user.isActive ? 'green' : 'red'}
+                    />
                   </Space>
                   <Descriptions size='small' column={1} className='mobile-descriptions'>
                     <Descriptions.Item label='Phòng ban'>{user.department || '—'}</Descriptions.Item>

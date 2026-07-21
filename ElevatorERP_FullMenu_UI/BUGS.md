@@ -1,10 +1,27 @@
 # BUGS
 
-> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-19**.
+> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-21**.
 
 ## 1. Current open issues
 
 ### Critical / high
+
+- **Customer 360 can confuse preliminary configurations with physical elevator assets.**
+  - Area: `frontend/src/app/business/customers/[id]/page.tsx` and Customer 360 aggregate DTOs.
+  - Current behavior: the API exposes both `consultationElevators` and `elevators`; some counters/labels use technical-configuration totals while the **Thang máy tài sản** table renders only `CustomerElevator` rows.
+  - Risk: users see profile configuration counts but an empty asset tab, or assume an uncontracted configuration is a maintainable elevator.
+  - Required fix: use explicit labels/counts for **Cấu hình tư vấn** and **Thang máy tài sản**, and link configurations back to their source profile.
+
+- **Contract-to-asset conversion lacks database-enforced idempotency evidence.**
+  - Area: `POST /api/quotations/{id}/confirm-contract`.
+  - Current behavior: application code rejects repeated conversion and creates a `CustomerElevator` snapshot.
+  - Risk: concurrent requests can bypass application-level checks without a unique constraint and transaction test.
+  - Required fix: add migration, unique index and integration tests for concurrent/repeated conversion.
+
+- **Technical configurations, floors and attachments are still JSON-owned.**
+  - Area: `ConsultationProfile.TechnicalSpecsJson` and `AttachmentLinksJson`.
+  - Risk: weak referential integrity, difficult querying/filtering, fragile partial updates and migration complexity.
+  - Required fix: introduce relational configuration/floor/attachment entities while retaining a controlled compatibility migration.
 
 - **Most menu modules are not real backend modules.**
   - Area: `frontend/src/components/ModuleWorkspace.tsx`.
@@ -14,7 +31,7 @@
 
 - **No EF Core migrations.**
   - Area: `DemoSeeder.SeedAsync()` calls `EnsureCreatedAsync()`.
-  - Current workaround: customer location and elevator-type prototype columns are added with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `DemoSeeder`.
+  - Legacy workaround: the original customer-location and customer-level elevator-type prototype columns are added with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `DemoSeeder`. New work must not extend these fields; installation location and elevator type belong to the elevator configuration/asset lifecycle.
   - Risk: no controlled schema evolution or safe production deployment.
   - Workaround: acceptable only for disposable local demo databases.
 
@@ -41,6 +58,26 @@
 
 ### Medium
 
+- **Customer 360 receivables is not a real accounting aggregate yet.**
+  - Area: Customer 360 `receivables` tab.
+  - Current behavior: explanatory/empty content without payment schedule, receipt or overdue API data.
+  - Required fix: expose contract-level totals, received amount, remaining amount and overdue amount as a read model; edits remain in accounting/contract context.
+
+- **Customer 360 progress and maintenance are derived placeholders.**
+  - Area: Customer 360 `progress` and `maintenance` tabs.
+  - Current behavior: summarized from asset state rather than full deployment and maintenance records.
+  - Required fix: connect real workflow/read APIs and deep-link each row to the owning asset/module.
+
+- **Legacy customer/profile columns overlap the approved ownership model.**
+  - Area: `Customer` and `ConsultationProfile` still contain legacy area, elevator type, coordinates and technical JSON fields.
+  - Risk: new code can accidentally read or write installation data at customer level.
+  - Required fix: document compatibility fields, stop new writes, migrate data and remove them through controlled EF migrations.
+
+- **Reverse-geocoded installation area can select the wrong administrative level.**
+  - Area: location result parsing for installation area.
+  - Examples: a hamlet/neighborhood may be selected instead of expected `Phường Hạc Thành` or `Xã Lưu Vệ`, while province is correct.
+  - Required fix: prioritize Vietnamese ward/commune administrative fields, retain raw provider response for diagnostics and add parser fixtures.
+
 - **Customer code generation is race-prone.**
   - Area: `POST /api/customers` uses total count + 1.
   - Risk: concurrent creates can produce the same unique code and fail.
@@ -65,10 +102,10 @@
   - Area: customer API.
   - Gap: customer create/edit/status exist, but no soft-delete/restore endpoint is implemented yet.
 
-- **Customer location/geocoding is best-effort and network-dependent.**
-  - Area: `/api/geo/search`, `/api/geo/resolve-link`, `customers/page.tsx`.
+- **Installation location/geocoding is best-effort and network-dependent.**
+  - Area: `/api/geo/search`, `/api/geo/resolve-link`, technical configuration/location UI.
   - Cause: free flow depends on OpenStreetMap/Nominatim availability, browser geolocation permission and whether a pasted Google Maps link exposes coordinates after redirect.
-  - Workaround: user can paste plain decimal coordinates or manually edit Vĩ độ/Kinh độ in the location modal.
+  - Workaround: user can paste plain decimal coordinates or manually edit latitude/longitude in the installation-location modal.
   - Required fix: add provider abstraction, rate limiting/cache and automated parser tests before relying on it for dispatch-critical workflows.
 
 - **Role assignment can remove the current admin’s final role.**
@@ -196,7 +233,7 @@
 - Added catalog-backed elevator type (`elevator_type`) to customer form/list/filter/export and seeded `Thang xây`/`Thang kính`.
 - Renamed customer-facing "Loại khách" display label to **Nhóm khách hàng** and hid **Nhóm KH** plus **Loại thang** by default in table column settings.
 - Renamed the customer table area column to **Địa chỉ** and showed location pin inside that column when coordinates exist.
-- Added free customer location pinning with OpenStreetMap search, Leaflet map click, browser geolocation, pasted Google Maps link/coordinate parsing and manual coordinate edit.
+- Added the original customer-level location pinning prototype with OpenStreetMap search, Leaflet map click, browser geolocation, pasted Google Maps link/coordinate parsing and manual coordinate edit. The current model applies this capability to each elevator installation configuration instead.
 - Removed the visible location radius/bán kính field from the normal location modal.
 - Reworked the map modal from too small, then too large, into a bounded ERP/admin shell modal with compact search/link area, coordinate strip and fixed footer.
 - Fixed dashboard welcome panel text contrast and reduced the washed/foggy visual treatment.
@@ -212,7 +249,7 @@
 - Schema changes during local prototype: recreate only a disposable local database after backup. Never delete production `.data`.
 - Docker dependency installation issue: keep the committed npmjs-based lock file; do not run unreviewed dependency upgrades.
 - Care overdue demo mismatch: re-seed disposable demo data or inspect dates manually until worker/derived status exists.
-- Customer location search mismatch: if OSM does not find a building/address, open Google Maps, copy share link or copy coordinates, paste into the location modal, or use **Sửa tọa độ** to enter latitude/longitude manually.
+- Installation-location search mismatch: if OSM does not find a building/address, open Google Maps, copy the share link or coordinates, paste them into the location modal, or use **Sửa tọa độ** to enter latitude/longitude manually.
 - After rebuilding/recreating the frontend container, if `localhost` shows Nginx `502 Bad Gateway` while containers are healthy, run `docker compose restart nginx` so Nginx resolves the current frontend container IP.
 
 ## 4. High-risk code areas

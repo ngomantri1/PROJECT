@@ -71,6 +71,7 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
+import AppStatusTag from '@/components/AppStatusTag';
 import { api } from '@/lib/api';
 import { exportCsv } from '@/lib/exportCsv';
 
@@ -285,7 +286,7 @@ function statusMeta(statusOptions: CatalogOption[], value: string) {
 
 function CustomerStatus({ value, statusOptions }: { value: string; statusOptions: CatalogOption[] }) {
   const status = statusMeta(statusOptions, value);
-  return <Tag color={status.color}>{status.label}</Tag>;
+  return <AppStatusTag value={value} label={status.label} color={status.color} />;
 }
 
 function CatalogTag({ value, options }: { value?: string; options: CatalogOption[] }) {

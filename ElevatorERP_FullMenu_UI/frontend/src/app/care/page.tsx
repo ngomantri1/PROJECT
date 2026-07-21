@@ -42,6 +42,7 @@ import {
 import type { ProColumns } from '@ant-design/pro-components';
 import dayjs, { Dayjs } from 'dayjs';
 import { useRouter, useSearchParams } from 'next/navigation';
+import AppStatusTag from '@/components/AppStatusTag';
 import { api } from '@/lib/api';
 import { exportCsv } from '@/lib/exportCsv';
 
@@ -94,7 +95,7 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 
 function CareStatus({ value }: { value: string }) {
   const status = statusLabels[value] ?? { label: value, color: 'default' };
-  return <Tag color={status.color}>{status.label}</Tag>;
+  return <AppStatusTag value={value} label={status.label} color={status.color} />;
 }
 
 export default function Care() {

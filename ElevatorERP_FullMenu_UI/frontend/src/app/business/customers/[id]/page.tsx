@@ -8,6 +8,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { PageContainer, ProCard } from '@ant-design/pro-components';
 import { AppstoreOutlined, ArrowLeftOutlined, BuildOutlined, CalendarOutlined, CustomerServiceOutlined, DollarOutlined, FileTextOutlined, FundProjectionScreenOutlined, HistoryOutlined, PhoneOutlined, ProfileOutlined, SafetyCertificateOutlined, ToolOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import AppStatusTag from '@/components/AppStatusTag';
 import { api } from '@/lib/api';
 
 type ConsultationProfile = {
@@ -215,7 +216,13 @@ function formatStatus(value?: string) {
 }
 
 function StatusTag({ value }: { value?: string }) {
-  return <Tag color={statusColor[value ?? '']}>{formatStatus(value)}</Tag>;
+  return (
+    <AppStatusTag
+      value={value ?? ''}
+      label={formatStatus(value)}
+      color={statusColor[value ?? '']}
+    />
+  );
 }
 
 function formatCurrency(value?: number) {

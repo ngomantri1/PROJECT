@@ -9,8 +9,31 @@
 - Preserve the approved business rules while restructuring the backend into a real Modular Monolith.
 - Keep Docker Compose and Rider workflows working after every meaningful change.
 - Preserve the approved ERP/admin shell behavior: persistent shared shell, desktop one-open-group sidebar accordion, compact mobile drawer, primary page actions in page headers, and light/dark theme support.
+- Stabilize the Customer → consultation → quotation/contract → physical elevator asset lifecycle and remove legacy ownership ambiguity.
+- Keep Customer 360 as an aggregate/read surface while write operations remain in their owning modules.
 
-## 1.1 Recently completed UI shell baseline
+## 1.1 Recently completed customer/consultation foundation
+
+- [x] Split the business navigation into **Khách hàng** and **Hồ sơ tư vấn**.
+- [x] Add normalized-phone duplicate prevention and actionable existing-customer selection.
+- [x] Support multiple consultation profiles for one customer.
+- [x] Store multiple preliminary elevator configurations per consultation profile and support configuration copying.
+- [x] Move installation address, pin, derived area and survey attachments into each elevator configuration.
+- [x] Add Customer 360 aggregate APIs and URL-backed Customer 360 tabs.
+- [x] Add contract-confirmation conversion from an accepted quotation to a physical `CustomerElevator` asset snapshot.
+- [x] Add Customer 360 tabs for profiles, assets, quotations, contracts, receivables, progress, maintenance, care and history.
+- [x] Make customer code/name navigate to Customer 360 and profile code navigate to the profile context.
+
+## 1.2 Current Customer 360 and lifecycle work
+
+- [ ] Correct Customer 360 labels and counters so preliminary configurations and physical assets are never represented as the same quantity.
+- [ ] Show consultation configurations under their source profile, including read-only configurations from other profiles and explicit copy-to-current-profile action.
+- [ ] Replace the receivables placeholder with a real accounting read model grouped by contract.
+- [ ] Replace derived progress/maintenance placeholders with real asset workflow read models and links to their owning modules.
+- [ ] Add responsive and dark-theme verification for every Customer 360 tab.
+- [ ] Add backend integration tests for profile creation, configuration copy, contract conversion, repeat conversion and customer history.
+
+## 1.3 Recently completed UI shell baseline
 
 - [x] Move `AppShell` to shared authenticated frame so sidebar/header do not remount on normal menu navigation.
 - [x] Keep `/login` outside the ERP shell.
@@ -31,20 +54,20 @@
 - [x] Add month/year calendar toolbar with previous/today/next navigation.
 - Verification evidence: `npm run lint` and `npm run build` passed after the shell changes.
 
-## 1.2 Recently completed customer registration UX/API baseline
+## 1.4 Legacy customer-intake UX/API baseline (partly superseded)
 
-- [x] Add edit action to the customer registration list and persist edits through `PUT /api/customers/{id}`.
+- [x] Add edit action to the legacy customer-intake list and persist customer master edits through `PUT /api/customers/{id}`.
 - [x] Add inline editable customer status badge using catalog-backed colors and `PUT /api/customers/{id}/status`.
 - [x] Standardize table action alignment and compact table card toolbar spacing across list pages.
 - [x] Move secondary customer filters into an advanced filter drawer; keep main search as live/debounced search.
 - [x] Add created date range, customer group, elevator type, source, owner and area/address filters to the customer advanced filter.
 - [x] Add normalized Vietnamese-friendly search so partial input without full diacritics can still match customer data.
-- [x] Add catalog-backed **Loại thang máy** to customer form, list, detail/mobile card, CSV and advanced filter.
-- [x] Add customer location pinning with OpenStreetMap search, map click, browser current location, pasted Google Maps link/coordinates and manual coordinate edit.
-- [x] Keep the customer location workflow free by avoiding Google Places/Maps API key dependency.
-- [x] Hide visible customer location radius/bán kính from the normal location modal.
-- [x] Show customer location pin inside the **Địa chỉ** column and open Google Maps by coordinates when clicked.
-- [x] Rename customer-facing "Loại khách" display label to **Nhóm khách hàng** and hide **Nhóm KH** plus **Loại thang** by default in table column settings.
+- [x] Keep catalog-backed **Loại thang máy** but move its business ownership to each consultation configuration.
+- [x] Reuse the free OpenStreetMap/coordinate flow for per-configuration installation pinning.
+- [x] Keep the installation-location workflow free by avoiding Google Places/Maps API key dependency.
+- [x] Hide visible location radius/accuracy from normal business forms.
+- [x] Keep customer contact address separate from installation address/coordinates.
+- [x] Use **Nhóm khách hàng** as the customer-facing label and remove elevator type/installation area from customer-master list semantics.
 - [x] Fix dashboard welcome panel contrast/fog so text is readable on a professional ERP/admin shell background.
 - Verification evidence: `npm run lint` and `npm run build` passed after the customer/location changes.
 
@@ -64,6 +87,9 @@
 - [ ] Add login throttling/lockout and production password policy.
 - [ ] Implement concurrency-safe business code generation.
 - [ ] Confirm backup and restore for PostgreSQL, uploads and deployment configuration.
+- [ ] Add a database uniqueness constraint for quotation/contract-to-asset conversion and execute conversion plus audit in one transaction.
+- [ ] Define relational entities/migrations for elevator configurations, floors and configuration attachments; migrate away from JSON-only ownership.
+- [ ] Normalize and uniquely index customer phone numbers at database level.
 
 ## 3. P0 — authorization foundation
 
@@ -77,6 +103,8 @@
 - [ ] Prevent a user from accidentally removing their own last administration role.
 - [ ] Add separation-of-duties policies for quotation, payment, KCS and change approval.
 - [ ] Expand audit logging with before/after values, reason, device/user agent and protected document access.
+- [ ] Implement approved Rule assignment: one account can receive multiple Rules containing action permissions plus per-module data scope.
+- [ ] Support explicit scopes `OWN`, `TEAM`, `DEPARTMENT`, `BRANCH`, `COMPANY` and `CUSTOM`; do not infer access from job title alone.
 
 ## 4. Backend refactor
 
@@ -104,21 +132,19 @@
 - [ ] Optional 2FA for privileged accounts.
 - [ ] Audit viewer backed by PostgreSQL, not generic workspace data.
 
-### Customer registration
+### Customer master and consultation profiles
 
-- [ ] Add customer detail page.
-- [ ] Add soft-delete API and restore/audit behavior.
-- [ ] Add contacts, tax code and multiple construction addresses.
-- [ ] Add full elevator need/specification fields from the approved summary; current source only stores catalog-backed elevator type.
-- [ ] Add attachments through a real document service.
+- [x] Add Customer 360 detail page and deep links from customer code/name.
+- [ ] Add soft-delete/restore semantics and audit behavior; deletion must remain blocked when dependent profiles/contracts/assets exist.
+- [ ] Add customer contacts and tax code without moving construction/installation addresses to the customer master.
 - [ ] Enforce full status transitions, failure reason and lost reason rules; current inline status update writes the selected catalog status directly.
-- [ ] Add duplicate phone/tax-code detection policy.
-- [ ] Add server pagination and formal server sorting contract; current customer API returns all visible rows ordered by customer code descending.
-- [ ] Replace prototype `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` schema workaround for customer location/elevator type with real EF Core migrations.
-- [ ] Add backend tests for customer edit, inline status update, location metadata and elevator type filter.
+- [ ] Add tax-code duplicate policy; normalized phone duplicate prevention already exists and also applies when creating a customer through a consultation profile.
+- [ ] Add server pagination and formal server sorting contracts to customer and consultation lists.
+- [ ] Replace prototype schema workarounds and legacy customer/profile location/elevator-type columns with controlled EF Core migrations.
+- [ ] Add backend tests for customer edit/delete guards, duplicate phone, profile ownership, KPI eligibility and installation metadata.
 - [ ] Replace client-side CSV export with server-side export when data volume, permissions and audit requirements are implemented.
-- [ ] Add statistics for customer intake by time, source, status, owner and outcome from authoritative PostgreSQL data.
-- [ ] Define how a signed contract converts a customer registration into contract/project records, and how repeat elevator purchases are represented.
+- [ ] Add KPI statistics by time window, owner, department, source, eligible consultation count, quotation milestone, contract outcome and conversion rate.
+- [ ] Add read-only visibility of configurations from a customer's other profiles and explicit copy-to-current-profile behavior.
 
 ### Care schedule
 
@@ -183,7 +209,7 @@
 - [ ] Centralize status codes/labels instead of duplicating them in pages and backend seed logic.
 - [ ] Centralize responsive table/card patterns.
 - [ ] Extract shared list-table action alignment and compact table toolbar styles into reusable components/classes rather than page-specific fixes.
-- [ ] Extract customer location picker into a reusable, tested component if project/site modules also need pinned deployment locations.
+- [ ] Extract the elevator installation-location picker into a reusable, tested component for consultation configurations, projects and physical elevator assets.
 - [ ] Introduce a real upload API helper that supports `FormData` without forcing JSON headers.
 - [ ] Add request cancellation/stale-response protection.
 - [ ] Reduce frontend first-load bundle size; generic workspace currently loads a large ProComponents bundle.

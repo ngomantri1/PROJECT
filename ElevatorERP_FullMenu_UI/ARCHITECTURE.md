@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-> Current architecture map plus the approved target direction. Last source review: **2026-07-19**.
+> Current architecture map plus the approved target direction. Last source review: **2026-07-21**.
 
 ## 1. Current repository structure
 
@@ -76,6 +76,36 @@ Target but absent service:
 
 The source is **not yet a true Modular Monolith**. It is one ASP.NET Core Minimal API project.
 
+### Customer, consultation and elevator model
+
+```text
+Customer (long-lived identity master)
+  └── ConsultationProfile 1..n (a sales/consultation need at a point in time)
+        ├── Technical configuration 0..n (currently serialized in TechnicalSpecsJson)
+        ├── Quotation 0..n
+        └── CustomerElevator 0..n (created only by successful contract conversion)
+```
+
+- `Customer` owns stable identity/contact data. Normalized phone is the duplicate-prevention key.
+- `ConsultationProfile` owns source, status, assignee, KPI eligibility and preliminary technical configurations.
+- A technical configuration is scoped to its source consultation. Cross-profile reuse is performed by copy, never by shared mutable ownership.
+- `CustomerElevator` is the physical asset snapshot for deployment, handover, warranty and maintenance.
+- Installation address, coordinates and derived area are configuration/asset data, not customer master data.
+- `TechnicalSpecsJson` and `AttachmentLinksJson` are current compatibility storage. They are not the preferred final relational model.
+
+Implemented lifecycle endpoints include:
+
+- `GET /api/customers/{id}/overview`
+- `GET /api/customers/{id}/customer-360`
+- `GET /api/customers/{id}/elevators`
+- `GET /api/customers/{id}/history`
+- consultation profile list/create/update/status/detail/history endpoints
+- `POST /api/consultation-profiles/{id}/copy-technical-configuration`
+- `POST /api/quotations/{id}/confirm-contract`
+- customer elevator detail/status/history endpoints
+
+Contract confirmation requires an accepted/approved quotation and a source technical configuration, rejects repeated conversion, and creates a `CustomerElevator` snapshot. This flow still needs database-level uniqueness and transaction/integration-test hardening.
+
 ### `backend/Program.cs`
 
 Responsibilities currently concentrated in one file:
@@ -128,7 +158,7 @@ Contains all current entities:
 - Seeds departments, permissions, roles, users, 20 customers and 45 care activities.
 - Seeds shared catalog categories/options for customer statuses, lost reasons, sources, customer types and elevator types.
 - Updates existing system catalog options on startup when their label/color/sort order changes.
-- Uses `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for prototype customer location/elevator-type columns because EF Core migrations are not in place yet. This is a local prototype workaround, not the target migration strategy.
+- Uses `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for legacy prototype columns because EF Core migrations are not in place yet. These compatibility columns do not define the approved ownership model.
 - Uses deterministic sample random seed.
 
 ### `backend/Security/SecurityServices.cs`
@@ -139,6 +169,15 @@ Contains all current entities:
 - `RequirePermission(...)` endpoint filter returns `403` when missing.
 
 ## 4. Current frontend architecture
+
+### Customer 360
+
+- Route: `frontend/src/app/business/customers/[id]/page.tsx`.
+- Tab state is URL-backed through `?tab=`.
+- Tabs: overview, profiles, elevators, quotations, contracts, receivables, progress, maintenance, care and history.
+- The page consumes the Customer 360 read model and keeps mutations in the owning business surface.
+- Consultation configurations and physical elevator assets are separate collections. UI labels, counters and empty states must preserve that distinction.
+- Desktop shows the complete tab row. Mobile uses a horizontally scrollable tab control without wrapping or overlapping actions.
 
 ### `src/app/layout.tsx`
 
@@ -178,9 +217,10 @@ Only routes with an explicit `permission` property are currently filtered. Most 
 
 - `app/login/page.tsx`: cookie login.
 - `app/page.tsx`: dashboard from `/dashboard`.
-- `app/customers/page.tsx`: customer list/search/advanced-filter/create/edit/status update.
-- `app/customers/page.tsx`: also includes customer CSV export, catalog-backed status/group/elevator-type tags, table column settings, compact KPI/filter/table layout, address/location pin display and the customer location modal.
-- `components/LocationPickerMap.tsx`: Leaflet/OpenStreetMap map wrapper for picking a customer location by map click and displaying the current pin.
+- `app/customers/page.tsx`: consultation-profile list and business intake workflow retained as a compatibility route.
+- `app/business/customers/page.tsx`: customer master list/create/edit/actions and Customer 360 navigation.
+- `app/business/customers/[id]/page.tsx`: Customer 360 aggregate surface.
+- `components/LocationPickerMap.tsx`: Leaflet/OpenStreetMap wrapper used for per-configuration installation pinning.
 - `app/care/page.tsx`: care list/calendar/create/complete, CSV export and month/year calendar navigation.
 - `app/admin/users/page.tsx`: user/role list and role assignment.
 - `app/admin/catalogs/page.tsx`: shared catalog category/option administration, including active toggle and sort order management.
@@ -283,6 +323,20 @@ Recommended module boundaries:
 
 ## 7. Data flow
 
+### Customer consultation to physical asset
+
+```text
+Create/select Customer
+  → create ConsultationProfile
+  → optionally add one or more preliminary configurations
+  → create/revise Quotation
+  → approve/accept and confirm Contract
+  → create immutable-origin CustomerElevator snapshot
+  → deployment / handover / warranty / maintenance
+```
+
+Customer 360 aggregates this lifecycle but does not become the write owner for receivables, progress or maintenance. Those writes stay in accounting, contract, asset and maintenance modules and return to Customer 360 as read models.
+
 ### Authentication
 
 ```text
@@ -346,22 +400,22 @@ Customer status badge
 
 The current status endpoint writes the selected status directly. Full transition rules and failure reasons are not implemented yet.
 
-### Customer location pinning
+### Elevator installation pinning
 
 ```text
-Customer drawer
+Technical configuration drawer
 → Ghim vị trí opens Modal
 → AutoComplete calls GET /api/geo/search?q=...&area=...
 → backend calls OpenStreetMap/Nominatim with Vietnam and optional area bias
 → user selects suggestion, clicks the map, uses browser geolocation, pastes Google Maps link/coordinates, or manually edits coordinates
 → pasted links/coordinates call POST /api/geo/resolve-link
-→ frontend stores latitude/longitude/locationLabel in the customer form
-→ POST/PUT /api/customers persists location metadata
-→ customer table renders a small pin inside the Địa chỉ column
-→ pin opens Google Maps in a new tab by coordinates
+→ frontend stores latitude/longitude/locationLabel on the selected configuration
+→ configuration save persists installation address, coordinates and derived ward/commune plus province
+→ later contract conversion snapshots these fields into CustomerElevator
+→ asset/deployment views can open Google Maps by coordinates
 ```
 
-The UI intentionally hides radius/accuracy from users. `LocationAccuracyMeters` remains only for compatibility and future dispatch/geofence use.
+The UI intentionally hides radius/accuracy from users. Any legacy customer-level location columns remain compatibility data only and must not receive new installation writes.
 
 ### Care completion
 
@@ -430,10 +484,11 @@ Catalog administration page
 - Table styling is centralized in `globals.css` for sorter visibility, sticky/fixed-column shadows, hover/selected colors, toolbar icon sizing and typography.
 - The customer table uses separate columns for customer code, name, phone and email to support future export/filter workflows.
 - Customer search auto-loads after debounce and uses normalized text matching in the backend response set.
-- Customer advanced filters are in a right drawer and include status, customer group, elevator type, source, owner, area/address and created date range.
+- Customer advanced filters are in a right drawer and include status, customer group, source, owner, contact address and created date range.
+- Consultation-profile advanced filters may query elevator type through owned technical configurations using “matches any configuration” semantics.
 - Customer list default ordering is numeric customer code descending from the backend; the code column shows default descending sort in the table.
-- Customer table column settings hide **Nhóm KH** and **Loại thang** by default, while still allowing the user to enable them from the gear menu.
-- The customer location modal uses a compact top search/link area, a one-line coordinate strip and a Leaflet map. Vĩ độ/Kinh độ are read-only by default and switch to manual input only when the user chooses **Sửa tọa độ**.
+- Customer tables do not expose installation area or elevator type as customer-master columns.
+- The installation-location modal belongs to the selected elevator configuration. It uses a compact top search/link area, a one-line coordinate strip and a Leaflet map; latitude/longitude are read-only by default and switch to manual input only through **Sửa tọa độ**.
 
 ### Target
 

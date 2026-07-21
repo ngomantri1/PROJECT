@@ -1,4 +1,4 @@
-Đọc các file trong thư mục docs:
+Đọc các file:
 - PROJECT_CONTEXT.md
 - ARCHITECTURE.md
 - TODO.md
@@ -6,19 +6,6 @@
 
 Trong quá trình sửa không được encoding sang dạng mã khác. Tôi đang dùng UTF8 (tiếng việt)
 Hãy giải thích file nào cần sửa và patch tối thiểu.
+Không chạy : npm run lint, npm run build, git diff --check
 
-Từ bây giờ hãy tối ưu quy trình kiểm tra để giảm thời gian:
-
-1. Trước khi chạy npm, phải xác định chính xác thư mục frontend chứa package.json và đặt working directory tại đó.
-2. Không chạy npm install nếu package.json và package-lock.json không thay đổi.
-3. Không xóa node_modules, .next hoặc .next/cache nếu không thật sự cần.
-4. Sau mỗi chỉnh sửa nhỏ, chỉ chạy:
-   - TypeScript check;
-   - ESLint cho các file đã thay đổi;
-   - test nhỏ nhất liên quan đến chức năng vừa sửa.
-5. Không chạy npm run build sau mỗi lần sửa.
-6. Chỉ chạy npm run build đúng một lần khi toàn bộ task đã hoàn thành hoặc khi tôi yêu cầu.
-7. Ghi rõ thời gian chạy của từng lệnh và báo nếu một lệnh bị treo; không tự chạy lại build nhiều lần.
-8. Kiểm tra phiên bản Next.js và bundler hiện tại, đề xuất sử dụng Turbopack nếu tương thích nhưng không tự nâng cấp phiên bản lớn hoặc phá cấu hình hiện tại.
-
-
+Tôi cần rà soát project theo checklist trong file : Elevator ERP UI Standard.docs, DESIGN.md xem đã làm đúng chưa ? Phần nào chưa được cần sửa lại. Tôi cần sửa để áp dụng chung

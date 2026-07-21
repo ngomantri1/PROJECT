@@ -360,18 +360,20 @@ export default function CustomerMasterPage() {
         />
       </ProCard>
 
-      <ProTable<CustomerRow>
-        rowKey='id'
-        loading={loading}
-        dataSource={filteredRows}
-        columns={columns}
-        search={false}
-        cardBordered
-        options={{ density: true, fullScreen: true, reload: () => void load() }}
-        pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} khách hàng` }}
-        scroll={{ x: 1400 }}
-        headerTitle='Danh sách khách hàng'
-      />
+      <div className='responsive-table section-gap'>
+        <ProTable<CustomerRow>
+          rowKey='id'
+          loading={loading}
+          dataSource={filteredRows}
+          columns={columns}
+          search={false}
+          cardBordered
+          options={{ density: true, fullScreen: true, reload: () => void load() }}
+          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} khách hàng` }}
+          scroll={{ x: 1400 }}
+          headerTitle='Danh sách khách hàng'
+        />
+      </div>
 
       <Drawer
         title={editingCustomer ? 'Sửa khách hàng' : 'Thêm khách hàng'}

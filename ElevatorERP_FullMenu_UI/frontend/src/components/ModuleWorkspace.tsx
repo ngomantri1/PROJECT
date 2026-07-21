@@ -47,6 +47,7 @@ import {
 import type { ProColumns } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 import { usePathname, useRouter } from 'next/navigation';
+import AppStatusTag, { getAppStatusMeta } from '@/components/AppStatusTag';
 import { exportCsv } from '@/lib/exportCsv';
 
 type StatusOption = {
@@ -209,7 +210,8 @@ function seedRows(pathname: string, config: WorkspaceConfig): WorkspaceRow[] {
 }
 
 function statusMeta(config: WorkspaceConfig, value: string) {
-  return config.statuses.find((item) => item.value === value) ?? { value, label: value, color: 'default' };
+  const configured = config.statuses.find((item) => item.value === value);
+  return getAppStatusMeta(value, configured);
 }
 
 function formatMoney(value?: number) {
@@ -369,7 +371,7 @@ export default function ModuleWorkspace() {
       ),
       render: (_, item) => {
         const meta = statusMeta(config, item.status);
-        return <Tag color={meta.color}>{meta.label}</Tag>;
+        return <AppStatusTag value={item.status} label={meta.label} color={meta.color} />;
       },
     },
     {
@@ -460,7 +462,12 @@ export default function ModuleWorkspace() {
             ],
           }}
         >
-          <Button type='text' className='table-action-button' icon={<EllipsisOutlined />} />
+          <Button
+            type='text'
+            className='table-action-button'
+            icon={<EllipsisOutlined />}
+            aria-label={`Mở thao tác ${item.code}`}
+          />
         </Dropdown>
       </Space>,
     ],
@@ -567,7 +574,7 @@ export default function ModuleWorkspace() {
                         <small className='table-secondary-text'>{item.code}</small>
                       </span>
                     </Space>
-                    <Tag color={meta.color}>{meta.label}</Tag>
+                    <AppStatusTag value={item.status} label={meta.label} color={meta.color} />
                   </Space>
                   <Descriptions size='small' column={1} className='mobile-descriptions'>
                     <Descriptions.Item label='Liên quan'>{item.related}</Descriptions.Item>
@@ -667,7 +674,11 @@ export default function ModuleWorkspace() {
                 <Descriptions.Item label='Khách hàng / Dự án'>{selected.related}</Descriptions.Item>
                 <Descriptions.Item label='Người phụ trách'>{selected.owner}</Descriptions.Item>
                 <Descriptions.Item label='Trạng thái'>
-                  <Tag color={statusMeta(config, selected.status).color}>{statusMeta(config, selected.status).label}</Tag>
+                  <AppStatusTag
+                    value={selected.status}
+                    label={statusMeta(config, selected.status).label}
+                    color={statusMeta(config, selected.status).color}
+                  />
                 </Descriptions.Item>
                 <Descriptions.Item label='Mức ưu tiên'>{selected.priority}</Descriptions.Item>
                 <Descriptions.Item label='Ngày dự kiến'>{dayjs(selected.date).format('DD/MM/YYYY')}</Descriptions.Item>

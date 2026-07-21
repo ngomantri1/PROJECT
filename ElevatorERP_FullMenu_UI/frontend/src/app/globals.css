@@ -1,5 +1,5 @@
 *{box-sizing:border-box}
-html,body{margin:0;padding:0;background:#f3f6f4;color:#17281e}
+html,body{margin:0;padding:0;background:var(--bg-layout);color:var(--text)}
 body{min-height:100vh}
 a{text-decoration:none;color:inherit}
 button,input,textarea,select{font:inherit}
@@ -15,6 +15,7 @@ button,input,textarea,select{font:inherit}
   --brand-border:#bfe6ce;
   --surface:#ffffff;
   --surface-soft:#f7faf8;
+  --bg-layout:#f4f8f3;
   --border:#dbe4de;
   --text:#17281e;
   --muted:#66756b;
@@ -24,13 +25,14 @@ button,input,textarea,select{font:inherit}
 html[data-theme='dark']{
   --surface:#161b19;
   --surface-soft:#1b211e;
+  --bg-layout:#0f1211;
   --border:#2a312e;
   --text:#f3f5f4;
   --muted:#9da7a1;
   --shadow-sm:0 1px 2px rgba(0,0,0,.26),0 8px 28px rgba(0,0,0,.18);
   --shadow-md:0 14px 36px rgba(0,0,0,.3);
 }
-html[data-theme='dark'],html[data-theme='dark'] body{background:#0f1211;color:var(--text)}
+html[data-theme='dark'],html[data-theme='dark'] body{background:var(--bg-layout);color:var(--text)}
 
 /* Layout */
 .ant-pro-layout .ant-layout-sider{box-shadow:8px 0 30px rgba(3,14,28,.12)}
@@ -56,7 +58,7 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0f1211;color:va
 .avatar-title{display:flex;flex-direction:column;line-height:1.2;min-width:0}
 .avatar-title b{font-size:13px;color:#17281e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .avatar-title small{font-size:11px;color:#8a94a6;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.erp-content{position:relative;min-height:calc(100vh - 64px);background:#f3f6f4}
+.erp-content{position:relative;min-height:calc(100vh - 64px);background:var(--bg-layout)}
 .erp-account-toolbar{
   position:absolute;
   top:14px;
@@ -88,7 +90,8 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:#0f1211;color:va
   text-align:left;
   transition:.2s;
 }
-.account-trigger:hover,.account-trigger:focus-visible{background:var(--account-hover);outline:none}
+.account-trigger:hover{background:var(--account-hover)}
+.account-trigger:focus-visible{background:var(--account-hover);outline:2px solid var(--brand-600);outline-offset:2px}
 .account-trigger-copy{display:flex;flex:1;min-width:0;flex-direction:column;line-height:1.2}
 .account-trigger-copy b,.account-trigger-copy small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .account-trigger-copy b{font-size:13px;font-weight:750;color:var(--account-color)}
@@ -231,7 +234,19 @@ html[data-theme='dark'] .customer-360-tab-label>.anticon{color:#a9b8ae}
 .table-address-pin{display:inline-grid;place-items:center;flex:0 0 auto;width:22px;height:22px;border-radius:999px;color:var(--brand-600);background:#eaf7ef;border:1px solid #bfe6ce}
 .table-address-pin:hover{color:#fff;background:var(--brand-600);border-color:var(--brand-600)}
 .muted-text{color:#8a94a6;font-size:12px;margin-top:3px}
-.desktop-table{display:block}.mobile-card-list{display:none}
+.desktop-table,.responsive-table{display:block;min-width:0;max-width:100%}.mobile-card-list{display:none}
+.desktop-table .ant-pro-card,
+.responsive-table .ant-pro-card,
+.customer-360-table-card,
+.catalog-options-card{min-width:0;max-width:100%}
+.desktop-table .ant-table-wrapper,
+.responsive-table .ant-table-wrapper,
+.customer-360-table-card .ant-table-wrapper,
+.catalog-options-card .ant-table-wrapper{min-width:0;max-width:100%}
+.desktop-table .ant-table-container,
+.responsive-table .ant-table-container,
+.customer-360-table-card .ant-table-container,
+.catalog-options-card .ant-table-container{min-width:0;max-width:100%}
 .mobile-record-card{width:100%;border-radius:14px!important}
 .mobile-record-card .ant-card-body{padding:18px 20px!important}
 .mobile-descriptions{margin-top:14px;padding-top:12px;border-top:1px solid #eef1f5}
@@ -573,6 +588,7 @@ html[data-theme='dark'] .customer-360-tab-label>.anticon{color:#a9b8ae}
   .account-trigger{width:auto;padding-right:7px}
   .account-trigger-copy{display:none}
   .quotation-kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .desktop-table{display:none}.mobile-card-list{display:block}
   .welcome-visual{display:none}.welcome-copy{max-width:none}
   .login-page{grid-template-columns:1fr 480px}.login-brand-panel{padding:42px}.login-hero-copy h1{font-size:38px!important}
 }
@@ -583,7 +599,6 @@ html[data-theme='dark'] .customer-360-tab-label>.anticon{color:#a9b8ae}
   .erp-account-toolbar{top:14px;right:14px}
   .erp-page-container .ant-page-header-heading-extra{padding-right:132px}
   .avatar-title{display:none}
-  .desktop-table{display:none}.mobile-card-list{display:block}
   .filter-search{max-width:none}.filter-select{flex:1;min-width:180px}
   .quotation-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .quotation-form-drawer .ant-drawer-content-wrapper{width:100vw!important}
@@ -1139,3 +1154,12 @@ html[data-theme='dark'] .ant-table-wrapper .ant-table-tbody>tr:hover>td.ant-tabl
 html[data-theme='dark'] .ant-table-wrapper .ant-table-tbody>tr:hover>td.ant-table-cell-fix-right-first,
 html[data-theme='dark'] .ant-table-wrapper .ant-table-tbody>tr:hover>td.ant-table-cell-fix-right-last{background:rgba(22,160,93,.07)!important}
 html[data-theme='dark'] .ant-pro-table-list-toolbar-setting-item:hover{background:rgba(22,160,93,.16)!important;color:#66d08f!important}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    scroll-behavior:auto!important;
+    animation-duration:.01ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.01ms!important;
+  }
+}
