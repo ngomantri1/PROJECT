@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<ConsultationProfile> ConsultationProfiles => Set<ConsultationProfile>();
+    public DbSet<CustomerElevator> CustomerElevators => Set<CustomerElevator>();
     public DbSet<CareActivity> CareActivities => Set<CareActivity>();
     public DbSet<Quotation> Quotations => Set<Quotation>();
     public DbSet<CatalogCategory> CatalogCategories => Set<CatalogCategory>();
@@ -52,9 +53,26 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .WithMany(x => x.Quotations)
             .HasForeignKey(x => x.ConsultationProfileId)
             .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CustomerElevator>().HasIndex(x => x.Code).IsUnique();
+        b.Entity<CustomerElevator>()
+            .HasOne(x => x.Customer)
+            .WithMany(x => x.CustomerElevators)
+            .HasForeignKey(x => x.CustomerId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CustomerElevator>()
+            .HasOne(x => x.ConsultationProfile)
+            .WithMany(x => x.CustomerElevators)
+            .HasForeignKey(x => x.ConsultationProfileId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CustomerElevator>()
+            .HasOne(x => x.SourceQuotation)
+            .WithMany(x => x.CustomerElevators)
+            .HasForeignKey(x => x.SourceQuotationId)
+            .OnDelete(DeleteBehavior.Restrict);
         b.Entity<Customer>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<ConsultationProfile>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<CareActivity>().HasQueryFilter(x => !x.IsDeleted);
         b.Entity<Quotation>().HasQueryFilter(x => !x.IsDeleted);
+        b.Entity<CustomerElevator>().HasQueryFilter(x => !x.IsDeleted);
     }
 }

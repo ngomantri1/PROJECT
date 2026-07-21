@@ -13,6 +13,7 @@ public static class DemoSeeder
         await EnsureCatalogTablesAsync(db);
         await EnsureConsultationProfileTablesAsync(db);
         await EnsureQuotationTablesAsync(db);
+        await EnsureCustomerElevatorTablesAsync(db);
         await BackfillConsultationProfilesAsync(db);
         await SeedCatalogsAsync(db);
         await EnsureCustomerDeletePermissionAsync(db);
@@ -90,7 +91,7 @@ public static class DemoSeeder
             {
                 Code=$"KH-{i+1:0000}", Name=names[i], Phone=$"09{random.Next(10000000,99999999)}",
                 Email=$"customer{i+1}@example.com", Address=$"Địa chỉ công trình số {i+1}, Thanh Hóa",
-                Area=i%3==0?"Thanh Hóa":i%3==1?"Nghệ An":"Hà Nội", ElevatorType=i%2==0?"BUILT":"GLASS", Source=sources[i%sources.Length],
+                Area=null, ElevatorType=i%2==0?"BUILT":"GLASS", Source=sources[i%sources.Length],
                 Status=i%5==0?"NEGOTIATING":i%4==0?"QUOTED":"CARING", OwnerUser=i%3==0?salesManager:sales, IsDemo=true
             });
         }
@@ -304,6 +305,52 @@ public static class DemoSeeder
 
             CREATE INDEX IF NOT EXISTS "IX_ConsultationProfiles_OwnerUserId"
                 ON "ConsultationProfiles" ("OwnerUserId");
+            """);
+    }
+
+    private static async Task EnsureCustomerElevatorTablesAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "CustomerElevators" (
+                "Id" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NULL,
+                "IsDeleted" boolean NOT NULL,
+                "IsDemo" boolean NOT NULL,
+                "Code" text NOT NULL,
+                "CustomerId" uuid NOT NULL,
+                "ConsultationProfileId" uuid NULL,
+                "SourceQuotationId" uuid NULL,
+                "ContractReference" text NULL,
+                "Name" text NOT NULL,
+                "ElevatorType" text NOT NULL,
+                "TechnicalSpecsJson" text NOT NULL,
+                "InstallationAddress" text NULL,
+                "Area" text NULL,
+                "Latitude" double precision NULL,
+                "Longitude" double precision NULL,
+                "LocationLabel" text NULL,
+                "Status" text NOT NULL,
+                "SignedAt" timestamp with time zone NULL,
+                "HandedOverAt" timestamp with time zone NULL,
+                "WarrantyExpiresAt" timestamp with time zone NULL,
+                CONSTRAINT "PK_CustomerElevators" PRIMARY KEY ("Id"),
+                CONSTRAINT "FK_CustomerElevators_Customers_CustomerId"
+                    FOREIGN KEY ("CustomerId") REFERENCES "Customers" ("Id") ON DELETE RESTRICT,
+                CONSTRAINT "FK_CustomerElevators_ConsultationProfiles_ConsultationProfileId"
+                    FOREIGN KEY ("ConsultationProfileId") REFERENCES "ConsultationProfiles" ("Id") ON DELETE RESTRICT,
+                CONSTRAINT "FK_CustomerElevators_Quotations_SourceQuotationId"
+                    FOREIGN KEY ("SourceQuotationId") REFERENCES "Quotations" ("Id") ON DELETE RESTRICT
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_CustomerElevators_Code"
+                ON "CustomerElevators" ("Code");
+            CREATE INDEX IF NOT EXISTS "IX_CustomerElevators_CustomerId"
+                ON "CustomerElevators" ("CustomerId");
+            CREATE INDEX IF NOT EXISTS "IX_CustomerElevators_ConsultationProfileId"
+                ON "CustomerElevators" ("ConsultationProfileId");
+            CREATE INDEX IF NOT EXISTS "IX_CustomerElevators_SourceQuotationId"
+                ON "CustomerElevators" ("SourceQuotationId");
             """);
     }
 

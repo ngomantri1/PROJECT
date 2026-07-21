@@ -86,8 +86,6 @@ type CustomerRow = {
   phone: string;
   email?: string;
   address?: string;
-  area?: string;
-  elevatorType?: string;
   customerType: 'PERSONAL' | 'BUSINESS';
   notes?: string;
   source: string;
@@ -105,7 +103,6 @@ type CustomerMasterRow = {
   phone: string;
   email?: string;
   address?: string;
-  area?: string;
   customerType: 'PERSONAL' | 'BUSINESS';
   source?: string;
 };
@@ -116,8 +113,6 @@ type CustomerForm = {
   name: string;
   phone: string;
   email?: string;
-  area?: string;
-  elevatorType?: string;
   source: string;
   address?: string;
   notes?: string;
@@ -131,6 +126,8 @@ type CustomerLocation = {
   longitude: number;
   accuracyMeters?: number;
   label?: string;
+  ward?: string;
+  province?: string;
 };
 
 type CustomerSaveResponse = {
@@ -172,7 +169,11 @@ type ElevatorSpec = {
   longitude?: number;
   locationAccuracyMeters?: number;
   locationLabel?: string;
+  installationWard?: string;
+  installationProvince?: string;
+  installationAreaSource?: 'PIN' | 'MANUAL';
   floorHeights: ElevatorFloorHeight[];
+  attachments?: CustomerAttachment[];
   technicalNotes?: string;
 };
 
@@ -212,10 +213,10 @@ type CustomerFilters = {
   status?: string;
   statusGroup?: string;
   customerType?: string;
-  elevatorType?: string;
+  elevatorTypes?: string[];
+  technicalConfiguration?: 'CONFIGURED' | 'UNCONFIGURED';
   source?: string;
   owner?: string;
-  area?: string;
   createdFrom?: string;
   createdTo?: string;
 };
@@ -310,11 +311,20 @@ function createElevatorSpec(index: number): ElevatorSpec {
     name: `Thang máy ${index}`,
     floors: 2,
     counterweightPosition: 'BACK',
+    attachments: [],
     floorHeights: [
       { id: createId('floor'), floorName: 'Tầng 1', heightMm: 3600 },
       { id: createId('floor'), floorName: 'Tầng 2', heightMm: 3600 },
     ],
   };
+}
+
+function synchronizeElevatorFloorHeights(floors: number, currentFloors: ElevatorFloorHeight[]) {
+  return Array.from({ length: floors }, (_, index) => currentFloors[index] ?? {
+    id: createId('floor'),
+    floorName: `Tầng ${index + 1}`,
+    heightMm: 3600,
+  });
 }
 
 function cloneElevatorSpec(source: ElevatorSpec, index: number): ElevatorSpec {
@@ -323,6 +333,8 @@ function cloneElevatorSpec(source: ElevatorSpec, index: number): ElevatorSpec {
     id: createId('elevator'),
     name: `${source.name || `Thang máy ${index}`} - Bản sao`,
     floorHeights: source.floorHeights.map((floor) => ({ ...floor, id: createId('floor') })),
+    // Evidence belongs to the actual installation site and must not be copied to a new elevator.
+    attachments: [],
   };
 }
 
@@ -366,8 +378,9 @@ export default function Customers() {
   const [technicalDrawerOpen, setTechnicalDrawerOpen] = useState(false);
   const [elevatorSpecs, setElevatorSpecs] = useState<ElevatorSpec[]>([]);
   const [activeElevatorSpecId, setActiveElevatorSpecId] = useState<string>();
+  const [technicalValidationErrors, setTechnicalValidationErrors] = useState<Record<string, string>>({});
   const [deleteElevatorSpecCandidate, setDeleteElevatorSpecCandidate] = useState<ElevatorSpec>();
-  const [attachments, setAttachments] = useState<CustomerAttachment[]>([]);
+  const [attachmentTargetElevatorSpecId, setAttachmentTargetElevatorSpecId] = useState<string>();
   const [attachmentLinkModalOpen, setAttachmentLinkModalOpen] = useState(false);
   const [attachmentLinkDraft, setAttachmentLinkDraft] = useState('');
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
@@ -389,18 +402,18 @@ export default function Customers() {
   const [status, setStatus] = useState<string>();
   const [statusGroup, setStatusGroup] = useState<string>();
   const [customerType, setCustomerType] = useState<string>();
-  const [elevatorType, setElevatorType] = useState<string>();
+  const [elevatorTypes, setElevatorTypes] = useState<string[]>([]);
+  const [technicalConfiguration, setTechnicalConfiguration] = useState<'CONFIGURED' | 'UNCONFIGURED'>();
   const [source, setSource] = useState<string>();
   const [owner, setOwner] = useState<string>();
-  const [area, setArea] = useState<string>();
   const [createdRange, setCreatedRange] = useState<[Dayjs, Dayjs]>();
   const [customerTablePage, setCustomerTablePage] = useState({ current: 1, pageSize: 10 });
   const [draftStatus, setDraftStatus] = useState<string>();
   const [draftCustomerType, setDraftCustomerType] = useState<string>();
-  const [draftElevatorType, setDraftElevatorType] = useState<string>();
+  const [draftElevatorTypes, setDraftElevatorTypes] = useState<string[]>([]);
+  const [draftTechnicalConfiguration, setDraftTechnicalConfiguration] = useState<'CONFIGURED' | 'UNCONFIGURED'>();
   const [draftSource, setDraftSource] = useState<string>();
   const [draftOwner, setDraftOwner] = useState<string>();
-  const [draftArea, setDraftArea] = useState<string>();
   const [draftCreatedRange, setDraftCreatedRange] = useState<[Dayjs, Dayjs]>();
   const [catalogStatuses, setCatalogStatuses] = useState<CatalogOption[]>([]);
   const [catalogCustomerTypes, setCatalogCustomerTypes] = useState<CatalogOption[]>([]);
@@ -411,6 +424,8 @@ export default function Customers() {
   const customerTypeOptions = catalogCustomerTypes.length ? catalogCustomerTypes : fallbackCustomerTypeOptions;
   const elevatorTypeOptions = catalogElevatorTypes.length ? catalogElevatorTypes : fallbackElevatorTypeOptions;
   const activeElevatorSpec = elevatorSpecs.find((item) => item.id === activeElevatorSpecId) ?? elevatorSpecs[0];
+  const activeElevatorAttachments = activeElevatorSpec?.attachments ?? [];
+  const technicalErrorFor = (specId: string, field: string) => technicalValidationErrors[`${specId}:${field}`];
   const masterCustomerOptions = useMemo(
     () => masterCustomers.map((customer) => ({
       value: customer.id,
@@ -419,6 +434,13 @@ export default function Customers() {
     [masterCustomers],
   );
   const selectedExistingCustomer = masterCustomers.find((customer) => customer.id === selectedExistingCustomerId);
+  const isUsingExistingCustomer = !editingCustomer && Boolean(selectedExistingCustomer);
+  const contactAddressForInstallation = (
+    customerFormRef.current?.getFieldValue('address')
+    ?? selectedExistingCustomer?.address
+    ?? editingCustomer?.address
+    ?? ''
+  ).trim();
   const locationSuggestionOptions = useMemo(
     () => locationSuggestions.map((item) => ({
       value: item.id,
@@ -444,10 +466,10 @@ export default function Customers() {
       const currentStatus = hasOverride('status') ? overrides?.status : status;
       const currentStatusGroup = hasOverride('statusGroup') ? overrides?.statusGroup : statusGroup;
       const currentCustomerType = hasOverride('customerType') ? overrides?.customerType : customerType;
-      const currentElevatorType = hasOverride('elevatorType') ? overrides?.elevatorType : elevatorType;
+      const currentElevatorTypes = hasOverride('elevatorTypes') ? overrides?.elevatorTypes : elevatorTypes;
+      const currentTechnicalConfiguration = hasOverride('technicalConfiguration') ? overrides?.technicalConfiguration : technicalConfiguration;
       const currentSource = hasOverride('source') ? overrides?.source : source;
       const currentOwner = hasOverride('owner') ? overrides?.owner : owner;
-      const currentArea = hasOverride('area') ? overrides?.area : area;
       const currentCreatedFrom = hasOverride('createdFrom') ? overrides?.createdFrom : createdRange?.[0].startOf('day').toISOString();
       const currentCreatedTo = hasOverride('createdTo') ? overrides?.createdTo : createdRange?.[1].endOf('day').toISOString();
       const params = new URLSearchParams();
@@ -455,10 +477,10 @@ export default function Customers() {
       if (currentStatus) params.set('status', currentStatus);
       if (!currentStatus && currentStatusGroup) params.set('statusGroup', currentStatusGroup);
       if (currentCustomerType) params.set('customerType', currentCustomerType);
-      if (currentElevatorType) params.set('elevatorType', currentElevatorType);
+      if (currentElevatorTypes?.length) params.set('elevatorTypes', currentElevatorTypes.join(','));
+      if (currentTechnicalConfiguration) params.set('technicalConfiguration', currentTechnicalConfiguration);
       if (currentSource) params.set('source', currentSource);
       if (currentOwner) params.set('owner', currentOwner);
-      if (currentArea) params.set('area', currentArea);
       if (currentCreatedFrom) params.set('createdFrom', currentCreatedFrom);
       if (currentCreatedTo) params.set('createdTo', currentCreatedTo);
       const query = params.toString();
@@ -468,7 +490,7 @@ export default function Customers() {
     } finally {
       setLoading(false);
     }
-  }, [area, createdRange, customerType, elevatorType, owner, search, source, status, statusGroup]);
+  }, [createdRange, customerType, elevatorTypes, owner, search, source, status, statusGroup, technicalConfiguration]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -479,7 +501,7 @@ export default function Customers() {
 
   useEffect(() => {
     setCustomerTablePage((page) => ({ ...page, current: 1 }));
-  }, [area, createdRange, customerType, elevatorType, owner, search, source, status, statusGroup]);
+  }, [createdRange, customerType, elevatorTypes, owner, search, source, status, statusGroup, technicalConfiguration]);
 
   useEffect(() => {
     setCustomerTablePage((page) => {
@@ -524,8 +546,6 @@ export default function Customers() {
       setLocationSuggesting(true);
       try {
         const params = new URLSearchParams({ q: query });
-        const formArea = customerFormRef.current?.getFieldValue?.('area') as string | undefined;
-        if (formArea?.trim()) params.set('area', formArea.trim());
         setLocationSuggestions(await api<GeoLocationSuggestion[]>(`/geo/search?${params.toString()}`, {
           signal: controller.signal,
         }));
@@ -561,22 +581,15 @@ export default function Customers() {
     [data],
   );
 
-  const areaOptions = useMemo(
-    () => Array.from(new Set(data.map((item) => item.area).filter(Boolean) as string[]))
-      .sort(textSorter.compare)
-      .map((value) => ({ value, label: value })),
-    [data],
-  );
-
-  const advancedFilterCount = [status, statusGroup, customerType, elevatorType, source, owner, area, createdRange].filter(Boolean).length;
+  const advancedFilterCount = [status, statusGroup, customerType, elevatorTypes.length ? 'elevatorTypes' : undefined, technicalConfiguration, source, owner, createdRange].filter(Boolean).length;
 
   const openAdvancedFilters = () => {
     setDraftStatus(status);
     setDraftCustomerType(customerType);
-    setDraftElevatorType(elevatorType);
+    setDraftElevatorTypes(elevatorTypes);
+    setDraftTechnicalConfiguration(technicalConfiguration);
     setDraftSource(source);
     setDraftOwner(owner);
-    setDraftArea(area);
     setDraftCreatedRange(createdRange);
     setAdvancedOpen(true);
   };
@@ -586,27 +599,27 @@ export default function Customers() {
     setStatus(undefined);
     setStatusGroup(undefined);
     setCustomerType(undefined);
-    setElevatorType(undefined);
+    setElevatorTypes([]);
+    setTechnicalConfiguration(undefined);
     setSource(undefined);
     setOwner(undefined);
-    setArea(undefined);
     setCreatedRange(undefined);
     setDraftStatus(undefined);
     setDraftCustomerType(undefined);
-    setDraftElevatorType(undefined);
+    setDraftElevatorTypes([]);
+    setDraftTechnicalConfiguration(undefined);
     setDraftSource(undefined);
     setDraftOwner(undefined);
-    setDraftArea(undefined);
     setDraftCreatedRange(undefined);
     await load({
       search: '',
       status: undefined,
       statusGroup: undefined,
       customerType: undefined,
-      elevatorType: undefined,
+      elevatorTypes: [],
+      technicalConfiguration: undefined,
       source: undefined,
       owner: undefined,
-      area: undefined,
       createdFrom: undefined,
       createdTo: undefined,
     });
@@ -616,20 +629,20 @@ export default function Customers() {
     setStatus(draftStatus);
     setStatusGroup(undefined);
     setCustomerType(draftCustomerType);
-    setElevatorType(draftElevatorType);
+    setElevatorTypes(draftElevatorTypes);
+    setTechnicalConfiguration(draftTechnicalConfiguration);
     setSource(draftSource);
     setOwner(draftOwner);
-    setArea(draftArea);
     setCreatedRange(draftCreatedRange);
     setAdvancedOpen(false);
     await load({
       status: draftStatus,
       statusGroup: undefined,
       customerType: draftCustomerType,
-      elevatorType: draftElevatorType,
+      elevatorTypes: draftElevatorTypes,
+      technicalConfiguration: draftTechnicalConfiguration,
       source: draftSource,
       owner: draftOwner,
-      area: draftArea,
       createdFrom: draftCreatedRange?.[0].startOf('day').toISOString(),
       createdTo: draftCreatedRange?.[1].endOf('day').toISOString(),
     });
@@ -649,8 +662,7 @@ export default function Customers() {
       { header: 'Số điện thoại', value: (item) => item.phone },
       { header: 'Email', value: (item) => item.email },
       { header: 'Nhóm khách hàng', value: (item) => statusMeta(customerTypeOptions, item.customerType).label },
-      { header: 'Loại thang', value: (item) => item.elevatorType ? statusMeta(elevatorTypeOptions, item.elevatorType).label : '' },
-      { header: 'Địa chỉ', value: (item) => item.address || item.area },
+      { header: 'Địa chỉ', value: (item) => item.address },
       { header: 'Nguồn', value: (item) => item.source },
       { header: 'Nhân viên phụ trách', value: (item) => item.owner },
       { header: 'Trạng thái', value: (item) => statusMeta(statusOptions, item.status).label },
@@ -664,7 +676,6 @@ export default function Customers() {
     setDuplicateConsultationCustomer(undefined);
     setElevatorSpecs([]);
     setActiveElevatorSpecId(undefined);
-    setAttachments([]);
     attachmentFileByIdRef.current = {};
     setOpen(true);
   };
@@ -673,13 +684,25 @@ export default function Customers() {
     setEditingCustomer(customer);
     setSelectedExistingCustomerId(customer.customerId);
     setDuplicateConsultationCustomer(undefined);
-    const specs = parseJsonArray<ElevatorSpec>(customer.technicalSpecsJson);
+    const legacyAttachments = parseJsonArray<CustomerAttachment>(customer.attachmentLinksJson);
+    const specs = parseJsonArray<ElevatorSpec>(customer.technicalSpecsJson).map((spec, index) => ({
+      ...spec,
+      attachments: [...(spec.attachments ?? []), ...(index === 0 ? legacyAttachments : [])],
+    }));
     setElevatorSpecs(specs);
     setActiveElevatorSpecId(specs[0]?.id);
-    setAttachments(parseJsonArray<CustomerAttachment>(customer.attachmentLinksJson));
     attachmentFileByIdRef.current = {};
     setOpen(true);
   };
+
+  useEffect(() => {
+    const requestedProfileId = searchParams.get('profileId');
+    if (!requestedProfileId || open || editingCustomer) return;
+    const profile = data.find((item) => item.id === requestedProfileId);
+    if (!profile) return;
+    openEditDrawer(profile);
+    router.replace('/customers');
+  }, [data, editingCustomer, open, router, searchParams]);
 
   useEffect(() => {
     const requestedCustomerId = searchParams.get('customerId');
@@ -701,8 +724,22 @@ export default function Customers() {
       name: customer.name,
       phone: customer.phone,
       email: customer.email,
-      area: customer.area,
       address: customer.address,
+      source: customer.source || 'Marketing',
+    });
+  };
+
+  const clearExistingCustomerSelection = () => {
+    setSelectedExistingCustomerId(undefined);
+    setDuplicateConsultationCustomer(undefined);
+    customerFormRef.current?.setFieldsValue({
+      customerId: undefined,
+      customerType: 'PERSONAL',
+      name: undefined,
+      phone: undefined,
+      email: undefined,
+      address: undefined,
+      source: 'Marketing',
     });
   };
 
@@ -723,7 +760,7 @@ export default function Customers() {
     setTechnicalDrawerOpen(false);
     setElevatorSpecs([]);
     setActiveElevatorSpecId(undefined);
-    setAttachments([]);
+    setAttachmentTargetElevatorSpecId(undefined);
     attachmentFileByIdRef.current = {};
     setAttachmentLinkModalOpen(false);
     setAttachmentLinkDraft('');
@@ -741,7 +778,24 @@ export default function Customers() {
   };
 
   const updateElevatorSpec = (id: string, patch: Partial<ElevatorSpec>) => {
-    setElevatorSpecs((items) => items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    setElevatorSpecs((items) => items.map((item) => {
+      if (item.id !== id) return item;
+      const isUpdatingFloors = Object.prototype.hasOwnProperty.call(patch, 'floors');
+      const floors = isUpdatingFloors
+        ? (typeof patch.floors === 'number' ? Math.max(1, Math.floor(patch.floors)) : undefined)
+        : item.floors;
+      return {
+        ...item,
+        ...patch,
+        floors,
+        floorHeights: isUpdatingFloors && typeof floors === 'number'
+          ? synchronizeElevatorFloorHeights(floors, item.floorHeights)
+          : item.floorHeights,
+      };
+    }));
+    setTechnicalValidationErrors((errors) => Object.fromEntries(
+      Object.entries(errors).filter(([key]) => !key.startsWith(`${id}:`)),
+    ));
   };
 
   const addElevatorSpec = () => {
@@ -765,8 +819,10 @@ export default function Customers() {
 
   const removeElevatorSpec = (id: string) => {
     setElevatorSpecs((items) => {
+      const removedIndex = items.findIndex((item) => item.id === id);
       const next = items.filter((item) => item.id !== id);
-      setActiveElevatorSpecId(next[0]?.id);
+      const preferredSpec = items[removedIndex - 1] ?? items[removedIndex + 1];
+      setActiveElevatorSpecId((currentId) => (currentId === id ? preferredSpec?.id : currentId));
       if (!next.length) setTechnicalDrawerOpen(false);
       return next;
     });
@@ -780,16 +836,16 @@ export default function Customers() {
   const addElevatorFloor = (specId: string) => {
     setElevatorSpecs((items) => items.map((item) => {
       if (item.id !== specId) return item;
-      const nextFloor = item.floorHeights.length + 1;
+      const nextFloor = Math.max(item.floors ?? 0, item.floorHeights.length) + 1;
       return {
         ...item,
-        floors: Math.max(item.floors ?? 0, nextFloor),
-        floorHeights: [
-          ...item.floorHeights,
-          { id: createId('floor'), floorName: `Tầng ${nextFloor}`, heightMm: 3600 },
-        ],
+        floors: nextFloor,
+        floorHeights: synchronizeElevatorFloorHeights(nextFloor, item.floorHeights),
       };
     }));
+    setTechnicalValidationErrors((errors) => Object.fromEntries(
+      Object.entries(errors).filter(([key]) => !key.startsWith(`${specId}:`)),
+    ));
   };
 
   const updateElevatorFloor = (specId: string, floorId: string, patch: Partial<ElevatorFloorHeight>) => {
@@ -801,17 +857,42 @@ export default function Customers() {
         }
         : item
     )));
+    setTechnicalValidationErrors((errors) => Object.fromEntries(
+      Object.entries(errors).filter(([key]) => !key.startsWith(`${specId}:`)),
+    ));
   };
 
   const removeElevatorFloor = (specId: string, floorId: string) => {
+    setElevatorSpecs((items) => items.map((item) => {
+      if (item.id !== specId) return item;
+      if (item.floorHeights.length <= 1) {
+        message.warning('Cấu hình thang cần tối thiểu một tầng.');
+        return item;
+      }
+      const floorHeights = item.floorHeights.filter((floor) => floor.id !== floorId);
+      return { ...item, floors: floorHeights.length, floorHeights };
+    }));
+    setTechnicalValidationErrors((errors) => Object.fromEntries(
+      Object.entries(errors).filter(([key]) => !key.startsWith(`${specId}:`)),
+    ));
+  };
+
+  const updateElevatorAttachments = (
+    elevatorSpecId: string,
+    updater: (attachments: CustomerAttachment[]) => CustomerAttachment[],
+  ) => {
     setElevatorSpecs((items) => items.map((item) => (
-      item.id === specId
-        ? { ...item, floorHeights: item.floorHeights.filter((floor) => floor.id !== floorId) }
+      item.id === elevatorSpecId
+        ? { ...item, attachments: updater(item.attachments ?? []) }
         : item
     )));
   };
 
-  const addAttachmentFiles = (files: FileList | null, source: 'file' | 'camera') => {
+  const addAttachmentFiles = (elevatorSpecId: string | undefined, files: FileList | null, source: 'file' | 'camera') => {
+    if (!elevatorSpecId) {
+      message.warning('Vui lòng chọn cấu hình thang trước khi thêm tài liệu.');
+      return;
+    }
     if (!files?.length) return;
     const nextAttachments = Array.from(files).map<CustomerAttachment>((file) => {
       const id = createId('attachment');
@@ -828,8 +909,8 @@ export default function Customers() {
         createdAt: new Date().toISOString(),
       };
     });
-    setAttachments((items) => [...items, ...nextAttachments]);
-    message.success(source === 'camera' ? 'Đã thêm ảnh chụp khảo sát vào hồ sơ.' : `Đã thêm ${nextAttachments.length} tài liệu/ảnh vào hồ sơ.`);
+    updateElevatorAttachments(elevatorSpecId, (items) => [...items, ...nextAttachments]);
+    message.success(source === 'camera' ? 'Đã thêm ảnh khảo sát vào thang máy này.' : `Đã thêm ${nextAttachments.length} tài liệu/ảnh vào thang máy này.`);
   };
 
   const stopCameraCapture = () => {
@@ -843,9 +924,11 @@ export default function Customers() {
     setCameraModalOpen(false);
     setCameraStarting(false);
     setCameraError('');
+    setAttachmentTargetElevatorSpecId(undefined);
   };
 
-  const openCameraCapture = async () => {
+  const openCameraCapture = async (elevatorSpecId: string) => {
+    setAttachmentTargetElevatorSpecId(elevatorSpecId);
     setCameraError('');
     if (!navigator.mediaDevices?.getUserMedia) {
       message.warning('Trình duyệt không hỗ trợ mở camera trực tiếp, hệ thống sẽ dùng chế độ chụp ảnh mặc định.');
@@ -903,7 +986,11 @@ export default function Customers() {
     const id = createId('attachment');
     const now = new Date().toISOString();
     attachmentFileByIdRef.current[id] = file;
-    setAttachments((items) => [
+    if (!attachmentTargetElevatorSpecId) {
+      message.warning('Không xác định được cấu hình thang để lưu ảnh khảo sát.');
+      return;
+    }
+    updateElevatorAttachments(attachmentTargetElevatorSpecId, (items) => [
       ...items,
       {
         id,
@@ -916,7 +1003,7 @@ export default function Customers() {
         createdAt: now,
       },
     ]);
-    message.success('Đã chụp và thêm ảnh khảo sát vào hồ sơ.');
+    message.success('Đã chụp và thêm ảnh khảo sát vào thang máy này.');
     closeCameraCapture();
   };
 
@@ -934,7 +1021,12 @@ export default function Customers() {
       return;
     }
 
-    setAttachments((items) => [
+    if (!attachmentTargetElevatorSpecId) {
+      message.warning('Vui lòng chọn cấu hình thang trước khi thêm link.');
+      return;
+    }
+
+    updateElevatorAttachments(attachmentTargetElevatorSpecId, (items) => [
       ...items,
       {
         id: createId('attachment'),
@@ -948,6 +1040,7 @@ export default function Customers() {
     ]);
     setAttachmentLinkDraft('');
     setAttachmentLinkModalOpen(false);
+    setAttachmentTargetElevatorSpecId(undefined);
   };
 
   const reverseLookupLocation = async (latitude: number, longitude: number) => {
@@ -961,8 +1054,25 @@ export default function Customers() {
       });
       const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`);
       if (!response.ok) return undefined;
-      const result = await response.json() as { display_name?: string };
-      return result.display_name;
+      const result = await response.json() as {
+        display_name?: string;
+        address?: Record<string, string | undefined>;
+      };
+      const address = result.address;
+      const addressParts = result.display_name?.split(',').map((part) => part.trim()).filter(Boolean) ?? [];
+      return {
+        label: result.display_name,
+        ward: addressParts.find((part) => /^(Phường|Xã|Thị trấn)(?=\s|$)/i.test(part))
+          || address?.city_district
+          || address?.suburb
+          || address?.quarter
+          || address?.village
+          || address?.town,
+        province: addressParts.find((part) => /^(Tỉnh|Thành phố)(?=\s|$)/i.test(part))
+          || address?.province
+          || address?.state
+          || address?.city,
+      };
     } catch {
       return undefined;
     }
@@ -981,6 +1091,8 @@ export default function Customers() {
         longitude: targetSpec.longitude,
         accuracyMeters: targetSpec.locationAccuracyMeters,
         label: targetSpec.locationLabel,
+        ward: targetSpec.installationWard,
+        province: targetSpec.installationProvince,
       }
       : undefined;
 
@@ -995,13 +1107,34 @@ export default function Customers() {
       longitude: currentLocation?.longitude.toFixed(6) ?? '',
     });
     setLocationModalOpen(true);
+
+    if (currentLocation) {
+      void reverseLookupLocation(currentLocation.latitude, currentLocation.longitude).then((resolvedLocation) => {
+        if (!resolvedLocation) return;
+        setDraftLocation((previousLocation) => previousLocation?.latitude === currentLocation.latitude && previousLocation.longitude === currentLocation.longitude
+          ? {
+            ...previousLocation,
+            label: resolvedLocation.label ?? previousLocation.label,
+            ward: resolvedLocation.ward ?? previousLocation.ward,
+            province: resolvedLocation.province ?? previousLocation.province,
+          }
+          : previousLocation);
+      });
+    }
   };
 
   const pickLocation = async (latitude: number, longitude: number, accuracyMeters?: number) => {
     setCoordinateEditing(false);
     setDraftLocation({ latitude, longitude, accuracyMeters, label: 'Đang xác định địa chỉ...' });
-    const label = await reverseLookupLocation(latitude, longitude);
-    setDraftLocation({ latitude, longitude, accuracyMeters, label });
+    const resolvedLocation = await reverseLookupLocation(latitude, longitude);
+    setDraftLocation({
+      latitude,
+      longitude,
+      accuracyMeters,
+      label: resolvedLocation?.label,
+      ward: resolvedLocation?.ward,
+      province: resolvedLocation?.province,
+    });
   };
 
   const selectLocationSuggestion = async (suggestion: GeoLocationSuggestion) => {
@@ -1026,13 +1159,7 @@ export default function Customers() {
       return;
     }
 
-    setDraftLocation({
-      latitude: selected.latitude,
-      longitude: selected.longitude,
-      accuracyMeters: 100,
-      label: selected.label,
-    });
-    setCoordinateEditing(false);
+    await pickLocation(selected.latitude, selected.longitude, 100);
   };
 
   const beginCoordinateEdit = () => {
@@ -1061,9 +1188,17 @@ export default function Customers() {
     setLocationLoading(true);
     setDraftLocation({ latitude, longitude, accuracyMeters, label: 'Tọa độ nhập tay' });
     try {
-      const label = await reverseLookupLocation(latitude, longitude);
-      setDraftLocation({ latitude, longitude, accuracyMeters, label: label ?? 'Tọa độ nhập tay' });
-      setLocationSearch(label ?? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+      const resolvedLocation = await reverseLookupLocation(latitude, longitude);
+      const label = resolvedLocation?.label ?? 'Tọa độ nhập tay';
+      setDraftLocation({
+        latitude,
+        longitude,
+        accuracyMeters,
+        label,
+        ward: resolvedLocation?.ward,
+        province: resolvedLocation?.province,
+      });
+      setLocationSearch(label);
       setCoordinateEditing(false);
       message.success('Đã cập nhật tọa độ.');
     } catch {
@@ -1092,13 +1227,17 @@ export default function Customers() {
         return;
       }
 
-      setLocationSearch(result.label);
+      const resolvedLocation = await reverseLookupLocation(result.latitude, result.longitude);
+      const label = resolvedLocation?.label ?? result.label;
+      setLocationSearch(label);
       setLastResolvedSharedLocation(text);
       setDraftLocation({
         latitude: result.latitude,
         longitude: result.longitude,
         accuracyMeters: 100,
-        label: result.label,
+        label,
+        ward: resolvedLocation?.ward,
+        province: resolvedLocation?.province,
       });
       setCoordinateEditing(false);
       if (!options?.silent) message.success('Đã đọc tọa độ và ghim lên bản đồ.');
@@ -1127,8 +1266,6 @@ export default function Customers() {
     setLocationLoading(true);
     try {
       const params = new URLSearchParams({ q: locationSearch.trim() });
-      const formArea = customerFormRef.current?.getFieldValue?.('area') as string | undefined;
-      if (formArea?.trim()) params.set('area', formArea.trim());
       const results = await api<GeoLocationSuggestion[]>(`/geo/search?${params.toString()}`);
       const first = results[0];
       if (!first) {
@@ -1218,7 +1355,7 @@ export default function Customers() {
   };
 
   const renderCustomerAddress = (customer: CustomerRow) => {
-    const displayAddress = customer.address || customer.area;
+    const displayAddress = customer.address;
 
     return displayAddress ? (
       <Tooltip title={displayAddress}>
@@ -1232,11 +1369,10 @@ export default function Customers() {
     ) : <Typography.Text type='secondary'>—</Typography.Text>;
   };
 
-  const uploadPendingAttachments = async (consultationProfileId: string, currentAttachments: CustomerAttachment[]) => {
-    const pendingAttachments = currentAttachments.filter((attachment) =>
-      !attachment.storedFileId && attachmentFileByIdRef.current[attachment.id],
-    );
-    if (!pendingAttachments.length) return currentAttachments;
+  const uploadPendingElevatorAttachments = async (consultationProfileId: string, currentSpecs: ElevatorSpec[]) => {
+    const pendingAttachments = currentSpecs.flatMap((spec) => (spec.attachments ?? [])
+      .filter((attachment) => !attachment.storedFileId && attachmentFileByIdRef.current[attachment.id]));
+    if (!pendingAttachments.length) return currentSpecs;
 
     const uploadedAttachments = await Promise.all(pendingAttachments.map(async (attachment) => {
       const file = attachmentFileByIdRef.current[attachment.id];
@@ -1267,7 +1403,10 @@ export default function Customers() {
     }));
 
     const uploadedById = new Map(uploadedAttachments.map((attachment) => [attachment.id, attachment]));
-    return currentAttachments.map((attachment) => uploadedById.get(attachment.id) ?? attachment);
+    return currentSpecs.map((spec) => ({
+      ...spec,
+      attachments: (spec.attachments ?? []).map((attachment) => uploadedById.get(attachment.id) ?? attachment),
+    }));
   };
 
   const columns: ProColumns<CustomerRow>[] = [
@@ -1278,7 +1417,11 @@ export default function Customers() {
       fixed: 'left',
       sorter: (a, b) => textSorter.compare(a.code, b.code),
       defaultSortOrder: 'descend',
-      render: (value) => <Typography.Text copyable={{ text: String(value) }}>{String(value)}</Typography.Text>,
+      render: (_, item) => (
+        <Tooltip title='Mở chi tiết hồ sơ tư vấn'>
+          <Typography.Link className='record-link record-link-code' onClick={() => openEditDrawer(item)}>{item.code}</Typography.Link>
+        </Tooltip>
+      ),
     },
     {
       title: 'Khách hàng',
@@ -1287,7 +1430,14 @@ export default function Customers() {
       fixed: 'left',
       sorter: (a, b) => textSorter.compare(a.name, b.name),
       render: (_, item) => (
-        <b className='table-primary-text'>{item.name}</b>
+        <Tooltip title='Mở Customer 360 tại hồ sơ tư vấn này'>
+          <Typography.Link
+            className='record-link table-primary-text'
+            onClick={() => router.push(`/business/customers/${item.customerId ?? item.id}?tab=profiles&profileId=${item.id}`)}
+          >
+            {item.name}
+          </Typography.Link>
+        </Tooltip>
       ),
     },
     {
@@ -1308,17 +1458,6 @@ export default function Customers() {
       render: (_, item) => <CustomerTypeTag value={item.customerType} typeOptions={customerTypeOptions} />,
     },
     {
-      title: 'Loại thang',
-      key: 'elevatorType',
-      dataIndex: 'elevatorType',
-      width: 112,
-      sorter: (a, b) => textSorter.compare(
-        a.elevatorType ? statusMeta(elevatorTypeOptions, a.elevatorType).label : '',
-        b.elevatorType ? statusMeta(elevatorTypeOptions, b.elevatorType).label : '',
-      ),
-      render: (_, item) => <CatalogTag value={item.elevatorType} options={elevatorTypeOptions} />,
-    },
-    {
       title: 'Email',
       dataIndex: 'email',
       width: 155,
@@ -1332,7 +1471,7 @@ export default function Customers() {
       title: 'Địa chỉ',
       dataIndex: 'address',
       width: 175,
-      sorter: (a, b) => textSorter.compare(a.address || a.area || '', b.address || b.area || ''),
+      sorter: (a, b) => textSorter.compare(a.address || '', b.address || ''),
       render: (_, item) => renderCustomerAddress(item),
     },
     { title: 'Nguồn', dataIndex: 'source', width: 100, sorter: (a, b) => textSorter.compare(a.source, b.source) },
@@ -1413,19 +1552,87 @@ export default function Customers() {
     },
   ];
 
+  const validateTechnicalConfiguration = () => {
+    if (!elevatorSpecs.length) {
+      setTechnicalValidationErrors({});
+      return true;
+    }
+
+    const errors: Record<string, string> = {};
+    let firstInvalidSpecId: string | undefined;
+    const addError = (spec: ElevatorSpec, field: string, error: string) => {
+      errors[`${spec.id}:${field}`] = error;
+      firstInvalidSpecId ??= spec.id;
+    };
+    const hasPositiveNumber = (value?: number) => typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+    elevatorSpecs.forEach((spec) => {
+      if (!spec.name.trim()) addError(spec, 'name', 'Nhập tên cấu hình thang máy.');
+      if (!Number.isInteger(spec.floors) || !hasPositiveNumber(spec.floors)) addError(spec, 'floors', 'Nhập số tầng từ 1 trở lên.');
+      if (!hasPositiveNumber(spec.capacityKg)) addError(spec, 'capacityKg', 'Nhập tải trọng.');
+      if (!spec.elevatorType) addError(spec, 'elevatorType', 'Chọn loại thang máy.');
+      if (!spec.counterweightPosition) addError(spec, 'counterweightPosition', 'Chọn vị trí đối trọng.');
+      if (!hasPositiveNumber(spec.shaftWidthMm)) addError(spec, 'shaftWidthMm', 'Nhập rộng thông thủy.');
+      if (!hasPositiveNumber(spec.shaftDepthMm)) addError(spec, 'shaftDepthMm', 'Nhập sâu thông thủy.');
+      if (!hasPositiveNumber(spec.pitDepthMm)) addError(spec, 'pitDepthMm', 'Nhập chiều sâu hố pit.');
+      if (!hasPositiveNumber(spec.machineRoomHeightMm)) addError(spec, 'machineRoomHeightMm', 'Nhập chiều cao phòng máy.');
+      if (!hasPositiveNumber(spec.overheadHeightMm)) addError(spec, 'overheadHeightMm', 'Nhập chiều cao OH.');
+      if (!spec.installationAddress?.trim()) addError(spec, 'installationAddress', 'Nhập địa chỉ công trình / vị trí đặt thang.');
+
+      if (!spec.floors || spec.floorHeights.length !== spec.floors) {
+        addError(spec, 'floorHeights', 'Số dòng tầng phải khớp với số tầng đã khai báo.');
+      }
+      spec.floorHeights.forEach((floor) => {
+        if (!floor.floorName.trim()) addError(spec, `floor:${floor.id}:name`, 'Nhập tên tầng.');
+        if (!hasPositiveNumber(floor.heightMm)) addError(spec, `floor:${floor.id}:height`, 'Nhập chiều cao tầng.');
+      });
+
+      if (typeof spec.latitude !== 'number' || typeof spec.longitude !== 'number') {
+        addError(spec, 'location', 'Cần ghim vị trí lắp đặt trước khi lưu cấu hình.');
+      }
+    });
+
+    setTechnicalValidationErrors(errors);
+    if (firstInvalidSpecId) {
+      setActiveElevatorSpecId(firstInvalidSpecId);
+      message.error('Vui lòng hoàn tất các thông số kỹ thuật bắt buộc.');
+      return false;
+    }
+    return true;
+  };
+
+  const saveTechnicalConfiguration = () => {
+    if (!validateTechnicalConfiguration()) return;
+    setTechnicalDrawerOpen(false);
+  };
+
   const save = async (values: CustomerForm) => {
-    const buildPayload = (currentAttachments: CustomerAttachment[]) => ({
-      ...values,
+    // Existing-customer fields are rendered as a read-only summary, so do not
+    // rely on unmounted form inputs when constructing the submission payload.
+    const profileValues: CustomerForm = !editingCustomer && selectedExistingCustomer
+      ? {
+        ...values,
+        customerId: selectedExistingCustomer.id,
+        customerType: selectedExistingCustomer.customerType,
+        name: selectedExistingCustomer.name,
+        phone: selectedExistingCustomer.phone,
+        email: selectedExistingCustomer.email,
+        address: selectedExistingCustomer.address,
+        source: selectedExistingCustomer.source || 'Marketing',
+      }
+      : values;
+    const buildPayload = (currentSpecs: ElevatorSpec[]) => ({
+      ...profileValues,
       latitude: null,
       longitude: null,
       locationAccuracyMeters: null,
       locationLabel: null,
-      technicalSpecsJson: elevatorSpecs.length ? JSON.stringify(elevatorSpecs) : null,
-      attachmentLinksJson: currentAttachments.length ? JSON.stringify(currentAttachments) : null,
+      technicalSpecsJson: JSON.stringify(currentSpecs),
+      attachmentLinksJson: null,
     });
 
     const duplicateCustomer = !editingCustomer
-      ? masterCustomers.find((customer) => normalizePhone(customer.phone) === normalizePhone(values.phone))
+      ? masterCustomers.find((customer) => normalizePhone(customer.phone) === normalizePhone(profileValues.phone))
       : undefined;
     const selectedCustomerId = values.customerId ?? selectedExistingCustomerId;
 
@@ -1444,17 +1651,17 @@ export default function Customers() {
     try {
       let savedCustomerId = editingCustomer?.id;
       if (editingCustomer) {
-        await api(`/consultation-profiles/${editingCustomer.id}`, { method: 'PUT', body: JSON.stringify(buildPayload(attachments)) });
+        await api(`/consultation-profiles/${editingCustomer.id}`, { method: 'PUT', body: JSON.stringify(buildPayload(elevatorSpecs)) });
       } else {
-        const created = await api<CustomerSaveResponse>('/consultation-profiles', { method: 'POST', body: JSON.stringify(buildPayload(attachments)) });
+        const created = await api<CustomerSaveResponse>('/consultation-profiles', { method: 'POST', body: JSON.stringify(buildPayload(elevatorSpecs)) });
         savedCustomerId = created.id;
       }
 
       if (savedCustomerId) {
-        const uploadedAttachments = await uploadPendingAttachments(savedCustomerId, attachments);
-        if (uploadedAttachments !== attachments) {
-          await api(`/consultation-profiles/${savedCustomerId}`, { method: 'PUT', body: JSON.stringify(buildPayload(uploadedAttachments)) });
-          setAttachments(uploadedAttachments);
+        const uploadedSpecs = await uploadPendingElevatorAttachments(savedCustomerId, elevatorSpecs);
+        if (uploadedSpecs !== elevatorSpecs) {
+          await api(`/consultation-profiles/${savedCustomerId}`, { method: 'PUT', body: JSON.stringify(buildPayload(uploadedSpecs)) });
+          setElevatorSpecs(uploadedSpecs);
         }
       }
 
@@ -1467,12 +1674,12 @@ export default function Customers() {
       return true;
     } catch (error) {
       if (error instanceof Error && error.message.includes('Số điện thoại')) {
-        let matchedCustomer = masterCustomers.find((customer) => normalizePhone(customer.phone) === normalizePhone(values.phone));
+        let matchedCustomer = masterCustomers.find((customer) => normalizePhone(customer.phone) === normalizePhone(profileValues.phone));
         if (!matchedCustomer) {
           try {
             const refreshedCustomers = await api<CustomerMasterRow[]>('/customers');
             setMasterCustomers(refreshedCustomers);
-            matchedCustomer = refreshedCustomers.find((customer) => normalizePhone(customer.phone) === normalizePhone(values.phone));
+            matchedCustomer = refreshedCustomers.find((customer) => normalizePhone(customer.phone) === normalizePhone(profileValues.phone));
           } catch {
             // The original API error remains the fallback when the customer list cannot be refreshed.
           }
@@ -1573,10 +1780,10 @@ export default function Customers() {
               <Button icon={<ReloadOutlined />} onClick={() => {
                 setDraftStatus(undefined);
                 setDraftCustomerType(undefined);
-                setDraftElevatorType(undefined);
+                setDraftElevatorTypes([]);
+                setDraftTechnicalConfiguration(undefined);
                 setDraftSource(undefined);
                 setDraftOwner(undefined);
-                setDraftArea(undefined);
                 setDraftCreatedRange(undefined);
               }}>
                 Đặt lại
@@ -1616,16 +1823,6 @@ export default function Customers() {
               />
             </label>
             <label className='advanced-filter-field'>
-              <span>Loại thang máy</span>
-              <Select
-                value={draftElevatorType}
-                onChange={setDraftElevatorType}
-                allowClear
-                placeholder='Tất cả'
-                options={elevatorTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
-              />
-            </label>
-            <label className='advanced-filter-field'>
               <span>Nguồn khách hàng</span>
               <Select
                 value={draftSource}
@@ -1633,6 +1830,34 @@ export default function Customers() {
                 allowClear
                 placeholder='Tất cả'
                 options={sourceOptions.map((item) => ({ value: item, label: item }))}
+              />
+            </label>
+          </div>
+          <div className='advanced-filter-section'>
+            <div className='advanced-filter-section-title'>Cấu hình kỹ thuật</div>
+            <label className='advanced-filter-field'>
+              <span>Loại thang máy</span>
+              <Select
+                mode='multiple'
+                value={draftElevatorTypes}
+                onChange={setDraftElevatorTypes}
+                allowClear
+                maxTagCount='responsive'
+                placeholder='Tất cả loại thang'
+                options={elevatorTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
+              />
+            </label>
+            <label className='advanced-filter-field'>
+              <span>Tình trạng cấu hình</span>
+              <Select
+                value={draftTechnicalConfiguration}
+                onChange={setDraftTechnicalConfiguration}
+                allowClear
+                placeholder='Tất cả'
+                options={[
+                  { value: 'CONFIGURED', label: 'Đã có cấu hình thang' },
+                  { value: 'UNCONFIGURED', label: 'Chưa có cấu hình thang' },
+                ]}
               />
             </label>
           </div>
@@ -1648,21 +1873,6 @@ export default function Customers() {
                 optionFilterProp='label'
                 placeholder='Chọn người phụ trách'
                 options={ownerOptions}
-              />
-            </label>
-          </div>
-          <div className='advanced-filter-section'>
-            <div className='advanced-filter-section-title'>Vị trí</div>
-            <label className='advanced-filter-field'>
-              <span>Khu vực</span>
-              <Select
-                value={draftArea}
-                onChange={setDraftArea}
-                allowClear
-                showSearch
-                optionFilterProp='label'
-                placeholder='Chọn khu vực'
-                options={areaOptions}
               />
             </label>
           </div>
@@ -1697,7 +1907,6 @@ export default function Customers() {
             columnsState={{
               defaultValue: {
                 customerType: { show: false },
-                elevatorType: { show: false },
               },
             }}
             pagination={{
@@ -1733,12 +1942,9 @@ export default function Customers() {
                     <CustomerStatus value={customer.status} statusOptions={statusOptions} />
                   </Space>
                   <Descriptions size='small' column={1} className='mobile-descriptions'>
-                    <Descriptions.Item label='Địa chỉ'>{customer.address || customer.area || '—'}</Descriptions.Item>
+                    <Descriptions.Item label='Địa chỉ liên hệ'>{customer.address || '—'}</Descriptions.Item>
                     <Descriptions.Item label='Nhóm khách hàng'>
                       <CustomerTypeTag value={customer.customerType} typeOptions={customerTypeOptions} />
-                    </Descriptions.Item>
-                    <Descriptions.Item label='Loại thang'>
-                      <CatalogTag value={customer.elevatorType} options={elevatorTypeOptions} />
                     </Descriptions.Item>
                     <Descriptions.Item label='Email'>{customer.email || 'Chưa có email'}</Descriptions.Item>
                     <Descriptions.Item label='Nguồn'>{customer.source}</Descriptions.Item>
@@ -1776,8 +1982,6 @@ export default function Customers() {
             name: editingCustomer.name,
             phone: editingCustomer.phone,
             email: editingCustomer.email,
-            area: editingCustomer.area,
-            elevatorType: editingCustomer.elevatorType,
             source: editingCustomer.source,
             address: editingCustomer.address,
             notes: editingCustomer.notes,
@@ -1788,7 +1992,6 @@ export default function Customers() {
             name: selectedExistingCustomer.name,
             phone: selectedExistingCustomer.phone,
             email: selectedExistingCustomer.email,
-            area: selectedExistingCustomer.area,
             address: selectedExistingCustomer.address,
             source: selectedExistingCustomer.source || 'Marketing',
             status: 'NEW',
@@ -1835,72 +2038,76 @@ export default function Customers() {
                   )}
                 </>
               )}
-              <ProFormRadio.Group
-                name='customerType'
-                label='Nhóm khách hàng'
-                formItemProps={{ className: 'customer-type-field' }}
-                options={customerTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
-              />
-              <ProForm.Group>
-                <ProFormText
-                  name='name'
-                  label='Tên khách hàng'
-                  width='md'
-                  placeholder='Nhập họ tên hoặc tên doanh nghiệp'
-                  rules={[{ required: true, message: 'Vui lòng nhập tên khách hàng' }]}
-                />
-                <ProFormText
-                  name='phone'
-                  label='Số điện thoại'
-                  width='md'
-                  placeholder='Ví dụ: 0912 345 678'
-                  fieldProps={{
-                    onChange: (event) => {
-                      clearSelectedCustomerIfPhoneChanged(event.target.value);
-                      if (duplicateConsultationCustomer) setDuplicateConsultationCustomer(undefined);
-                    },
-                  }}
-                  rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
-                />
-              </ProForm.Group>
-              <ProForm.Group>
-                <ProFormText name='email' label='Email' width='md' rules={[{ type: 'email' }]} />
-                <ProFormText name='area' label='Khu vực' width='md' placeholder='Tỉnh/thành, quận/huyện' />
-              </ProForm.Group>
+              {isUsingExistingCustomer && selectedExistingCustomer ? (
+                <div className='selected-customer-summary'>
+                  <div>
+                    <Typography.Text strong>{selectedExistingCustomer.code} - {selectedExistingCustomer.name}</Typography.Text>
+                    <Typography.Text type='secondary'>
+                      {selectedExistingCustomer.phone}{selectedExistingCustomer.email ? ` · ${selectedExistingCustomer.email}` : ''}
+                    </Typography.Text>
+                    <Typography.Text type='secondary'>
+                      {selectedExistingCustomer.address || 'Chưa có địa chỉ liên hệ'} · Nguồn: {selectedExistingCustomer.source || 'Marketing'}
+                    </Typography.Text>
+                  </div>
+                  <Button type='link' onClick={clearExistingCustomerSelection}>Thay đổi</Button>
+                </div>
+              ) : (
+                <>
+                  <ProFormRadio.Group
+                    name='customerType'
+                    label='Nhóm khách hàng'
+                    formItemProps={{ className: 'customer-type-field' }}
+                    options={customerTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
+                  />
+                  <ProForm.Group>
+                    <ProFormText
+                      name='name'
+                      label='Tên khách hàng'
+                      width='md'
+                      placeholder='Nhập họ tên hoặc tên doanh nghiệp'
+                      rules={[{ required: true, message: 'Vui lòng nhập tên khách hàng' }]}
+                    />
+                    <ProFormText
+                      name='phone'
+                      label='Số điện thoại'
+                      width='md'
+                      placeholder='Ví dụ: 0912 345 678'
+                      fieldProps={{
+                        onChange: (event) => {
+                          clearSelectedCustomerIfPhoneChanged(event.target.value);
+                          if (duplicateConsultationCustomer) setDuplicateConsultationCustomer(undefined);
+                        },
+                      }}
+                      rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
+                    />
+                  </ProForm.Group>
+                  <ProForm.Group>
+                    <ProFormText name='email' label='Email' width='md' rules={[{ type: 'email' }]} />
+                    <ProFormSelect
+                      name='source'
+                      label='Nguồn khách hàng'
+                      width='md'
+                      options={sourceOptions.map((value) => ({ value, label: value }))}
+                    />
+                  </ProForm.Group>
+                  <ProFormTextArea
+                    name='address'
+                    label='Địa chỉ liên hệ'
+                    placeholder='Nhập địa chỉ liên hệ của khách hàng'
+                    fieldProps={{ rows: 2 }}
+                    rules={[{ required: true, message: 'Vui lòng nhập địa chỉ liên hệ' }]}
+                  />
+                </>
+              )}
 
-              <div className='form-section-heading'>Nhu cầu và nguồn khách</div>
-              <ProForm.Group>
-                <ProFormSelect
-                  name='source'
-                  label='Nguồn khách hàng'
-                  width='md'
-                  options={sourceOptions.map((value) => ({ value, label: value }))}
-                />
-                <ProFormSelect
-                  name='elevatorType'
-                  label='Loại thang máy'
-                  width='md'
-                  placeholder='Chọn loại thang'
-                  options={elevatorTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
-                  rules={[{ required: true, message: 'Vui lòng chọn loại thang máy' }]}
-                />
-              </ProForm.Group>
-              <ProFormTextArea
-                name='address'
-                label='Địa chỉ liên hệ'
-                placeholder='Nhập địa chỉ liên hệ của khách hàng'
-                fieldProps={{ rows: 2 }}
-              />
+              <div className='form-section-heading'>Thông tin hồ sơ tư vấn</div>
               <ProFormTextArea
                 name='notes'
                 label='Yêu cầu / Ghi chú ban đầu'
                 placeholder='Loại thang, số tầng, tải trọng, thời gian dự kiến...'
                 fieldProps={{ rows: 2 }}
               />
-            </div>
-
-            <aside className='customer-form-aside'>
-              <div className='customer-aside-title'>Hồ sơ khảo sát</div>
+              <div className='form-section-heading'>Hồ sơ khảo sát</div>
               <div className='customer-supplement-section'>
             <div className='customer-supplement-heading'>
               <span>
@@ -1908,7 +2115,7 @@ export default function Customers() {
                 Cấu hình thông số kỹ thuật thang máy
                 <Badge count={elevatorSpecs.length} showZero size='small' className='section-count-badge' />
               </span>
-              <Typography.Text type='secondary'>Hỗ trợ một khách hàng nhiều cấu hình thang</Typography.Text>
+              <Typography.Text type='secondary'>Có thể bổ sung khi đã có thông tin khảo sát</Typography.Text>
             </div>
             {elevatorSpecs.length ? (
               <div className='elevator-spec-summary-list'>
@@ -1942,13 +2149,13 @@ export default function Customers() {
               </div>
             ) : (
               <div className='customer-empty-panel'>
+                <Button icon={<PlusOutlined />} onClick={openTechnicalConfig}>
+                  Tạo cấu hình kỹ thuật
+                </Button>
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description='Chưa có cấu hình thông số kỹ thuật thang máy.'
                 />
-                <Button icon={<PlusOutlined />} onClick={openTechnicalConfig}>
-                  Tạo cấu hình kỹ thuật
-                </Button>
               </div>
             )}
             {elevatorSpecs.length > 0 && (
@@ -1963,7 +2170,8 @@ export default function Customers() {
             )}
           </div>
 
-          <div className='customer-supplement-section'>
+          {/* Attachments are owned and rendered by the selected elevator configuration. */}
+          {/*
             <div className='customer-supplement-heading'>
               <span>
                 <PaperClipOutlined />
@@ -1974,7 +2182,7 @@ export default function Customers() {
                 <Button icon={<LinkOutlined />} onClick={() => setAttachmentLinkModalOpen(true)}>
                   Link
                 </Button>
-                <Button icon={<CameraOutlined />} onClick={() => void openCameraCapture()}>
+                <Button icon={<CameraOutlined />} onClick={() => activeElevatorSpec && void openCameraCapture(activeElevatorSpec.id)}>
                   Chụp ảnh
                 </Button>
                 <Button icon={<PaperClipOutlined />} onClick={() => attachmentFileInputRef.current?.click()}>
@@ -1990,7 +2198,7 @@ export default function Customers() {
               hidden
               accept='image/*,.pdf,.doc,.docx,.xls,.xlsx'
               onChange={(event) => {
-                addAttachmentFiles(event.target.files, 'file');
+                addAttachmentFiles(activeElevatorSpec?.id, event.target.files, 'file');
                 event.target.value = '';
               }}
             />
@@ -2002,7 +2210,7 @@ export default function Customers() {
               accept='image/*'
               capture='environment'
               onChange={(event) => {
-                addAttachmentFiles(event.target.files, 'camera');
+                addAttachmentFiles(activeElevatorSpec?.id, event.target.files, 'camera');
                 closeCameraCapture();
                 event.target.value = '';
               }}
@@ -2054,8 +2262,8 @@ export default function Customers() {
                 />
               </div>
             )}
+          */}
           </div>
-            </aside>
           </div>
           <ProFormText name='status' hidden />
         </DrawerForm>
@@ -2077,7 +2285,7 @@ export default function Customers() {
               <span />
               <Space>
                 <Button onClick={() => setTechnicalDrawerOpen(false)}>Đóng</Button>
-                <Button type='primary' onClick={() => setTechnicalDrawerOpen(false)}>Lưu cấu hình</Button>
+                <Button type='primary' onClick={saveTechnicalConfiguration}>Lưu cấu hình</Button>
               </Space>
             </div>
           ) : null}
@@ -2152,36 +2360,41 @@ export default function Customers() {
               <div className='technical-config-body'>
                 <div className='technical-grid five-columns'>
                   <label>
-                    <span>Tên cấu hình thang máy *</span>
+                    <span>Tên cấu hình thang máy <b className='required-marker'>*</b></span>
                     <Input
+                      status={technicalErrorFor(activeElevatorSpec.id, 'name') ? 'error' : undefined}
                       value={activeElevatorSpec.name}
                       onChange={(event) => updateElevatorSpec(activeElevatorSpec.id, { name: event.target.value })}
                       placeholder='Thang máy 1'
                     />
                   </label>
                   <label>
-                    <span>Số tầng</span>
+                    <span>Số tầng <b className='required-marker'>*</b></span>
                     <InputNumber
                       min={1}
+                      max={200}
+                      status={technicalErrorFor(activeElevatorSpec.id, 'floors') ? 'error' : undefined}
                       value={activeElevatorSpec.floors}
                       onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { floors: value ?? undefined })}
                       placeholder='Ví dụ: 5'
                     />
                   </label>
                   <label>
-                    <span>Tải trọng (kg)</span>
+                    <span>Tải trọng (kg) <b className='required-marker'>*</b></span>
                     <InputNumber
                       min={100}
                       step={50}
+                      status={technicalErrorFor(activeElevatorSpec.id, 'capacityKg') ? 'error' : undefined}
                       value={activeElevatorSpec.capacityKg}
                       onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { capacityKg: value ?? undefined })}
                       placeholder='Ví dụ: 450'
                     />
                   </label>
                   <label>
-                    <span>Loại thang quan tâm</span>
+                    <span>Loại thang máy <b className='required-marker'>*</b></span>
                     <Select
                       allowClear
+                      status={technicalErrorFor(activeElevatorSpec.id, 'elevatorType') ? 'error' : undefined}
                       value={activeElevatorSpec.elevatorType}
                       placeholder='Chưa chọn'
                       options={elevatorTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
@@ -2189,9 +2402,10 @@ export default function Customers() {
                     />
                   </label>
                   <label>
-                    <span>Vị trí đối trọng</span>
+                    <span>Vị trí đối trọng <b className='required-marker'>*</b></span>
                     <Select
                       allowClear
+                      status={technicalErrorFor(activeElevatorSpec.id, 'counterweightPosition') ? 'error' : undefined}
                       value={activeElevatorSpec.counterweightPosition}
                       options={counterweightOptions}
                       onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { counterweightPosition: value })}
@@ -2202,47 +2416,49 @@ export default function Customers() {
                 <div className='technical-section-title'>Thông tin hố thang</div>
                 <div className='technical-grid five-columns'>
                   <label>
-                    <span>Rộng thông thủy (mm)</span>
-                    <InputNumber value={activeElevatorSpec.shaftWidthMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { shaftWidthMm: value ?? undefined })} placeholder='Ví dụ: 1500' />
+                    <span>Rộng thông thủy (mm) <b className='required-marker'>*</b></span>
+                    <InputNumber min={1} status={technicalErrorFor(activeElevatorSpec.id, 'shaftWidthMm') ? 'error' : undefined} value={activeElevatorSpec.shaftWidthMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { shaftWidthMm: value ?? undefined })} placeholder='Ví dụ: 1500' />
                   </label>
                   <label>
-                    <span>Sâu thông thủy (mm)</span>
-                    <InputNumber value={activeElevatorSpec.shaftDepthMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { shaftDepthMm: value ?? undefined })} placeholder='Ví dụ: 1500' />
+                    <span>Sâu thông thủy (mm) <b className='required-marker'>*</b></span>
+                    <InputNumber min={1} status={technicalErrorFor(activeElevatorSpec.id, 'shaftDepthMm') ? 'error' : undefined} value={activeElevatorSpec.shaftDepthMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { shaftDepthMm: value ?? undefined })} placeholder='Ví dụ: 1500' />
                   </label>
                   <label>
-                    <span>Hố pit (mm)</span>
-                    <InputNumber value={activeElevatorSpec.pitDepthMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { pitDepthMm: value ?? undefined })} placeholder='Ví dụ: 1400' />
+                    <span>Hố pit (mm) <b className='required-marker'>*</b></span>
+                    <InputNumber min={1} status={technicalErrorFor(activeElevatorSpec.id, 'pitDepthMm') ? 'error' : undefined} value={activeElevatorSpec.pitDepthMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { pitDepthMm: value ?? undefined })} placeholder='Ví dụ: 1400' />
                   </label>
                   <label>
-                    <span>Chiều cao phòng máy (mm)</span>
-                    <InputNumber value={activeElevatorSpec.machineRoomHeightMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { machineRoomHeightMm: value ?? undefined })} placeholder='Ví dụ: 1200' />
+                    <span>Chiều cao phòng máy (mm) <b className='required-marker'>*</b></span>
+                    <InputNumber min={1} status={technicalErrorFor(activeElevatorSpec.id, 'machineRoomHeightMm') ? 'error' : undefined} value={activeElevatorSpec.machineRoomHeightMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { machineRoomHeightMm: value ?? undefined })} placeholder='Ví dụ: 1200' />
                   </label>
                   <label>
-                    <span>Chiều cao OH (mm)</span>
-                    <InputNumber value={activeElevatorSpec.overheadHeightMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { overheadHeightMm: value ?? undefined })} placeholder='Ví dụ: 4200' />
+                    <span>Chiều cao OH (mm) <b className='required-marker'>*</b></span>
+                    <InputNumber min={1} status={technicalErrorFor(activeElevatorSpec.id, 'overheadHeightMm') ? 'error' : undefined} value={activeElevatorSpec.overheadHeightMm} onChange={(value) => updateElevatorSpec(activeElevatorSpec.id, { overheadHeightMm: value ?? undefined })} placeholder='Ví dụ: 4200' />
                   </label>
                 </div>
 
                 <div className='technical-table-heading'>
-                  <span>Chiều cao từng tầng thực tế</span>
+                  <span>Chiều cao từng tầng thực tế <b className='required-marker'>*</b></span>
                   <Button icon={<PlusOutlined />} onClick={() => addElevatorFloor(activeElevatorSpec.id)}>
                     Thêm tầng
                   </Button>
                 </div>
                 <div className='floor-height-table'>
                   <div className='floor-height-row head'>
-                    <span>Tên tầng</span>
-                    <span>Chiều cao (mm)</span>
+                    <span>Tên tầng <b className='required-marker'>*</b></span>
+                    <span>Chiều cao (mm) <b className='required-marker'>*</b></span>
                     <span>Xóa</span>
                   </div>
                   {activeElevatorSpec.floorHeights.map((floor) => (
                     <div key={floor.id} className='floor-height-row'>
                       <Input
+                        status={technicalErrorFor(activeElevatorSpec.id, `floor:${floor.id}:name`) ? 'error' : undefined}
                         value={floor.floorName}
                         onChange={(event) => updateElevatorFloor(activeElevatorSpec.id, floor.id, { floorName: event.target.value })}
                       />
                       <InputNumber
-                        min={0}
+                        min={1}
+                        status={technicalErrorFor(activeElevatorSpec.id, `floor:${floor.id}:height`) ? 'error' : undefined}
                         value={floor.heightMm}
                         onChange={(value) => updateElevatorFloor(activeElevatorSpec.id, floor.id, { heightMm: value ?? undefined })}
                       />
@@ -2257,39 +2473,57 @@ export default function Customers() {
                     </div>
                   ))}
                 </div>
+                {technicalErrorFor(activeElevatorSpec.id, 'floorHeights') && (
+                  <div className='technical-field-error'>{technicalErrorFor(activeElevatorSpec.id, 'floorHeights')}</div>
+                )}
 
                 <div className='technical-section-title'>Vị trí lắp đặt</div>
                 <div className='technical-install-location'>
                   <label className='technical-note-field'>
-                    <span>Địa chỉ công trình / vị trí đặt thang</span>
-                    <Input.TextArea
-                      rows={2}
+                    <div className='technical-installation-address-head'>
+                      <span>Địa chỉ công trình / vị trí đặt thang <b className='required-marker'>*</b></span>
+                      <Tooltip title={contactAddressForInstallation ? 'Sao chép địa chỉ liên hệ của khách hàng' : 'Khách hàng chưa có địa chỉ liên hệ để sao chép'}>
+                        <span>
+                          <Button
+                            className='technical-copy-contact-button'
+                            icon={<CopyOutlined />}
+                            disabled={!contactAddressForInstallation}
+                            onClick={() => updateElevatorSpec(activeElevatorSpec.id, { installationAddress: contactAddressForInstallation })}
+                          >
+                            Dùng địa chỉ liên hệ
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    </div>
+                    <Input
+                      status={technicalErrorFor(activeElevatorSpec.id, 'installationAddress') ? 'error' : undefined}
                       value={activeElevatorSpec.installationAddress}
                       placeholder='Nhập địa chỉ nơi lắp đặt thang máy'
                       onChange={(event) => updateElevatorSpec(activeElevatorSpec.id, { installationAddress: event.target.value })}
                     />
+                    {technicalErrorFor(activeElevatorSpec.id, 'installationAddress') && (
+                      <span className='technical-field-error'>{technicalErrorFor(activeElevatorSpec.id, 'installationAddress')}</span>
+                    )}
                   </label>
-                  <div className='technical-location-panel'>
+                  <div className={`technical-location-panel ${typeof activeElevatorSpec.latitude === 'number' && typeof activeElevatorSpec.longitude === 'number' ? 'is-pinned' : 'is-unpinned'} ${technicalErrorFor(activeElevatorSpec.id, 'location') ? 'has-error' : ''}`}>
                     <div>
-                      <Typography.Text strong>Vị trí ghim triển khai</Typography.Text>
+                      <Typography.Text strong>Vị trí ghim triển khai <b className='required-marker'>*</b></Typography.Text>
                       <Typography.Text type='secondary'>
                         Ghim tọa độ riêng cho thang này để kỹ thuật mở bản đồ khi khảo sát/lắp đặt.
                       </Typography.Text>
+                      <span className={`technical-pin-state ${typeof activeElevatorSpec.latitude === 'number' && typeof activeElevatorSpec.longitude === 'number' ? 'is-pinned' : 'is-unpinned'}`}>
+                        <EnvironmentOutlined />
+                        {typeof activeElevatorSpec.latitude === 'number' && typeof activeElevatorSpec.longitude === 'number'
+                          ? 'Đã ghim vị trí'
+                          : 'Chưa ghim vị trí'}
+                      </span>
                     </div>
                     <Space wrap>
                       <Button
-                        onClick={() => {
-                          const contactAddress = customerFormRef.current?.getFieldValue('address')?.trim();
-                          if (!contactAddress) {
-                            message.warning('Chưa có địa chỉ liên hệ để sao chép.');
-                            return;
-                          }
-                          updateElevatorSpec(activeElevatorSpec.id, { installationAddress: contactAddress });
-                        }}
+                        className={`technical-pin-button ${typeof activeElevatorSpec.latitude === 'number' && typeof activeElevatorSpec.longitude === 'number' ? 'is-pinned' : 'is-unpinned'}`}
+                        icon={<PushpinOutlined />}
+                        onClick={() => openLocationPicker(activeElevatorSpec.id)}
                       >
-                        Dùng địa chỉ liên hệ
-                      </Button>
-                      <Button icon={<PushpinOutlined />} onClick={() => openLocationPicker(activeElevatorSpec.id)}>
                         {typeof activeElevatorSpec.latitude === 'number' && typeof activeElevatorSpec.longitude === 'number'
                           ? 'Sửa vị trí ghim'
                           : 'Ghim vị trí'}
@@ -2302,6 +2536,9 @@ export default function Customers() {
                             longitude: undefined,
                             locationAccuracyMeters: undefined,
                             locationLabel: undefined,
+                            installationWard: undefined,
+                            installationProvince: undefined,
+                            installationAreaSource: undefined,
                           })}
                         >
                           Xóa ghim
@@ -2316,7 +2553,108 @@ export default function Customers() {
                         </span>
                       </div>
                     )}
+                    {typeof activeElevatorSpec.latitude === 'number' && typeof activeElevatorSpec.longitude === 'number' && (
+                      <div className='technical-installation-area'>
+                        <span>Khu vực lắp đặt</span>
+                        <Typography.Text type='secondary'>Tự động từ vị trí ghim</Typography.Text>
+                        <div className='technical-installation-area-value'>
+                          <EnvironmentOutlined />
+                          <span>
+                            {[activeElevatorSpec.installationWard, activeElevatorSpec.installationProvince].filter(Boolean).join(' · ') || 'Đang xác định khu vực'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {technicalErrorFor(activeElevatorSpec.id, 'location') && (
+                      <div className='technical-location-error'>{technicalErrorFor(activeElevatorSpec.id, 'location')}</div>
+                    )}
                   </div>
+                </div>
+
+                <div className='technical-section-title'>Tài liệu / Ảnh khảo sát <Badge count={activeElevatorAttachments.length} showZero size='small' className='section-count-badge' /></div>
+                <div className='technical-attachment-section'>
+                  <div className='technical-attachment-actions'>
+                    <Typography.Text type='secondary'>Tài liệu và ảnh chỉ thuộc thang máy đang chọn.</Typography.Text>
+                    <Space size={8} wrap>
+                      <Button icon={<LinkOutlined />} onClick={() => {
+                        setAttachmentTargetElevatorSpecId(activeElevatorSpec.id);
+                        setAttachmentLinkModalOpen(true);
+                      }}>
+                        Link
+                      </Button>
+                      <Button icon={<CameraOutlined />} onClick={() => void openCameraCapture(activeElevatorSpec.id)}>
+                        Chụp ảnh
+                      </Button>
+                      <Button icon={<PaperClipOutlined />} onClick={() => {
+                        setAttachmentTargetElevatorSpecId(activeElevatorSpec.id);
+                        attachmentFileInputRef.current?.click();
+                      }}>
+                        Tệp
+                      </Button>
+                    </Space>
+                  </div>
+                  <input
+                    ref={attachmentFileInputRef}
+                    className='customer-file-input'
+                    type='file'
+                    multiple
+                    hidden
+                    accept='image/*,.pdf,.doc,.docx,.xls,.xlsx'
+                    onChange={(event) => {
+                      addAttachmentFiles(attachmentTargetElevatorSpecId, event.target.files, 'file');
+                      setAttachmentTargetElevatorSpecId(undefined);
+                      event.target.value = '';
+                    }}
+                  />
+                  <input
+                    ref={attachmentCameraInputRef}
+                    className='customer-file-input'
+                    type='file'
+                    hidden
+                    accept='image/*'
+                    capture='environment'
+                    onChange={(event) => {
+                      addAttachmentFiles(attachmentTargetElevatorSpecId, event.target.files, 'camera');
+                      closeCameraCapture();
+                      event.target.value = '';
+                    }}
+                  />
+                  {activeElevatorAttachments.length ? (
+                    <div className='attachment-list'>
+                      {activeElevatorAttachments.map((attachment) => (
+                        <div key={attachment.id} className='attachment-item'>
+                          <span className='attachment-type-icon'>
+                            {attachment.type === 'IMAGE' ? <FileImageOutlined /> : attachment.type === 'LINK' ? <LinkOutlined /> : <FilePdfOutlined />}
+                          </span>
+                          <div className='attachment-copy'>
+                            {attachment.url || attachment.storedFileId ? (
+                              <a href={attachment.url ?? `${API_BASE}/files/${attachment.storedFileId}`} target='_blank' rel='noreferrer'>{attachment.name}</a>
+                            ) : <Typography.Text strong>{attachment.name}</Typography.Text>}
+                            <Typography.Text type='secondary'>
+                              {attachment.source === 'CAMERA' ? 'Ảnh chụp hiện trường' : attachment.type === 'IMAGE' ? 'Ảnh tải lên' : attachment.type === 'LINK' ? 'Link' : 'Tài liệu'}
+                              {attachment.sizeBytes ? ` · ${formatFileSize(attachment.sizeBytes)}` : ''}
+                            </Typography.Text>
+                          </div>
+                          <Select
+                            className='attachment-category-select'
+                            value={attachment.category}
+                            options={attachmentCategoryOptions.map((value) => ({ value, label: value }))}
+                            onChange={(category) => updateElevatorAttachments(activeElevatorSpec.id, (items) => items.map((item) => (
+                              item.id === attachment.id ? { ...item, category } : item
+                            )))}
+                          />
+                          <Tooltip title='Xóa tài liệu'>
+                            <Button danger icon={<DeleteOutlined />} onClick={() => {
+                              delete attachmentFileByIdRef.current[attachment.id];
+                              updateElevatorAttachments(activeElevatorSpec.id, (items) => items.filter((item) => item.id !== attachment.id));
+                            }} />
+                          </Tooltip>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <Typography.Text type='secondary' className='technical-attachment-empty'>Chưa có tài liệu hoặc ảnh khảo sát cho thang máy này.</Typography.Text>
+                  )}
                 </div>
 
                 <label className='technical-note-field'>
@@ -2366,6 +2704,8 @@ export default function Customers() {
           open={cameraModalOpen}
           onCancel={closeCameraCapture}
           width='min(720px, calc(100vw - 40px))'
+          getContainer={() => document.body}
+          zIndex={1500}
           className='camera-capture-modal'
           destroyOnHidden
           footer={[
@@ -2410,10 +2750,15 @@ export default function Customers() {
         <Modal
           title='Thêm link tài liệu'
           open={attachmentLinkModalOpen}
-          onCancel={() => setAttachmentLinkModalOpen(false)}
+          onCancel={() => {
+            setAttachmentLinkModalOpen(false);
+            setAttachmentTargetElevatorSpecId(undefined);
+          }}
           onOk={addAttachmentLink}
           okText='Thêm link'
           cancelText='Hủy'
+          getContainer={() => document.body}
+          zIndex={1500}
           destroyOnHidden
         >
           <Input
@@ -2437,6 +2782,7 @@ export default function Customers() {
           }}
           width='min(1080px, calc(100vw - 96px))'
           style={{ top: 48 }}
+          zIndex={1400}
           className='location-picker-modal'
           destroyOnHidden
           footer={[
@@ -2463,6 +2809,9 @@ export default function Customers() {
                         longitude: draftLocation.longitude,
                         locationAccuracyMeters: draftLocation.accuracyMeters,
                         locationLabel: draftLocation.label,
+                        installationWard: draftLocation.ward,
+                        installationProvince: draftLocation.province,
+                        installationAreaSource: 'PIN',
                       });
                     }
                     setLocationModalOpen(false);

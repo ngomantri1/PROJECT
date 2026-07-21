@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Avatar, Button, Col, Drawer, Dropdown, Form, Input, Modal, Row, Select, Space, Tag, Tooltip, Typography, message } from 'antd';
+import { Alert, Button, Col, Drawer, Dropdown, Form, Input, Modal, Row, Select, Space, Tag, Tooltip, Typography, message } from 'antd';
 import { PageContainer, ProCard, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { CalendarOutlined, DeleteOutlined, EditOutlined, EllipsisOutlined, EnvironmentOutlined, FileAddOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
@@ -17,7 +17,6 @@ type CustomerRow = {
   email?: string;
   customerType: 'PERSONAL' | 'BUSINESS';
   source?: string;
-  area?: string;
   address?: string;
   owner: string;
   status: string;
@@ -33,7 +32,6 @@ type CustomerForm = {
   phone: string;
   email?: string;
   source: string;
-  area?: string;
   address?: string;
 };
 
@@ -60,7 +58,7 @@ export default function CustomerMasterPage() {
     const normalized = search.trim().toLowerCase();
     if (!normalized) return rows;
     return rows.filter((row) =>
-      `${row.code} ${row.name} ${row.phone} ${row.email ?? ''} ${row.address ?? ''} ${row.area ?? ''}`.toLowerCase().includes(normalized),
+      `${row.code} ${row.name} ${row.phone} ${row.email ?? ''} ${row.address ?? ''}`.toLowerCase().includes(normalized),
     );
   }, [rows, search]);
 
@@ -94,7 +92,6 @@ export default function CustomerMasterPage() {
       phone: customer.phone,
       email: customer.email,
       source: customer.source,
-      area: customer.area,
       address: customer.address,
     });
     setDuplicateCustomer(undefined);
@@ -132,7 +129,6 @@ export default function CustomerMasterPage() {
           phone,
           email: values.email?.trim() || null,
           address: values.address?.trim() || null,
-          area: values.area?.trim() || null,
           elevatorType: null,
           latitude: null,
           longitude: null,
@@ -196,19 +192,23 @@ export default function CustomerMasterPage() {
       dataIndex: 'code',
       width: 120,
       sorter: (a, b) => textSorter.compare(a.code, b.code),
+      render: (value, item) => (
+        <Tooltip title='Mở Customer 360'>
+          <Typography.Link className='record-link record-link-code' onClick={() => router.push(`/business/customers/${item.id}`)}>{String(value)}</Typography.Link>
+        </Tooltip>
+      ),
     },
     {
       title: 'Khách hàng',
       dataIndex: 'name',
       sorter: (a, b) => textSorter.compare(a.name, b.name),
       render: (_, item) => (
-        <Space>
-          <Avatar className='customer-avatar'>{item.name.charAt(0)}</Avatar>
-          <span>
-            <Typography.Text strong>{item.name}</Typography.Text>
-            <small className='table-secondary-text'>{item.phone}</small>
-          </span>
-        </Space>
+        <span>
+          <Tooltip title='Mở Customer 360'>
+            <Typography.Link strong className='record-link' onClick={() => router.push(`/business/customers/${item.id}`)}>{item.name}</Typography.Link>
+          </Tooltip>
+          <small className='table-secondary-text'>{item.phone}</small>
+        </span>
       ),
     },
     {
@@ -245,12 +245,6 @@ export default function CustomerMasterPage() {
       dataIndex: 'source',
       width: 150,
       render: (_, item) => item.source || <Typography.Text type='secondary'>Chưa có</Typography.Text>,
-    },
-    {
-      title: 'Khu vực',
-      dataIndex: 'area',
-      width: 180,
-      render: (_, item) => item.area || <Typography.Text type='secondary'>Chưa có</Typography.Text>,
     },
     {
       title: 'Phụ trách',
@@ -375,7 +369,7 @@ export default function CustomerMasterPage() {
         cardBordered
         options={{ density: true, fullScreen: true, reload: () => void load() }}
         pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} khách hàng` }}
-        scroll={{ x: 1580 }}
+        scroll={{ x: 1400 }}
         headerTitle='Danh sách khách hàng'
       />
 
@@ -455,9 +449,6 @@ export default function CustomerMasterPage() {
           </Form.Item>
           <Form.Item name='source' label='Nguồn khách hàng' rules={[{ required: true, message: 'Vui lòng chọn nguồn khách hàng' }]}>
             <Select options={sourceOptions.map((value) => ({ value, label: value }))} />
-          </Form.Item>
-          <Form.Item name='area' label='Khu vực'>
-            <Input placeholder='Tỉnh/thành, quận/huyện' />
           </Form.Item>
           <Form.Item name='address' label='Địa chỉ liên hệ'>
             <Input.TextArea rows={3} placeholder='Nhập địa chỉ liên hệ nếu có' />

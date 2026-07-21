@@ -82,6 +82,7 @@ public sealed class Customer : Entity
     public Guid OwnerUserId { get; set; }
     public AppUser OwnerUser { get; set; } = null!;
     public ICollection<ConsultationProfile> ConsultationProfiles { get; set; } = new List<ConsultationProfile>();
+    public ICollection<CustomerElevator> CustomerElevators { get; set; } = new List<CustomerElevator>();
 }
 
 public sealed class ConsultationProfile : Entity
@@ -108,6 +109,7 @@ public sealed class ConsultationProfile : Entity
     public DateTimeOffset? KpiCountedAt { get; set; }
     public string? KpiExcludedReason { get; set; }
     public ICollection<Quotation> Quotations { get; set; } = new List<Quotation>();
+    public ICollection<CustomerElevator> CustomerElevators { get; set; } = new List<CustomerElevator>();
 }
 
 public sealed class CareActivity : Entity
@@ -147,6 +149,33 @@ public sealed class Quotation : Entity
     public string? Notes { get; set; }
     public DateTimeOffset? SentAt { get; set; }
     public DateTimeOffset? ApprovedAt { get; set; }
+    public ICollection<CustomerElevator> CustomerElevators { get; set; } = new List<CustomerElevator>();
+}
+
+// Created after a consultation requirement is converted by a signed contract.
+// This snapshot becomes the operational source for handover, warranty, and maintenance.
+public sealed class CustomerElevator : Entity
+{
+    public string Code { get; set; } = "";
+    public Guid CustomerId { get; set; }
+    public Customer Customer { get; set; } = null!;
+    public Guid? ConsultationProfileId { get; set; }
+    public ConsultationProfile? ConsultationProfile { get; set; }
+    public Guid? SourceQuotationId { get; set; }
+    public Quotation? SourceQuotation { get; set; }
+    public string? ContractReference { get; set; }
+    public string Name { get; set; } = "";
+    public string ElevatorType { get; set; } = "";
+    public string TechnicalSpecsJson { get; set; } = "{}";
+    public string? InstallationAddress { get; set; }
+    public string? Area { get; set; }
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public string? LocationLabel { get; set; }
+    public string Status { get; set; } = "PENDING_IMPLEMENTATION";
+    public DateTimeOffset? SignedAt { get; set; }
+    public DateTimeOffset? HandedOverAt { get; set; }
+    public DateTimeOffset? WarrantyExpiresAt { get; set; }
 }
 
 public sealed class CatalogCategory : Entity

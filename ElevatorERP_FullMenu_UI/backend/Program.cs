@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using ElevatorERP.Domain;
 using ElevatorERP.Infrastructure;
@@ -201,6 +202,324 @@ app.MapGet("/api/dashboard", async (AppDbContext db) =>
     });
 }).RequirePermission("dashboard.view");
 
+app.MapGet("/api/customers/{id:guid}/overview", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+
+    var customer = await db.Customers
+        .Include(x => x.OwnerUser)
+        .FirstOrDefaultAsync(x => x.Id == id);
+    if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
+
+    var canViewAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canViewAll && customer.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    var profiles = await db.ConsultationProfiles
+        .Where(x => x.CustomerId == id)
+        .Select(x => new { x.Id, x.TechnicalSpecsJson })
+        .ToListAsync();
+    var quotationIds = await db.Quotations
+        .Where(x => x.CustomerId == id)
+        .Select(x => x.Id)
+        .ToListAsync();
+    var elevatorRows = await db.CustomerElevators
+        .Where(x => x.CustomerId == id)
+        .Select(x => new { x.Id, x.Status })
+        .ToListAsync();
+
+    var profileIds = profiles.Select(x => x.Id.ToString()).ToHashSet();
+    var quotationIdSet = quotationIds.Select(x => x.ToString()).ToHashSet();
+    var elevatorIds = elevatorRows.Select(x => x.Id.ToString()).ToHashSet();
+    var activity = await db.AuditLogs
+        .Where(x =>
+            (x.EntityType == nameof(Customer) && x.EntityId == id.ToString()) ||
+            (x.EntityType == nameof(ConsultationProfile) && x.EntityId != null && profileIds.Contains(x.EntityId)) ||
+            (x.EntityType == nameof(Quotation) && x.EntityId != null && quotationIdSet.Contains(x.EntityId)) ||
+            (x.EntityType == nameof(CustomerElevator) && x.EntityId != null && elevatorIds.Contains(x.EntityId)))
+        .OrderByDescending(x => x.CreatedAt)
+        .Take(10)
+        .Select(x => new { x.Id, x.CreatedAt, x.Username, x.Action, x.Module, x.EntityType, x.EntityId, x.Details })
+        .ToListAsync();
+
+    return Results.Ok(new
+    {
+        customer = new
+        {
+            customer.Id,
+            customer.Code,
+            customer.Name,
+            customer.Phone,
+            customer.Email,
+            customer.Address,
+            customer.Source,
+            customer.Status,
+            owner = customer.OwnerUser.DisplayName
+        },
+        summary = new
+        {
+            consultationProfileCount = profiles.Count,
+            requirementCount = profiles.Sum(x => TechnicalSpecFilter.CountSpecifications(x.TechnicalSpecsJson)),
+            quotationCount = quotationIds.Count,
+            customerElevatorCount = elevatorRows.Count,
+            implementationCount = elevatorRows.Count(x => x.Status is "PENDING_IMPLEMENTATION" or "IMPLEMENTING"),
+            warrantyCount = elevatorRows.Count(x => x.Status == "WARRANTY"),
+            maintenanceCount = elevatorRows.Count(x => x.Status == "MAINTENANCE")
+        },
+        recentActivity = activity
+    });
+}).RequirePermission("customer.view");
+
+app.MapGet("/api/customers/{id:guid}/elevators", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+
+    var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == id);
+    if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
+
+    var canViewAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canViewAll && customer.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    var rows = await db.CustomerElevators
+        .Where(x => x.CustomerId == id)
+        .OrderByDescending(x => x.CreatedAt)
+        .Select(x => new
+        {
+            x.Id,
+            x.Code,
+            x.Name,
+            x.ElevatorType,
+            x.InstallationAddress,
+            x.Area,
+            x.Status,
+            x.ContractReference,
+            x.SignedAt,
+            x.HandedOverAt,
+            x.WarrantyExpiresAt,
+            consultationProfileCode = x.ConsultationProfile != null ? x.ConsultationProfile.Code : null,
+            quotationCode = x.SourceQuotation != null ? x.SourceQuotation.Code : null
+        })
+        .ToListAsync();
+
+    return Results.Ok(rows);
+}).RequirePermission("customer.view");
+
+app.MapGet("/api/customers/{id:guid}/customer-360", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+
+    var customer = await db.Customers
+        .Include(x => x.OwnerUser)
+        .FirstOrDefaultAsync(x => x.Id == id);
+    if (customer is null) return Results.NotFound(new { message = "Customer was not found." });
+
+    var canViewAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canViewAll && customer.OwnerUserId != current.Id.Value)
+        return Results.Forbid();
+
+    var profileRows = await db.ConsultationProfiles
+        .Where(x => x.CustomerId == id)
+        .OrderByDescending(x => x.CreatedAt)
+        .Select(x => new
+        {
+            x.Id,
+            x.Code,
+            x.ProfileType,
+            x.Status,
+            x.Source,
+            x.CreatedAt,
+            x.UpdatedAt,
+            x.TechnicalSpecsJson,
+            quotationCount = x.Quotations.Count,
+            customerElevatorCount = x.CustomerElevators.Count
+        })
+        .ToListAsync();
+    var profiles = profileRows.Select(x => new
+    {
+        x.Id,
+        x.Code,
+        x.ProfileType,
+        x.Status,
+        x.Source,
+        x.CreatedAt,
+        x.UpdatedAt,
+        technicalConfigurationCount = TechnicalSpecFilter.CountSpecifications(x.TechnicalSpecsJson),
+        x.quotationCount,
+        x.customerElevatorCount
+    }).ToList();
+
+    var consultationElevators = profileRows.SelectMany(profile =>
+        TechnicalSpecDocument.ReadArray(profile.TechnicalSpecsJson)
+            .Select((specification, index) => new
+            {
+                id = $"{profile.Id}:{TechnicalSpecDocument.ReadString(specification, "id") ?? index.ToString()}",
+                consultationProfileId = profile.Id,
+                consultationProfileCode = profile.Code,
+                consultationProfileStatus = profile.Status,
+                name = TechnicalSpecDocument.ReadString(specification, "name") ?? $"Thang máy {index + 1}",
+                elevatorType = TechnicalSpecDocument.ReadString(specification, "elevatorType"),
+                floors = TechnicalSpecDocument.ReadDouble(specification, "floors"),
+                capacityKg = TechnicalSpecDocument.ReadDouble(specification, "capacityKg"),
+                installationAddress = TechnicalSpecDocument.ReadString(specification, "installationAddress"),
+                area = TechnicalSpecDocument.BuildArea(specification)
+            }))
+        .ToList();
+
+    var quotations = await db.Quotations
+        .Where(x => x.CustomerId == id)
+        .OrderByDescending(x => x.CreatedAt)
+        .Select(x => new
+        {
+            x.Id,
+            x.Code,
+            x.Title,
+            x.Status,
+            x.TotalAmount,
+            x.ConsultationProfileId,
+            consultationProfileCode = x.ConsultationProfile != null ? x.ConsultationProfile.Code : null,
+            x.CreatedAt
+        })
+        .ToListAsync();
+
+    var elevators = await db.CustomerElevators
+        .Where(x => x.CustomerId == id)
+        .OrderByDescending(x => x.CreatedAt)
+        .Select(x => new
+        {
+            x.Id,
+            x.Code,
+            x.Name,
+            x.ElevatorType,
+            x.Status,
+            x.InstallationAddress,
+            x.ContractReference,
+            x.SignedAt,
+            x.HandedOverAt,
+            x.WarrantyExpiresAt,
+            consultationProfileCode = x.ConsultationProfile != null ? x.ConsultationProfile.Code : null,
+            sourceQuotationId = x.SourceQuotationId,
+            sourceQuotationCode = x.SourceQuotation != null ? x.SourceQuotation.Code : null,
+            sourceQuotationTotalAmount = x.SourceQuotation != null ? (decimal?)x.SourceQuotation.TotalAmount : null
+        })
+        .ToListAsync();
+
+    var profileIdSet = profiles.Select(x => x.Id.ToString()).ToHashSet();
+    var quotationIdSet = quotations.Select(x => x.Id.ToString()).ToHashSet();
+    var elevatorIdSet = elevators.Select(x => x.Id.ToString()).ToHashSet();
+    var history = await db.AuditLogs
+        .Where(x =>
+            (x.EntityType == nameof(Customer) && x.EntityId == id.ToString()) ||
+            (x.EntityType == nameof(ConsultationProfile) && x.EntityId != null && profileIdSet.Contains(x.EntityId)) ||
+            (x.EntityType == nameof(Quotation) && x.EntityId != null && quotationIdSet.Contains(x.EntityId)) ||
+            (x.EntityType == nameof(CustomerElevator) && x.EntityId != null && elevatorIdSet.Contains(x.EntityId)))
+        .OrderByDescending(x => x.CreatedAt)
+        .Take(30)
+        .Select(x => new { x.Id, x.CreatedAt, x.Username, x.Action, x.Module, x.EntityType, x.EntityId, x.Details })
+        .ToListAsync();
+
+    return Results.Ok(new
+    {
+        customer = new
+        {
+            customer.Id,
+            customer.Code,
+            customer.Name,
+            customer.Phone,
+            customer.Email,
+            customer.Address,
+            customer.CustomerType,
+            customer.Source,
+            customer.Status,
+            owner = customer.OwnerUser.DisplayName
+        },
+        summary = new
+        {
+            consultationProfileCount = profiles.Count,
+            technicalConfigurationCount = profiles.Sum(x => x.technicalConfigurationCount),
+            quotationCount = quotations.Count,
+            customerElevatorCount = elevators.Count,
+            activeElevatorCount = elevators.Count(x => x.Status is "PENDING_IMPLEMENTATION" or "IMPLEMENTING" or "WARRANTY" or "MAINTENANCE")
+        },
+        consultationProfiles = profiles,
+        consultationElevators,
+        quotations,
+        elevators,
+        history
+    });
+}).RequirePermission("customer.view");
+
+app.MapGet("/api/customers/{id:guid}/history", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == id);
+    if (customer is null) return Results.NotFound(new { message = "Customer was not found." });
+
+    var canViewAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canViewAll && customer.OwnerUserId != current.Id.Value) return Results.Forbid();
+
+    var profileIds = await db.ConsultationProfiles.Where(x => x.CustomerId == id).Select(x => x.Id.ToString()).ToListAsync();
+    var quotationIds = await db.Quotations.Where(x => x.CustomerId == id).Select(x => x.Id.ToString()).ToListAsync();
+    var elevatorIds = await db.CustomerElevators.Where(x => x.CustomerId == id).Select(x => x.Id.ToString()).ToListAsync();
+    return Results.Ok(await db.AuditLogs
+        .Where(x =>
+            (x.EntityType == nameof(Customer) && x.EntityId == id.ToString()) ||
+            (x.EntityType == nameof(ConsultationProfile) && x.EntityId != null && profileIds.Contains(x.EntityId)) ||
+            (x.EntityType == nameof(Quotation) && x.EntityId != null && quotationIds.Contains(x.EntityId)) ||
+            (x.EntityType == nameof(CustomerElevator) && x.EntityId != null && elevatorIds.Contains(x.EntityId)))
+        .OrderByDescending(x => x.CreatedAt)
+        .Select(x => new { x.Id, x.CreatedAt, x.Username, x.Action, x.Module, x.EntityType, x.EntityId, x.Details })
+        .ToListAsync());
+}).RequirePermission("customer.view");
+
+app.MapGet("/api/customers/{id:guid}/care-activities", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+
+    var customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == id);
+    if (customer is null) return Results.NotFound(new { message = "Customer was not found." });
+
+    var canViewAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canViewAll && customer.OwnerUserId != current.Id.Value) return Results.Forbid();
+
+    return Results.Ok(await db.CareActivities
+        .Where(x => x.CustomerId == id)
+        .Include(x => x.AssigneeUser)
+        .OrderByDescending(x => x.ScheduledAt)
+        .Select(x => new
+        {
+            x.Id,
+            x.CareType,
+            x.ScheduledAt,
+            x.Content,
+            x.Result,
+            x.Status,
+            x.NextCareAt,
+            assignee = x.AssigneeUser.DisplayName
+        })
+        .ToListAsync());
+}).RequirePermission("care.view");
+
 app.MapGet("/api/customers", async (
     string? search,
     string? status,
@@ -209,7 +528,6 @@ app.MapGet("/api/customers", async (
     string? elevatorType,
     string? source,
     string? owner,
-    string? area,
     DateTimeOffset? createdFrom,
     DateTimeOffset? createdTo,
     AppDbContext db,
@@ -251,12 +569,6 @@ app.MapGet("/api/customers", async (
     if (!string.IsNullOrWhiteSpace(owner))
         query = query.Where(x => x.OwnerUser.DisplayName == owner);
 
-    if (!string.IsNullOrWhiteSpace(area))
-    {
-        var normalizedArea = area.Trim().ToLower();
-        query = query.Where(x => x.Area != null && x.Area.ToLower().Contains(normalizedArea));
-    }
-
     if (createdFrom is not null)
         query = query.Where(x => x.CreatedAt >= createdFrom);
 
@@ -272,7 +584,6 @@ app.MapGet("/api/customers", async (
             x.Phone,
             x.Email,
             x.Address,
-            x.Area,
             x.ElevatorType,
             x.Latitude,
             x.Longitude,
@@ -327,7 +638,6 @@ app.MapPost("/api/customers", async (
         Phone = phone,
         Email = request.Email?.Trim(),
         Address = request.Address?.Trim(),
-        Area = request.Area?.Trim(),
         Latitude = request.Latitude,
         Longitude = request.Longitude,
         LocationAccuracyMeters = request.LocationAccuracyMeters,
@@ -386,7 +696,6 @@ app.MapPut("/api/customers/{id:guid}", async (
     customer.Phone = phone;
     customer.Email = request.Email?.Trim();
     customer.Address = request.Address?.Trim();
-    customer.Area = request.Area?.Trim();
     customer.Latitude = request.Latitude;
     customer.Longitude = request.Longitude;
     customer.LocationAccuracyMeters = request.LocationAccuracyMeters;
@@ -433,7 +742,8 @@ app.MapDelete("/api/customers/{id:guid}", async (
     var consultationProfileCount = await db.ConsultationProfiles.CountAsync(x => x.CustomerId == id);
     var quotationCount = await db.Quotations.CountAsync(x => x.CustomerId == id);
     var careActivityCount = await db.CareActivities.CountAsync(x => x.CustomerId == id);
-    if (consultationProfileCount > 0 || quotationCount > 0 || careActivityCount > 0)
+    var customerElevatorCount = await db.CustomerElevators.CountAsync(x => x.CustomerId == id);
+    if (consultationProfileCount > 0 || quotationCount > 0 || careActivityCount > 0 || customerElevatorCount > 0)
     {
         return Results.Conflict(new
         {
@@ -507,9 +817,10 @@ app.MapGet("/api/consultation-profiles", async (
     string? statusGroup,
     string? customerType,
     string? elevatorType,
+    string? elevatorTypes,
+    string? technicalConfiguration,
     string? source,
     string? owner,
-    string? area,
     DateTimeOffset? createdFrom,
     DateTimeOffset? createdTo,
     AppDbContext db,
@@ -554,12 +865,6 @@ app.MapGet("/api/consultation-profiles", async (
     if (!string.IsNullOrWhiteSpace(owner))
         query = query.Where(x => x.OwnerUser.DisplayName == owner);
 
-    if (!string.IsNullOrWhiteSpace(area))
-    {
-        var normalizedArea = area.Trim().ToLower();
-        query = query.Where(x => x.Area != null && x.Area.ToLower().Contains(normalizedArea));
-    }
-
     if (createdFrom is not null)
         query = query.Where(x => x.CreatedAt >= createdFrom);
 
@@ -577,7 +882,6 @@ app.MapGet("/api/consultation-profiles", async (
             x.Customer.Phone,
             x.Customer.Email,
             Address = x.Customer.Address,
-            x.Area,
             x.ElevatorType,
             x.Latitude,
             x.Longitude,
@@ -596,6 +900,25 @@ app.MapGet("/api/consultation-profiles", async (
             x.CreatedAt
         })
         .ToListAsync();
+
+    var selectedElevatorTypes = (elevatorTypes ?? string.Empty)
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    if (selectedElevatorTypes.Count > 0)
+    {
+        rows = rows
+            .Where(x => TechnicalSpecFilter.ReadElevatorTypes(x.TechnicalSpecsJson)
+                .Overlaps(selectedElevatorTypes))
+            .ToList();
+    }
+
+    if (technicalConfiguration is "CONFIGURED" or "UNCONFIGURED")
+    {
+        var requiresConfiguration = technicalConfiguration == "CONFIGURED";
+        rows = rows
+            .Where(x => TechnicalSpecFilter.HasAnySpecification(x.TechnicalSpecsJson) == requiresConfiguration)
+            .ToList();
+    }
 
     if (!string.IsNullOrWhiteSpace(search))
     {
@@ -640,7 +963,6 @@ app.MapPost("/api/consultation-profiles", async (
             Phone = phone,
             Email = email,
             Address = request.Address?.Trim(),
-            Area = request.Area?.Trim(),
             ElevatorType = request.ElevatorType?.Trim(),
             Source = request.Source,
             Status = request.Status,
@@ -659,7 +981,6 @@ app.MapPost("/api/consultation-profiles", async (
         customer.Phone = phone;
         customer.Email = email;
         customer.Address = request.Address?.Trim();
-        customer.Area = request.Area?.Trim();
         customer.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
@@ -674,7 +995,6 @@ app.MapPost("/api/consultation-profiles", async (
         Status = string.IsNullOrWhiteSpace(request.Status) ? "NEW" : request.Status.Trim(),
         OwnerUserId = current.Id.Value,
         ProjectAddress = null,
-        Area = request.Area?.Trim(),
         ElevatorType = request.ElevatorType?.Trim(),
         Latitude = null,
         Longitude = null,
@@ -730,13 +1050,11 @@ app.MapPut("/api/consultation-profiles/{id:guid}", async (
     profile.Customer.Phone = request.Phone.Trim();
     profile.Customer.Email = request.Email?.Trim();
     profile.Customer.Address = request.Address?.Trim();
-    profile.Customer.Area = request.Area?.Trim();
     profile.Customer.UpdatedAt = DateTimeOffset.UtcNow;
 
     profile.Source = request.Source;
     profile.Status = request.Status;
     profile.ProjectAddress = null;
-    profile.Area = request.Area?.Trim();
     profile.ElevatorType = request.ElevatorType?.Trim();
     profile.Latitude = null;
     profile.Longitude = null;
@@ -805,6 +1123,152 @@ app.MapPut("/api/consultation-profiles/{id:guid}/status", async (
     await db.SaveChangesAsync();
 
     return Results.NoContent();
+}).RequirePermission("customer.update");
+
+app.MapGet("/api/consultation-profiles/{id:guid}", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+
+    var profile = await db.ConsultationProfiles
+        .Include(x => x.Customer)
+        .Include(x => x.OwnerUser)
+        .FirstOrDefaultAsync(x => x.Id == id);
+    if (profile is null) return Results.NotFound(new { message = "Consultation profile was not found." });
+
+    var canViewAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canViewAll && profile.OwnerUserId != current.Id.Value) return Results.Forbid();
+
+    var quotations = await db.Quotations
+        .Where(x => x.ConsultationProfileId == id)
+        .OrderByDescending(x => x.CreatedAt)
+        .Select(x => new { x.Id, x.Code, x.Title, x.Status, x.TotalAmount, x.ValidUntil, x.CreatedAt })
+        .ToListAsync();
+    var elevators = await db.CustomerElevators
+        .Where(x => x.ConsultationProfileId == id)
+        .OrderByDescending(x => x.CreatedAt)
+        .Select(x => new { x.Id, x.Code, x.Name, x.ElevatorType, x.Status, x.ContractReference, x.CreatedAt })
+        .ToListAsync();
+    var configurationCount = TechnicalSpecFilter.CountSpecifications(profile.TechnicalSpecsJson);
+
+    return Results.Ok(new
+    {
+        profile = new
+        {
+            profile.Id,
+            profile.Code,
+            profile.CustomerId,
+            profile.ProfileType,
+            profile.Source,
+            profile.Status,
+            profile.ProjectAddress,
+            profile.Area,
+            profile.ElevatorType,
+            profile.Latitude,
+            profile.Longitude,
+            profile.LocationAccuracyMeters,
+            profile.LocationLabel,
+            profile.Notes,
+            profile.TechnicalSpecsJson,
+            profile.AttachmentLinksJson,
+            profile.IsKpiEligible,
+            profile.KpiCountedAt,
+            profile.KpiExcludedReason,
+            profile.CreatedAt,
+            profile.UpdatedAt,
+            owner = profile.OwnerUser.DisplayName
+        },
+        customer = new
+        {
+            profile.Customer.Id,
+            profile.Customer.Code,
+            profile.Customer.Name,
+            profile.Customer.Phone,
+            profile.Customer.Email,
+            profile.Customer.Address
+        },
+        summary = new { technicalConfigurationCount = configurationCount, quotationCount = quotations.Count, customerElevatorCount = elevators.Count },
+        quotations,
+        customerElevators = elevators
+    });
+}).RequirePermission("customer.view");
+
+app.MapGet("/api/consultation-profiles/{id:guid}/history", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    var profile = await db.ConsultationProfiles.FirstOrDefaultAsync(x => x.Id == id);
+    if (profile is null) return Results.NotFound(new { message = "Consultation profile was not found." });
+
+    var canViewAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canViewAll && profile.OwnerUserId != current.Id.Value) return Results.Forbid();
+
+    var quotationIds = await db.Quotations.Where(x => x.ConsultationProfileId == id).Select(x => x.Id.ToString()).ToListAsync();
+    var elevatorIds = await db.CustomerElevators.Where(x => x.ConsultationProfileId == id).Select(x => x.Id.ToString()).ToListAsync();
+    return Results.Ok(await db.AuditLogs
+        .Where(x =>
+            (x.EntityType == nameof(ConsultationProfile) && x.EntityId == id.ToString()) ||
+            (x.EntityType == nameof(Quotation) && x.EntityId != null && quotationIds.Contains(x.EntityId)) ||
+            (x.EntityType == nameof(CustomerElevator) && x.EntityId != null && elevatorIds.Contains(x.EntityId)))
+        .OrderByDescending(x => x.CreatedAt)
+        .Select(x => new { x.Id, x.CreatedAt, x.Username, x.Action, x.Module, x.EntityType, x.EntityId, x.Details })
+        .ToListAsync());
+}).RequirePermission("customer.view");
+
+app.MapPost("/api/consultation-profiles/{id:guid}/copy-technical-configuration", async (
+    Guid id,
+    CopyTechnicalConfigurationRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    var target = await db.ConsultationProfiles.FirstOrDefaultAsync(x => x.Id == id);
+    var source = await db.ConsultationProfiles.FirstOrDefaultAsync(x => x.Id == request.SourceProfileId);
+    if (target is null || source is null) return Results.NotFound(new { message = "Consultation profile was not found." });
+    if (target.CustomerId != source.CustomerId)
+        return Results.BadRequest(new { message = "Only configurations of the same customer can be copied." });
+
+    var canUpdateAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canUpdateAll && target.OwnerUserId != current.Id.Value) return Results.Forbid();
+
+    var sourceConfigurations = TechnicalSpecDocument.ReadArray(source.TechnicalSpecsJson);
+    if (sourceConfigurations.Count == 0)
+        return Results.BadRequest(new { message = "The source profile has no technical configuration to copy." });
+
+    var selected = string.IsNullOrWhiteSpace(request.ConfigurationId)
+        ? sourceConfigurations
+        : sourceConfigurations.Where(x => TechnicalSpecDocument.ReadString(x, "id") == request.ConfigurationId).ToList();
+    if (selected.Count == 0)
+        return Results.NotFound(new { message = "Technical configuration was not found." });
+
+    var targetConfigurations = TechnicalSpecDocument.ReadArray(target.TechnicalSpecsJson);
+    foreach (var configuration in selected)
+        targetConfigurations.Add(TechnicalSpecDocument.CloneForCopy(configuration));
+
+    target.TechnicalSpecsJson = TechnicalSpecDocument.Serialize(targetConfigurations);
+    target.UpdatedAt = DateTimeOffset.UtcNow;
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "COPY_TECHNICAL_CONFIGURATION",
+        Module = "ConsultationProfiles",
+        EntityType = nameof(ConsultationProfile),
+        EntityId = target.Id.ToString(),
+        Details = $"{target.Code} <= {source.Code} ({selected.Count})",
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { copiedCount = selected.Count, technicalSpecsJson = target.TechnicalSpecsJson });
 }).RequirePermission("customer.update");
 
 app.MapGet("/api/quotations", async (
@@ -1027,6 +1491,211 @@ app.MapPut("/api/quotations/{id:guid}/status", async (
 
     return Results.NoContent();
 }).RequirePermission("customer.update");
+
+app.MapPost("/api/quotations/{id:guid}/confirm-contract", async (
+    Guid id,
+    ConfirmQuotationContractRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (string.IsNullOrWhiteSpace(request.ContractReference))
+        return Results.BadRequest(new { message = "Contract reference is required." });
+
+    var quotation = await db.Quotations
+        .Include(x => x.Customer)
+        .Include(x => x.ConsultationProfile)
+        .FirstOrDefaultAsync(x => x.Id == id);
+    if (quotation is null) return Results.NotFound(new { message = "Quotation was not found." });
+
+    var canUpdateAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canUpdateAll && quotation.OwnerUserId != current.Id.Value) return Results.Forbid();
+    if (quotation.Status is not ("ACCEPTED" or "APPROVED" or "SIGNED"))
+        return Results.Conflict(new { message = "Quotation must be accepted or approved before confirming a contract." });
+    if (await db.CustomerElevators.AnyAsync(x => x.SourceQuotationId == quotation.Id))
+        return Results.Conflict(new { message = "This quotation has already been converted to customer elevator assets." });
+
+    var sourceSpecs = TechnicalSpecDocument.ReadArray(quotation.ElevatorSpecsJson);
+    if (sourceSpecs.Count == 0 && quotation.ConsultationProfile is not null)
+        sourceSpecs = TechnicalSpecDocument.ReadArray(quotation.ConsultationProfile.TechnicalSpecsJson);
+    if (sourceSpecs.Count == 0)
+        return Results.BadRequest(new { message = "A technical configuration is required before a contract can create elevator assets." });
+
+    var signedAt = request.SignedAt ?? DateTimeOffset.UtcNow;
+    var assetCount = await db.CustomerElevators.IgnoreQueryFilters().CountAsync();
+    var createdAssets = new List<CustomerElevator>();
+    foreach (var specification in sourceSpecs)
+    {
+        assetCount++;
+        var technicalSpecJson = specification.ToJsonString();
+        var asset = new CustomerElevator
+        {
+            Code = $"TM-{DateTimeOffset.UtcNow:yyyy}-{assetCount:000000}",
+            CustomerId = quotation.CustomerId,
+            ConsultationProfileId = quotation.ConsultationProfileId,
+            SourceQuotationId = quotation.Id,
+            ContractReference = request.ContractReference.Trim(),
+            Name = TechnicalSpecDocument.ReadString(specification, "name") ?? $"Thang may {assetCount}",
+            ElevatorType = TechnicalSpecDocument.ReadString(specification, "elevatorType") ?? string.Empty,
+            TechnicalSpecsJson = technicalSpecJson,
+            InstallationAddress = TechnicalSpecDocument.ReadString(specification, "installationAddress"),
+            Area = TechnicalSpecDocument.BuildArea(specification),
+            Latitude = TechnicalSpecDocument.ReadDouble(specification, "latitude"),
+            Longitude = TechnicalSpecDocument.ReadDouble(specification, "longitude"),
+            LocationLabel = TechnicalSpecDocument.ReadString(specification, "locationLabel"),
+            Status = "PENDING_IMPLEMENTATION",
+            SignedAt = signedAt,
+            WarrantyExpiresAt = request.WarrantyExpiresAt
+        };
+        createdAssets.Add(asset);
+        db.CustomerElevators.Add(asset);
+    }
+
+    quotation.Status = "SIGNED";
+    quotation.ApprovedAt ??= signedAt;
+    quotation.UpdatedAt = DateTimeOffset.UtcNow;
+    if (quotation.ConsultationProfile is not null)
+    {
+        quotation.ConsultationProfile.Status = "SIGNED";
+        quotation.ConsultationProfile.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+    quotation.Customer.Status = "SIGNED";
+    quotation.Customer.UpdatedAt = DateTimeOffset.UtcNow;
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "CONFIRM_CONTRACT",
+        Module = "Quotations",
+        EntityType = nameof(Quotation),
+        EntityId = quotation.Id.ToString(),
+        Details = $"{quotation.Code} -> {request.ContractReference.Trim()} ({createdAssets.Count} elevator assets)",
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    foreach (var asset in createdAssets)
+    {
+        db.AuditLogs.Add(new AuditLog
+        {
+            UserId = current.Id,
+            Username = current.Username,
+            Action = "CREATE_FROM_CONTRACT",
+            Module = "CustomerElevators",
+            EntityType = nameof(CustomerElevator),
+            EntityId = asset.Id.ToString(),
+            Details = $"{asset.Code} from {quotation.Code}",
+            IpAddress = http.Connection.RemoteIpAddress?.ToString()
+        });
+    }
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/customer-elevators/{createdAssets[0].Id}", new
+    {
+        quotationId = quotation.Id,
+        quotationCode = quotation.Code,
+        contractReference = request.ContractReference.Trim(),
+        customerElevators = createdAssets.Select(x => new { x.Id, x.Code, x.Name, x.Status })
+    });
+}).RequirePermission("customer.update");
+
+app.MapGet("/api/customer-elevators/{id:guid}", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    var elevator = await db.CustomerElevators
+        .Include(x => x.Customer)
+        .Include(x => x.ConsultationProfile)
+        .Include(x => x.SourceQuotation)
+        .FirstOrDefaultAsync(x => x.Id == id);
+    if (elevator is null) return Results.NotFound(new { message = "Customer elevator was not found." });
+
+    var canViewAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canViewAll && elevator.Customer.OwnerUserId != current.Id.Value) return Results.Forbid();
+
+    return Results.Ok(new
+    {
+        elevator.Id,
+        elevator.Code,
+        elevator.Name,
+        elevator.ElevatorType,
+        elevator.TechnicalSpecsJson,
+        elevator.InstallationAddress,
+        elevator.Area,
+        elevator.Latitude,
+        elevator.Longitude,
+        elevator.LocationLabel,
+        elevator.Status,
+        elevator.ContractReference,
+        elevator.SignedAt,
+        elevator.HandedOverAt,
+        elevator.WarrantyExpiresAt,
+        elevator.CreatedAt,
+        elevator.UpdatedAt,
+        customer = new { elevator.Customer.Id, elevator.Customer.Code, elevator.Customer.Name, elevator.Customer.Phone },
+        consultationProfile = elevator.ConsultationProfile is null ? null : new { elevator.ConsultationProfile.Id, elevator.ConsultationProfile.Code },
+        quotation = elevator.SourceQuotation is null ? null : new { elevator.SourceQuotation.Id, elevator.SourceQuotation.Code }
+    });
+}).RequirePermission("customer.view");
+
+app.MapPut("/api/customer-elevators/{id:guid}/status", async (
+    Guid id,
+    CustomerElevatorStatusRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (string.IsNullOrWhiteSpace(request.Status)) return Results.BadRequest(new { message = "Status is required." });
+    var elevator = await db.CustomerElevators.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
+    if (elevator is null) return Results.NotFound(new { message = "Customer elevator was not found." });
+
+    var canUpdateAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canUpdateAll && elevator.Customer.OwnerUserId != current.Id.Value) return Results.Forbid();
+
+    var previousStatus = elevator.Status;
+    elevator.Status = request.Status.Trim();
+    elevator.HandedOverAt = request.HandedOverAt ?? elevator.HandedOverAt;
+    elevator.WarrantyExpiresAt = request.WarrantyExpiresAt ?? elevator.WarrantyExpiresAt;
+    elevator.UpdatedAt = DateTimeOffset.UtcNow;
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "UPDATE_STATUS",
+        Module = "CustomerElevators",
+        EntityType = nameof(CustomerElevator),
+        EntityId = elevator.Id.ToString(),
+        Details = $"{elevator.Code}: {previousStatus} -> {elevator.Status}",
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequirePermission("customer.update");
+
+app.MapGet("/api/customer-elevators/{id:guid}/history", async (
+    Guid id,
+    AppDbContext db,
+    CurrentUser current) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    var elevator = await db.CustomerElevators.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
+    if (elevator is null) return Results.NotFound(new { message = "Customer elevator was not found." });
+    var canViewAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canViewAll && elevator.Customer.OwnerUserId != current.Id.Value) return Results.Forbid();
+
+    return Results.Ok(await db.AuditLogs
+        .Where(x => x.EntityType == nameof(CustomerElevator) && x.EntityId == id.ToString())
+        .OrderByDescending(x => x.CreatedAt)
+        .Select(x => new { x.Id, x.CreatedAt, x.Username, x.Action, x.Module, x.Details })
+        .ToListAsync());
+}).RequirePermission("customer.view");
 
 app.MapGet("/api/care-activities", async (
     DateTimeOffset? from,
@@ -1605,7 +2274,6 @@ record CustomerRequest(
     string Phone,
     string? Email,
     string? Address,
-    string? Area,
     string? ElevatorType,
     double? Latitude,
     double? Longitude,
@@ -1624,7 +2292,6 @@ record ConsultationProfileRequest(
     string Phone,
     string? Email,
     string? Address,
-    string? Area,
     string? ElevatorType,
     double? Latitude,
     double? Longitude,
@@ -1650,6 +2317,129 @@ record QuotationRequest(
     decimal? VatAmount,
     decimal? TotalAmount,
     string? Notes);
+record CopyTechnicalConfigurationRequest(Guid SourceProfileId, string? ConfigurationId);
+record ConfirmQuotationContractRequest(string ContractReference, DateTimeOffset? SignedAt, DateTimeOffset? WarrantyExpiresAt);
+record CustomerElevatorStatusRequest(string Status, DateTimeOffset? HandedOverAt, DateTimeOffset? WarrantyExpiresAt);
+
+static class TechnicalSpecFilter
+{
+    public static HashSet<string> ReadElevatorTypes(string? technicalSpecsJson)
+    {
+        var elevatorTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(technicalSpecsJson)) return elevatorTypes;
+
+        try
+        {
+            using var document = JsonDocument.Parse(technicalSpecsJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return elevatorTypes;
+
+            foreach (var specification in document.RootElement.EnumerateArray())
+            {
+                if (specification.ValueKind != JsonValueKind.Object
+                    || !specification.TryGetProperty("elevatorType", out var elevatorType)
+                    || elevatorType.ValueKind != JsonValueKind.String)
+                    continue;
+
+                var value = elevatorType.GetString();
+                if (!string.IsNullOrWhiteSpace(value)) elevatorTypes.Add(value);
+            }
+        }
+        catch (JsonException)
+        {
+            // Existing legacy data can contain an invalid or non-array JSON value.
+        }
+
+        return elevatorTypes;
+    }
+
+    public static bool HasAnySpecification(string? technicalSpecsJson)
+    {
+        if (string.IsNullOrWhiteSpace(technicalSpecsJson)) return false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(technicalSpecsJson);
+            return document.RootElement.ValueKind == JsonValueKind.Array
+                && document.RootElement.GetArrayLength() > 0;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    public static int CountSpecifications(string? technicalSpecsJson)
+    {
+        if (string.IsNullOrWhiteSpace(technicalSpecsJson)) return 0;
+
+        try
+        {
+            using var document = JsonDocument.Parse(technicalSpecsJson);
+            return document.RootElement.ValueKind == JsonValueKind.Array
+                ? document.RootElement.GetArrayLength()
+                : 0;
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
+    }
+}
+
+static class TechnicalSpecDocument
+{
+    public static List<JsonObject> ReadArray(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return [];
+        try
+        {
+            if (JsonNode.Parse(value) is not JsonArray array) return [];
+            return array.OfType<JsonObject>().ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    public static JsonObject CloneForCopy(JsonObject source)
+    {
+        var copy = source.DeepClone().AsObject();
+        copy["id"] = Guid.NewGuid().ToString("N");
+        var name = ReadString(copy, "name");
+        if (!string.IsNullOrWhiteSpace(name)) copy["name"] = $"{name} - Ban sao";
+        return copy;
+    }
+
+    public static string Serialize(IEnumerable<JsonObject> configurations)
+    {
+        var array = new JsonArray();
+        foreach (var configuration in configurations) array.Add(configuration);
+        return array.ToJsonString();
+    }
+
+    public static string? ReadString(JsonObject source, string propertyName)
+    {
+        if (source[propertyName] is not JsonValue value) return null;
+        return value.TryGetValue<string>(out var result) ? result?.Trim() : null;
+    }
+
+    public static double? ReadDouble(JsonObject source, string propertyName)
+    {
+        if (source[propertyName] is not JsonValue value) return null;
+        if (value.TryGetValue<double>(out var number)) return number;
+        if (value.TryGetValue<string>(out var text)
+            && double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out number)) return number;
+        return null;
+    }
+
+    public static string? BuildArea(JsonObject source)
+    {
+        var ward = ReadString(source, "installationWard");
+        var province = ReadString(source, "installationProvince");
+        return string.Join(", ", new[] { ward, province }.Where(x => !string.IsNullOrWhiteSpace(x)));
+    }
+}
 record QuotationStatusRequest(string Status);
 record CareRequest(
     Guid CustomerId,
