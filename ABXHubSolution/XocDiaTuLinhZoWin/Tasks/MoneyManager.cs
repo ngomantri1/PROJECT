@@ -35,6 +35,14 @@ namespace XocDiaTuLinhZoWin.Tasks
         /// <summary>Gọi sau khi có kết quả WIN/LOSS (true/false).</summary>
         public void OnRoundResult(bool win)
         {
+            if (MoneyHelper.ConsumeAutoResetToLevel1())
+            {
+                _i = 0;
+                _needDoubleNext = false;
+                _usedDoubleThisRound = false;
+                return;
+            }
+
             switch (_id)
             {
                 case "IncreaseWhenLose":   // thua ↑1 mức, thắng → về mức 1
@@ -110,6 +118,25 @@ namespace XocDiaTuLinhZoWin.Tasks
                         {
                             // thua => giữ nguyên mức
                             MoneyHelper.Logger?.Invoke($"[S7] MoneyManager: LOSS => keep step={_i}");
+                        }
+
+                        break;
+                    }
+
+                case "WinUpLoseDown":
+                    {
+                        _needDoubleNext = false;
+                        var before = _i;
+
+                        if (win)
+                        {
+                            _i = (_i + 1 < _seq.Length ? _i + 1 : 0);
+                            MoneyHelper.Logger?.Invoke($"[S8] MoneyManager: WIN => step {before} -> {_i}");
+                        }
+                        else
+                        {
+                            _i = Math.Max(0, _i - 1);
+                            MoneyHelper.Logger?.Invoke($"[S8] MoneyManager: LOSS => step {before} -> {_i}");
                         }
 
                         break;

@@ -43,6 +43,8 @@ namespace XocDiaTuLinhHit.Tasks
         public double DecisionPercent { get; init; }
         // Ngưỡng giây còn lại để vào tiền. HIT dùng progress 0..1, quy đổi theo ván 20s.
         public int DecisionSeconds { get; init; } = 10;
+        public bool AutoResetStakeOnNonNegativeWin { get; init; }
+        public Func<bool>? ConsumeAutoResetStakeRequest { get; init; }
 
         // Trạng thái chiến lược (lưu Step/PreferLarger/.)
         public DecisionState State { get; init; }

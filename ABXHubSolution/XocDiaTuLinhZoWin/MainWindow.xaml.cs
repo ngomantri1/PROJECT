@@ -727,6 +727,8 @@ Ví dụ không hợp lệ:
             public List<long[]> RunStakeChains { get; set; } = new();
             public long[] RunStakeChainTotals { get; set; } = Array.Empty<long>();
             public double RunDecisionPercent { get; set; } = 0;
+            public bool RunAutoResetStakeOnNonNegativeWin { get; set; } = false;
+            public bool AutoResetStakeRequested { get; set; } = false;
             public bool CutStopTriggered { get; set; } = false;
 
             public CancellationTokenSource? TaskCts { get; set; }
@@ -3119,15 +3121,12 @@ Ví dụ không hợp lệ:
         {
             try
             {
-                var isS7 = string.Equals(GetMoneyStrategyFromUI(), "WinUpLoseKeep", StringComparison.OrdinalIgnoreCase);
                 if (ChkS7ResetOnProfit != null)
                 {
-                    ChkS7ResetOnProfit.Visibility = isS7 ? Visibility.Visible : Visibility.Collapsed;
-                    if (isS7)
-                        ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
+                    ChkS7ResetOnProfit.Visibility = Visibility.Visible;
+                    ChkS7ResetOnProfit.IsChecked = _cfg.S7ResetOnProfit;
                 }
-                if (!IsAnyTabRunning() || IsActiveTabRunning())
-                    MoneyHelper.S7ResetOnProfit = _cfg.S7ResetOnProfit;
+                MoneyHelper.S7ResetOnProfit = false;
             }
             catch { }
         }
@@ -5409,14 +5408,17 @@ Ví dụ không hợp lệ:
 
             tab.WinTotal += net;
             tab.Stats.TotalProfit += net;
+            if (_cfg.S7ResetOnProfit && tab.WinTotal >= 0)
+            {
+                var beforeReset = tab.WinTotal;
+                tab.WinTotal = 0;
+                MoneyHelper.RequestAutoResetToLevel1();
+                Log($"[MONEY][AUTO-RESET-NONNEG] winTotalBefore={beforeReset:N0} | netDelta={net:N0} | strategy={moneyStrategyId} | tab={tab.Id}");
+            }
             if (ReferenceEquals(_activeTab, tab))
                 _winTotal = tab.WinTotal;
 
-            try
-            {
-                XocDiaTuLinhZoWin.Tasks.MoneyHelper.NotifyTempProfit(moneyStrategyId, net);
-            }
-            catch { /* ignore */ }
+            // Reset mới dựa trên tiền thắng lũy kế, không còn dùng lãi tạm của S7.
 
             if (ReferenceEquals(_activeTab, tab) && LblWin != null)
                 LblWin.Text = tab.WinTotal.ToString("N0");
@@ -7348,9 +7350,6 @@ Ví dụ không hợp lệ:
     }
 
 }
-
-
-
 
 
 

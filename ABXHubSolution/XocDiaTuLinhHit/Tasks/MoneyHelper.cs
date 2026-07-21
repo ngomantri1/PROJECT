@@ -4,6 +4,12 @@ namespace XocDiaTuLinhHit.Tasks
 {
     internal static class MoneyHelper
     {
+        private static int _autoResetRequested;
+
+        public static void RequestAutoResetToLevel1() => Interlocked.Exchange(ref _autoResetRequested, 1);
+
+        internal static bool ConsumeAutoResetToLevel1() => Interlocked.Exchange(ref _autoResetRequested, 0) == 1;
+
         // ====== NEW: Logger để bắn log ra file (gắn từ MainWindow) ======
         public static Action<string>? Logger { get; set; }
         public static bool S7ResetOnProfit { get; set; } = true;
@@ -195,6 +201,25 @@ namespace XocDiaTuLinhHit.Tasks
                         break;
                     }
 
+                case "WinUpLoseDown":
+                    {
+                        var beforeStep = step;
+
+                        if (win == true)
+                        {
+                            step = (step + 1) % n;
+                            S7Log($"[S8] UpdateAfterRound: WIN => step {beforeStep} -> {step}");
+                        }
+                        else if (win == false)
+                        {
+                            step = Math.Max(0, step - 1);
+                            S7Log($"[S8] UpdateAfterRound: LOSS => step {beforeStep} -> {step}");
+                        }
+
+                        v2DoublePhase = false;
+                        break;
+                    }
+
                 default:
                     if (win == true || win == null) step = 0;
                     else step = (step + 1) % n;
@@ -228,6 +253,14 @@ namespace XocDiaTuLinhHit.Tasks
             ref double profitOnCurrentChain,
             bool? win)
         {
+            if (ConsumeAutoResetToLevel1())
+            {
+                chainIndex = 0;
+                levelIndex = 0;
+                profitOnCurrentChain = 0;
+                return;
+            }
+
             int chainCount = chains?.Length ?? 0;
             if (chainCount == 0) return;
 
