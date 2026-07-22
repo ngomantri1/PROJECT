@@ -333,3 +333,14 @@ Mobile construction photos should initially use standard camera/file input, clie
 - Never remove the demo-data distinction for localStorage-backed modules.
 - Never require a paid Google Maps/Places API key for the approved free installation-location workflow unless the business explicitly accepts the cost and changes the architecture.
 - Never expose location radius/accuracy in normal configuration UI unless there is a real dispatch/geofence requirement.
+
+## 13. Deployment status and operating rules (2026-07-22)
+
+- The first Ubuntu VPS deployment has been validated with Docker Compose: PostgreSQL, Redis, backend, frontend and Nginx are running; the ERP is reachable through HTTP.
+- The VPS is prepared with Docker Engine, Docker Compose plugin and UFW. Only SSH, HTTP and HTTPS are intended to be publicly reachable; PostgreSQL is bound to loopback and Redis remains internal.
+- Production uses a server-only `.env`, absolute persistent paths under `/opt/elevator-erp/data`, generated secrets and `ENABLE_DEMO_SEED=false`.
+- Source code is stored in a private GitHub repository. Initial deployment may use archive/SCP; normal code updates use Git commit, push, server `git pull --ff-only`, then `docker compose up -d --build`.
+- During the current test period, local and VPS data may be synchronized deliberately. Database transfer must use a PostgreSQL SQL dump (`pg_dump` and `psql` restore), never a raw copy of `.data/postgres` between Windows and Linux.
+- Uploads and Data Protection keys are transferred separately from `.data/uploads` and `.data/data-protection-keys`. A database restore overwrites VPS database content and must be treated as a controlled test-data sync.
+- The complete copy-paste operational procedure is maintained in `docs/DEPLOYMENT_CHECKLIST.md`. It uses placeholders such as `<IP_SERVER>` and must never contain a real production password or secret.
+- The next production hardening milestone is domain + HTTPS, backup automation and monitoring before real customer data is used.

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { CopyOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Badge, Button, Input, InputNumber, Select, Typography } from 'antd';
 
 export type TechnicalFloorHeight = { id?: string; floorName?: string; heightMm?: number };
@@ -35,6 +35,7 @@ type Props = {
   onChange: (nextValue: TechnicalConfigurationValues) => void;
   locationExtra?: ReactNode;
   attachmentsExtra?: ReactNode;
+  contactAddress?: string;
   disabled?: boolean;
 };
 
@@ -53,7 +54,7 @@ function floorId(index: number) {
   return `floor-${Date.now()}-${index}`;
 }
 
-export default function TechnicalConfigurationForm({ value, onChange, locationExtra, attachmentsExtra, disabled = false }: Props) {
+export default function TechnicalConfigurationForm({ value, onChange, locationExtra, attachmentsExtra, contactAddress, disabled = false }: Props) {
   const patch = (next: Partial<TechnicalConfigurationValues>) => onChange({ ...value, ...next });
   const floors = value.floorHeights ?? [];
 
@@ -105,7 +106,10 @@ export default function TechnicalConfigurationForm({ value, onChange, locationEx
 
       <div className='technical-section-title'>Vị trí lắp đặt</div>
       <div className='technical-grid'>
-        <label><span>Địa chỉ công trình / vị trí đặt thang <b className='required-marker'>*</b></span><Input disabled={disabled} value={value.installationAddress} onChange={(event) => patch({ installationAddress: event.target.value })} /></label>
+        <label>
+          <span className='technical-installation-address-head'><span>Địa chỉ công trình / vị trí đặt thang <b className='required-marker'>*</b></span>{contactAddress && <Button className='technical-copy-contact-button' disabled={disabled} size='small' icon={<CopyOutlined />} onClick={() => patch({ installationAddress: contactAddress })}>Dùng địa chỉ liên hệ</Button>}</span>
+          <Input disabled={disabled} value={value.installationAddress} onChange={(event) => patch({ installationAddress: event.target.value })} />
+        </label>
         <div className='technical-grid five-columns'>
           <label><span>Phường / xã</span><Input disabled={disabled} value={value.installationWard} onChange={(event) => patch({ installationWard: event.target.value })} /></label>
           <label><span>Tỉnh / thành phố</span><Input disabled={disabled} value={value.installationProvince} onChange={(event) => patch({ installationProvince: event.target.value })} /></label>

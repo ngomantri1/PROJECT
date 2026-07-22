@@ -1235,6 +1235,7 @@ app.MapGet("/api/consultation-profiles/{id:guid}", async (
         {
             profile.Customer.Id,
             profile.Customer.Code,
+            profile.Customer.CustomerType,
             profile.Customer.Name,
             profile.Customer.Phone,
             profile.Customer.Email,

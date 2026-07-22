@@ -249,3 +249,20 @@
 - [ ] Camera upload and unreliable-network retry.
 - [ ] Nginx API routing, upload size and future websocket upgrade.
 - [ ] Backup restore into a clean environment.
+
+## 14. Production operations and deployment follow-up
+
+### Before real customer data
+
+- [ ] Attach production domain and configure HTTPS/TLS in Nginx; change CORS to the final HTTPS origin.
+- [ ] Restrict or disable public Swagger outside explicitly authorized administration access.
+- [ ] Create scheduled backups for PostgreSQL, uploads and Data Protection keys; copy backups to storage outside the VPS and test restoration.
+- [ ] Add service health monitoring, disk-space alerting and error-log retention for Docker/Nginx/backend.
+- [ ] Harden SSH access: use key-only login, disable password/root login where the server-access process permits, and restrict administration IPs when possible.
+
+### Current test deployment workflow
+
+- [ ] Use `docs/DEPLOYMENT_CHECKLIST.md` as the only copy-paste deployment runbook; retain placeholders such as `<IP_SERVER>` rather than committing real host details or secrets.
+- [ ] For code-only updates: local commit/push, VPS `git pull --ff-only`, then `docker compose up -d --build` and verify `docker compose ps` plus the web/API health endpoints.
+- [ ] For deliberate local-to-VPS test-data sync: export PostgreSQL with `pg_dump`, transfer SQL plus uploads and Data Protection keys, back up VPS data, restore with application containers stopped, then restart the stack.
+- [ ] Stop using local-to-VPS database overwrites once real production data begins; switch to migrations and production backup/restore procedures only.

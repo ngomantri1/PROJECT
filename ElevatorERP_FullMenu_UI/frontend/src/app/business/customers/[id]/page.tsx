@@ -10,6 +10,7 @@ import { AppstoreOutlined, ArrowLeftOutlined, BuildOutlined, CalendarOutlined, C
 import dayjs from 'dayjs';
 import AppStatusTag from '@/components/AppStatusTag';
 import Customer360TableActions from '@/components/Customer360TableActions';
+import ConsultationProfileEditDrawer from '@/components/ConsultationProfileEditDrawer';
 import { api } from '@/lib/api';
 
 type ConsultationProfile = {
@@ -262,6 +263,8 @@ export default function Customer360Page() {
   const [careActivities, setCareActivities] = useState<CareActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [editingProfileId, setEditingProfileId] = useState<string>();
+  const [editingConfigurationId, setEditingConfigurationId] = useState<string>();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -343,14 +346,9 @@ export default function Customer360Page() {
     router.replace(`/business/customers/${customerId}?${nextSearchParams.toString()}`);
   };
 
-  const configurationUrl = (item: ConsultationElevator, mode?: 'edit') => {
-    const query = new URLSearchParams({
-      returnTo: 'customer360',
-      customerId,
-      customerReturnTo: returnTo === 'consultation-profiles' ? 'consultation-profiles' : 'customers',
-    });
-    if (mode === 'edit') query.set('mode', 'edit');
-    return `/consultation-profiles/${item.consultationProfileId}/configurations/${item.configurationId}?${query.toString()}`;
+  const openProfileEditor = (profileId: string, configurationId?: string) => {
+    setEditingProfileId(profileId);
+    setEditingConfigurationId(configurationId);
   };
 
   const profileColumns: ColumnsType<ConsultationProfile> = [
@@ -360,7 +358,7 @@ export default function Customer360Page() {
     { title: 'Cấu hình thang', dataIndex: 'technicalConfigurationCount', align: 'right', width: 150 },
     { title: 'Báo giá', dataIndex: 'quotationCount', align: 'right', width: 110 },
     { title: 'Tạo ngày', dataIndex: 'createdAt', width: 130, render: (value) => dayjs(value).format('DD/MM/YYYY') },
-    { title: 'Thao tác', key: 'actions', width: 116, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(`/consultation-profiles/${item.id}`)} onEdit={() => router.push(`/customers?profileId=${item.id}`)} viewLabel='Xem hồ sơ tư vấn' editLabel='Sửa hồ sơ tư vấn' moreItems={[{ key: 'quotations', label: 'Mở báo giá liên kết', onClick: () => router.push(`/quotations?consultationProfileId=${item.id}`) }]} /> },
+    { title: 'Thao tác', key: 'actions', width: 116, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(`/consultation-profiles/${item.id}`)} onEdit={() => openProfileEditor(item.id)} viewLabel='Xem hồ sơ tư vấn' editLabel='Sửa hồ sơ tư vấn' moreItems={[{ key: 'quotations', label: 'Mở báo giá liên kết', onClick: () => router.push(`/quotations?consultationProfileId=${item.id}`) }]} /> },
   ];
 
   const consultationProfileRowProps = (profile: ConsultationProfile) => ({
@@ -379,14 +377,14 @@ export default function Customer360Page() {
   ];
 
   const consultationElevatorColumns: ColumnsType<ConsultationElevator> = [
-    { title: 'Tên thang', dataIndex: 'name', width: 190, render: (_, item) => <Tooltip title='Xem cấu hình kỹ thuật'><Typography.Link className='record-link' onClick={() => router.push(configurationUrl(item))}>{item.name}</Typography.Link></Tooltip> },
+    { title: 'Tên thang', dataIndex: 'name', width: 190, render: (_, item) => <Tooltip title='Xem cấu hình kỹ thuật'><Typography.Link className='record-link' onClick={() => openProfileEditor(item.consultationProfileId, item.configurationId)}>{item.name}</Typography.Link></Tooltip> },
     { title: 'Loại thang máy', dataIndex: 'elevatorType', width: 160, render: (value) => elevatorTypeLabel(value) },
     { title: 'Số tầng', dataIndex: 'floors', align: 'right', width: 100, render: (value) => value ?? '-' },
     { title: 'Tải trọng', dataIndex: 'capacityKg', align: 'right', width: 130, render: (value) => value ? `${value} kg` : '-' },
     { title: 'Hồ sơ nguồn', dataIndex: 'consultationProfileCode', width: 155, render: (_, item) => <Typography.Link className='record-link record-link-code' onClick={() => router.push(`/consultation-profiles/${item.consultationProfileId}`)}>{item.consultationProfileCode}</Typography.Link> },
     { title: 'Trạng thái hồ sơ', dataIndex: 'consultationProfileStatus', width: 155, render: (value) => <StatusTag value={value} /> },
     { title: 'Vị trí lắp đặt', dataIndex: 'installationAddress', render: (value, item) => value || item.area || '-' },
-    { title: 'Thao tác', key: 'actions', width: 96, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(configurationUrl(item))} onEdit={() => router.push(configurationUrl(item, 'edit'))} viewLabel='Xem cấu hình kỹ thuật' editLabel='Sửa cấu hình kỹ thuật' /> },
+    { title: 'Thao tác', key: 'actions', width: 96, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => openProfileEditor(item.consultationProfileId, item.configurationId)} onEdit={() => openProfileEditor(item.consultationProfileId, item.configurationId)} viewLabel='Xem cấu hình kỹ thuật' editLabel='Sửa cấu hình kỹ thuật' /> },
   ];
 
   const quotationColumns: ColumnsType<Quotation> = [
@@ -560,6 +558,7 @@ export default function Customer360Page() {
   const orderedTabItems = tabs.map((tab) => tabItems.find((item) => item.key === tab)!);
 
   return (
+    <>
     <PageContainer
       className='erp-page-container customer-360-page'
       header={{
@@ -582,5 +581,14 @@ export default function Customer360Page() {
       </Card>
       <Tabs className='customer-360-tabs' activeKey={activeTab} onChange={changeTab} items={orderedTabItems} />
     </PageContainer>
+    <ConsultationProfileEditDrawer
+      profileId={editingProfileId}
+      initialConfigurationId={editingConfigurationId}
+      configurationOnly={Boolean(editingConfigurationId)}
+      open={Boolean(editingProfileId)}
+      onClose={() => { setEditingProfileId(undefined); setEditingConfigurationId(undefined); }}
+      onSaved={() => void load()}
+    />
+    </>
   );
 }

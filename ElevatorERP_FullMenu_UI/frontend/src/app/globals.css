@@ -543,6 +543,11 @@ html[data-theme='dark'] .customer-360-tab-label>.anticon{color:#a9b8ae}
 .technical-drawer-footer>span:first-child{flex:1}
 .technical-drawer-footer .ant-btn-dangerous:disabled,
 .technical-drawer-footer .ant-btn-dangerous.ant-btn-disabled{color:#b76a6a!important;border-color:#ead2d2!important;background:#fbf7f7!important}
+.consultation-technical-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}
+.consultation-technical-heading>span{display:inline-flex;align-items:center;gap:8px}
+.consultation-technical-editor-list{display:grid;gap:10px}
+.consultation-technical-editor-item .ant-card-body{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.consultation-technical-empty{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px dashed #cfe0d3;border-radius:8px;background:#fbfdfb}
 
 /* Dashboard */
 .welcome-panel{overflow:hidden;position:relative;border:1px solid #d8e7da!important;background:#fff!important;color:var(--text);min-height:188px;box-shadow:0 1px 2px rgba(16,24,40,.05),0 6px 16px rgba(16,24,40,.045)}
@@ -655,6 +660,8 @@ html[data-theme='dark'] .customer-360-tab-label>.anticon{color:#a9b8ae}
   .technical-config-drawer .ant-drawer-content-wrapper{width:100vw!important}
   .technical-grid.five-columns{grid-template-columns:1fr}
   .technical-drawer-footer{align-items:stretch;flex-direction:column}
+  .consultation-technical-heading,.consultation-technical-editor-item .ant-card-body,.consultation-technical-empty{align-items:flex-start;flex-direction:column}
+  .consultation-technical-editor-item .ant-card-body>.ant-btn,.consultation-technical-empty>.ant-btn{width:100%}
   .technical-drawer-footer>.ant-space{width:100%;justify-content:flex-end}
   .performance-layout{gap:22px}.performance-detail{min-width:210px}
   .login-page{display:block;background:#f4f8f3}.login-brand-panel{display:none}.login-form-panel{min-height:100vh;padding:28px 20px}.login-mobile-brand{display:flex;align-items:center;gap:10px;margin-bottom:42px;color:#11351f}.login-mobile-brand .login-logo{width:36px;height:36px}.login-form-card{max-width:440px}

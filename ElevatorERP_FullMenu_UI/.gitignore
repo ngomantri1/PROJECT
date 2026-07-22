@@ -5,6 +5,7 @@
 **/obj/
 frontend/node_modules/
 frontend/.next/
+frontend/tsconfig.tsbuildinfo
 uploads/
 backups/
 *.log

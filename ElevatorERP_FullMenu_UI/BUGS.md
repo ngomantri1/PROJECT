@@ -282,3 +282,13 @@
 - Upload cannot escape the configured root or execute uploaded content.
 - Docker restart preserves PostgreSQL, uploads and Data Protection keys.
 - Production configuration does not seed demo accounts or expose demo password.
+
+## 6. Deployment and operational risks observed
+
+- Current VPS access is HTTP only. Browser traffic is not protected until a domain and HTTPS/TLS configuration are completed.
+- `CORS_ALLOWED_ORIGINS` is currently a deployment value and must be changed to the final HTTPS domain when TLS is enabled; do not leave a broad or temporary origin in production.
+- No scheduled off-VPS backup or monitoring has been configured yet. Docker bind mounts preserve data across container rebuilds but do not protect against VPS loss, disk failure or accidental deletion.
+- Local-to-VPS test synchronization intentionally replaces database content. Restoring a SQL dump without a current VPS backup can destroy newer VPS data.
+- Raw copying of `.data/postgres` from a Windows Docker environment to Linux is not a supported migration path. Use `pg_dump`/`psql`; only uploads and Data Protection keys may be transferred as files.
+- The VPS `.env` contains production secrets and must remain server-only, mode `600`, excluded from Git, archives and screenshots. Rotate any secret that has been exposed while testing.
+- Data Protection keys must be backed up with uploads. Losing them can invalidate existing encrypted authentication/session material after restore.
