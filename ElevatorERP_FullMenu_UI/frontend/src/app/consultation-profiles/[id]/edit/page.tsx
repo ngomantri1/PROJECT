@@ -119,7 +119,7 @@ export default function ConsultationProfileEditPage() {
         notes: response.profile.notes,
       });
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Không tải được hồ sơ tư vấn.');
+      setError(loadError instanceof Error ? loadError.message : 'Không tải được đăng ký tư vấn.');
     } finally {
       setLoading(false);
     }
@@ -144,26 +144,26 @@ export default function ConsultationProfileEditPage() {
           isKpiEligible: detail.profile.isKpiEligible,
         }),
       });
-      message.success('Đã cập nhật hồ sơ tư vấn.');
+      message.success('Đã cập nhật đăng ký tư vấn.');
       const nextTarget = nextTargetAfterSaveRef.current;
       nextTargetAfterSaveRef.current = undefined;
       router.push(nextTarget || backTarget);
     } catch (saveError) {
       nextTargetAfterSaveRef.current = undefined;
-      message.error(saveError instanceof Error ? saveError.message : 'Không thể cập nhật hồ sơ tư vấn.');
+      message.error(saveError instanceof Error ? saveError.message : 'Không thể cập nhật đăng ký tư vấn.');
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className='consultation-detail-loading'><Spin size='large' tip='Đang tải hồ sơ tư vấn...' /></div>;
-  if (error || !detail) return <Result status='error' title='Không tải được hồ sơ tư vấn' subTitle={error} extra={<Button type='primary' onClick={() => void load()}>Tải lại</Button>} />;
+  if (loading) return <div className='consultation-detail-loading'><Spin size='large' tip='Đang tải đăng ký tư vấn...' /></div>;
+  if (error || !detail) return <Result status='error' title='Không tải được đăng ký tư vấn' subTitle={error} extra={<Button type='primary' onClick={() => void load()}>Tải lại</Button>} />;
 
   return (
     <PageContainer
       className='erp-page-container consultation-profile-edit-page'
       header={{
-        title: <div className='page-title-stack'><Typography.Title level={3}>Sửa hồ sơ tư vấn</Typography.Title><Typography.Text>{detail.profile.code} · {detail.customer.code} · {detail.customer.name}</Typography.Text></div>,
+        title: <div className='page-title-stack'><Typography.Title level={3}>Sửa đăng ký tư vấn</Typography.Title><Typography.Text>{detail.profile.code} · {detail.customer.code} · {detail.customer.name}</Typography.Text></div>,
         extra: <Space wrap><Button icon={<ArrowLeftOutlined />} onClick={() => router.push(backTarget)}>{backLabel}</Button><Button type='primary' icon={<SaveOutlined />} loading={saving} onClick={() => form.submit()}>Lưu thay đổi</Button></Space>,
         breadcrumb: {},
       }}
@@ -171,7 +171,7 @@ export default function ConsultationProfileEditPage() {
       <Card className='consultation-detail-header'>
         <Space wrap><Tag color='green'>Hồ sơ {detail.profile.code}</Tag><Tag>{detail.customer.customerType === 'BUSINESS' ? 'Doanh nghiệp' : 'Cá nhân'}</Tag><Typography.Text type='secondary'>Người phụ trách: {detail.profile.owner || 'Chưa phân công'}</Typography.Text></Space>
       </Card>
-      <Card title='Thông tin hồ sơ tư vấn'>
+      <Card title='Thông tin đăng ký tư vấn'>
         <Form form={form} layout='vertical' onFinish={save} className='consultation-profile-edit-form'>
           <Typography.Title level={5}>Thông tin khách hàng</Typography.Title>
           <Row gutter={[16, 0]}>
@@ -182,7 +182,7 @@ export default function ConsultationProfileEditPage() {
             <Col xs={24} md={12}><Form.Item name='source' label='Nguồn khách hàng'><Select allowClear options={sourceOptions} /></Form.Item></Col>
             <Col xs={24}><Form.Item name='address' label='Địa chỉ liên hệ'><Input.TextArea rows={2} /></Form.Item></Col>
           </Row>
-          <Typography.Title level={5}>Thông tin hồ sơ tư vấn</Typography.Title>
+          <Typography.Title level={5}>Thông tin đăng ký tư vấn</Typography.Title>
           <Row gutter={[16, 0]}>
             <Col xs={24} md={12}><Form.Item name='status' label='Trạng thái hồ sơ' rules={[{ required: true, message: 'Chọn trạng thái hồ sơ.' }]}><Select options={statusOptions} /></Form.Item></Col>
             <Col xs={24}><Form.Item name='notes' label='Yêu cầu / ghi chú ban đầu'><Input.TextArea rows={5} placeholder='Loại thang, số tầng, tải trọng, thời gian dự kiến...' /></Form.Item></Col>

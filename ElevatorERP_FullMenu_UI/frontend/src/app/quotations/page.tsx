@@ -226,7 +226,7 @@ export default function Quotations() {
     api<CustomerRow[]>('/consultation-profiles')
       .then(setCustomers)
       .catch((error: unknown) =>
-        message.error(error instanceof Error ? error.message : 'Không tải được danh sách hồ sơ tư vấn.'),
+        message.error(error instanceof Error ? error.message : 'Không tải được danh sách đăng ký tư vấn.'),
       );
   }, []);
 
@@ -565,11 +565,11 @@ export default function Quotations() {
           <div className='quotation-form-layout'>
             <div className='quotation-form-main'>
               <div className='form-section-heading'>Thông tin báo giá</div>
-              <Form.Item name='consultationProfileId' label='Hồ sơ tư vấn' rules={[{ required: true, message: 'Vui lòng chọn hồ sơ tư vấn' }]}>
+              <Form.Item name='consultationProfileId' label='Đăng ký tư vấn' rules={[{ required: true, message: 'Vui lòng chọn đăng ký tư vấn' }]}>
                 <Select
                   showSearch
                   optionFilterProp='label'
-                  placeholder='Chọn hồ sơ tư vấn'
+                  placeholder='Chọn đăng ký tư vấn'
                   options={customers.map((customer) => ({
                     value: customer.id,
                     label: `${customer.code} - ${customer.name} - ${customer.phone}`,
@@ -614,7 +614,7 @@ export default function Quotations() {
                 </Checkbox.Group>
               ) : (
                 <div className='quotation-empty-inline'>
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='Hồ sơ tư vấn chưa có cấu hình thang.' />
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='Đăng ký tư vấn chưa có cấu hình thang.' />
                 </div>
               )}
 

@@ -8,13 +8,13 @@ ElevatorERP is an internal ERP for **Công ty Thang máy Miền Trung**, expecte
 
 The system manages the full customer and elevator lifecycle:
 
-`Khách hàng → Hồ sơ tư vấn → Cấu hình thang tư vấn → Báo giá → Hợp đồng → Thang máy tài sản → Triển khai → KCS → Kiểm định → Nghiệm thu → Bàn giao → Bảo hành → Bảo trì → Sự cố sửa chữa`
+`Khách hàng → Đăng ký tư vấn → Cấu hình thang tư vấn → Báo giá → Hợp đồng → Thang máy tài sản → Triển khai → KCS → Kiểm định → Nghiệm thu → Bàn giao → Bảo hành → Bảo trì → Sự cố sửa chữa`
 
 Core domain decisions:
 
 - Do **not** use the term or entity **“Cơ hội bán hàng”**.
 - The long-lived identity master is **Khách hàng**; normalized phone number is the duplicate-prevention key.
-- A customer can have many **Hồ sơ tư vấn** at different times.
+- A customer can have many **Đăng ký tư vấn** at different times.
 - A consultation profile can have zero or many preliminary elevator configurations. Creating a configuration is optional when saving the profile.
 - A preliminary configuration belongs to exactly one consultation profile. Other profiles' configurations are read-only references, but may be copied into the current profile.
 - A preliminary configuration is not a physical elevator asset.
@@ -99,10 +99,13 @@ There is intentionally no Live/Demo/Planned label in the menu. All menu items ar
 
 ### Customer 360 and sales domain decisions
 
-- The business menu is: **Khách hàng**, **Hồ sơ tư vấn**, **Lịch chăm sóc khách hàng**, **Báo giá**, **Hợp đồng**.
-- Customer 360 is the cross-process read model for one customer. Its tabs are: **Tổng quan**, **Hồ sơ tư vấn**, **Thang máy**, **Báo giá**, **Hợp đồng**, **Công nợ**, **Tiến độ**, **Bảo trì**, **Chăm sóc**, **Lịch sử**.
+- The business menu is: **Khách hàng**, **Đăng ký tư vấn**, **Lịch chăm sóc**, **Báo giá**, **Hợp đồng**.
+- Use **Đăng ký tư vấn** consistently in user-facing menus, tabs, lists, create/edit/detail contexts and messages. Technical route/API/type names such as `ConsultationProfile` remain unchanged until an approved migration.
+- Customer 360 is the cross-process read model for one customer. Its tabs are: **Tổng quan**, **Đăng ký tư vấn**, **Báo giá**, **Hợp đồng**, **Thang máy**, **Công nợ**, **Tiến độ**, **Bảo trì**, **Chăm sóc**, **Lịch sử**.
 - Customer name and customer code open Customer 360. Consultation profile code opens/focuses that profile's detail context.
 - Customer 360 uses URL tab state (`?tab=`), so links must open the intended business tab without losing customer context.
+- Back navigation is context-aware. A detail opened from Customer 360 must carry its customer/tab/source context, and its primary back action must return to that Customer 360 context before offering a generic list destination.
+- Back labels must name the real destination, for example **Quay lại Customer 360 – [Tên khách hàng]**. Use a list fallback only when the page was opened from that list or no source context is available; nested detail links must preserve the relevant return context.
 - The **Thang máy** tab is for physical assets only. Preliminary configurations remain under their source consultation profile and must not inflate the asset count.
 - Receivables, progress and maintenance in Customer 360 are aggregate/read-oriented views. Mutations remain in the owning contract, asset, accounting or maintenance module.
 - Survey documents/images are optional and belong to an individual elevator configuration, not globally to the customer or consultation profile.
@@ -313,7 +316,7 @@ Mobile construction photos should initially use standard camera/file input, clie
 ## 12. Things that must never be broken
 
 - Never introduce “Cơ hội bán hàng”.
-- Never merge **Khách hàng**, **Hồ sơ tư vấn**, preliminary elevator configuration and **Thang máy tài sản** into one record.
+- Never merge **Khách hàng**, **Đăng ký tư vấn**, preliminary elevator configuration and **Thang máy tài sản** into one record.
 - Never count a physical elevator asset before quotation/contract conversion has succeeded.
 - Never allow one consultation profile to edit or delete configurations owned by another profile; copying is the supported reuse operation.
 - Never move installation address, installation pin or installation area back to the customer master.

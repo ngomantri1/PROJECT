@@ -1,13 +1,21 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, Descriptions, Drawer, Dropdown, Form, Input, List, Modal, Row, Select, Space, Tag, Tooltip, Typography, message } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Badge, Button, Card, Col, DatePicker, Descriptions, Drawer, Dropdown, Form, Input, List, Modal, Row, Select, Space, Tag, Tooltip, Typography, message } from 'antd';
 import { PageContainer, ProCard, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { CalendarOutlined, DeleteOutlined, EditOutlined, EllipsisOutlined, EnvironmentOutlined, FileAddOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { CalendarOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EllipsisOutlined, EnvironmentOutlined, FileAddOutlined, FilterOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SlidersOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import {
+  buildCustomerFilterQuery,
+  cloneCustomerAdvancedFilters,
+  countCustomerAdvancedFilters,
+  emptyCustomerAdvancedFilters,
+  type CustomerAdvancedFilters,
+} from '@/lib/customerFilters';
+import { exportCsv } from '@/lib/exportCsv';
 
 type CustomerRow = {
   id: string;
@@ -35,8 +43,33 @@ type CustomerForm = {
   address?: string;
 };
 
+type CatalogOption = {
+  code: string;
+  label: string;
+  color?: string;
+};
+
 const textSorter = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
 const sourceOptions = ['Marketing', 'Telesale', 'Giới thiệu', 'Khách cũ', 'Cộng tác viên', 'Khác'];
+const fallbackStatusOptions: CatalogOption[] = [
+  { code: 'NEW', label: 'Mới tiếp nhận', color: 'blue' },
+  { code: 'CONTACTED', label: 'Đã liên hệ', color: 'cyan' },
+  { code: 'CARING', label: 'Đang chăm sóc', color: 'green' },
+  { code: 'WAITING_SURVEY', label: 'Chờ khảo sát', color: 'purple' },
+  { code: 'SURVEYED', label: 'Đã khảo sát', color: 'purple' },
+  { code: 'VISITED_SHOWROOM', label: 'Đã xem thang mẫu', color: 'geekblue' },
+  { code: 'QUOTED', label: 'Đã gửi báo giá', color: 'cyan' },
+  { code: 'WAITING_RESPONSE', label: 'Chờ phản hồi', color: 'orange' },
+  { code: 'NEGOTIATING', label: 'Đang đàm phán', color: 'orange' },
+  { code: 'CONVERTED', label: 'Đã chuyển sang hợp đồng', color: 'green' },
+  { code: 'PAUSED', label: 'Tạm dừng chăm sóc', color: 'default' },
+  { code: 'LOST', label: 'Không thành công', color: 'red' },
+  { code: 'SIGNED', label: 'Đã ký hợp đồng', color: 'green' },
+];
+const fallbackCustomerTypeOptions: CatalogOption[] = [
+  { code: 'PERSONAL', label: 'Cá nhân', color: 'green' },
+  { code: 'BUSINESS', label: 'Doanh nghiệp', color: 'blue' },
+];
 
 function normalizePhone(value?: string) {
   const digits = value?.replace(/[^\d]/g, '') ?? '';
@@ -50,32 +83,85 @@ export default function CustomerMasterPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<CustomerAdvancedFilters>(emptyCustomerAdvancedFilters);
+  const [draftFilters, setDraftFilters] = useState<CustomerAdvancedFilters>(emptyCustomerAdvancedFilters);
+  const [catalogStatuses, setCatalogStatuses] = useState<CatalogOption[]>([]);
+  const [catalogCustomerTypes, setCatalogCustomerTypes] = useState<CatalogOption[]>([]);
+  const [ownerOptions, setOwnerOptions] = useState<string[]>([]);
+  const [customerTablePage, setCustomerTablePage] = useState({ current: 1, pageSize: 10 });
   const [duplicateCustomer, setDuplicateCustomer] = useState<CustomerRow>();
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow>();
+  const statusOptions = catalogStatuses.length ? catalogStatuses : fallbackStatusOptions;
+  const customerTypeOptions = catalogCustomerTypes.length ? catalogCustomerTypes : fallbackCustomerTypeOptions;
+  const advancedFilterCount = countCustomerAdvancedFilters(filters);
 
-  const filteredRows = useMemo(() => {
-    const normalized = search.trim().toLowerCase();
-    if (!normalized) return rows;
-    return rows.filter((row) =>
-      `${row.code} ${row.name} ${row.phone} ${row.email ?? ''} ${row.address ?? ''}`.toLowerCase().includes(normalized),
-    );
-  }, [rows, search]);
-
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await api<CustomerRow[]>('/customers'));
+      const query = buildCustomerFilterQuery({ search, ...filters });
+      const nextRows = await api<CustomerRow[]>(`/customers${query ? `?${query}` : ''}`);
+      setRows(nextRows);
+      setOwnerOptions((current) => Array.from(new Set([
+        ...current,
+        ...nextRows.map((item) => item.owner).filter(Boolean),
+      ])).sort(textSorter.compare));
     } catch (error) {
       message.error(error instanceof Error ? error.message : 'Không tải được danh sách khách hàng.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, search]);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 350);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  useEffect(() => {
+    setCustomerTablePage((page) => ({ ...page, current: 1 }));
+  }, [filters, search]);
+
+  useEffect(() => {
+    api<CatalogOption[]>('/catalogs/categories/customer_status/options?activeOnly=true')
+      .then(setCatalogStatuses)
+      .catch(() => setCatalogStatuses(fallbackStatusOptions));
+    api<CatalogOption[]>('/catalogs/categories/customer_type/options?activeOnly=true')
+      .then(setCatalogCustomerTypes)
+      .catch(() => setCatalogCustomerTypes(fallbackCustomerTypeOptions));
   }, []);
+
+  const openAdvancedFilters = () => {
+    setDraftFilters(cloneCustomerAdvancedFilters(filters));
+    setAdvancedOpen(true);
+  };
+
+  const resetFilters = () => {
+    setSearch('');
+    setFilters(emptyCustomerAdvancedFilters);
+    setDraftFilters(emptyCustomerAdvancedFilters);
+  };
+
+  const applyAdvancedFilters = () => {
+    setFilters(cloneCustomerAdvancedFilters(draftFilters));
+    setAdvancedOpen(false);
+  };
+
+  const exportCustomers = () => {
+    exportCsv(`danh-sach-khach-hang-${dayjs().format('YYYYMMDD-HHmm')}`, rows, [
+      { header: 'Mã KH', value: (item) => item.code },
+      { header: 'Khách hàng', value: (item) => item.name },
+      { header: 'Số điện thoại', value: (item) => item.phone },
+      { header: 'Email', value: (item) => item.email },
+      { header: 'Nhóm khách hàng', value: (item) => customerTypeOptions.find((option) => option.code === item.customerType)?.label ?? item.customerType },
+      { header: 'Địa chỉ liên hệ', value: (item) => item.address },
+      { header: 'Nguồn', value: (item) => item.source },
+      { header: 'Người phụ trách', value: (item) => item.owner },
+      { header: 'Trạng thái', value: (item) => statusOptions.find((option) => option.code === item.status)?.label ?? item.status },
+      { header: 'Ngày tạo', value: (item) => item.createdAt ? dayjs(item.createdAt).format('DD/MM/YYYY') : '' },
+    ]);
+  };
 
   const openCreate = () => {
     form.resetFields();
@@ -188,7 +274,7 @@ export default function CustomerMasterPage() {
 
   const renderCustomerActions = (item: CustomerRow) => {
     const hasBusinessHistory = Boolean(item.consultationProfileCount || item.quotationCount || item.careActivityCount);
-    const deleteReason = 'Không thể xóa khách hàng đã phát sinh hồ sơ tư vấn, lịch chăm sóc hoặc báo giá/hợp đồng.';
+    const deleteReason = 'Không thể xóa khách hàng đã phát sinh đăng ký tư vấn, lịch chăm sóc hoặc báo giá/hợp đồng.';
 
     return (
       <Space size={4}>
@@ -202,7 +288,7 @@ export default function CustomerMasterPage() {
               {
                 key: 'consultation',
                 icon: <FileAddOutlined />,
-                label: 'Tạo hồ sơ tư vấn',
+                label: 'Đăng ký tư vấn',
                 onClick: () => router.push(`/customers?customerId=${item.id}`),
               },
               {
@@ -299,6 +385,15 @@ export default function CustomerMasterPage() {
       width: 170,
     },
     {
+      title: 'Trạng thái',
+      dataIndex: 'status',
+      width: 160,
+      render: (_, item) => {
+        const status = statusOptions.find((option) => option.code === item.status);
+        return <Tag color={status?.color}>{status?.label ?? item.status}</Tag>;
+      },
+    },
+    {
       title: 'Ngày tạo',
       dataIndex: 'createdAt',
       width: 130,
@@ -353,27 +448,154 @@ export default function CustomerMasterPage() {
       </Row>
 
       <ProCard className='section-gap filter-card'>
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          prefix={<SearchOutlined />}
-          placeholder='Tìm mã KH, tên, SĐT hoặc email...'
-          allowClear
-          className='customer-search-input'
-        />
+        <div className='customer-search-row'>
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            prefix={<SearchOutlined />}
+            placeholder='Tìm mã KH, tên, SĐT hoặc email...'
+            allowClear
+            className='customer-search-input'
+          />
+          <Badge count={advancedFilterCount} size='small' offset={[-4, 4]}>
+            <Button icon={<SlidersOutlined />} onClick={openAdvancedFilters}>
+              Lọc nâng cao
+            </Button>
+          </Badge>
+          <Button icon={<ReloadOutlined />} onClick={resetFilters}>
+            Đặt lại
+          </Button>
+          <Typography.Text className='filter-result-count'>{rows.length} khách hàng</Typography.Text>
+          <Button icon={<DownloadOutlined />} onClick={exportCustomers}>
+            Xuất CSV
+          </Button>
+        </div>
       </ProCard>
+
+      <Drawer
+        title={(
+          <div className='advanced-filter-title'>
+            <SlidersOutlined />
+            <span>Lọc nâng cao</span>
+          </div>
+        )}
+        open={advancedOpen}
+        onClose={() => setAdvancedOpen(false)}
+        width={420}
+        className='advanced-filter-drawer'
+        footer={(
+          <div className='advanced-filter-footer'>
+            <Button icon={<ReloadOutlined />} onClick={() => setDraftFilters(emptyCustomerAdvancedFilters)}>
+              Đặt lại
+            </Button>
+            <Space>
+              <Button onClick={() => setAdvancedOpen(false)}>Hủy</Button>
+              <Button type='primary' icon={<FilterOutlined />} onClick={applyAdvancedFilters}>
+                Áp dụng
+              </Button>
+            </Space>
+          </div>
+        )}
+      >
+        <Typography.Text className='advanced-filter-description'>
+          Áp dụng nhiều điều kiện cùng lúc cho danh sách khách hàng hiện tại.
+        </Typography.Text>
+        <div className='advanced-filter-section'>
+          <div className='advanced-filter-section-title'>Phân loại</div>
+          <label className='advanced-filter-field'>
+            <span>Trạng thái khách hàng</span>
+            <Select
+              value={draftFilters.status}
+              onChange={(status) => setDraftFilters((current) => ({ ...current, status }))}
+              allowClear
+              placeholder='Tất cả trạng thái'
+              options={statusOptions.map((item) => ({ value: item.code, label: item.label }))}
+            />
+          </label>
+          <label className='advanced-filter-field'>
+            <span>Nhóm khách hàng</span>
+            <Select
+              value={draftFilters.customerType}
+              onChange={(customerType) => setDraftFilters((current) => ({ ...current, customerType }))}
+              allowClear
+              placeholder='Tất cả nhóm'
+              options={customerTypeOptions.map((item) => ({ value: item.code, label: item.label }))}
+            />
+          </label>
+          <label className='advanced-filter-field'>
+            <span>Nguồn khách hàng</span>
+            <Select
+              value={draftFilters.source}
+              onChange={(source) => setDraftFilters((current) => ({ ...current, source }))}
+              allowClear
+              placeholder='Tất cả nguồn'
+              options={sourceOptions.map((value) => ({ value, label: value }))}
+            />
+          </label>
+        </div>
+        <div className='advanced-filter-section'>
+          <div className='advanced-filter-section-title'>Liên hệ và phụ trách</div>
+          <label className='advanced-filter-field'>
+            <span>Địa chỉ liên hệ chứa</span>
+            <Input
+              value={draftFilters.address}
+              onChange={(event) => setDraftFilters((current) => ({ ...current, address: event.target.value }))}
+              allowClear
+              placeholder='Nhập phường/xã, quận/huyện hoặc tỉnh/thành'
+            />
+          </label>
+          <label className='advanced-filter-field'>
+            <span>Người phụ trách</span>
+            <Select
+              value={draftFilters.owner}
+              onChange={(owner) => setDraftFilters((current) => ({ ...current, owner }))}
+              allowClear
+              showSearch
+              optionFilterProp='label'
+              placeholder='Tất cả người phụ trách'
+              options={ownerOptions.map((value) => ({ value, label: value }))}
+            />
+          </label>
+        </div>
+        <div className='advanced-filter-section'>
+          <div className='advanced-filter-section-title'>Thời gian</div>
+          <label className='advanced-filter-field'>
+            <span>Ngày tạo</span>
+            <DatePicker.RangePicker
+              value={draftFilters.createdFrom && draftFilters.createdTo
+                ? [dayjs(draftFilters.createdFrom), dayjs(draftFilters.createdTo)]
+                : undefined}
+              onChange={(value) => setDraftFilters((current) => ({
+                ...current,
+                createdFrom: value?.[0]?.startOf('day').toISOString(),
+                createdTo: value?.[1]?.endOf('day').toISOString(),
+              }))}
+              format='DD/MM/YYYY'
+              placeholder={['Từ ngày', 'Đến ngày']}
+            />
+          </label>
+        </div>
+      </Drawer>
 
       <div className='responsive-table section-gap'>
         <ProTable<CustomerRow>
           rowKey='id'
           loading={loading}
-          dataSource={filteredRows}
+          dataSource={rows}
           columns={columns}
           search={false}
           cardBordered
           options={{ density: true, fullScreen: true, reload: () => void load() }}
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} khách hàng` }}
-          scroll={{ x: 1400 }}
+          pagination={{
+            current: customerTablePage.current,
+            pageSize: customerTablePage.pageSize,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showTotal: (total) => `${total} khách hàng`,
+            onChange: (current, pageSize) => setCustomerTablePage({ current, pageSize }),
+            onShowSizeChange: (_, pageSize) => setCustomerTablePage({ current: 1, pageSize }),
+          }}
+          scroll={{ x: 1560 }}
           headerTitle='Danh sách khách hàng'
         />
       </div>
@@ -381,7 +603,7 @@ export default function CustomerMasterPage() {
       <div className='mobile-card-list section-gap'>
         <List
           loading={loading}
-          dataSource={filteredRows}
+          dataSource={rows}
           locale={{ emptyText: 'Chưa có khách hàng' }}
           renderItem={(item) => (
             <List.Item>

@@ -43,7 +43,7 @@ Các số liệu trên không đồng nghĩa mọi occurrence đều sai. Chúng
 | Dashboard `/` | PageContainer, ProCard, Progress | 87 | Responsive tốt; màu chart hard-code; loading dùng Spin thay vì Skeleton gần layout; một số phần mang tính trang trí nhiều hơn tác vụ |
 | Shell dùng chung | ProLayout, Menu, Dropdown | 86 | Kiến trúc đúng; breadcrumb bị tắt toàn cục; màu ProLayout hard-code; chưa có Help action như checklist; route permission chưa đầy đủ |
 | Khách hàng `/business/customers` | PageContainer, ProTable, Drawer | 82 | Cấu trúc list đúng; thiếu error/retry rõ; client pagination/sort; action icon cần audit aria; status chưa dùng registry chung trước patch |
-| Hồ sơ tư vấn `/customers` | ProTable, DrawerForm, Tabs/sections, Map modal | 76 | File 2.940 dòng; form/map rất phức tạp; thiếu dirty guard; nhiều CSS riêng và icon-only action; khó bảo trì và có nguy cơ phá ownership nghiệp vụ |
+| Đăng ký tư vấn `/customers` | ProTable, DrawerForm, Tabs/sections, Map modal | 76 | File 2.940 dòng; form/map rất phức tạp; thiếu dirty guard; nhiều CSS riêng và icon-only action; khó bảo trì và có nguy cơ phá ownership nghiệp vụ |
 | Customer 360 | Tabs, Table, Card, Timeline | 69 | Lỗi nghiêm trọng về count/label cấu hình tư vấn và tài sản; tab công nợ/tiến độ/bảo trì còn placeholder; initial loading là Spin; tabs override `.ant-*` sâu |
 | Chăm sóc `/care` | ProTable, Calendar, DrawerForm | 79 | Có list/calendar/mobile; thiếu bộ filter API đầy đủ; `+n lịch khác` chưa mở chi tiết; chưa tạo lịch tiếp theo; error chỉ là toast, không có retry state |
 | Báo giá `/quotations` | ProTable, Drawer, Form | 75 | Form dài trong Drawer, client-side pagination/sort, thiếu dirty guard/error-retry; status mapping riêng; chưa đủ permission-aware action |
@@ -140,4 +140,3 @@ Không nên tạo toàn bộ component trên cùng một patch. Ưu tiên theo s
 - Dirty form khi đóng Drawer/đổi route.
 - Loading/empty/no-result/request-failed/permission-denied cho từng API page.
 - Không nhầm cấu hình tư vấn với tài sản vật lý trong Customer 360.
-

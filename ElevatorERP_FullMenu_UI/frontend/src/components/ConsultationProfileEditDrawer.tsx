@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { CameraOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EllipsisOutlined, EnvironmentOutlined, LinkOutlined, PaperClipOutlined, PlusOutlined, PushpinOutlined, SlidersOutlined } from '@ant-design/icons';
-import { Badge, Button, Card, Col, Drawer, Form, Input, Modal, Radio, Row, Select, Space, Tag, Tooltip, Typography, message } from 'antd';
+import { Badge, Button, Col, Drawer, Form, Input, Modal, Radio, Row, Select, Space, Tooltip, Typography, message } from 'antd';
 import TechnicalConfigurationForm, { type TechnicalConfigurationValues } from '@/components/TechnicalConfigurationForm';
 import { api } from '@/lib/api';
 
@@ -45,7 +45,6 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
   const [form] = Form.useForm<ProfileValues>();
   const [detail, setDetail] = useState<ProfileDetail>();
   const [configurations, setConfigurations] = useState<Configuration[]>([]);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number>();
@@ -62,14 +61,12 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
 
   const load = useCallback(async () => {
     if (!profileId) return;
-    setLoading(true);
     try {
       const response = await api<ProfileDetail>(`/consultation-profiles/${profileId}`);
       setDetail(response);
       setConfigurations(parseConfigurations(response.profile.technicalSpecsJson));
       form.setFieldsValue({ customerType: response.customer.customerType, name: response.customer.name, phone: response.customer.phone, email: response.customer.email, address: response.customer.address, source: response.profile.source, status: response.profile.status, notes: response.profile.notes });
-    } catch (error) { message.error(error instanceof Error ? error.message : 'Không thể tải hồ sơ tư vấn.'); }
-    finally { setLoading(false); }
+    } catch (error) { message.error(error instanceof Error ? error.message : 'Không thể tải đăng ký tư vấn.'); }
   }, [form, profileId]);
 
   useEffect(() => { if (open) void load(); }, [load, open]);
@@ -184,7 +181,7 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
       }
       setConfigurations((current) => current.map((item, index) => index === editingIndex ? updated : item));
       setTechnicalOpen(false); setConfigDraft(undefined); pendingFilesRef.current = {};
-      message.success('Đã cập nhật cấu hình vào hồ sơ tư vấn.');
+      message.success('Đã cập nhật cấu hình vào đăng ký tư vấn.');
     } catch (error) { message.error(error instanceof Error ? error.message : 'Không thể lưu cấu hình kỹ thuật.'); }
     finally { setSaving(false); }
   };
@@ -194,9 +191,9 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
     setSaving(true);
     try {
       await api(`/consultation-profiles/${profileId}`, { method: 'PUT', body: JSON.stringify({ customerId: detail.customer.id, ...values, elevatorType: detail.profile.elevatorType, technicalSpecsJson: JSON.stringify(configurations), attachmentLinksJson: detail.profile.attachmentLinksJson, isKpiEligible: detail.profile.isKpiEligible }) });
-      message.success('Đã cập nhật hồ sơ tư vấn.');
+      message.success('Đã cập nhật đăng ký tư vấn.');
       onClose(); await onSaved();
-    } catch (error) { message.error(error instanceof Error ? error.message : 'Không thể cập nhật hồ sơ tư vấn.'); }
+    } catch (error) { message.error(error instanceof Error ? error.message : 'Không thể cập nhật đăng ký tư vấn.'); }
     finally { setSaving(false); }
   };
 
@@ -207,11 +204,11 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
   const attachmentsExtra = <div className='technical-attachment-section'><div className='technical-attachment-actions'><Typography.Text type='secondary'>Tài liệu và ảnh chỉ thuộc thang máy đang chọn.</Typography.Text><Space size={8} wrap><Button icon={<LinkOutlined />} onClick={() => setAttachmentLinkOpen(true)}>Link</Button><Button icon={<CameraOutlined />} onClick={() => attachmentCameraInputRef.current?.click()}>Chụp ảnh</Button><Button icon={<PaperClipOutlined />} onClick={() => attachmentFileInputRef.current?.click()}>Tệp</Button></Space></div><input ref={attachmentFileInputRef} className='customer-file-input' type='file' multiple hidden accept='image/*,.pdf,.doc,.docx,.xls,.xlsx' onChange={(event) => { addAttachments(event.target.files, 'UPLOAD'); event.target.value = ''; }} /><input ref={attachmentCameraInputRef} className='customer-file-input' type='file' hidden accept='image/*' capture='environment' onChange={(event) => { addAttachments(event.target.files, 'CAMERA'); event.target.value = ''; }} />{attachments.length ? <div className='attachment-list'>{attachments.map((attachment) => <div key={attachment.id} className='attachment-item'><span className='attachment-type-icon'>{attachment.type === 'IMAGE' ? <CameraOutlined /> : attachment.type === 'LINK' ? <LinkOutlined /> : <PaperClipOutlined />}</span><div className='attachment-copy'>{attachment.url || attachment.storedFileId ? <a href={attachment.url ?? `${API_BASE}/files/${attachment.storedFileId}`} target='_blank' rel='noreferrer'>{attachment.name}</a> : <Typography.Text strong>{attachment.name}</Typography.Text>}<Typography.Text type='secondary'>{attachment.source === 'CAMERA' ? 'Ảnh chụp hiện trường' : attachment.type === 'LINK' ? 'Link' : attachment.type === 'IMAGE' ? 'Ảnh tải lên' : 'Tài liệu'}</Typography.Text></div><Tooltip title='Xóa tài liệu'><Button danger icon={<DeleteOutlined />} onClick={() => setConfigDraft((current) => current ? { ...current, attachments: ((current.attachments ?? []) as Attachment[]).filter((item) => item.id !== attachment.id) } : current)} /></Tooltip></div>)}</div> : <Typography.Text type='secondary' className='technical-attachment-empty'>Chưa có tài liệu hoặc ảnh khảo sát cho thang máy này.</Typography.Text>}</div>;
 
   return <>
-    {!configurationOnly && <Drawer title='Sửa hồ sơ tư vấn' open={open} onClose={onClose} width='min(1120px, calc(100vw - 40px))' className='customer-form-drawer' rootClassName='customer-form-drawer-root' destroyOnClose footer={<Space><Button onClick={onClose}>Hủy</Button><Button type='primary' loading={saving} onClick={() => form.submit()}>Lưu thay đổi</Button></Space>}>
+    {!configurationOnly && <Drawer title='Sửa đăng ký tư vấn' open={open} onClose={onClose} width='min(1120px, calc(100vw - 40px))' className='customer-form-drawer' rootClassName='customer-form-drawer-root' destroyOnClose footer={<Space><Button onClick={onClose}>Hủy</Button><Button type='primary' loading={saving} onClick={() => form.submit()}>Lưu thay đổi</Button></Space>}>
       <Form form={form} layout='vertical' onFinish={saveProfile} className='consultation-profile-edit-form'>
         <div className='form-section-heading'>Thông tin khách hàng</div>
         <Row gutter={[16, 0]}><Col xs={24}><Form.Item name='customerType' label='Nhóm khách hàng' rules={[{ required: true }]}><Radio.Group options={[{ value: 'PERSONAL', label: 'Cá nhân' }, { value: 'BUSINESS', label: 'Doanh nghiệp' }]} /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='name' label='Tên khách hàng' rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='phone' label='Số điện thoại' rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='email' label='Email'><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='source' label='Nguồn khách hàng'><Select options={sourceOptions} /></Form.Item></Col><Col xs={24}><Form.Item name='address' label='Địa chỉ liên hệ'><Input.TextArea rows={2} /></Form.Item></Col></Row>
-        <div className='form-section-heading'>Thông tin hồ sơ tư vấn</div>
+        <div className='form-section-heading'>Thông tin đăng ký tư vấn</div>
         <Row gutter={[16, 0]}><Col xs={24} md={12}><Form.Item name='status' label='Trạng thái hồ sơ' rules={[{ required: true }]}><Select options={statusOptions} /></Form.Item></Col><Col xs={24}><Form.Item name='notes' label='Yêu cầu / Ghi chú ban đầu'><Input.TextArea rows={3} placeholder='Loại thang, số tầng, tải trọng, thời gian dự kiến...' /></Form.Item></Col></Row>
         <div className='form-section-heading'>Hồ sơ khảo sát</div>
         <div className='customer-supplement-section'><div className='customer-supplement-heading'><span><SlidersOutlined /> Cấu hình thông số kỹ thuật thang máy <Badge count={configurations.length} showZero size='small' className='section-count-badge' /></span><Typography.Text type='secondary'>Có thể bổ sung khi đã có thông tin khảo sát</Typography.Text></div>{configurations.map((configuration, index) => <div key={configuration.id ?? index} className='elevator-spec-summary-item'><div><Typography.Text strong>{configuration.name || `Thang máy ${index + 1}`}</Typography.Text><Typography.Text type='secondary'>{configuration.floors || '—'} tầng · {configuration.capacityKg || '—'} kg · {typeLabel(configuration.elevatorType)}</Typography.Text></div><Space size={6}><Tooltip title='Nhân bản cấu hình'><Button icon={<CopyOutlined />} onClick={() => copyTechnical(index)} /></Tooltip><Tooltip title='Sửa cấu hình kỹ thuật'><Button icon={<EditOutlined />} onClick={() => openTechnical(index)} /></Tooltip></Space></div>)}<div className='customer-supplement-footer'><Button icon={<PlusOutlined />} onClick={addTechnical}>Thêm thang</Button>{configurations.length > 0 && <Button type='primary' icon={<SlidersOutlined />} onClick={() => openTechnical(0)}>Mở cấu hình chi tiết</Button>}</div></div>

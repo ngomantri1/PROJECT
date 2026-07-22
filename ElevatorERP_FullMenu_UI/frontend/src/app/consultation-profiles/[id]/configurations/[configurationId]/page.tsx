@@ -85,11 +85,11 @@ export default function TechnicalConfigurationPage() {
       const suffix = query.toString();
       return `/consultation-profiles/${profileId}/edit${suffix ? `?${suffix}` : ''}`;
     }
-    if (returnTo === 'customer360' && customerId) return `/business/customers/${customerId}?tab=elevators&returnTo=${customerReturnTo}`;
+    if (returnTo === 'customer360' && customerId) return `/business/customers/${customerId}?tab=profiles&profileId=${profileId}&returnTo=${customerReturnTo}`;
     return `/consultation-profiles/${profileId}?tab=requirements`;
   }, [customerId, customerReturnTo, profileId, returnTo, searchParams]);
 
-  const backLabel = returnTo === 'customer360' ? 'Quay lại Customer 360' : returnTo === 'profile-edit' ? 'Quay lại sửa hồ sơ tư vấn' : 'Quay lại hồ sơ tư vấn';
+  const backLabel = returnTo === 'customer360' ? 'Quay lại Customer 360' : returnTo === 'profile-edit' ? 'Quay lại sửa đăng ký tư vấn' : 'Quay lại đăng ký tư vấn';
 
   const load = useCallback(async () => {
     setLoading(true);

@@ -63,7 +63,7 @@ Các container mong đợi:
 5. Kiểm tra:
    - Dashboard.
    - Đăng ký khách hàng.
-   - Lịch chăm sóc khách hàng.
+   - Lịch chăm sóc.
    - Người dùng và vai trò.
 6. Thu nhỏ trình duyệt hoặc mở bằng điện thoại cùng mạng để kiểm tra Drawer mobile và card mobile.
 

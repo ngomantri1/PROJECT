@@ -9,6 +9,7 @@ import { PageContainer, ProCard } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 import AppStatusTag from '@/components/AppStatusTag';
 import { api } from '@/lib/api';
+import { consultationConfigurationViewHref, consultationProfileEditHref, customer360BackLabel, customer360ProfileHref } from '@/lib/customer360';
 
 type TechnicalConfiguration = Record<string, unknown> & {
   id?: string;
@@ -133,6 +134,9 @@ export default function ConsultationProfileDetailPage() {
   const searchParams = useSearchParams();
   const profileId = params.id;
   const requestedTab = searchParams.get('tab');
+  const returnTo = searchParams.get('returnTo');
+  const returnCustomerId = searchParams.get('customerId');
+  const customerReturnTo = searchParams.get('customerReturnTo') === 'consultation-profiles' ? 'consultation-profiles' : 'customers';
   const activeTab: DetailTab = detailTabs.includes(requestedTab as DetailTab) ? requestedTab as DetailTab : 'overview';
   const [detail, setDetail] = useState<DetailResponse>();
   const [history, setHistory] = useState<Activity[]>([]);
@@ -156,7 +160,7 @@ export default function ConsultationProfileDetailPage() {
       setHistory(historyRows);
       setRelatedProfiles(profileRows.filter((item) => item.customerId === response.profile.customerId && item.id !== response.profile.id));
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Không tải được chi tiết hồ sơ tư vấn.');
+      setError(error instanceof Error ? error.message : 'Không tải được chi tiết đăng ký tư vấn.');
     } finally {
       setLoading(false);
     }
@@ -210,12 +214,20 @@ export default function ConsultationProfileDetailPage() {
   };
 
   if (loading) {
-    return <div className='consultation-detail-loading'><Spin size='large' tip='Đang tải chi tiết hồ sơ tư vấn...' /></div>;
+    return <div className='consultation-detail-loading'><Spin size='large' tip='Đang tải chi tiết đăng ký tư vấn...' /></div>;
   }
 
   if (error || !detail) {
-    return <Result status='error' title='Không tải được chi tiết hồ sơ tư vấn' subTitle={error} extra={<Button type='primary' onClick={() => void load()}>Tải lại</Button>} />;
+    return <Result status='error' title='Không tải được chi tiết đăng ký tư vấn' subTitle={error} extra={<Button type='primary' onClick={() => void load()}>Tải lại</Button>} />;
   }
+
+  const returnsToCustomer360 = returnTo === 'customer360' && returnCustomerId === detail.customer.id;
+  const primaryBackTarget = returnsToCustomer360
+    ? customer360ProfileHref(detail.customer.id, profileId, customerReturnTo)
+    : '/customers';
+  const primaryBackLabel = returnsToCustomer360
+    ? customer360BackLabel(detail.customer.name)
+    : 'Danh sách đăng ký';
 
   const quotationColumns: ColumnsType<Quotation> = [
     { title: 'Mã báo giá', dataIndex: 'code', width: 160, render: (value) => <Typography.Link className='record-link record-link-code' onClick={() => router.push(`/quotations?consultationProfileId=${profileId}`)}>{value}</Typography.Link> },
@@ -243,7 +255,9 @@ export default function ConsultationProfileDetailPage() {
             key={configuration.id ?? `${configuration.name}-${index}`}
             className='consultation-configuration-card'
             size='small'
-            extra={configuration.id ? <Button type='link' onClick={() => router.push(`/consultation-profiles/${profileId}/configurations/${configuration.id}`)}>Xem cấu hình</Button> : undefined}
+            extra={configuration.id ? <Button type='link' onClick={() => router.push(returnsToCustomer360
+              ? consultationConfigurationViewHref(profileId, configuration.id!, detail.customer.id, customerReturnTo)
+              : `/consultation-profiles/${profileId}/configurations/${configuration.id}`)}>Xem cấu hình</Button> : undefined}
           >
             <div className='consultation-configuration-title'>
               <span><SlidersOutlined /> {configuration.name || `Cấu hình ${index + 1}`}</span>
@@ -323,7 +337,7 @@ export default function ConsultationProfileDetailPage() {
                   />
                 )}
               </Space>
-            ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='Khách hàng chưa có hồ sơ tư vấn khác để tham khảo.' />}
+            ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='Khách hàng chưa có đăng ký tư vấn khác để tham khảo.' />}
           </Card>
         </Space>
       ),
@@ -341,7 +355,7 @@ export default function ConsultationProfileDetailPage() {
     {
       key: 'history',
       label: `Lịch sử (${history.length})`,
-      children: <Card title='Lịch sử hoạt động'><Timeline items={history.map((item) => ({ color: 'green', dot: <HistoryOutlined />, children: <div className='consultation-history-item'><Typography.Text strong>{item.action}</Typography.Text><Typography.Paragraph type='secondary'>{item.details || item.module || 'Hồ sơ tư vấn'}</Typography.Paragraph><Typography.Text type='secondary'>{item.username || 'Hệ thống'} · {dayjs(item.createdAt).format('DD/MM/YYYY HH:mm')}</Typography.Text></div> }))} /></Card>,
+      children: <Card title='Lịch sử hoạt động'><Timeline items={history.map((item) => ({ color: 'green', dot: <HistoryOutlined />, children: <div className='consultation-history-item'><Typography.Text strong>{item.action}</Typography.Text><Typography.Paragraph type='secondary'>{item.details || item.module || 'Đăng ký tư vấn'}</Typography.Paragraph><Typography.Text type='secondary'>{item.username || 'Hệ thống'} · {dayjs(item.createdAt).format('DD/MM/YYYY HH:mm')}</Typography.Text></div> }))} /></Card>,
     },
   ];
 
@@ -349,8 +363,8 @@ export default function ConsultationProfileDetailPage() {
     <PageContainer
       className='erp-page-container consultation-detail-page'
       header={{
-        title: <div className='page-title-stack'><Typography.Title level={3}>{detail.profile.code}</Typography.Title><Typography.Text>Hồ sơ tư vấn · {detail.customer.code} · {detail.customer.name}</Typography.Text></div>,
-        extra: <Space wrap><Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/customers')}>Danh sách hồ sơ</Button><Button onClick={() => router.push(`/business/customers/${detail.customer.id}?tab=profiles&profileId=${profileId}&returnTo=consultation-profiles`)}>Customer 360</Button><Button icon={<FileTextOutlined />} onClick={() => router.push(`/quotations?consultationProfileId=${profileId}`)}>Báo giá</Button><Button type='primary' onClick={() => router.push(`/customers?profileId=${profileId}`)}>Chỉnh sửa hồ sơ</Button></Space>,
+        title: <div className='page-title-stack'><Typography.Title level={3}>{detail.profile.code}</Typography.Title><Typography.Text>Đăng ký tư vấn · {detail.customer.code} · {detail.customer.name}</Typography.Text></div>,
+        extra: <Space wrap><Button icon={<ArrowLeftOutlined />} onClick={() => router.push(primaryBackTarget)}>{primaryBackLabel}</Button>{!returnsToCustomer360 && <Button onClick={() => router.push(customer360ProfileHref(detail.customer.id, profileId, 'consultation-profiles'))}>Customer 360</Button>}<Button icon={<FileTextOutlined />} onClick={() => router.push(`/quotations?consultationProfileId=${profileId}`)}>Báo giá</Button><Button type='primary' onClick={() => router.push(consultationProfileEditHref(profileId, returnsToCustomer360 ? { customerId: detail.customer.id, customerReturnTo } : undefined))}>Chỉnh sửa hồ sơ</Button></Space>,
         breadcrumb: {},
       }}
     >

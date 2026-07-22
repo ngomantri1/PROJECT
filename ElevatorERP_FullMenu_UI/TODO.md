@@ -14,7 +14,7 @@
 
 ## 1.1 Recently completed customer/consultation foundation
 
-- [x] Split the business navigation into **Khách hàng** and **Hồ sơ tư vấn**.
+- [x] Split the business navigation into **Khách hàng** and **Đăng ký tư vấn**.
 - [x] Add normalized-phone duplicate prevention and actionable existing-customer selection.
 - [x] Support multiple consultation profiles for one customer.
 - [x] Store multiple preliminary elevator configurations per consultation profile and support configuration copying.

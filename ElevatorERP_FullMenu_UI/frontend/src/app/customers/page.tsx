@@ -73,6 +73,7 @@ import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppStatusTag from '@/components/AppStatusTag';
 import { api } from '@/lib/api';
+import { customer360ProfileHref } from '@/lib/customer360';
 import { exportCsv } from '@/lib/exportCsv';
 
 const LocationPickerMap = dynamic(() => import('@/components/LocationPickerMap'), { ssr: false });
@@ -370,6 +371,7 @@ export default function Customers() {
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const profileEditorReturnTargetRef = useRef<string | undefined>(undefined);
   const [data, setData] = useState<CustomerRow[]>([]);
   const [masterCustomers, setMasterCustomers] = useState<CustomerMasterRow[]>([]);
   const [open, setOpen] = useState(false);
@@ -487,7 +489,7 @@ export default function Customers() {
       const query = params.toString();
       setData(await api<CustomerRow[]>(`/consultation-profiles${query ? `?${query}` : ''}`));
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Không tải được danh sách hồ sơ tư vấn.');
+      message.error(error instanceof Error ? error.message : 'Không tải được danh sách đăng ký tư vấn.');
     } finally {
       setLoading(false);
     }
@@ -658,7 +660,7 @@ export default function Customers() {
 
   const exportCustomers = () => {
     exportCsv(`danh-sach-ho-so-tu-van-${dayjs().format('YYYYMMDD-HHmm')}`, data, [
-      { header: 'Mã hồ sơ', value: (item) => item.code },
+      { header: 'Mã đăng ký', value: (item) => item.code },
       { header: 'Khách hàng', value: (item) => item.name },
       { header: 'Số điện thoại', value: (item) => item.phone },
       { header: 'Email', value: (item) => item.email },
@@ -681,7 +683,8 @@ export default function Customers() {
     setOpen(true);
   };
 
-  const openEditDrawer = (customer: CustomerRow) => {
+  const openEditDrawer = (customer: CustomerRow, returnTarget?: string) => {
+    profileEditorReturnTargetRef.current = returnTarget;
     setEditingCustomer(customer);
     setSelectedExistingCustomerId(customer.customerId);
     setDuplicateConsultationCustomer(undefined);
@@ -701,16 +704,27 @@ export default function Customers() {
     if (!requestedProfileId || open || editingCustomer) return;
     const profile = data.find((item) => item.id === requestedProfileId);
     if (!profile) return;
-    openEditDrawer(profile);
+    const returnCustomerId = searchParams.get('returnCustomerId');
+    const customerReturnTo = searchParams.get('customerReturnTo') === 'consultation-profiles' ? 'consultation-profiles' : 'customers';
+    const returnTarget = searchParams.get('returnTo') === 'customer360' && returnCustomerId === profile.customerId
+      ? customer360ProfileHref(returnCustomerId, requestedProfileId, customerReturnTo)
+      : undefined;
+    openEditDrawer(profile, returnTarget);
     router.replace('/customers');
   }, [data, editingCustomer, open, router, searchParams]);
 
   useEffect(() => {
     const requestedCustomerId = searchParams.get('customerId');
-    if (!requestedCustomerId || open || editingCustomer || !masterCustomers.some((customer) => customer.id === requestedCustomerId)) return;
+    if (searchParams.get('profileId') || !requestedCustomerId || open || editingCustomer || !masterCustomers.some((customer) => customer.id === requestedCustomerId)) return;
     openCreateDrawer(requestedCustomerId);
     router.replace('/customers');
   }, [editingCustomer, masterCustomers, open, router, searchParams]);
+
+  const returnFromProfileEditor = () => {
+    const target = profileEditorReturnTargetRef.current;
+    profileEditorReturnTargetRef.current = undefined;
+    if (target) router.push(target);
+  };
 
   const applyExistingCustomer = (customerId?: string) => {
     setSelectedExistingCustomerId(customerId);
@@ -1312,7 +1326,7 @@ export default function Customers() {
         method: 'PUT',
         body: JSON.stringify({ status: nextStatus }),
       });
-      message.success('Đã cập nhật trạng thái hồ sơ tư vấn');
+      message.success('Đã cập nhật trạng thái đăng ký tư vấn');
       await load();
     } catch (error) {
       message.error(error instanceof Error ? error.message : 'Không cập nhật được trạng thái.');
@@ -1412,14 +1426,14 @@ export default function Customers() {
 
   const columns: ProColumns<CustomerRow>[] = [
     {
-      title: 'Mã hồ sơ',
+      title: 'Mã đăng ký',
       dataIndex: 'code',
       width: 112,
       fixed: 'left',
       sorter: (a, b) => textSorter.compare(a.code, b.code),
       defaultSortOrder: 'descend',
       render: (_, item) => (
-        <Tooltip title='Mở chi tiết hồ sơ tư vấn'>
+        <Tooltip title='Mở chi tiết đăng ký tư vấn'>
           <Typography.Link className='record-link record-link-code' onClick={() => router.push(`/consultation-profiles/${item.id}`)}>{item.code}</Typography.Link>
         </Tooltip>
       ),
@@ -1431,7 +1445,7 @@ export default function Customers() {
       fixed: 'left',
       sorter: (a, b) => textSorter.compare(a.name, b.name),
       render: (_, item) => (
-        <Tooltip title='Mở Customer 360 tại hồ sơ tư vấn này'>
+        <Tooltip title='Mở Customer 360 tại đăng ký tư vấn này'>
           <Typography.Link
             className='record-link table-primary-text'
             onClick={() => router.push(`/business/customers/${item.customerId ?? item.id}?tab=profiles&profileId=${item.id}&returnTo=consultation-profiles`)}
@@ -1537,7 +1551,7 @@ export default function Customers() {
                 {
                   key: 'delete',
                   icon: <DeleteOutlined />,
-                  label: 'Hủy hồ sơ tư vấn',
+                  label: 'Hủy đăng ký tư vấn',
                   danger: true,
                   disabled: true,
                 },
@@ -1666,12 +1680,13 @@ export default function Customers() {
         }
       }
 
-      message.success(editingCustomer ? 'Đã cập nhật hồ sơ tư vấn' : 'Đã tạo hồ sơ tư vấn');
+      message.success(editingCustomer ? 'Đã cập nhật đăng ký tư vấn' : 'Đã tạo đăng ký tư vấn');
       setOpen(false);
       setEditingCustomer(undefined);
       resetSupplementalCustomerData();
       await load();
       api<CustomerMasterRow[]>('/customers').then(setMasterCustomers).catch(() => undefined);
+      returnFromProfileEditor();
       return true;
     } catch (error) {
       if (error instanceof Error && error.message.includes('Số điện thoại')) {
@@ -1695,7 +1710,7 @@ export default function Customers() {
           ]);
         }
       }
-      message.error(error instanceof Error ? error.message : 'Không lưu được hồ sơ tư vấn.');
+      message.error(error instanceof Error ? error.message : 'Không lưu được đăng ký tư vấn.');
       return false;
     }
   };
@@ -1706,13 +1721,13 @@ export default function Customers() {
         header={{
           title: (
             <div className='page-title-stack'>
-              <Typography.Title level={3}>Hồ sơ tư vấn thang máy</Typography.Title>
+          <Typography.Title level={3}>Đăng ký tư vấn</Typography.Title>
               <Typography.Text>Quản lý nhu cầu thang máy, kỹ thuật sơ khai, báo giá và người phụ trách</Typography.Text>
             </div>
           ),
           extra: (
             <Button type='primary' icon={<PlusOutlined />} onClick={() => openCreateDrawer()}>
-              Thêm hồ sơ tư vấn
+              Đăng ký tư vấn
             </Button>
           ),
           breadcrumb: {},
@@ -1720,7 +1735,7 @@ export default function Customers() {
       >
         <Row gutter={[16, 16]} className='erp-kpi-row'>
           {[
-            { label: 'Tổng hồ sơ tư vấn', value: summary.total, icon: <TeamOutlined />, tone: 'blue' },
+            { label: 'Tổng đăng ký tư vấn', value: summary.total, icon: <TeamOutlined />, tone: 'blue' },
             { label: 'Mới tiếp nhận', value: summary.newCount, icon: <UserAddOutlined />, tone: 'cyan' },
             { label: 'Đang chăm sóc', value: summary.caringCount, icon: <PhoneOutlined />, tone: 'violet' },
             { label: 'Báo giá / Đàm phán', value: summary.quotedCount, icon: <BankOutlined />, tone: 'orange' },
@@ -1799,7 +1814,7 @@ export default function Customers() {
           )}
         >
           <Typography.Text className='advanced-filter-description'>
-            Áp dụng nhiều điều kiện cùng lúc cho danh sách hồ sơ tư vấn hiện tại.
+            Áp dụng nhiều điều kiện cùng lúc cho danh sách đăng ký tư vấn hiện tại.
           </Typography.Text>
           <div className='advanced-filter-section'>
             <div className='advanced-filter-section-title'>Phân loại</div>
@@ -1920,7 +1935,7 @@ export default function Customers() {
               onShowSizeChange: (_, pageSize) => setCustomerTablePage({ current: 1, pageSize }),
             }}
             scroll={{ x: 1510 }}
-            headerTitle='Danh sách hồ sơ tư vấn'
+            headerTitle='Danh sách đăng ký tư vấn'
           />
         </div>
 
@@ -1928,7 +1943,7 @@ export default function Customers() {
           <List
             loading={loading}
             dataSource={data}
-            locale={{ emptyText: 'Chưa có hồ sơ tư vấn' }}
+            locale={{ emptyText: 'Chưa có đăng ký tư vấn' }}
             renderItem={(customer) => (
               <List.Item>
                 <Card className='mobile-record-card'>
@@ -1968,7 +1983,7 @@ export default function Customers() {
         <DrawerForm<CustomerForm>
           key={editingCustomer?.id ?? 'consultation-form'}
           formRef={customerFormRef}
-          title={editingCustomer ? 'Sửa hồ sơ tư vấn' : 'Thêm hồ sơ tư vấn'}
+          title={editingCustomer ? 'Sửa đăng ký tư vấn' : 'Đăng ký tư vấn'}
           open={open}
           onOpenChange={(visible) => {
             setOpen(visible);
@@ -1979,6 +1994,7 @@ export default function Customers() {
               setSelectedExistingCustomerId(undefined);
               setDuplicateConsultationCustomer(undefined);
               resetSupplementalCustomerData();
+              returnFromProfileEditor();
             }
           }}
           width='min(1120px, calc(100vw - 40px))'
@@ -2004,7 +2020,7 @@ export default function Customers() {
           } : { customerType: 'PERSONAL', source: 'Marketing', status: 'NEW' }}
           onFinish={save}
           drawerProps={{ destroyOnClose: true, className: 'customer-form-drawer', rootClassName: 'customer-form-drawer-root' }}
-          submitter={{ searchConfig: { submitText: editingCustomer ? 'Lưu thay đổi' : 'Lưu hồ sơ', resetText: 'Hủy' } }}
+          submitter={{ searchConfig: { submitText: editingCustomer ? 'Lưu thay đổi' : 'Lưu đăng ký', resetText: 'Hủy' } }}
         >
           <div className='customer-form-layout'>
             <div className='customer-form-main'>
@@ -2106,7 +2122,7 @@ export default function Customers() {
                 </>
               )}
 
-              <div className='form-section-heading'>Thông tin hồ sơ tư vấn</div>
+              <div className='form-section-heading'>Thông tin đăng ký tư vấn</div>
               <ProFormTextArea
                 name='notes'
                 label='Yêu cầu / Ghi chú ban đầu'

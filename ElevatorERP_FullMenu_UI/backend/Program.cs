@@ -356,12 +356,12 @@ app.MapGet("/api/customers/{id:guid}/customer-360", async (
         x.Source,
         x.CreatedAt,
         x.UpdatedAt,
-        technicalConfigurationCount = TechnicalSpecFilter.CountSpecifications(x.TechnicalSpecsJson),
+        consultationConfigurationCount = TechnicalSpecFilter.CountSpecifications(x.TechnicalSpecsJson),
         x.quotationCount,
         x.customerElevatorCount
     }).ToList();
 
-    var consultationElevators = profileRows.SelectMany(profile =>
+    var consultationConfigurations = profileRows.SelectMany(profile =>
         TechnicalSpecDocument.ReadArray(profile.TechnicalSpecsJson)
             .Select((specification, index) => new
             {
@@ -410,6 +410,7 @@ app.MapGet("/api/customers/{id:guid}/customer-360", async (
             x.SignedAt,
             x.HandedOverAt,
             x.WarrantyExpiresAt,
+            consultationProfileId = x.ConsultationProfileId,
             consultationProfileCode = x.ConsultationProfile != null ? x.ConsultationProfile.Code : null,
             sourceQuotationId = x.SourceQuotationId,
             sourceQuotationCode = x.SourceQuotation != null ? x.SourceQuotation.Code : null,
@@ -449,13 +450,13 @@ app.MapGet("/api/customers/{id:guid}/customer-360", async (
         summary = new
         {
             consultationProfileCount = profiles.Count,
-            technicalConfigurationCount = profiles.Sum(x => x.technicalConfigurationCount),
+            consultationConfigurationCount = profiles.Sum(x => x.consultationConfigurationCount),
             quotationCount = quotations.Count,
             customerElevatorCount = elevators.Count,
             activeElevatorCount = elevators.Count(x => x.Status is "PENDING_IMPLEMENTATION" or "IMPLEMENTING" or "WARRANTY" or "MAINTENANCE")
         },
         consultationProfiles = profiles,
-        consultationElevators,
+        consultationConfigurations,
         quotations,
         elevators,
         history
@@ -529,6 +530,7 @@ app.MapGet("/api/customers", async (
     string? elevatorType,
     string? source,
     string? owner,
+    string? address,
     DateTimeOffset? createdFrom,
     DateTimeOffset? createdTo,
     AppDbContext db,
@@ -612,6 +614,14 @@ app.MapGet("/api/customers", async (
             .ToList();
     }
 
+    if (!string.IsNullOrWhiteSpace(address))
+    {
+        var normalizedAddress = SearchText.Normalize(address.Trim());
+        rows = rows
+            .Where(x => SearchText.Normalize(x.Address).Contains(normalizedAddress))
+            .ToList();
+    }
+
     return Results.Ok(rows.OrderByDescending(x => CustomerCodeSort.Key(x.Code)).ThenByDescending(x => x.Code));
 }).RequirePermission("customer.view");
 
@@ -627,7 +637,7 @@ app.MapPost("/api/customers", async (
 
     var phone = request.Phone.Trim();
     if (await db.Customers.AnyAsync(x => x.Phone == phone))
-        return Results.BadRequest(new { message = "Số điện thoại đã tồn tại trong hệ thống. Vui lòng mở khách hàng đã có hoặc tạo hồ sơ tư vấn từ khách hàng này." });
+        return Results.BadRequest(new { message = "Số điện thoại đã tồn tại trong hệ thống. Vui lòng mở khách hàng đã có hoặc tạo đăng ký tư vấn từ khách hàng này." });
 
     var count = await db.Customers.IgnoreQueryFilters().CountAsync() + 1;
     var customer = new Customer
@@ -748,7 +758,7 @@ app.MapDelete("/api/customers/{id:guid}", async (
     {
         return Results.Conflict(new
         {
-            message = "Không thể xóa khách hàng đã phát sinh hồ sơ tư vấn, lịch chăm sóc hoặc báo giá. Hãy giữ khách hàng để bảo toàn lịch sử nghiệp vụ."
+            message = "Không thể xóa khách hàng đã phát sinh đăng ký tư vấn, lịch chăm sóc hoặc báo giá. Hãy giữ khách hàng để bảo toàn lịch sử nghiệp vụ."
         });
     }
 
@@ -950,7 +960,7 @@ app.MapPost("/api/consultation-profiles", async (
     if (request.CustomerId is not null && customer is null)
         return Results.NotFound(new { message = "Không tìm thấy khách hàng đã chọn." });
     if (request.CustomerId is null && await db.Customers.AnyAsync(x => x.Phone == phone))
-        return Results.BadRequest(new { message = "Số điện thoại đã tồn tại trong hệ thống. Vui lòng chọn khách hàng đã có để tạo hồ sơ tư vấn mới." });
+        return Results.BadRequest(new { message = "Số điện thoại đã tồn tại trong hệ thống. Vui lòng chọn khách hàng đã có để tạo đăng ký tư vấn mới." });
 
     var isNewCustomer = customer is null;
     if (customer is null)
@@ -1039,7 +1049,7 @@ app.MapPut("/api/consultation-profiles/{id:guid}", async (
     var profile = await db.ConsultationProfiles
         .Include(x => x.Customer)
         .FirstOrDefaultAsync(x => x.Id == id);
-    if (profile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+    if (profile is null) return Results.NotFound(new { message = "Không tìm thấy đăng ký tư vấn." });
 
     var canUpdateAll = await db.UserRoles.AnyAsync(x =>
         x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
@@ -1096,7 +1106,7 @@ app.MapPut("/api/consultation-profiles/{id:guid}/status", async (
         return Results.BadRequest(new { message = "Trạng thái là bắt buộc." });
 
     var profile = await db.ConsultationProfiles.FirstOrDefaultAsync(x => x.Id == id);
-    if (profile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+    if (profile is null) return Results.NotFound(new { message = "Không tìm thấy đăng ký tư vấn." });
 
     var canUpdateAll = await db.UserRoles.AnyAsync(x =>
         x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
@@ -1139,7 +1149,7 @@ app.MapPut("/api/consultation-profiles/{id:guid}/technical-configurations/{confi
         return Results.BadRequest(new { message = "Dữ liệu cấu hình kỹ thuật không hợp lệ." });
 
     var profile = await db.ConsultationProfiles.FirstOrDefaultAsync(x => x.Id == id);
-    if (profile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+    if (profile is null) return Results.NotFound(new { message = "Không tìm thấy đăng ký tư vấn." });
 
     var canUpdateAll = await db.UserRoles.AnyAsync(x =>
         x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
@@ -1407,13 +1417,13 @@ app.MapPost("/api/quotations", async (
         consultationProfile = await db.ConsultationProfiles
             .Include(x => x.Customer)
             .FirstOrDefaultAsync(x => x.Id == request.ConsultationProfileId);
-        if (consultationProfile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+        if (consultationProfile is null) return Results.NotFound(new { message = "Không tìm thấy đăng ký tư vấn." });
         customer = consultationProfile.Customer;
     }
     else
     {
         if (request.CustomerId == Guid.Empty)
-            return Results.BadRequest(new { message = "Hồ sơ tư vấn là bắt buộc." });
+            return Results.BadRequest(new { message = "Đăng ký tư vấn là bắt buộc." });
         customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == request.CustomerId);
         if (customer is null) return Results.NotFound(new { message = "Không tìm thấy khách hàng." });
         consultationProfile = await db.ConsultationProfiles
@@ -2216,7 +2226,7 @@ app.MapGet("/api/files/{id:guid}", async (
         && Guid.TryParse(storedFile.RecordId, out var consultationProfileId))
     {
         var profile = await db.ConsultationProfiles.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == consultationProfileId && !x.IsDeleted);
-        if (profile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+        if (profile is null) return Results.NotFound(new { message = "Không tìm thấy đăng ký tư vấn." });
 
         var canViewAll = await db.UserRoles.AnyAsync(x =>
             x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));

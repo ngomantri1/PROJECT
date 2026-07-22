@@ -118,7 +118,7 @@ export default function TechnicalConfigurationForm({ value, onChange, locationEx
       </div>
 
       <div className='technical-section-title'>Tài liệu / Ảnh khảo sát <Badge count={value.attachments?.length ?? 0} showZero size='small' className='section-count-badge' /></div>
-      {attachmentsExtra ?? <Typography.Text type='secondary'>Tài liệu khảo sát được quản lý tại hồ sơ tư vấn.</Typography.Text>}
+      {attachmentsExtra ?? <Typography.Text type='secondary'>Tài liệu khảo sát được quản lý tại đăng ký tư vấn.</Typography.Text>}
 
       <label className='technical-note-field'><span>Ghi chú kỹ thuật</span><Input.TextArea disabled={disabled} rows={3} value={value.technicalNotes} onChange={(event) => patch({ technicalNotes: event.target.value })} /></label>
     </div>

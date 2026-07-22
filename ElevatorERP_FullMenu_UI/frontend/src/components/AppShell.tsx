@@ -88,6 +88,7 @@ const routeDefinitions: ErpRoute[] = [
     path: '/notifications',
     name: 'Thông báo',
     icon: <BellOutlined />,
+    hideInMenu: true,
   },
   {
     path: '/business',
@@ -102,13 +103,13 @@ const routeDefinitions: ErpRoute[] = [
       },
       {
         path: '/customers',
-        name: 'Hồ sơ tư vấn',
+        name: 'Đăng ký tư vấn',
         icon: <UserAddOutlined />,
         permission: 'customer.view',
       },
       {
         path: '/care',
-        name: 'Lịch chăm sóc khách hàng',
+        name: 'Lịch chăm sóc',
         icon: <CalendarOutlined />,
         permission: 'care.view',
       },

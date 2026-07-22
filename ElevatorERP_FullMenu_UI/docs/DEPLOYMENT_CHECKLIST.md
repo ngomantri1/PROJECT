@@ -526,7 +526,7 @@ docker compose ps
 ### D5. Kiểm tra đồng bộ
 
 - [ ] Đăng nhập VPS bằng tài khoản giống local.
-- [ ] So sánh số lượng khách hàng/hồ sơ tư vấn ở local và VPS.
+- [ ] So sánh số lượng khách hàng/đăng ký tư vấn ở local và VPS.
 - [ ] Mở ít nhất một ảnh/tài liệu đính kèm.
 - [ ] Nếu không cần giữ file upload cũ trên VPS, có thể kiểm tra số file:
 

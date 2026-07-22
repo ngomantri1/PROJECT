@@ -299,7 +299,7 @@ export default function Care() {
         header={{
           title: (
             <div className='page-title-stack'>
-              <Typography.Title level={3}>Lịch chăm sóc khách hàng</Typography.Title>
+              <Typography.Title level={3}>Lịch chăm sóc</Typography.Title>
               <Typography.Text>Lập lịch, theo dõi và ghi nhận kết quả chăm sóc</Typography.Text>
             </div>
           ),

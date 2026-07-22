@@ -2,8 +2,8 @@
 
 - V0: hạ tầng và kiến trúc.
 - V1: tài khoản, vai trò, quyền, audit.
-- V2: khách hàng, hồ sơ tư vấn và lịch chăm sóc.
-- V3: báo giá gắn với hồ sơ tư vấn và hợp đồng.
+- V2: khách hàng, đăng ký tư vấn và lịch chăm sóc.
+- V3: báo giá gắn với đăng ký tư vấn và hợp đồng.
 - V4: dự án và hồ sơ thang máy.
 - V5: công việc, nhật ký công trường, ảnh.
 - V6: KCS, kiểm định, nghiệm thu, bàn giao.
@@ -17,7 +17,7 @@ Chi tiết giai đoạn đổi luồng kinh doanh nền tảng được ghi tạ
 
 ### Giai đoạn 1: đổi luồng kinh doanh nền tảng
 
-- Đổi `Đăng ký khách hàng` thành `Hồ sơ tư vấn`.
-- Tách/chuẩn hóa `Khách hàng` và `Hồ sơ tư vấn`.
-- Báo giá gắn với `Hồ sơ tư vấn`.
-- KPI kinh doanh tính theo `Hồ sơ tư vấn hợp lệ`.
+- Đổi `Đăng ký khách hàng` thành `Đăng ký tư vấn`.
+- Tách/chuẩn hóa `Khách hàng` và `Đăng ký tư vấn`.
+- Báo giá gắn với `Đăng ký tư vấn`.
+- KPI kinh doanh tính theo `Đăng ký tư vấn hợp lệ`.
