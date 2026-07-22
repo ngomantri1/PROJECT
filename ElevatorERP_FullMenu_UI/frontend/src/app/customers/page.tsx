@@ -1420,7 +1420,7 @@ export default function Customers() {
       defaultSortOrder: 'descend',
       render: (_, item) => (
         <Tooltip title='Mở chi tiết hồ sơ tư vấn'>
-          <Typography.Link className='record-link record-link-code' onClick={() => openEditDrawer(item)}>{item.code}</Typography.Link>
+          <Typography.Link className='record-link record-link-code' onClick={() => router.push(`/consultation-profiles/${item.id}`)}>{item.code}</Typography.Link>
         </Tooltip>
       ),
     },
@@ -1434,7 +1434,7 @@ export default function Customers() {
         <Tooltip title='Mở Customer 360 tại hồ sơ tư vấn này'>
           <Typography.Link
             className='record-link table-primary-text'
-            onClick={() => router.push(`/business/customers/${item.customerId ?? item.id}?tab=profiles&profileId=${item.id}`)}
+            onClick={() => router.push(`/business/customers/${item.customerId ?? item.id}?tab=profiles&profileId=${item.id}&returnTo=consultation-profiles`)}
           >
             {item.name}
           </Typography.Link>
@@ -1951,9 +1951,14 @@ export default function Customers() {
                     <Descriptions.Item label='Nguồn'>{customer.source}</Descriptions.Item>
                     <Descriptions.Item label='Phụ trách'>{customer.owner}</Descriptions.Item>
                   </Descriptions>
-                  <Button block icon={<EditOutlined />} onClick={() => openEditDrawer(customer)}>
-                    Sửa thông tin
-                  </Button>
+                  <Space direction='vertical' size={8} style={{ width: '100%' }}>
+                    <Button block icon={<FileTextOutlined />} onClick={() => router.push(`/consultation-profiles/${customer.id}`)}>
+                      Mở chi tiết hồ sơ
+                    </Button>
+                    <Button block icon={<EditOutlined />} onClick={() => openEditDrawer(customer)}>
+                      Sửa thông tin
+                    </Button>
+                  </Space>
                 </Card>
               </List.Item>
             )}

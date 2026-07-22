@@ -366,6 +366,7 @@ app.MapGet("/api/customers/{id:guid}/customer-360", async (
             .Select((specification, index) => new
             {
                 id = $"{profile.Id}:{TechnicalSpecDocument.ReadString(specification, "id") ?? index.ToString()}",
+                configurationId = TechnicalSpecDocument.ReadString(specification, "id") ?? index.ToString(),
                 consultationProfileId = profile.Id,
                 consultationProfileCode = profile.Code,
                 consultationProfileStatus = profile.Status,
@@ -1123,6 +1124,55 @@ app.MapPut("/api/consultation-profiles/{id:guid}/status", async (
     await db.SaveChangesAsync();
 
     return Results.NoContent();
+}).RequirePermission("customer.update");
+
+app.MapPut("/api/consultation-profiles/{id:guid}/technical-configurations/{configurationId}", async (
+    Guid id,
+    string configurationId,
+    TechnicalConfigurationUpdateRequest request,
+    AppDbContext db,
+    CurrentUser current,
+    HttpContext http) =>
+{
+    if (current.Id is null) return Results.Unauthorized();
+    if (request.Configuration.ValueKind != JsonValueKind.Object)
+        return Results.BadRequest(new { message = "Dữ liệu cấu hình kỹ thuật không hợp lệ." });
+
+    var profile = await db.ConsultationProfiles.FirstOrDefaultAsync(x => x.Id == id);
+    if (profile is null) return Results.NotFound(new { message = "Không tìm thấy hồ sơ tư vấn." });
+
+    var canUpdateAll = await db.UserRoles.AnyAsync(x =>
+        x.UserId == current.Id && (x.Role.DataScope == "ALL" || x.Role.DataScope == "DEPARTMENT"));
+    if (!canUpdateAll && profile.OwnerUserId != current.Id.Value) return Results.Forbid();
+
+    var configurations = TechnicalSpecDocument.ReadArray(profile.TechnicalSpecsJson);
+    var index = configurations.FindIndex(configuration => TechnicalSpecDocument.ReadString(configuration, "id") == configurationId);
+    if (index < 0 && int.TryParse(configurationId, out var legacyIndex) && legacyIndex >= 0 && legacyIndex < configurations.Count)
+        index = legacyIndex;
+    if (index < 0) return Results.NotFound(new { message = "Không tìm thấy cấu hình kỹ thuật thang máy." });
+
+    var updated = JsonNode.Parse(request.Configuration.GetRawText()) as JsonObject;
+    if (updated is null) return Results.BadRequest(new { message = "Dữ liệu cấu hình kỹ thuật không hợp lệ." });
+    updated["id"] = configurationId;
+
+    configurations[index] = updated;
+    profile.TechnicalSpecsJson = TechnicalSpecDocument.Serialize(configurations);
+    profile.UpdatedAt = DateTimeOffset.UtcNow;
+
+    db.AuditLogs.Add(new AuditLog
+    {
+        UserId = current.Id,
+        Username = current.Username,
+        Action = "UPDATE_TECHNICAL_CONFIGURATION",
+        Module = "ConsultationProfiles",
+        EntityType = nameof(ConsultationProfile),
+        EntityId = profile.Id.ToString(),
+        Details = $"{profile.Code} · {TechnicalSpecDocument.ReadString(updated, "name") ?? configurationId}",
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    });
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { configuration = updated });
 }).RequirePermission("customer.update");
 
 app.MapGet("/api/consultation-profiles/{id:guid}", async (
@@ -2318,6 +2368,7 @@ record QuotationRequest(
     decimal? TotalAmount,
     string? Notes);
 record CopyTechnicalConfigurationRequest(Guid SourceProfileId, string? ConfigurationId);
+record TechnicalConfigurationUpdateRequest(JsonElement Configuration);
 record ConfirmQuotationContractRequest(string ContractReference, DateTimeOffset? SignedAt, DateTimeOffset? WarrantyExpiresAt);
 record CustomerElevatorStatusRequest(string Status, DateTimeOffset? HandedOverAt, DateTimeOffset? WarrantyExpiresAt);
 

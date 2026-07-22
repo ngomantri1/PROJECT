@@ -135,7 +135,24 @@ html[data-theme='dark'],html[data-theme='dark'] body{background:var(--bg-layout)
 .customer-360-tabs .ant-tabs-content-holder{min-height:360px}
 .customer-360-table-card .ant-card-body{padding:12px!important}
 .customer-360-history-item .ant-typography-paragraph{margin:3px 0!important}
+.consultation-detail-loading{display:grid;min-height:60vh;place-items:center}
+.consultation-detail-header{margin-bottom:14px!important;border-color:#cfe0d2!important}
+.technical-configuration-header{margin-bottom:14px!important;border-color:#cfe0d2!important}
+.technical-configuration-form .ant-typography{margin:8px 0 12px!important}
+.consultation-detail-owner{display:flex;align-items:flex-end;gap:8px;justify-content:flex-end;flex-direction:column}
+.consultation-detail-stack{width:100%}
+.consultation-configuration-list{display:grid;gap:12px}
+.consultation-configuration-card{border-color:#d9e9dc!important;box-shadow:none!important}
+.consultation-configuration-card .ant-card-body{padding:14px 16px!important}
+.consultation-configuration-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;font-weight:700;color:#1e3325}
+.consultation-configuration-title>span{display:inline-flex;align-items:center;gap:8px}.consultation-configuration-title .anticon{color:var(--brand-600)}
+.consultation-copy-controls{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:10px;align-items:center}
+.consultation-history-item .ant-typography-paragraph{margin:3px 0!important}
 html[data-theme='dark'] .customer-360-header-card{background:#161b19!important;border-color:#31463a!important}
+html[data-theme='dark'] .consultation-detail-header{background:#161b19!important;border-color:#31463a!important}
+html[data-theme='dark'] .technical-configuration-header{background:#161b19!important;border-color:#31463a!important}
+html[data-theme='dark'] .consultation-configuration-card{background:#161b19!important;border-color:#2f3935!important}
+html[data-theme='dark'] .consultation-configuration-title{color:#dce4df}
 html[data-theme='dark'] .customer-360-tabs>.ant-tabs-nav{background:#17221a!important;border-color:#31463a!important}
 html[data-theme='dark'] .customer-360-tabs .ant-tabs-tab{color:#c7d0ca!important}
 html[data-theme='dark'] .customer-360-tabs .ant-tabs-tab:hover{color:#7ee2a1!important}
@@ -624,6 +641,7 @@ html[data-theme='dark'] .customer-360-tab-label>.anticon{color:#a9b8ae}
   .technical-location-panel{grid-template-columns:1fr}
   .technical-location-panel>.ant-space{justify-content:flex-start}
   .technical-installation-address-head{align-items:flex-start;flex-direction:column}
+  .consultation-copy-controls{grid-template-columns:1fr}
   .technical-attachment-actions{align-items:flex-start;flex-direction:column}
   .technical-installation-area>.ant-typography{justify-self:start}
   .customer-supplement-heading{align-items:flex-start;flex-direction:column}

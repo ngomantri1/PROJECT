@@ -241,7 +241,7 @@ export default function CustomerMasterPage() {
       sorter: (a, b) => textSorter.compare(a.code, b.code),
       render: (value, item) => (
         <Tooltip title='Mở Customer 360'>
-          <Typography.Link className='record-link record-link-code' onClick={() => router.push(`/business/customers/${item.id}`)}>{String(value)}</Typography.Link>
+          <Typography.Link className='record-link record-link-code' onClick={() => router.push(`/business/customers/${item.id}?returnTo=customers`)}>{String(value)}</Typography.Link>
         </Tooltip>
       ),
     },
@@ -252,7 +252,7 @@ export default function CustomerMasterPage() {
       render: (_, item) => (
         <span>
           <Tooltip title='Mở Customer 360'>
-            <Typography.Link strong className='record-link' onClick={() => router.push(`/business/customers/${item.id}`)}>{item.name}</Typography.Link>
+            <Typography.Link strong className='record-link' onClick={() => router.push(`/business/customers/${item.id}?returnTo=customers`)}>{item.name}</Typography.Link>
           </Tooltip>
           <small className='table-secondary-text'>{item.phone}</small>
         </span>
@@ -389,7 +389,7 @@ export default function CustomerMasterPage() {
                 <Space align='start' style={{ width: '100%', justifyContent: 'space-between' }}>
                   <div>
                     <Tooltip title='Mở Customer 360'>
-                      <Typography.Link strong className='record-link' onClick={() => router.push(`/business/customers/${item.id}`)}>{item.name}</Typography.Link>
+                      <Typography.Link strong className='record-link' onClick={() => router.push(`/business/customers/${item.id}?returnTo=customers`)}>{item.name}</Typography.Link>
                     </Tooltip>
                     <div className='muted-text'>{item.code} · {item.phone}</div>
                   </div>
@@ -403,7 +403,7 @@ export default function CustomerMasterPage() {
                   <Descriptions.Item label='Ngày tạo'>{item.createdAt ? dayjs(item.createdAt).format('DD/MM/YYYY') : '—'}</Descriptions.Item>
                 </Descriptions>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                  <Button type='link' onClick={() => router.push(`/business/customers/${item.id}`)}>Mở Customer 360</Button>
+                  <Button type='link' onClick={() => router.push(`/business/customers/${item.id}?returnTo=customers`)}>Mở Customer 360</Button>
                   {renderCustomerActions(item)}
                 </Space>
               </Card>

@@ -9,6 +9,7 @@ import { PageContainer, ProCard } from '@ant-design/pro-components';
 import { AppstoreOutlined, ArrowLeftOutlined, BuildOutlined, CalendarOutlined, CustomerServiceOutlined, DollarOutlined, FileTextOutlined, FundProjectionScreenOutlined, HistoryOutlined, PhoneOutlined, ProfileOutlined, SafetyCertificateOutlined, ToolOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import AppStatusTag from '@/components/AppStatusTag';
+import Customer360TableActions from '@/components/Customer360TableActions';
 import { api } from '@/lib/api';
 
 type ConsultationProfile = {
@@ -62,6 +63,7 @@ type CustomerContract = {
 
 type ConsultationElevator = {
   id: string;
+  configurationId: string;
   consultationProfileId: string;
   consultationProfileCode: string;
   consultationProfileStatus: string;
@@ -240,6 +242,11 @@ function lifecyclePhase(status?: string) {
   return phases[status ?? ''] ?? formatStatus(status);
 }
 
+function elevatorTypeLabel(value?: string) {
+  const labels: Record<string, string> = { BUILT: 'Thang xây', GLASS: 'Thang kính' };
+  return value ? labels[value] ?? value : '-';
+}
+
 export default function Customer360Page() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -247,6 +254,9 @@ export default function Customer360Page() {
   const customerId = params.id;
   const requestedTab = searchParams.get('tab');
   const requestedProfileId = searchParams.get('profileId');
+  const returnTo = searchParams.get('returnTo');
+  const returnTarget = returnTo === 'consultation-profiles' ? '/customers' : '/business/customers';
+  const returnLabel = returnTo === 'consultation-profiles' ? 'Danh sách hồ sơ tư vấn' : 'Danh sách khách hàng';
   const activeTab: CustomerTab = tabs.includes(requestedTab as CustomerTab) ? requestedTab as CustomerTab : 'overview';
   const [data, setData] = useState<Customer360>();
   const [careActivities, setCareActivities] = useState<CareActivity[]>([]);
@@ -333,13 +343,24 @@ export default function Customer360Page() {
     router.replace(`/business/customers/${customerId}?${nextSearchParams.toString()}`);
   };
 
+  const configurationUrl = (item: ConsultationElevator, mode?: 'edit') => {
+    const query = new URLSearchParams({
+      returnTo: 'customer360',
+      customerId,
+      customerReturnTo: returnTo === 'consultation-profiles' ? 'consultation-profiles' : 'customers',
+    });
+    if (mode === 'edit') query.set('mode', 'edit');
+    return `/consultation-profiles/${item.consultationProfileId}/configurations/${item.configurationId}?${query.toString()}`;
+  };
+
   const profileColumns: ColumnsType<ConsultationProfile> = [
-    { title: 'Mã hồ sơ', dataIndex: 'code', width: 150, render: (_, item) => <Tooltip title='Mở chi tiết hồ sơ tư vấn'><Typography.Link className='record-link record-link-code' onClick={() => router.push(`/customers?profileId=${item.id}`)}>{item.code}</Typography.Link></Tooltip> },
+    { title: 'Mã hồ sơ', dataIndex: 'code', width: 150, render: (_, item) => <Tooltip title='Mở chi tiết hồ sơ tư vấn'><Typography.Link className='record-link record-link-code' onClick={() => router.push(`/consultation-profiles/${item.id}`)}>{item.code}</Typography.Link></Tooltip> },
     { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (value) => <StatusTag value={value} /> },
     { title: 'Nguồn', dataIndex: 'source', width: 150, render: (value) => value || '-' },
     { title: 'Cấu hình thang', dataIndex: 'technicalConfigurationCount', align: 'right', width: 150 },
     { title: 'Báo giá', dataIndex: 'quotationCount', align: 'right', width: 110 },
     { title: 'Tạo ngày', dataIndex: 'createdAt', width: 130, render: (value) => dayjs(value).format('DD/MM/YYYY') },
+    { title: 'Thao tác', key: 'actions', width: 116, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(`/consultation-profiles/${item.id}`)} onEdit={() => router.push(`/customers?profileId=${item.id}`)} viewLabel='Xem hồ sơ tư vấn' editLabel='Sửa hồ sơ tư vấn' moreItems={[{ key: 'quotations', label: 'Mở báo giá liên kết', onClick: () => router.push(`/quotations?consultationProfileId=${item.id}`) }]} /> },
   ];
 
   const consultationProfileRowProps = (profile: ConsultationProfile) => ({
@@ -350,20 +371,22 @@ export default function Customer360Page() {
   const elevatorColumns: ColumnsType<CustomerElevator> = [
     { title: 'Mã thang', dataIndex: 'code', width: 130 },
     { title: 'Tên thang', dataIndex: 'name', width: 180 },
-    { title: 'Loại thang máy', dataIndex: 'elevatorType', width: 160, render: (value) => value || '-' },
+    { title: 'Loại thang máy', dataIndex: 'elevatorType', width: 160, render: (value) => elevatorTypeLabel(value) },
     { title: 'Trạng thái', dataIndex: 'status', width: 170, render: (value) => <StatusTag value={value} /> },
     { title: 'Hồ sơ nguồn', dataIndex: 'consultationProfileCode', width: 150, render: (value) => value || '-' },
     { title: 'Vị trí lắp đặt', dataIndex: 'installationAddress', render: (value) => value || '-' },
+    { title: 'Thao tác', key: 'actions', width: 96, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(item.contractReference ? `/quotations?contractReference=${encodeURIComponent(item.contractReference)}` : '/quotations')} viewLabel={item.contractReference ? 'Mở hợp đồng nguồn' : 'Xem báo giá nguồn'} /> },
   ];
 
   const consultationElevatorColumns: ColumnsType<ConsultationElevator> = [
-    { title: 'Tên thang', dataIndex: 'name', width: 190, render: (_, item) => <Typography.Link className='record-link' onClick={() => router.push(`/customers?profileId=${item.consultationProfileId}`)}>{item.name}</Typography.Link> },
-    { title: 'Loại thang máy', dataIndex: 'elevatorType', width: 160, render: (value) => value || '-' },
+    { title: 'Tên thang', dataIndex: 'name', width: 190, render: (_, item) => <Tooltip title='Xem cấu hình kỹ thuật'><Typography.Link className='record-link' onClick={() => router.push(configurationUrl(item))}>{item.name}</Typography.Link></Tooltip> },
+    { title: 'Loại thang máy', dataIndex: 'elevatorType', width: 160, render: (value) => elevatorTypeLabel(value) },
     { title: 'Số tầng', dataIndex: 'floors', align: 'right', width: 100, render: (value) => value ?? '-' },
     { title: 'Tải trọng', dataIndex: 'capacityKg', align: 'right', width: 130, render: (value) => value ? `${value} kg` : '-' },
-    { title: 'Hồ sơ nguồn', dataIndex: 'consultationProfileCode', width: 155, render: (_, item) => <Typography.Link className='record-link record-link-code' onClick={() => router.push(`/customers?profileId=${item.consultationProfileId}`)}>{item.consultationProfileCode}</Typography.Link> },
+    { title: 'Hồ sơ nguồn', dataIndex: 'consultationProfileCode', width: 155, render: (_, item) => <Typography.Link className='record-link record-link-code' onClick={() => router.push(`/consultation-profiles/${item.consultationProfileId}`)}>{item.consultationProfileCode}</Typography.Link> },
     { title: 'Trạng thái hồ sơ', dataIndex: 'consultationProfileStatus', width: 155, render: (value) => <StatusTag value={value} /> },
     { title: 'Vị trí lắp đặt', dataIndex: 'installationAddress', render: (value, item) => value || item.area || '-' },
+    { title: 'Thao tác', key: 'actions', width: 96, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(configurationUrl(item))} onEdit={() => router.push(configurationUrl(item, 'edit'))} viewLabel='Xem cấu hình kỹ thuật' editLabel='Sửa cấu hình kỹ thuật' /> },
   ];
 
   const quotationColumns: ColumnsType<Quotation> = [
@@ -373,6 +396,7 @@ export default function Customer360Page() {
     { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (value) => <StatusTag value={value} /> },
     { title: 'Giá trị', dataIndex: 'totalAmount', align: 'right', width: 170, render: (value) => formatCurrency(value) },
     { title: 'Ngày tạo', dataIndex: 'createdAt', width: 130, render: (value) => dayjs(value).format('DD/MM/YYYY') },
+    { title: 'Thao tác', key: 'actions', width: 82, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(`/quotations?consultationProfileId=${item.consultationProfileId ?? ''}`)} viewLabel='Xem báo giá' /> },
   ];
 
   const receivableColumns: ColumnsType<CustomerContract> = [
@@ -382,6 +406,7 @@ export default function Customer360Page() {
     { title: 'Đã thu', align: 'right', width: 150, render: () => 'Chưa ghi nhận' },
     { title: 'Còn phải thu', align: 'right', width: 160, render: () => 'Chưa có dữ liệu' },
     { title: 'Quá hạn', align: 'right', width: 130, render: () => 'Chưa có dữ liệu' },
+    { title: 'Thao tác', key: 'actions', width: 82, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(`/quotations?contractReference=${encodeURIComponent(item.reference)}`)} viewLabel='Xem hợp đồng' /> },
   ];
 
   const progressColumns: ColumnsType<CustomerElevator> = [
@@ -392,6 +417,7 @@ export default function Customer360Page() {
     { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (value) => <StatusTag value={value} /> },
     { title: 'Ngày ký', dataIndex: 'signedAt', width: 125, render: (value) => value ? dayjs(value).format('DD/MM/YYYY') : '-' },
     { title: 'Bàn giao', dataIndex: 'handedOverAt', width: 125, render: (value) => value ? dayjs(value).format('DD/MM/YYYY') : '-' },
+    { title: 'Thao tác', key: 'actions', width: 82, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(item.contractReference ? `/quotations?contractReference=${encodeURIComponent(item.contractReference)}` : '/quotations')} viewLabel='Xem thang máy tài sản' /> },
   ];
 
   const maintenanceColumns: ColumnsType<CustomerElevator> = [
@@ -402,6 +428,24 @@ export default function Customer360Page() {
     { title: 'Bảo hành đến', dataIndex: 'warrantyExpiresAt', width: 160, render: (value) => value ? dayjs(value).format('DD/MM/YYYY') : 'Chưa thiết lập' },
     { title: 'Bảo trì gần nhất', width: 170, render: () => 'Chưa ghi nhận' },
     { title: 'Lịch kế tiếp', width: 150, render: () => 'Chưa ghi nhận' },
+    { title: 'Thao tác', key: 'actions', width: 82, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(item.contractReference ? `/quotations?contractReference=${encodeURIComponent(item.contractReference)}` : '/quotations')} viewLabel='Xem thang máy tài sản' /> },
+  ];
+
+  const contractColumns: ColumnsType<CustomerContract> = [
+    { title: 'Mã hợp đồng', dataIndex: 'reference', render: (value) => <Typography.Text strong>{value}</Typography.Text> },
+    { title: 'Số thang máy', dataIndex: 'elevators', align: 'right', render: (value: CustomerElevator[]) => value.length },
+    { title: 'Thang máy', dataIndex: 'elevators', render: (value: CustomerElevator[]) => value.map((item) => item.name).join(', ') },
+    { title: 'Tình trạng', dataIndex: 'elevators', render: (value: CustomerElevator[]) => <StatusTag value={value[0]?.status} /> },
+    { title: 'Thao tác', key: 'actions', width: 82, fixed: 'right', align: 'center', render: (_, item) => <Customer360TableActions onView={() => router.push(`/quotations?contractReference=${encodeURIComponent(item.reference)}`)} viewLabel='Xem hợp đồng' /> },
+  ];
+
+  const careColumns: ColumnsType<CareActivity> = [
+    { title: 'Thời gian', dataIndex: 'scheduledAt', width: 150, render: (value) => dayjs(value).format('DD/MM/YYYY HH:mm') },
+    { title: 'Loại chăm sóc', dataIndex: 'careType', width: 150 },
+    { title: 'Nội dung', dataIndex: 'content' },
+    { title: 'Người phụ trách', dataIndex: 'assignee', width: 160, render: (value) => value || '-' },
+    { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (value) => <StatusTag value={value} /> },
+    { title: 'Thao tác', key: 'actions', width: 82, fixed: 'right', align: 'center', render: () => <Customer360TableActions onView={() => router.push(`/care?customerId=${customerId}`)} viewLabel='Xem lịch chăm sóc' /> },
   ];
 
   if (loading) {
@@ -450,7 +494,7 @@ export default function Customer360Page() {
       label: tabLabel('profiles', summary.consultationProfileCount),
       children: (
         <Card className='customer-360-table-card' title='Danh sách hồ sơ tư vấn'>
-          <Table rowKey='id' columns={profileColumns} dataSource={data.consultationProfiles} scroll={{ x: 900 }} pagination={{ pageSize: 10, showSizeChanger: true }} onRow={consultationProfileRowProps} />
+          <Table rowKey='id' columns={profileColumns} dataSource={data.consultationProfiles} scroll={{ x: 1000 }} pagination={{ pageSize: 10, showSizeChanger: true }} onRow={consultationProfileRowProps} />
         </Card>
       ),
     },
@@ -460,19 +504,19 @@ export default function Customer360Page() {
       children: (
         <Space direction='vertical' size={16} className='customer-360-stack'>
           <Card className='customer-360-table-card' title='Cấu hình thang theo hồ sơ tư vấn'>
-            <Typography.Paragraph type='secondary'>Các thang đang được tư vấn hoặc khảo sát. Mỗi dòng thuộc duy nhất một hồ sơ nguồn; mở hồ sơ nguồn để xem và chỉnh sửa cấu hình.</Typography.Paragraph>
-            <Table rowKey='id' columns={consultationElevatorColumns} dataSource={data.consultationElevators} scroll={{ x: 1040 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có cấu hình thang trong các hồ sơ tư vấn.' }} />
+            <Typography.Paragraph type='secondary'>Các thang đang được tư vấn hoặc khảo sát. Mỗi dòng thuộc duy nhất một hồ sơ nguồn; bấm tên thang để xem hoặc sửa cấu hình kỹ thuật.</Typography.Paragraph>
+            <Table rowKey='id' columns={consultationElevatorColumns} dataSource={data.consultationElevators} scroll={{ x: 1140 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có cấu hình thang trong các hồ sơ tư vấn.' }} />
           </Card>
           <Card className='customer-360-table-card' title='Thang máy tài sản'>
             <Typography.Paragraph type='secondary'>Chỉ các thang máy đã chốt hợp đồng mới trở thành tài sản để triển khai, bảo hành và bảo trì.</Typography.Paragraph>
-            <Table rowKey='id' columns={elevatorColumns} dataSource={data.elevators} scroll={{ x: 920 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có thang máy tài sản.' }} />
+            <Table rowKey='id' columns={elevatorColumns} dataSource={data.elevators} scroll={{ x: 1020 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có thang máy tài sản.' }} />
           </Card>
         </Space>
       ),
     },
-    { key: 'quotations', label: tabLabel('quotations', summary.quotationCount), children: <Card className='customer-360-table-card' title='Danh sách báo giá'><Table rowKey='id' columns={quotationColumns} dataSource={data.quotations} scroll={{ x: 940 }} pagination={{ pageSize: 10, showSizeChanger: true }} /></Card> },
-    { key: 'contracts', label: tabLabel('contracts', contracts.length), children: <Card title='Hợp đồng đã chốt'><Typography.Paragraph type='secondary'>Danh sách được tổng hợp từ các thang máy tài sản đã được tạo khi chốt hợp đồng.</Typography.Paragraph>{contracts.length === 0 ? <Empty description='Chưa có hợp đồng đã chốt.' /> : <Table rowKey='reference' pagination={false} dataSource={contracts} columns={[{ title: 'Mã hợp đồng', dataIndex: 'reference', render: (value) => <Typography.Text strong>{value}</Typography.Text> }, { title: 'Số thang máy', dataIndex: 'elevators', align: 'right', render: (value: CustomerElevator[]) => value.length }, { title: 'Thang máy', dataIndex: 'elevators', render: (value: CustomerElevator[]) => value.map((item) => item.name).join(', ') }, { title: 'Tình trạng', dataIndex: 'elevators', render: (value: CustomerElevator[]) => <StatusTag value={value[0]?.status} /> }]} />}</Card> },
-    { key: 'care', label: tabLabel('care', careActivities.length), children: <Card className='customer-360-table-card' title='Lịch chăm sóc khách hàng'><Table rowKey='id' dataSource={careActivities} scroll={{ x: 820 }} pagination={{ pageSize: 10, showSizeChanger: true }} columns={[{ title: 'Thời gian', dataIndex: 'scheduledAt', width: 150, render: (value) => dayjs(value).format('DD/MM/YYYY HH:mm') }, { title: 'Loại chăm sóc', dataIndex: 'careType', width: 150 }, { title: 'Nội dung', dataIndex: 'content' }, { title: 'Người phụ trách', dataIndex: 'assignee', width: 160, render: (value) => value || '-' }, { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (value) => <StatusTag value={value} /> }]} /></Card> },
+    { key: 'quotations', label: tabLabel('quotations', summary.quotationCount), children: <Card className='customer-360-table-card' title='Danh sách báo giá'><Table rowKey='id' columns={quotationColumns} dataSource={data.quotations} scroll={{ x: 1040 }} pagination={{ pageSize: 10, showSizeChanger: true }} /></Card> },
+    { key: 'contracts', label: tabLabel('contracts', contracts.length), children: <Card className='customer-360-table-card' title='Hợp đồng đã chốt'><Typography.Paragraph type='secondary'>Danh sách được tổng hợp từ các thang máy tài sản đã được tạo khi chốt hợp đồng.</Typography.Paragraph>{contracts.length === 0 ? <Empty description='Chưa có hợp đồng đã chốt.' /> : <Table rowKey='reference' pagination={false} dataSource={contracts} columns={contractColumns} scroll={{ x: 760 }} />}</Card> },
+    { key: 'care', label: tabLabel('care', careActivities.length), children: <Card className='customer-360-table-card' title='Lịch chăm sóc khách hàng'><Table rowKey='id' dataSource={careActivities} scroll={{ x: 920 }} pagination={{ pageSize: 10, showSizeChanger: true }} columns={careColumns} /></Card> },
     { key: 'history', label: tabLabel('history', data.history.length), children: <Card title='Lịch sử hoạt động'>{data.history.length === 0 ? <Empty description='Chưa có dữ liệu lịch sử.' /> : <Timeline items={data.history.map((item) => ({ color: 'green', dot: <HistoryOutlined />, children: <div className='customer-360-history-item'><Typography.Text strong>{item.action}</Typography.Text><Typography.Paragraph type='secondary'>{item.details || item.module || item.entityType}</Typography.Paragraph><Typography.Text type='secondary'>{item.username || 'Hệ thống'} · {dayjs(item.createdAt).format('DD/MM/YYYY HH:mm')}</Typography.Text></div> }))} />}</Card> },
     {
       key: 'receivables',
@@ -486,7 +530,7 @@ export default function Customer360Page() {
           </Row>
           <Card className='customer-360-table-card' title='Công nợ theo hợp đồng'>
             <Typography.Paragraph type='secondary'>Customer 360 chỉ tổng hợp. Dữ liệu đã thu, còn phải thu và quá hạn sẽ hiển thị khi nghiệp vụ thu tiền được ghi nhận tại hợp đồng.</Typography.Paragraph>
-            <Table rowKey='reference' columns={receivableColumns} dataSource={contracts} scroll={{ x: 1060 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có hợp đồng để tổng hợp công nợ.' }} />
+            <Table rowKey='reference' columns={receivableColumns} dataSource={contracts} scroll={{ x: 1150 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có hợp đồng để tổng hợp công nợ.' }} />
           </Card>
         </Space>
       ),
@@ -497,7 +541,7 @@ export default function Customer360Page() {
       children: (
         <Card className='customer-360-table-card' title='Tiến độ thang máy tài sản'>
           <Typography.Paragraph type='secondary'>Chỉ tổng hợp thang máy đã chốt hợp đồng. Cập nhật tiến độ thực hiện tại hồ sơ thang máy tài sản hoặc hợp đồng nguồn.</Typography.Paragraph>
-          <Table rowKey='id' columns={progressColumns} dataSource={implementationElevators} scroll={{ x: 1040 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có thang máy tài sản cần theo dõi tiến độ.' }} />
+          <Table rowKey='id' columns={progressColumns} dataSource={implementationElevators} scroll={{ x: 1130 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có thang máy tài sản cần theo dõi tiến độ.' }} />
         </Card>
       ),
     },
@@ -507,7 +551,7 @@ export default function Customer360Page() {
       children: (
         <Card className='customer-360-table-card' title='Bảo hành và bảo trì'>
           <Typography.Paragraph type='secondary'>Chỉ hiển thị thang đã bàn giao, đang bảo hành hoặc đang bảo trì. Kế hoạch và phiếu bảo trì được quản lý tại từng thang máy tài sản.</Typography.Paragraph>
-          <Table rowKey='id' columns={maintenanceColumns} dataSource={maintenanceElevators} scroll={{ x: 1040 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có thang máy đủ điều kiện theo dõi bảo hành hoặc bảo trì.' }} />
+          <Table rowKey='id' columns={maintenanceColumns} dataSource={maintenanceElevators} scroll={{ x: 1130 }} pagination={{ pageSize: 10, showSizeChanger: true }} locale={{ emptyText: 'Chưa có thang máy đủ điều kiện theo dõi bảo hành hoặc bảo trì.' }} />
         </Card>
       ),
     },
@@ -520,7 +564,7 @@ export default function Customer360Page() {
       className='erp-page-container customer-360-page'
       header={{
         title: <div className='page-title-stack'><Typography.Title level={3}>{customer.name}</Typography.Title><Typography.Text>{customer.code} · Customer 360</Typography.Text></div>,
-        extra: <Space><Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/business/customers')}>Danh sách khách hàng</Button><Button icon={<CalendarOutlined />} onClick={() => router.push(`/care?customerId=${customer.id}`)}>Ghi chăm sóc</Button><Button type='primary' icon={<ProfileOutlined />} onClick={() => router.push(`/customers?customerId=${customer.id}`)}>Tạo hồ sơ tư vấn</Button></Space>,
+        extra: <Space><Button icon={<ArrowLeftOutlined />} onClick={() => router.push(returnTarget)}>{returnLabel}</Button><Button icon={<CalendarOutlined />} onClick={() => router.push(`/care?customerId=${customer.id}`)}>Ghi chăm sóc</Button><Button type='primary' icon={<ProfileOutlined />} onClick={() => router.push(`/customers?customerId=${customer.id}`)}>Tạo hồ sơ tư vấn</Button></Space>,
         breadcrumb: {},
       }}
     >
