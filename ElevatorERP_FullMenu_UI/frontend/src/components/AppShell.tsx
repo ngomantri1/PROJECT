@@ -22,6 +22,7 @@ import {
   CalendarOutlined,
   CarryOutOutlined,
   ClockCircleOutlined,
+  CloseOutlined,
   ContactsOutlined,
   CustomerServiceOutlined,
   DashboardOutlined,
@@ -308,6 +309,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       siderWidth={276}
       collapsed={collapsed}
       onCollapse={setCollapsed}
+      collapsedButtonRender={(isSiderCollapsed, defaultDom) => {
+        if (!isMobile || isSiderCollapsed) return defaultDom;
+        return (
+          <button
+            type='button'
+            className='mobile-sider-close-button'
+            onClick={() => setCollapsed(true)}
+            aria-label='Đóng menu điều hướng'
+          >
+            <CloseOutlined />
+          </button>
+        );
+      }}
       location={{ pathname }}
       route={{ path: '/', routes: menuData }}
       menu={isMobile ? { type: 'sub' } : { type: 'sub' }}
@@ -321,7 +335,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       menuItemRender={(item, dom) => {
         const route = item as ErpRoute;
         if (route.children || !route.path) return dom;
-        return <Link href={route.path}>{dom}</Link>;
+        return <Link href={route.path} onClick={() => isMobile && setCollapsed(true)}>{dom}</Link>;
       }}
       token={{
         header: {

@@ -445,7 +445,15 @@ export default function Customer360Page() {
         </Space>
       ),
     },
-    { key: 'profiles', label: tabLabel('profiles', summary.consultationProfileCount), children: <Card className='customer-360-table-card' title='Danh sách hồ sơ tư vấn'><Table rowKey='id' columns={profileColumns} dataSource={data.consultationProfiles} scroll={{ x: 900 }} pagination={{ pageSize: 10, showSizeChanger: true }} onRow={consultationProfileRowProps} /></Card> },
+    {
+      key: 'profiles',
+      label: tabLabel('profiles', summary.consultationProfileCount),
+      children: (
+        <Card className='customer-360-table-card' title='Danh sách hồ sơ tư vấn'>
+          <Table rowKey='id' columns={profileColumns} dataSource={data.consultationProfiles} scroll={{ x: 900 }} pagination={{ pageSize: 10, showSizeChanger: true }} onRow={consultationProfileRowProps} />
+        </Card>
+      ),
+    },
     {
       key: 'elevators',
       label: tabLabel('elevators', summary.technicalConfigurationCount),

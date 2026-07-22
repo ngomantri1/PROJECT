@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Col, Drawer, Dropdown, Form, Input, Modal, Row, Select, Space, Tag, Tooltip, Typography, message } from 'antd';
+import { Alert, Button, Card, Col, Descriptions, Drawer, Dropdown, Form, Input, List, Modal, Row, Select, Space, Tag, Tooltip, Typography, message } from 'antd';
 import { PageContainer, ProCard, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { CalendarOutlined, DeleteOutlined, EditOutlined, EllipsisOutlined, EnvironmentOutlined, FileAddOutlined, PlusOutlined, SearchOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
@@ -186,6 +186,53 @@ export default function CustomerMasterPage() {
     });
   };
 
+  const renderCustomerActions = (item: CustomerRow) => {
+    const hasBusinessHistory = Boolean(item.consultationProfileCount || item.quotationCount || item.careActivityCount);
+    const deleteReason = 'Không thể xóa khách hàng đã phát sinh hồ sơ tư vấn, lịch chăm sóc hoặc báo giá/hợp đồng.';
+
+    return (
+      <Space size={4}>
+        <Tooltip title='Sửa khách hàng'>
+          <Button type='text' className='table-action-button' icon={<EditOutlined />} onClick={() => openEdit(item)} />
+        </Tooltip>
+        <Dropdown
+          trigger={['click']}
+          menu={{
+            items: [
+              {
+                key: 'consultation',
+                icon: <FileAddOutlined />,
+                label: 'Tạo hồ sơ tư vấn',
+                onClick: () => router.push(`/customers?customerId=${item.id}`),
+              },
+              {
+                key: 'care',
+                icon: <CalendarOutlined />,
+                label: 'Ghi chăm sóc',
+                onClick: () => router.push(`/care?customerId=${item.id}`),
+              },
+              { type: 'divider' },
+              {
+                key: 'delete',
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled: hasBusinessHistory,
+                label: hasBusinessHistory ? (
+                  <Tooltip title={deleteReason}><span>Xóa khách hàng</span></Tooltip>
+                ) : 'Xóa khách hàng',
+                onClick: () => removeCustomer(item),
+              },
+            ],
+          }}
+        >
+          <Tooltip title='Thao tác khác'>
+            <Button type='text' className='table-action-button' icon={<EllipsisOutlined />} />
+          </Tooltip>
+        </Dropdown>
+      </Space>
+    );
+  };
+
   const columns: ProColumns<CustomerRow>[] = [
     {
       title: 'Mã KH',
@@ -262,51 +309,7 @@ export default function CustomerMasterPage() {
       valueType: 'option',
       width: 112,
       fixed: 'right',
-      render: (_, item) => {
-        const hasBusinessHistory = Boolean(item.consultationProfileCount || item.quotationCount || item.careActivityCount);
-        const deleteReason = 'Không thể xóa khách hàng đã phát sinh hồ sơ tư vấn, lịch chăm sóc hoặc báo giá/hợp đồng.';
-        return (
-          <Space size={4}>
-            <Tooltip title='Sửa khách hàng'>
-              <Button type='text' className='table-action-button' icon={<EditOutlined />} onClick={() => openEdit(item)} />
-            </Tooltip>
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [
-                  {
-                    key: 'consultation',
-                    icon: <FileAddOutlined />,
-                    label: 'Tạo hồ sơ tư vấn',
-                    onClick: () => router.push(`/customers?customerId=${item.id}`),
-                  },
-                  {
-                    key: 'care',
-                    icon: <CalendarOutlined />,
-                    label: 'Ghi chăm sóc',
-                    onClick: () => router.push(`/care?customerId=${item.id}`),
-                  },
-                  { type: 'divider' },
-                  {
-                    key: 'delete',
-                    icon: <DeleteOutlined />,
-                    danger: true,
-                    disabled: hasBusinessHistory,
-                    label: hasBusinessHistory ? (
-                      <Tooltip title={deleteReason}><span>Xóa khách hàng</span></Tooltip>
-                    ) : 'Xóa khách hàng',
-                    onClick: () => removeCustomer(item),
-                  },
-                ],
-              }}
-            >
-              <Tooltip title='Thao tác khác'>
-                <Button type='text' className='table-action-button' icon={<EllipsisOutlined />} />
-              </Tooltip>
-            </Dropdown>
-          </Space>
-        );
-      },
+      render: (_, item) => renderCustomerActions(item),
     },
   ];
 
@@ -372,6 +375,40 @@ export default function CustomerMasterPage() {
           pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `${total} khách hàng` }}
           scroll={{ x: 1400 }}
           headerTitle='Danh sách khách hàng'
+        />
+      </div>
+
+      <div className='mobile-card-list section-gap'>
+        <List
+          loading={loading}
+          dataSource={filteredRows}
+          locale={{ emptyText: 'Chưa có khách hàng' }}
+          renderItem={(item) => (
+            <List.Item>
+              <Card className='mobile-record-card'>
+                <Space align='start' style={{ width: '100%', justifyContent: 'space-between' }}>
+                  <div>
+                    <Tooltip title='Mở Customer 360'>
+                      <Typography.Link strong className='record-link' onClick={() => router.push(`/business/customers/${item.id}`)}>{item.name}</Typography.Link>
+                    </Tooltip>
+                    <div className='muted-text'>{item.code} · {item.phone}</div>
+                  </div>
+                  <Tag color={item.customerType === 'BUSINESS' ? 'blue' : 'green'}>{item.customerType === 'BUSINESS' ? 'Doanh nghiệp' : 'Cá nhân'}</Tag>
+                </Space>
+                <Descriptions size='small' column={1} className='mobile-descriptions'>
+                  <Descriptions.Item label='Email'>{item.email || 'Chưa có'}</Descriptions.Item>
+                  <Descriptions.Item label='Địa chỉ liên hệ'>{item.address || 'Chưa có'}</Descriptions.Item>
+                  <Descriptions.Item label='Nguồn'>{item.source || 'Chưa có'}</Descriptions.Item>
+                  <Descriptions.Item label='Phụ trách'>{item.owner || 'Chưa có'}</Descriptions.Item>
+                  <Descriptions.Item label='Ngày tạo'>{item.createdAt ? dayjs(item.createdAt).format('DD/MM/YYYY') : '—'}</Descriptions.Item>
+                </Descriptions>
+                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                  <Button type='link' onClick={() => router.push(`/business/customers/${item.id}`)}>Mở Customer 360</Button>
+                  {renderCustomerActions(item)}
+                </Space>
+              </Card>
+            </List.Item>
+          )}
         />
       </div>
 
