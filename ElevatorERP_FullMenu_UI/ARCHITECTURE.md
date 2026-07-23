@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-> Current architecture map plus the approved target direction. Last source review: **2026-07-21**.
+> Current architecture map plus the approved target direction. Last source review: **2026-07-23**.
 
 ## 1. Current repository structure
 
@@ -36,8 +36,13 @@ ElevatorERP_FullMenu_UI/
 │       ├── components/AppFrame.tsx
 │       ├── components/AppProviders.tsx
 │       ├── components/LocationPickerMap.tsx
+│       ├── components/DeploymentLocationPickerModal.tsx
+│       ├── components/ConsultationProfileEditDrawer.tsx
+│       ├── components/TechnicalConfigurationForm.tsx
 │       ├── components/ModuleWorkspace.tsx
-│       └── lib/api.ts
+│       ├── lib/api.ts
+│       ├── lib/customer360.ts
+│       └── lib/consultationProfileEditor.ts
 ├── deploy/nginx/default.conf
 ├── scripts/
 ├── docs/
@@ -174,10 +179,25 @@ Contains all current entities:
 
 - Route: `frontend/src/app/business/customers/[id]/page.tsx`.
 - Tab state is URL-backed through `?tab=`.
-- Tabs: overview, profiles, elevators, quotations, contracts, receivables, progress, maintenance, care and history.
+- Lifecycle tab order: overview, profiles, quotations, contracts, elevators, receivables, progress, maintenance, care and history.
+- All Customer 360 tabs and consultation-detail tabs use the same icon/label/counter visual language.
 - The page consumes the Customer 360 read model and keeps mutations in the owning business surface.
 - Consultation configurations and physical elevator assets are separate collections. UI labels, counters and empty states must preserve that distinction.
 - Desktop shows the complete tab row. Mobile uses a horizontally scrollable tab control without wrapping or overlapping actions.
+- Customer 360 opens `ConsultationProfileEditDrawer` in place. It does not navigate to the consultation list merely to edit a registration.
+- Customer and registration return context is encoded in query parameters by `src/lib/customer360.ts`.
+
+### Shared consultation and technical editor
+
+- `ConsultationProfileEditDrawer.tsx` is the shared registration editor used by the main **Đăng ký tư vấn** list and Customer 360.
+- `FULL_PROFILE` mode edits customer/registration fields and all owned preliminary elevator configurations.
+- `SINGLE_CONFIGURATION` mode updates exactly one existing technical configuration through its configuration endpoint and hides add/duplicate/delete controls.
+- The registration summary exposes edit-only row actions. Add, duplicate and delete live in the full technical workspace.
+- `TechnicalConfigurationForm.tsx` owns the shared technical fields, floor rows, installation address, contact-address copy action and slots for pin/attachment UI.
+- `DeploymentLocationPickerModal.tsx` is the shared full location picker for search, pasted map links/coordinates, browser geolocation, map selection and manual coordinate correction.
+- Desktop configuration navigation uses tabs. Mobile uses a `Select`; the single-configuration flow shows a static selected-elevator label.
+- `.technical-config-drawer-root` and mobile rules in `globals.css` constrain the drawer to `100vw × 100dvh`, preserve safe areas and prevent horizontal overflow.
+- Destructive elevator confirmation is portaled to `document.body` above the drawer and rendered as a compact mobile modal.
 
 ### `src/app/layout.tsx`
 
@@ -221,6 +241,9 @@ Only routes with an explicit `permission` property are currently filtered. Most 
 - `app/business/customers/page.tsx`: customer master list/create/edit/actions and Customer 360 navigation.
 - `app/business/customers/[id]/page.tsx`: Customer 360 aggregate surface.
 - `components/LocationPickerMap.tsx`: Leaflet/OpenStreetMap wrapper used for per-configuration installation pinning.
+- `components/DeploymentLocationPickerModal.tsx`: shared full installation-pin workflow.
+- `components/ConsultationProfileEditDrawer.tsx`: shared full-profile/single-configuration editing overlay.
+- `components/TechnicalConfigurationForm.tsx`: shared technical fields and floor/location form.
 - `app/care/page.tsx`: care list/calendar/create/complete, CSV export and month/year calendar navigation.
 - `app/admin/users/page.tsx`: user/role list and role assignment.
 - `app/admin/catalogs/page.tsx`: shared catalog category/option administration, including active toggle and sort order management.
@@ -417,6 +440,31 @@ Technical configuration drawer
 
 The UI intentionally hides radius/accuracy from users. Any legacy customer-level location columns remain compatibility data only and must not receive new installation writes.
 
+### Registration and configuration editing
+
+```text
+Main registration list or Customer 360
+→ open shared ConsultationProfileEditDrawer without changing the invoking page
+→ FULL_PROFILE loads all owned configurations
+→ desktop selects by tab; mobile selects by Select
+→ add/duplicate/delete is available only in the full technical workspace
+→ save registration/configurations
+→ re-fetch invoking list or Customer 360 and close overlay
+```
+
+```text
+Customer 360 preliminary-elevator row
+→ open shared drawer in SINGLE_CONFIGURATION mode
+→ locate exact configuration by ID
+→ hide add/duplicate/delete and other-elevator navigation
+→ save only `/technical-configurations/{configurationId}`
+→ re-fetch Customer 360 and close overlay
+```
+
+Customer-name links on both desktop rows and mobile cards open:
+
+`/business/customers/{customerId}?tab=profiles&profileId={profileId}&returnTo=consultation-profiles`
+
 ### Care completion
 
 ```text
@@ -489,6 +537,8 @@ Catalog administration page
 - Customer list default ordering is numeric customer code descending from the backend; the code column shows default descending sort in the table.
 - Customer tables do not expose installation area or elevator type as customer-master columns.
 - The installation-location modal belongs to the selected elevator configuration. It uses a compact top search/link area, a one-line coordinate strip and a Leaflet map; latitude/longitude are read-only by default and switch to manual input only through **Sửa tọa độ**.
+- Drawer/modal action groups are right-aligned. Mobile technical drawers occupy the viewport, use safe-area-aware fixed footers, one-column fields and a mobile elevator selector without horizontal overflow.
+- Consultation mobile cards preserve desktop navigation semantics: customer name opens Customer 360; registration detail and edit remain separate actions.
 
 ### Target
 
@@ -599,6 +649,9 @@ Internet (80/443)
 ### 12.2 Deployment and data transfer policy
 
 - Initial source delivery may be an archive uploaded with SCP. Routine source delivery is Git-based and deploys the committed `main` branch with `git pull --ff-only` followed by `docker compose up -d --build`.
+- A build must run from the intended Git worktree. Validate repository root, branch, HEAD and dirty state before Docker build; do not assume similarly named folders are synchronized.
+- Local machine note from 2026-07-23: `D:\PROJECT\ElevatorERP_FullMenu_UI` and `D:\ElevatorERP` are separate clones. The former contains the current working changes; the latter can build successfully while still serving old code.
+- Compose startup can fail after successful image creation when host port `127.0.0.1:5432` is already owned by another PostgreSQL process/container. Diagnose the owner before stopping anything or changing the mapping.
 - Database data crosses environments only as a logical SQL dump generated by `pg_dump` and restored through `psql`; copying PostgreSQL data files between Windows and Linux is unsupported and risks corruption.
 - Files uploaded by users and Data Protection keys are archived and transferred separately. Keys are required to preserve encrypted cookies/tokens after a restore.
 - Before restoring test data, stop backend/frontend/Nginx, preserve a VPS backup, restore PostgreSQL, restore files/keys, then rebuild/start the application stack.

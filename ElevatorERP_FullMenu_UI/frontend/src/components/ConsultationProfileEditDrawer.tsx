@@ -278,13 +278,31 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
     </Drawer>}
     <Drawer title={<span className='technical-drawer-title'><SlidersOutlined /> Cấu hình kỹ thuật thang máy</span>} open={open && technicalOpen} onClose={() => { setTechnicalOpen(false); setConfigDraft(undefined); pendingFilesRef.current = {}; if (isSingleConfiguration) onClose(); }} width='min(1040px, calc(100vw - 64px))' className='technical-config-drawer' rootClassName='technical-config-drawer-root' destroyOnClose footer={<div className='technical-drawer-footer'><span /><Space><Button onClick={() => { setTechnicalOpen(false); if (isSingleConfiguration) onClose(); }}>Đóng</Button><Button type='primary' loading={saving} onClick={() => void saveTechnical()}>Lưu cấu hình</Button></Space></div>}>
       {active && <>
-        <div className='technical-tab-row'>
+        <div className={`technical-tab-row ${isSingleConfiguration ? 'is-single' : ''}`}>
           <div className='technical-tab-list'>
             {(isSingleConfiguration ? configurations.filter((_, index) => index === editingIndex) : configurations).map((configuration, index) => {
               const configurationIndex = isSingleConfiguration ? editingIndex ?? 0 : index;
               return <button key={configuration.id ?? configurationIndex} type='button' className={`technical-tab-button ${configurationIndex === editingIndex ? 'active' : ''}`} onClick={() => switchTechnical(configurationIndex)}><span>{configuration.name || `Thang máy ${configurationIndex + 1}`} ({configuration.floors ?? '—'} tầng)</span></button>;
             })}
             {!isSingleConfiguration && <Button className='technical-add-tab' icon={<PlusOutlined />} onClick={addTechnical}>Thêm thang</Button>}
+          </div>
+          <div className={`technical-mobile-toolbar ${isSingleConfiguration ? 'is-single' : ''}`}>
+            {isSingleConfiguration
+              ? <div className='technical-mobile-single-label'>{active.name || `Thang máy ${(editingIndex ?? 0) + 1}`} ({active.floors ?? '—'} tầng)</div>
+              : <>
+                <Select
+                  className='technical-mobile-spec-select'
+                  value={editingIndex}
+                  onChange={switchTechnical}
+                  options={configurations.map((configuration, index) => ({
+                    value: index,
+                    label: `${configuration.name || `Thang máy ${index + 1}`} (${configuration.floors ?? '—'} tầng)`,
+                  }))}
+                />
+                <Tooltip title='Thêm thang'>
+                  <Button aria-label='Thêm thang' icon={<PlusOutlined />} onClick={addTechnical} />
+                </Tooltip>
+              </>}
           </div>
           {!isSingleConfiguration && editingIndex !== undefined && <Dropdown
             trigger={['click']}

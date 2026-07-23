@@ -1,16 +1,16 @@
 # BUGS
 
-> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-21**.
+> Known defects, risks and historical fixes identified from the current source and project conversation. Last review: **2026-07-23**.
 
 ## 1. Current open issues
 
 ### Critical / high
 
-- **Customer 360 can confuse preliminary configurations with physical elevator assets.**
-  - Area: `frontend/src/app/business/customers/[id]/page.tsx` and Customer 360 aggregate DTOs.
-  - Current behavior: the API exposes both `consultationElevators` and `elevators`; some counters/labels use technical-configuration totals while the **Thang máy tài sản** table renders only `CustomerElevator` rows.
-  - Risk: users see profile configuration counts but an empty asset tab, or assume an uncontracted configuration is a maintainable elevator.
-  - Required fix: use explicit labels/counts for **Cấu hình tư vấn** and **Thang máy tài sản**, and link configurations back to their source profile.
+- **Two local Git clones can produce a successful but stale Docker build.**
+  - Observed 2026-07-23: `D:\PROJECT\ElevatorERP_FullMenu_UI` is at `629d91e` with the current uncommitted Customer 360/mobile/editor changes, while `D:\ElevatorERP` is a separate clean clone at `668a6a9`.
+  - Symptom: Docker reports frontend/backend images built successfully, but newly implemented UI such as the mobile customer-name link is absent.
+  - Cause: Compose was run from `D:\ElevatorERP`, which does not contain `mobile-customer360-link` or the latest working-tree changes.
+  - Required fix: use one authoritative clone, commit/push the changes, update the deployment clone with `git pull --ff-only`, and verify repository root plus HEAD before every build.
 
 - **Contract-to-asset conversion lacks database-enforced idempotency evidence.**
   - Area: `POST /api/quotations/{id}/confirm-contract`.
@@ -57,6 +57,11 @@
   - Required fix: restrict by environment, authentication or network policy.
 
 ### Medium
+
+- **Local Compose startup can fail because PostgreSQL host port 5432 is already allocated.**
+  - Symptom: images finish building, then `elevatorerp-postgres-1` fails with `Bind for 127.0.0.1:5432 failed: port is already allocated`.
+  - Impact: the stack is only partially created/started; the web application is not considered deployed even though image build succeeded.
+  - Required fix: identify the owning process/container, preserve its data, then deliberately stop the obsolete instance or change the approved host-port mapping before rerunning `docker compose up -d`.
 
 - **Customer 360 receivables is not a real accounting aggregate yet.**
   - Area: Customer 360 `receivables` tab.
@@ -186,6 +191,21 @@
 
 ## 2. Historical bugs already fixed
 
+- Separated Customer 360 preliminary consultation configurations from physical elevator assets in counters, labels, tables and source links.
+- Renamed user-facing **Hồ sơ tư vấn** to **Đăng ký tư vấn**, shortened **Lịch chăm sóc khách hàng** to **Lịch chăm sóc**, and hid the unfinished notification menu entry.
+- Reordered Customer 360 lifecycle tabs so **Thang máy** follows **Hợp đồng** and added consistent tab icons to Customer 360/registration detail.
+- Made Customer 360 registration editing open the shared editor in place instead of navigating to the main registration list.
+- Fixed multi-elevator editing so the shared editor loads all owned configurations; direct row editing updates only the selected configuration.
+- Removed add/duplicate/delete from registration summaries and single-configuration edit; retained those actions inside the full technical workspace.
+- Fixed the technical action menu layering and renamed delete to **Xóa thang máy**.
+- Fixed delete confirmation stacking and compact mobile sizing.
+- Restored the full installation-location picker after a reduced modal regression.
+- Made installation area derived/read-only, added a contact-address preview tooltip, and compacted the pin summary.
+- Standardized Drawer/Modal action groups on the right.
+- Added full-viewport technical drawers, mobile elevator selection, one-column fields, safe-area footer spacing and horizontal-overflow guards.
+- Added advanced customer-master filtering with draft/apply/reset behavior and address filtering.
+- Added a touch-accessible Customer 360 link to the customer name on consultation mobile cards.
+
 - Added `ElevatorERP.sln` so Rider can open/build the backend solution.
 - Added and locked `frontend/package-lock.json`.
 - Removed the accidental internal package registry reference that caused Docker `npm ci` failure.
@@ -251,6 +271,8 @@
 - Care overdue demo mismatch: re-seed disposable demo data or inspect dates manually until worker/derived status exists.
 - Installation-location search mismatch: if OSM does not find a building/address, open Google Maps, copy the share link or coordinates, paste them into the location modal, or use **Sửa tọa độ** to enter latitude/longitude manually.
 - After rebuilding/recreating the frontend container, if `localhost` shows Nginx `502 Bad Gateway` while containers are healthy, run `docker compose restart nginx` so Nginx resolves the current frontend container IP.
+- If a new UI change is missing after a successful build, run `git rev-parse --show-toplevel`, `git status -sb`, `git rev-parse --short HEAD` and search for the changed symbol before rebuilding. Do not build from `D:\ElevatorERP` while the current changes exist only in `D:\PROJECT\ElevatorERP_FullMenu_UI`.
+- If Compose reports port `5432` already allocated, do not delete volumes or stop an unidentified database. Inspect `docker ps --filter "publish=5432"` and `Get-NetTCPConnection -LocalPort 5432` first.
 
 ## 4. High-risk code areas
 
@@ -278,6 +300,9 @@
 - Every protected API returns `401/403` correctly.
 - A sales user cannot see another scope’s records.
 - Mobile sidebar, tables/cards and drawers remain usable.
+- Desktop and mobile consultation lists both open Customer 360 from the customer name and preserve the selected `profileId`.
+- Full technical edit shows all elevators; single-configuration edit shows only the selected elevator and no add/duplicate/delete actions.
+- At mobile widths the technical drawer is `100vw × 100dvh`, has no horizontal scroll and keeps close/save actions visible.
 - Customer/care mutations create audit records.
 - Upload cannot escape the configured root or execute uploaded content.
 - Docker restart preserves PostgreSQL, uploads and Data Protection keys.
@@ -292,3 +317,5 @@
 - Raw copying of `.data/postgres` from a Windows Docker environment to Linux is not a supported migration path. Use `pg_dump`/`psql`; only uploads and Data Protection keys may be transferred as files.
 - The VPS `.env` contains production secrets and must remain server-only, mode `600`, excluded from Git, archives and screenshots. Rotate any secret that has been exposed while testing.
 - Data Protection keys must be backed up with uploads. Losing them can invalidate existing encrypted authentication/session material after restore.
+- Multiple local clones are an active release risk. A clean/successful build is not evidence that the intended working changes were included; record the source root and HEAD in deployment evidence.
+- Host port conflicts can leave Compose at a partial `up 7/8` state. Deployment acceptance requires all expected services healthy/running plus web/API checks.

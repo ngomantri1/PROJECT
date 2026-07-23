@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeftOutlined, CopyOutlined, FileProtectOutlined, FileTextOutlined, HistoryOutlined, SlidersOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, ArrowLeftOutlined, CopyOutlined, FileProtectOutlined, FileTextOutlined, HistoryOutlined, SafetyCertificateOutlined, SlidersOutlined } from '@ant-design/icons';
 import { Button, Card, Col, Descriptions, Empty, List, Modal, Result, Row, Select, Space, Spin, Table, Tabs, Tag, Timeline, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { PageContainer, ProCard } from '@ant-design/pro-components';
@@ -87,6 +88,18 @@ type DetailResponse = {
 
 const detailTabs = ['overview', 'requirements', 'quotations', 'contracts', 'history'] as const;
 type DetailTab = (typeof detailTabs)[number];
+
+const detailTabIcons: Record<DetailTab, ReactNode> = {
+  overview: <AppstoreOutlined />,
+  requirements: <SlidersOutlined />,
+  quotations: <FileTextOutlined />,
+  contracts: <SafetyCertificateOutlined />,
+  history: <HistoryOutlined />,
+};
+
+function detailTabLabel(tab: DetailTab, label: ReactNode) {
+  return <span className='customer-360-tab-label'>{detailTabIcons[tab]}<span>{label}</span></span>;
+}
 
 const profileStatusLabels: Record<string, string> = {
   NEW: 'Mới tiếp nhận',
@@ -359,6 +372,11 @@ export default function ConsultationProfileDetailPage() {
     },
   ];
 
+  const tabItemsWithIcons = tabItems.map((item) => ({
+    ...item,
+    label: detailTabLabel(item.key as DetailTab, item.label),
+  }));
+
   return (
     <PageContainer
       className='erp-page-container consultation-detail-page'
@@ -380,7 +398,7 @@ export default function ConsultationProfileDetailPage() {
           <Col xs={24} lg={8} className='consultation-detail-owner'><Typography.Text type='secondary'>Người phụ trách</Typography.Text><Typography.Text strong>{detail.profile.owner || 'Chưa phân công'}</Typography.Text></Col>
         </Row>
       </Card>
-      <Tabs className='customer-360-tabs consultation-detail-tabs' activeKey={activeTab} onChange={changeTab} items={tabItems} />
+      <Tabs className='customer-360-tabs consultation-detail-tabs' activeKey={activeTab} onChange={changeTab} items={tabItemsWithIcons} />
     </PageContainer>
   );
 }

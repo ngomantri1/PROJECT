@@ -26,8 +26,17 @@
 
 ## 1.2 Current Customer 360 and lifecycle work
 
-- [ ] Correct Customer 360 labels and counters so preliminary configurations and physical assets are never represented as the same quantity.
-- [ ] Show consultation configurations under their source profile, including read-only configurations from other profiles and explicit copy-to-current-profile action.
+- [x] Correct Customer 360 labels and counters so preliminary configurations and physical assets are never represented as the same quantity.
+- [x] Show consultation configurations under their source profile, including read-only configurations from other profiles and explicit copy-to-current-profile action.
+- [x] Standardize user-facing **Đăng ký tư vấn**, **Lịch chăm sóc** and **Thang máy** labels and lifecycle tab order.
+- [x] Keep Customer 360 in place while opening the shared registration editor; preserve context-aware return links.
+- [x] Separate read-only configuration view from edit mode.
+- [x] Restrict direct single-elevator edit to edit/save only; move add/duplicate/delete into the full technical workspace.
+- [x] Add desktop/mobile technical-editor parity: desktop tabs, mobile selector, full-viewport drawer, reachable right-aligned footer and compact delete confirmation.
+- [x] Add icons to consultation-detail tabs to match Customer 360.
+- [x] Add advanced customer-master filters without mixing elevator-configuration fields into the customer master.
+- [x] Make customer names in consultation desktop rows and mobile cards open Customer 360 with the selected registration context.
+- [ ] Deploy the current authoritative worktree and verify the mobile customer-name link against the running Docker stack; the code is implemented but the last observed build used an older clone.
 - [ ] Replace the receivables placeholder with a real accounting read model grouped by contract.
 - [ ] Replace derived progress/maintenance placeholders with real asset workflow read models and links to their owning modules.
 - [ ] Add responsive and dark-theme verification for every Customer 360 tab.
@@ -249,6 +258,8 @@
 - [ ] Camera upload and unreliable-network retry.
 - [ ] Nginx API routing, upload size and future websocket upgrade.
 - [ ] Backup restore into a clean environment.
+- [ ] Add browser-level responsive tests at `360×800` and `390×844` for the technical drawer: selector, exact selected elevator, single-edit restrictions, footer visibility and zero horizontal overflow.
+- [ ] Add browser-level mobile navigation coverage proving a customer name in a consultation card opens Customer 360 with `tab=profiles` and the correct `profileId`.
 
 ## 14. Production operations and deployment follow-up
 
@@ -266,3 +277,6 @@
 - [ ] For code-only updates: local commit/push, VPS `git pull --ff-only`, then `docker compose up -d --build` and verify `docker compose ps` plus the web/API health endpoints.
 - [ ] For deliberate local-to-VPS test-data sync: export PostgreSQL with `pg_dump`, transfer SQL plus uploads and Data Protection keys, back up VPS data, restore with application containers stopped, then restart the stack.
 - [ ] Stop using local-to-VPS database overwrites once real production data begins; switch to migrations and production backup/restore procedures only.
+- [ ] Consolidate or clearly archive duplicate local clones. Until then, treat `D:\PROJECT\ElevatorERP_FullMenu_UI` as the current working source and verify `git rev-parse --show-toplevel`, `git status -sb` and `git rev-parse --short HEAD` before commit/build.
+- [ ] Commit and push the current Customer 360/mobile/editor changes before expecting `D:\ElevatorERP` or the VPS to receive them.
+- [ ] Resolve local PostgreSQL port ownership before Compose startup. A successful frontend/backend image build followed by `port is already allocated` is not a successful deployment.

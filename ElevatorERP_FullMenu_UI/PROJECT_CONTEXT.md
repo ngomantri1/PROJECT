@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT
 
-> Source of truth for AI coding. Last source review: **2026-07-21**. Read this file before changing code.
+> Source of truth for AI coding. Last source review: **2026-07-23**. Read this file before changing code.
 
 ## 1. Project overview
 
@@ -101,12 +101,24 @@ There is intentionally no Live/Demo/Planned label in the menu. All menu items ar
 
 - The business menu is: **Khách hàng**, **Đăng ký tư vấn**, **Lịch chăm sóc**, **Báo giá**, **Hợp đồng**.
 - Use **Đăng ký tư vấn** consistently in user-facing menus, tabs, lists, create/edit/detail contexts and messages. Technical route/API/type names such as `ConsultationProfile` remain unchanged until an approved migration.
+- Do not reintroduce the longer labels **Hồ sơ tư vấn**, **Đăng ký tư vấn thang máy** or **Lịch chăm sóc khách hàng** in user-facing navigation. The approved short labels are **Đăng ký tư vấn** and **Lịch chăm sóc**.
+- The **Thông báo** menu entry is intentionally hidden until the notification module is requested; the top-right notification affordance may remain as shell scaffolding.
 - Customer 360 is the cross-process read model for one customer. Its tabs are: **Tổng quan**, **Đăng ký tư vấn**, **Báo giá**, **Hợp đồng**, **Thang máy**, **Công nợ**, **Tiến độ**, **Bảo trì**, **Chăm sóc**, **Lịch sử**.
+- Customer 360 tab order follows the lifecycle: consultation registration → quotation → contract → physical elevator. **Thang máy** therefore stays after **Hợp đồng**, and every tab uses a consistent icon, label and counter.
 - Customer name and customer code open Customer 360. Consultation profile code opens/focuses that profile's detail context.
+- Desktop table rows and mobile consultation cards must have navigation parity: tapping the customer name opens Customer 360 at the selected **Đăng ký tư vấn** profile; tapping the registration code or **Mở chi tiết hồ sơ** opens registration detail.
 - Customer 360 uses URL tab state (`?tab=`), so links must open the intended business tab without losing customer context.
 - Back navigation is context-aware. A detail opened from Customer 360 must carry its customer/tab/source context, and its primary back action must return to that Customer 360 context before offering a generic list destination.
 - Back labels must name the real destination, for example **Quay lại Customer 360 – [Tên khách hàng]**. Use a list fallback only when the page was opened from that list or no source context is available; nested detail links must preserve the relevant return context.
 - Editing a consultation profile from Customer 360 must keep the Customer 360 page and URL in place and open the standard shared consultation-profile editor as an overlay. The main consultation list and Customer 360 must use the same editor component, validation and save payload; save/cancel returns to the invoking screen without rendering the consultation list behind the drawer.
+- Viewing and editing are separate modes. A view action is read-only. An edit action may mutate only the requested registration/configuration and must never silently create a new configuration.
+- The registration summary lists each preliminary elevator with only an edit action. Add, duplicate and delete are available only inside the full technical-configuration workspace where the user can inspect the selected elevator first.
+- Direct editing of one preliminary elevator uses `SINGLE_CONFIGURATION`: it shows only that elevator and allows only edit/save. It must not expose add, duplicate or delete actions.
+- The full technical editor uses desktop tabs and a mobile elevator selector. On mobile it occupies exactly the viewport, keeps the footer reachable, prevents horizontal overflow and shows add/more actions only when the current mode permits them.
+- Drawer and modal footer actions are right-aligned. Secondary cancel/close precedes the primary save/apply action.
+- Installation area is read-only and derived from the selected pin. **Dùng địa chỉ liên hệ** copies the customer contact address into the installation address and shows the full source address in a professional tooltip before use.
+- The deployment-pin summary is compact; long pin/area text uses ellipsis plus tooltip. Pin editing uses the shared full location picker rather than a reduced replacement modal.
+- Delete-elevator confirmation is rendered above the technical drawer, remains a compact centered dialog on mobile and clearly states that the selected elevator configuration and survey documents will be removed when changes are saved.
 - The **Thang máy** tab is for physical assets only. Preliminary configurations remain under their source consultation profile and must not inflate the asset count.
 - Receivables, progress and maintenance in Customer 360 are aggregate/read-oriented views. Mutations remain in the owning contract, asset, accounting or maintenance module.
 - Survey documents/images are optional and belong to an individual elevator configuration, not globally to the customer or consultation profile.
@@ -211,6 +223,8 @@ Development-only workspace flow:
 - Preserve sidebar/header state across route navigation unless the user logs out or enters `/login`.
 - On desktop, keep only one top-level sidebar module group open at a time. Do not remount the shell while doing this.
 - On mobile, keep controls compact and reachable; full-width actions are acceptable on narrow screens.
+- Keep desktop table and mobile card navigation behavior equivalent. Entity names that are links on desktop must remain keyboard/touch-accessible links on mobile.
+- Technical drawers at `<=640px` use `100vw × 100dvh`, safe-area-aware header/body/footer spacing and no horizontal scroll. Full-profile mode uses a mobile elevator selector; single-configuration mode renders a static selected-elevator label.
 
 ## 6. Naming rules
 
@@ -337,8 +351,10 @@ Mobile construction photos should initially use standard camera/file input, clie
 - Never remove the demo-data distinction for localStorage-backed modules.
 - Never require a paid Google Maps/Places API key for the approved free installation-location workflow unless the business explicitly accepts the cost and changes the architecture.
 - Never expose location radius/accuracy in normal configuration UI unless there is a real dispatch/geofence requirement.
+- Never expose add/duplicate/delete controls while directly editing a single preliminary elevator from Customer 360.
+- Never make a mobile entity name look like a normal label when the equivalent desktop name opens Customer 360.
 
-## 13. Deployment status and operating rules (2026-07-22)
+## 13. Deployment status and operating rules (updated 2026-07-23)
 
 - The first Ubuntu VPS deployment has been validated with Docker Compose: PostgreSQL, Redis, backend, frontend and Nginx are running; the ERP is reachable through HTTP.
 - The VPS is prepared with Docker Engine, Docker Compose plugin and UFW. Only SSH, HTTP and HTTPS are intended to be publicly reachable; PostgreSQL is bound to loopback and Redis remains internal.
@@ -348,3 +364,5 @@ Mobile construction photos should initially use standard camera/file input, clie
 - Uploads and Data Protection keys are transferred separately from `.data/uploads` and `.data/data-protection-keys`. A database restore overwrites VPS database content and must be treated as a controlled test-data sync.
 - The complete copy-paste operational procedure is maintained in `docs/DEPLOYMENT_CHECKLIST.md`. It uses placeholders such as `<IP_SERVER>` and must never contain a real production password or secret.
 - The next production hardening milestone is domain + HTTPS, backup automation and monitoring before real customer data is used.
+- Before every local build/deploy, verify the authoritative worktree and commit with `git rev-parse --show-toplevel`, `git status -sb` and `git rev-parse --short HEAD`. On 2026-07-23 two different clones were found: `D:\PROJECT\ElevatorERP_FullMenu_UI` contains the current uncommitted UI work, while `D:\ElevatorERP` is a different older clone. Building the latter produces a valid but stale UI.
+- Docker image build success does not mean the stack started. If Compose ends with `Bind for 127.0.0.1:5432 failed: port is already allocated`, inspect the current owner of port `5432`, preserve any existing PostgreSQL data, free or deliberately remap the port, then rerun `docker compose up -d` and verify `docker compose ps`.

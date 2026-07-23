@@ -1932,7 +1932,14 @@ export default function Customers() {
                     <Space align='start'>
                       <Avatar className='customer-avatar'>{customer.name.charAt(0)}</Avatar>
                       <div>
-                        <Typography.Text strong>{customer.name}</Typography.Text>
+                        <Typography.Link
+                          strong
+                          className='record-link table-primary-text mobile-customer360-link'
+                          aria-label={`Mở Customer 360 của ${customer.name}`}
+                          onClick={() => router.push(`/business/customers/${customer.customerId ?? customer.id}?tab=profiles&profileId=${customer.id}&returnTo=consultation-profiles`)}
+                        >
+                          {customer.name}
+                        </Typography.Link>
                         <div className='muted-text'>{customer.code} · {customer.phone}</div>
                       </div>
                     </Space>
@@ -2295,6 +2302,7 @@ export default function Customers() {
           getContainer={() => document.body}
           zIndex={1300}
           className='technical-config-drawer'
+          rootClassName='technical-config-drawer-root'
           footer={activeElevatorSpec ? (
             <div className='technical-drawer-footer'>
               <span />
