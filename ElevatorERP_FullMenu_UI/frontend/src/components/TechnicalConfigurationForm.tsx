@@ -1,8 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { CopyOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { Badge, Button, Input, InputNumber, Select, Typography } from 'antd';
+import { CopyOutlined, DeleteOutlined, EnvironmentOutlined, PlusOutlined } from '@ant-design/icons';
+import { Badge, Button, Input, InputNumber, Select, Tooltip, Typography } from 'antd';
 
 export type TechnicalFloorHeight = { id?: string; floorName?: string; heightMm?: number };
 
@@ -57,6 +57,7 @@ function floorId(index: number) {
 export default function TechnicalConfigurationForm({ value, onChange, locationExtra, attachmentsExtra, contactAddress, disabled = false }: Props) {
   const patch = (next: Partial<TechnicalConfigurationValues>) => onChange({ ...value, ...next });
   const floors = value.floorHeights ?? [];
+  const normalizedContactAddress = contactAddress?.trim();
 
   const changeFloorCount = (nextFloors: number | null) => {
     const count = nextFloors ?? undefined;
@@ -107,7 +108,21 @@ export default function TechnicalConfigurationForm({ value, onChange, locationEx
       <div className='technical-section-title'>Vị trí lắp đặt</div>
       <div className='technical-grid'>
         <label>
-          <span className='technical-installation-address-head'><span>Địa chỉ công trình / vị trí đặt thang <b className='required-marker'>*</b></span>{contactAddress && <Button className='technical-copy-contact-button' disabled={disabled} size='small' icon={<CopyOutlined />} onClick={() => patch({ installationAddress: contactAddress })}>Dùng địa chỉ liên hệ</Button>}</span>
+          <span className='technical-installation-address-head'>
+            <span>Địa chỉ công trình / vị trí đặt thang <b className='required-marker'>*</b></span>
+            <Tooltip
+              placement='topRight'
+              color='#ffffff'
+              overlayClassName='contact-address-tooltip'
+              title={normalizedContactAddress
+                ? <div className='contact-address-tooltip-content'><span className='contact-address-tooltip-label'><EnvironmentOutlined /> Địa chỉ liên hệ khách hàng</span><strong>{normalizedContactAddress}</strong><span className='contact-address-tooltip-hint'>Bấm nút để dùng địa chỉ này cho công trình.</span></div>
+                : <div className='contact-address-tooltip-content'><span className='contact-address-tooltip-label'><EnvironmentOutlined /> Địa chỉ liên hệ khách hàng</span><span className='contact-address-tooltip-empty'>Khách hàng chưa có địa chỉ liên hệ.</span></div>}
+            >
+              <span>
+                <Button className='technical-copy-contact-button' disabled={disabled || !normalizedContactAddress} size='small' icon={<CopyOutlined />} onClick={() => normalizedContactAddress && patch({ installationAddress: normalizedContactAddress })}>Dùng địa chỉ liên hệ</Button>
+              </span>
+            </Tooltip>
+          </span>
           <Input disabled={disabled} value={value.installationAddress} onChange={(event) => patch({ installationAddress: event.target.value })} />
         </label>
         {locationExtra}

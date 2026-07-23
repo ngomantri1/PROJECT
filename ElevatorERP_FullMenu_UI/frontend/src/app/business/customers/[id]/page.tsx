@@ -601,7 +601,7 @@ export default function Customer360Page() {
     <ConsultationProfileEditDrawer
       profileId={editingProfileId}
       initialConfigurationId={editingConfigurationId}
-      configurationOnly={Boolean(editingConfigurationId)}
+      mode={editingConfigurationId ? 'SINGLE_CONFIGURATION' : 'FULL_PROFILE'}
       open={Boolean(editingProfileId)}
       onClose={() => { setEditingProfileId(undefined); setEditingConfigurationId(undefined); }}
       onSaved={() => void load()}

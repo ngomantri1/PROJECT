@@ -1,14 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import dynamic from 'next/dynamic';
 import { CameraOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EllipsisOutlined, EnvironmentOutlined, LinkOutlined, PaperClipOutlined, PlusOutlined, PushpinOutlined, SlidersOutlined } from '@ant-design/icons';
 import { Badge, Button, Col, Drawer, Dropdown, Form, Input, Modal, Radio, Row, Select, Space, Tooltip, Typography, message } from 'antd';
+import DeploymentLocationPickerModal from '@/components/DeploymentLocationPickerModal';
 import TechnicalConfigurationForm, { type TechnicalConfigurationValues } from '@/components/TechnicalConfigurationForm';
 import { api } from '@/lib/api';
 import { cloneConsultationConfiguration, parseConsultationConfigurations, technicalConfigurationErrors } from '@/lib/consultationProfileEditor';
 
-const LocationPickerMap = dynamic(() => import('@/components/LocationPickerMap'), { ssr: false });
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 type ProfileDetail = {
@@ -24,7 +23,7 @@ type Props = {
   profileId?: string;
   open: boolean;
   initialConfigurationId?: string;
-  configurationOnly?: boolean;
+  mode?: 'FULL_PROFILE' | 'SINGLE_CONFIGURATION';
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 };
@@ -41,7 +40,7 @@ function parseAttachments(raw?: string): Attachment[] {
 
 function typeLabel(value?: string) { return value === 'GLASS' ? 'Thang kính' : value === 'BUILT' ? 'Thang xây' : 'Chưa cập nhật'; }
 
-export default function ConsultationProfileEditDrawer({ profileId, open, initialConfigurationId, configurationOnly = false, onClose, onSaved }: Props) {
+export default function ConsultationProfileEditDrawer({ profileId, open, initialConfigurationId, mode = 'FULL_PROFILE', onClose, onSaved }: Props) {
   const [form] = Form.useForm<ProfileValues>();
   const [detail, setDetail] = useState<ProfileDetail>();
   const [configurations, setConfigurations] = useState<Configuration[]>([]);
@@ -53,11 +52,14 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
   const [attachmentLinkOpen, setAttachmentLinkOpen] = useState(false);
   const [attachmentLinkUrl, setAttachmentLinkUrl] = useState('');
   const [attachmentLinkName, setAttachmentLinkName] = useState('');
+  const [deleteCandidateIndex, setDeleteCandidateIndex] = useState<number>();
   const attachmentFileInputRef = useRef<HTMLInputElement>(null);
   const attachmentCameraInputRef = useRef<HTMLInputElement>(null);
   const pendingFilesRef = useRef<Record<string, File>>({});
   const openedInitialConfigIdRef = useRef<string | undefined>(undefined);
-  const customerAddress = Form.useWatch('address', form);
+  const watchedCustomerAddress = Form.useWatch('address', form);
+  const isSingleConfiguration = mode === 'SINGLE_CONFIGURATION';
+  const customerAddress = (isSingleConfiguration ? detail?.customer.address : watchedCustomerAddress) || detail?.customer.address;
 
   const load = useCallback(async () => {
     if (!profileId) return;
@@ -83,13 +85,17 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
   useEffect(() => {
     if (!open) {
       openedInitialConfigIdRef.current = undefined;
+      setDeleteCandidateIndex(undefined);
       return;
     }
-    if (!initialConfigurationId || !configurations.length || openedInitialConfigIdRef.current === initialConfigurationId) return;
-    const index = configurations.findIndex((item, currentIndex) => (item.id ?? String(currentIndex)) === initialConfigurationId);
+    if (!initialConfigurationId || !detail || openedInitialConfigIdRef.current === initialConfigurationId) return;
+    const index = configurations.findIndex((item) => item.id === initialConfigurationId);
+    openedInitialConfigIdRef.current = initialConfigurationId;
     if (index >= 0) {
-      openedInitialConfigIdRef.current = initialConfigurationId;
       openTechnical(index);
+    } else if (isSingleConfiguration) {
+      message.error('Không tìm thấy đúng cấu hình thang máy cần sửa.');
+      onClose();
     }
   // Chỉ phản ứng khi hồ sơ/cấu hình đích được nạp xong.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,6 +116,11 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
     setTechnicalOpen(true);
   };
 
+  const openTechnicalWorkspace = () => {
+    if (configurations.length) openTechnical(0);
+    else addTechnical();
+  };
+
   const copyTechnical = (index: number) => {
     const currentConfigurations = editingIndex !== undefined && configDraft
       ? configurations.map((item, currentIndex) => currentIndex === editingIndex ? configDraft : item)
@@ -125,26 +136,23 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
   };
 
   const removeTechnical = (index: number) => {
-    Modal.confirm({
-      title: 'Xóa cấu hình thang máy?',
-      content: 'Cấu hình và danh sách tài liệu thuộc thang này sẽ bị loại khỏi đăng ký khi bạn lưu thay đổi.',
-      okText: 'Xóa cấu hình',
-      cancelText: 'Hủy',
-      okButtonProps: { danger: true },
-      onOk: () => {
-        const nextConfigurations = configurations.filter((_, currentIndex) => currentIndex !== index);
-        setConfigurations(nextConfigurations);
-        if (!nextConfigurations.length) {
-          setTechnicalOpen(false);
-          setEditingIndex(undefined);
-          setConfigDraft(undefined);
-          return;
-        }
-        const nextIndex = Math.min(index, nextConfigurations.length - 1);
-        setEditingIndex(nextIndex);
-        setConfigDraft({ ...nextConfigurations[nextIndex], attachments: [...(nextConfigurations[nextIndex].attachments ?? [])] });
-      },
-    });
+    setDeleteCandidateIndex(index);
+  };
+
+  const confirmRemoveTechnical = () => {
+    if (deleteCandidateIndex === undefined) return;
+    const nextConfigurations = configurations.filter((_, currentIndex) => currentIndex !== deleteCandidateIndex);
+    setConfigurations(nextConfigurations);
+    setDeleteCandidateIndex(undefined);
+    if (!nextConfigurations.length) {
+      setTechnicalOpen(false);
+      setEditingIndex(undefined);
+      setConfigDraft(undefined);
+      return;
+    }
+    const nextIndex = Math.min(deleteCandidateIndex, nextConfigurations.length - 1);
+    setEditingIndex(nextIndex);
+    setConfigDraft({ ...nextConfigurations[nextIndex], attachments: [...(nextConfigurations[nextIndex].attachments ?? [])] });
   };
 
   const switchTechnical = (index: number) => {
@@ -155,23 +163,6 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
     }
     setEditingIndex(index);
     setConfigDraft({ ...nextConfigurations[index], attachments: [...(nextConfigurations[index].attachments ?? [])] });
-  };
-
-  const updatePin = async (latitude: number, longitude: number) => {
-    let locationLabel = `Tọa độ: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-    let installationWard: string | undefined;
-    let installationProvince: string | undefined;
-    try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`, { headers: { Accept: 'application/json' } });
-      if (response.ok) {
-        const result = await response.json() as { display_name?: string; address?: { suburb?: string; village?: string; town?: string; city_district?: string; state?: string; city?: string } };
-        locationLabel = result.display_name || locationLabel;
-        installationWard = result.address?.suburb || result.address?.village || result.address?.town || result.address?.city_district;
-        installationProvince = result.address?.state || result.address?.city;
-      }
-    } catch { /* vẫn lưu tọa độ khi không tra được địa chỉ */ }
-    setConfigDraft((current) => current ? { ...current, latitude, longitude, locationLabel, installationWard: installationWard || current.installationWard, installationProvince: installationProvince || current.installationProvince } : current);
-    setLocationPickerOpen(false);
   };
 
   const addAttachments = (files: FileList | null, source: Attachment['source']) => {
@@ -219,8 +210,9 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
     setSaving(true);
     try {
       const updated = await uploadAttachments(configDraft);
-      if (configurationOnly && profileId) {
-        const configurationId = updated.id ?? initialConfigurationId ?? String(editingIndex);
+      if (isSingleConfiguration && profileId) {
+        if (!initialConfigurationId || updated.id !== initialConfigurationId) throw new Error('Không xác định được đúng cấu hình thang máy cần lưu.');
+        const configurationId = initialConfigurationId;
         await api(`/consultation-profiles/${profileId}/technical-configurations/${configurationId}`, {
           method: 'PUT',
           body: JSON.stringify({ configuration: { ...updated, id: configurationId } }),
@@ -263,11 +255,17 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
   const active = configDraft;
   const isPinned = typeof active?.latitude === 'number' && typeof active?.longitude === 'number';
   const attachments = (active?.attachments ?? []) as Attachment[];
-  const locationExtra = active && <div className={`technical-location-panel ${isPinned ? 'is-pinned' : 'is-unpinned'}`}><div><Typography.Text strong>Vị trí ghim triển khai <b className='required-marker'>*</b></Typography.Text><Typography.Text type='secondary'>Ghim tọa độ riêng cho thang này để kỹ thuật mở bản đồ khi khảo sát/lắp đặt.</Typography.Text><span className={`technical-pin-state ${isPinned ? 'is-pinned' : 'is-unpinned'}`}><EnvironmentOutlined /> {isPinned ? 'Đã ghim vị trí' : 'Chưa ghim vị trí'}</span></div><Space wrap><Button className={`technical-pin-button ${isPinned ? 'is-pinned' : 'is-unpinned'}`} icon={<PushpinOutlined />} onClick={() => setLocationPickerOpen(true)}>{isPinned ? 'Sửa vị trí ghim' : 'Ghim vị trí'}</Button>{isPinned && <Button icon={<DeleteOutlined />} onClick={() => setConfigDraft((current) => current ? { ...current, latitude: undefined, longitude: undefined, locationLabel: undefined, installationWard: undefined, installationProvince: undefined } : current)}>Xóa ghim</Button>}</Space>{isPinned && <><div className='location-pin-summary'><EnvironmentOutlined /><span>{active.locationLabel || 'Đã ghim vị trí'} · {active.latitude?.toFixed(6)}, {active.longitude?.toFixed(6)}</span></div><div className='technical-installation-area'><span>Khu vực lắp đặt</span><Typography.Text type='secondary'>Tự động từ vị trí ghim</Typography.Text><div className='technical-installation-area-value'><EnvironmentOutlined /><span>{[active.installationWard, active.installationProvince].filter(Boolean).join(' · ') || 'Đang xác định khu vực'}</span></div></div></>}</div>;
+  const pinnedLocationText = active && isPinned ? `${active.locationLabel || 'Đã ghim vị trí'} · ${active.latitude?.toFixed(6)}, ${active.longitude?.toFixed(6)}` : '';
+  const installationAreaText = active ? [active.installationWard, active.installationProvince].filter(Boolean).join(' · ') || 'Đang xác định khu vực' : '';
+  const locationExtra = active && <div className={`technical-location-panel compact ${isPinned ? 'is-pinned' : 'is-unpinned'}`}>
+    <div className='technical-location-heading'><Typography.Text strong>Vị trí ghim triển khai <b className='required-marker'>*</b></Typography.Text><span className={`technical-pin-state ${isPinned ? 'is-pinned' : 'is-unpinned'}`}><EnvironmentOutlined /> {isPinned ? 'Đã ghim vị trí' : 'Chưa ghim vị trí'}</span></div>
+    <Space wrap><Button className={`technical-pin-button ${isPinned ? 'is-pinned' : 'is-unpinned'}`} icon={<PushpinOutlined />} onClick={() => setLocationPickerOpen(true)}>{isPinned ? 'Sửa vị trí ghim' : 'Ghim vị trí'}</Button>{isPinned && <Button icon={<DeleteOutlined />} onClick={() => setConfigDraft((current) => current ? { ...current, latitude: undefined, longitude: undefined, locationLabel: undefined, installationWard: undefined, installationProvince: undefined } : current)}>Xóa ghim</Button>}</Space>
+    {isPinned && <><div className='location-pin-summary'><EnvironmentOutlined /><Tooltip title={pinnedLocationText}><span>{pinnedLocationText}</span></Tooltip></div><div className='technical-installation-area'><span>Khu vực:</span><Tooltip title={installationAreaText}><div className='technical-installation-area-value'><EnvironmentOutlined /><span>{installationAreaText}</span></div></Tooltip><Typography.Text type='secondary'>Tự động từ vị trí ghim</Typography.Text></div></>}
+  </div>;
   const attachmentsExtra = <div className='technical-attachment-section'><div className='technical-attachment-actions'><Typography.Text type='secondary'>Tài liệu và ảnh chỉ thuộc thang máy đang chọn.</Typography.Text><Space size={8} wrap><Button icon={<LinkOutlined />} onClick={() => setAttachmentLinkOpen(true)}>Link</Button><Button icon={<CameraOutlined />} onClick={() => attachmentCameraInputRef.current?.click()}>Chụp ảnh</Button><Button icon={<PaperClipOutlined />} onClick={() => attachmentFileInputRef.current?.click()}>Tệp</Button></Space></div><input ref={attachmentFileInputRef} className='customer-file-input' type='file' multiple hidden accept='image/*,.pdf,.doc,.docx,.xls,.xlsx' onChange={(event) => { addAttachments(event.target.files, 'UPLOAD'); event.target.value = ''; }} /><input ref={attachmentCameraInputRef} className='customer-file-input' type='file' hidden accept='image/*' capture='environment' onChange={(event) => { addAttachments(event.target.files, 'CAMERA'); event.target.value = ''; }} />{attachments.length ? <div className='attachment-list'>{attachments.map((attachment) => <div key={attachment.id} className='attachment-item'><span className='attachment-type-icon'>{attachment.type === 'IMAGE' ? <CameraOutlined /> : attachment.type === 'LINK' ? <LinkOutlined /> : <PaperClipOutlined />}</span><div className='attachment-copy'>{attachment.url || attachment.storedFileId ? <a href={attachment.url ?? `${API_BASE}/files/${attachment.storedFileId}`} target='_blank' rel='noreferrer'>{attachment.name}</a> : <Typography.Text strong>{attachment.name}</Typography.Text>}<Typography.Text type='secondary'>{attachment.source === 'CAMERA' ? 'Ảnh chụp hiện trường' : attachment.type === 'LINK' ? 'Link' : attachment.type === 'IMAGE' ? 'Ảnh tải lên' : 'Tài liệu'}</Typography.Text></div><Tooltip title='Xóa tài liệu'><Button danger icon={<DeleteOutlined />} onClick={() => setConfigDraft((current) => current ? { ...current, attachments: ((current.attachments ?? []) as Attachment[]).filter((item) => item.id !== attachment.id) } : current)} /></Tooltip></div>)}</div> : <Typography.Text type='secondary' className='technical-attachment-empty'>Chưa có tài liệu hoặc ảnh khảo sát cho thang máy này.</Typography.Text>}</div>;
 
   return <>
-    {!configurationOnly && <Drawer title='Sửa đăng ký tư vấn' open={open} onClose={onClose} width='min(1120px, calc(100vw - 40px))' className='customer-form-drawer' rootClassName='customer-form-drawer-root' destroyOnClose footer={<Space><Button onClick={onClose}>Hủy</Button><Button type='primary' loading={saving} onClick={() => form.submit()}>Lưu thay đổi</Button></Space>}>
+    {!isSingleConfiguration && <Drawer title='Sửa đăng ký tư vấn' open={open} onClose={onClose} width='min(1120px, calc(100vw - 40px))' className='customer-form-drawer' rootClassName='customer-form-drawer-root' destroyOnClose footer={<Space><Button onClick={onClose}>Hủy</Button><Button type='primary' loading={saving} onClick={() => form.submit()}>Lưu thay đổi</Button></Space>}>
       <Form form={form} layout='vertical' onFinish={saveProfile} className='consultation-profile-edit-form'>
         <div className='form-section-heading'>Thông tin khách hàng</div>
         <Row gutter={[16, 0]}><Col xs={24}><Form.Item name='customerType' label='Nhóm khách hàng' rules={[{ required: true, message: 'Vui lòng chọn nhóm khách hàng' }]}><Radio.Group options={[{ value: 'PERSONAL', label: 'Cá nhân' }, { value: 'BUSINESS', label: 'Doanh nghiệp' }]} /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='name' label='Tên khách hàng' rules={[{ required: true, message: 'Vui lòng nhập tên khách hàng' }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='phone' label='Số điện thoại' rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='email' label='Email' rules={[{ type: 'email', message: 'Email không hợp lệ' }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='source' label='Nguồn khách hàng'><Select options={sourceOptions} /></Form.Item></Col><Col xs={24}><Form.Item name='address' label='Địa chỉ liên hệ' rules={[{ required: true, message: 'Vui lòng nhập địa chỉ liên hệ' }]}><Input.TextArea rows={2} /></Form.Item></Col></Row>
@@ -275,20 +273,20 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
         <Form.Item name='status' hidden><Input /></Form.Item>
         <Row gutter={[16, 0]}><Col xs={24}><Form.Item name='notes' label='Yêu cầu / Ghi chú ban đầu'><Input.TextArea rows={3} placeholder='Loại thang, số tầng, tải trọng, thời gian dự kiến...' /></Form.Item></Col></Row>
         <div className='form-section-heading'>Hồ sơ khảo sát</div>
-        <div className='customer-supplement-section'><div className='customer-supplement-heading'><span><SlidersOutlined /> Cấu hình thông số kỹ thuật thang máy <Badge count={configurations.length} showZero size='small' className='section-count-badge' /></span><Typography.Text type='secondary'>Có thể bổ sung khi đã có thông tin khảo sát</Typography.Text></div>{configurations.map((configuration, index) => <div key={configuration.id ?? index} className='elevator-spec-summary-item'><div><Typography.Text strong>{configuration.name || `Thang máy ${index + 1}`}</Typography.Text><Typography.Text type='secondary'>{configuration.floors || '—'} tầng · {configuration.capacityKg || '—'} kg · {typeLabel(configuration.elevatorType)}</Typography.Text></div><Space size={6}><Tooltip title='Sửa cấu hình kỹ thuật'><Button aria-label='Sửa cấu hình thang' icon={<EditOutlined />} onClick={() => openTechnical(index)} /></Tooltip></Space></div>)}<div className='customer-supplement-footer'><Button icon={<PlusOutlined />} onClick={addTechnical}>Thêm thang</Button>{configurations.length > 0 && <Button type='primary' icon={<SlidersOutlined />} onClick={() => openTechnical(0)}>Mở cấu hình chi tiết</Button>}</div></div>
+        <div className='customer-supplement-section'><div className='customer-supplement-heading'><span><SlidersOutlined /> Cấu hình thông số kỹ thuật thang máy <Badge count={configurations.length} showZero size='small' className='section-count-badge' /></span><Typography.Text type='secondary'>Có thể bổ sung khi đã có thông tin khảo sát</Typography.Text></div>{configurations.map((configuration, index) => <div key={configuration.id ?? index} className='elevator-spec-summary-item'><div><Typography.Text strong>{configuration.name || `Thang máy ${index + 1}`}</Typography.Text><Typography.Text type='secondary'>{configuration.floors || '—'} tầng · {configuration.capacityKg || '—'} kg · {typeLabel(configuration.elevatorType)}</Typography.Text></div><Space size={6}><Tooltip title='Sửa cấu hình kỹ thuật'><Button aria-label='Sửa cấu hình thang' icon={<EditOutlined />} onClick={() => openTechnical(index)} /></Tooltip></Space></div>)}<div className='customer-supplement-footer'><Button type='primary' icon={<SlidersOutlined />} onClick={openTechnicalWorkspace}>Mở cấu hình chi tiết</Button></div></div>
       </Form>
     </Drawer>}
-    <Drawer title={<span className='technical-drawer-title'><SlidersOutlined /> Cấu hình kỹ thuật thang máy</span>} open={open && technicalOpen} onClose={() => { setTechnicalOpen(false); setConfigDraft(undefined); pendingFilesRef.current = {}; if (configurationOnly) onClose(); }} width='min(1040px, calc(100vw - 64px))' className='technical-config-drawer' rootClassName='technical-config-drawer-root' destroyOnClose footer={<div className='technical-drawer-footer'><span /><Space><Button onClick={() => { setTechnicalOpen(false); if (configurationOnly) onClose(); }}>Đóng</Button><Button type='primary' loading={saving} onClick={() => void saveTechnical()}>Lưu cấu hình</Button></Space></div>}>
+    <Drawer title={<span className='technical-drawer-title'><SlidersOutlined /> Cấu hình kỹ thuật thang máy</span>} open={open && technicalOpen} onClose={() => { setTechnicalOpen(false); setConfigDraft(undefined); pendingFilesRef.current = {}; if (isSingleConfiguration) onClose(); }} width='min(1040px, calc(100vw - 64px))' className='technical-config-drawer' rootClassName='technical-config-drawer-root' destroyOnClose footer={<div className='technical-drawer-footer'><span /><Space><Button onClick={() => { setTechnicalOpen(false); if (isSingleConfiguration) onClose(); }}>Đóng</Button><Button type='primary' loading={saving} onClick={() => void saveTechnical()}>Lưu cấu hình</Button></Space></div>}>
       {active && <>
         <div className='technical-tab-row'>
           <div className='technical-tab-list'>
-            {(configurationOnly ? configurations.filter((_, index) => index === editingIndex) : configurations).map((configuration, index) => {
-              const configurationIndex = configurationOnly ? editingIndex ?? 0 : index;
+            {(isSingleConfiguration ? configurations.filter((_, index) => index === editingIndex) : configurations).map((configuration, index) => {
+              const configurationIndex = isSingleConfiguration ? editingIndex ?? 0 : index;
               return <button key={configuration.id ?? configurationIndex} type='button' className={`technical-tab-button ${configurationIndex === editingIndex ? 'active' : ''}`} onClick={() => switchTechnical(configurationIndex)}><span>{configuration.name || `Thang máy ${configurationIndex + 1}`} ({configuration.floors ?? '—'} tầng)</span></button>;
             })}
-            {!configurationOnly && <Button className='technical-add-tab' icon={<PlusOutlined />} onClick={addTechnical}>Thêm thang</Button>}
+            {!isSingleConfiguration && <Button className='technical-add-tab' icon={<PlusOutlined />} onClick={addTechnical}>Thêm thang</Button>}
           </div>
-          {!configurationOnly && editingIndex !== undefined && <Dropdown
+          {!isSingleConfiguration && editingIndex !== undefined && <Dropdown
             trigger={['click']}
             overlayClassName='technical-action-dropdown'
             overlayStyle={{ zIndex: 1700 }}
@@ -301,7 +299,7 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
               items: [
                 { key: 'copy', icon: <CopyOutlined />, label: 'Nhân bản cấu hình' },
                 { type: 'divider' },
-                { key: 'delete', icon: <DeleteOutlined />, label: 'Xóa cấu hình', danger: true },
+                { key: 'delete', icon: <DeleteOutlined />, label: 'Xóa thang máy', danger: true },
               ],
             }}
           >
@@ -311,7 +309,35 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
         <TechnicalConfigurationForm value={active} onChange={setConfigDraft} contactAddress={customerAddress} locationExtra={locationExtra} attachmentsExtra={attachmentsExtra} />
       </>}
     </Drawer>
-    <Modal title='Ghim vị trí lắp đặt' open={locationPickerOpen} onCancel={() => setLocationPickerOpen(false)} footer={<Button onClick={() => setLocationPickerOpen(false)}>Đóng</Button>} width={760} destroyOnClose><Typography.Paragraph type='secondary'>Chọn vị trí trên bản đồ để cập nhật cấu hình thang máy.</Typography.Paragraph>{active && <div style={{ height: 420 }}><LocationPickerMap center={[active.latitude ?? 19.8071, active.longitude ?? 105.7763]} pin={isPinned ? [active.latitude!, active.longitude!] : undefined} onPick={(latitude, longitude) => void updatePin(latitude, longitude)} /></div>}</Modal>
+    <Modal
+      title='Xóa thang máy?'
+      open={deleteCandidateIndex !== undefined}
+      onCancel={() => setDeleteCandidateIndex(undefined)}
+      onOk={confirmRemoveTechnical}
+      okText='Xóa thang máy'
+      cancelText='Hủy'
+      okButtonProps={{ danger: true }}
+      getContainer={() => document.body}
+      zIndex={10000}
+      rootClassName='technical-delete-confirm-root'
+      className='technical-delete-confirm-modal'
+      width={360}
+      centered
+      maskClosable={false}
+      destroyOnHidden
+    >
+      <Typography.Paragraph>Thang máy <Typography.Text strong>{deleteCandidateIndex !== undefined ? configurations[deleteCandidateIndex]?.name || `Thang máy ${deleteCandidateIndex + 1}` : ''}</Typography.Text> cùng cấu hình kỹ thuật và tài liệu khảo sát sẽ bị loại khỏi đăng ký khi bạn lưu thay đổi.</Typography.Paragraph>
+    </Modal>
+    <DeploymentLocationPickerModal
+      open={locationPickerOpen}
+      value={active && isPinned ? { latitude: active.latitude!, longitude: active.longitude!, accuracyMeters: typeof active.locationAccuracyMeters === 'number' ? active.locationAccuracyMeters : undefined, label: active.locationLabel, ward: active.installationWard, province: active.installationProvince } : undefined}
+      searchSeed={active?.installationAddress}
+      onCancel={() => setLocationPickerOpen(false)}
+      onConfirm={(location) => {
+        setConfigDraft((current) => current ? { ...current, latitude: location.latitude, longitude: location.longitude, locationAccuracyMeters: location.accuracyMeters, locationLabel: location.label, installationWard: location.ward, installationProvince: location.province, installationAreaSource: 'PIN' } : current);
+        setLocationPickerOpen(false);
+      }}
+    />
     <Modal title='Thêm link tài liệu / ảnh khảo sát' open={attachmentLinkOpen} onCancel={() => setAttachmentLinkOpen(false)} onOk={addAttachmentLink} okText='Thêm link' cancelText='Hủy' destroyOnClose>
       <Space direction='vertical' size={12} style={{ width: '100%' }}>
         <Input value={attachmentLinkUrl} onChange={(event) => setAttachmentLinkUrl(event.target.value)} placeholder='https://... hoặc đường dẫn tài liệu' prefix={<LinkOutlined />} />

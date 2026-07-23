@@ -86,5 +86,6 @@ test('sửa đăng ký tại Customer 360 mở drawer tại chỗ và dùng chun
   assert.match(openEditorBody, /setEditingConfigurationId\(undefined\)/);
   assert.doesNotMatch(openEditorBody, /router\.(push|replace)/);
   assert.match(customer360Page, /<ConsultationProfileEditDrawer/);
+  assert.match(customer360Page, /mode=\{editingConfigurationId \? 'SINGLE_CONFIGURATION' : 'FULL_PROFILE'\}/);
   assert.match(consultationListPage, /<ConsultationProfileEditDrawer/);
 });

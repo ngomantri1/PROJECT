@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import dynamic from 'next/dynamic';
 import { ArrowLeftOutlined, CameraOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, PaperClipOutlined, PushpinOutlined, SaveOutlined, SlidersOutlined } from '@ant-design/icons';
-import { Button, Card, Descriptions, Modal, Result, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Card, Descriptions, Result, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
 import { PageContainer } from '@ant-design/pro-components';
+import DeploymentLocationPickerModal from '@/components/DeploymentLocationPickerModal';
 import TechnicalConfigurationForm, { type TechnicalConfigurationValues } from '@/components/TechnicalConfigurationForm';
 import { api } from '@/lib/api';
 
-const LocationPickerMap = dynamic(() => import('@/components/LocationPickerMap'), { ssr: false });
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 type TechnicalConfiguration = TechnicalConfigurationValues;
@@ -122,37 +121,6 @@ export default function TechnicalConfigurationPage() {
     setEditing(false);
   };
 
-  const updatePinnedLocation = async (latitude: number, longitude: number) => {
-    let locationLabel = `Tọa độ: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-    let installationWard: string | undefined;
-    let installationProvince: string | undefined;
-
-    try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`, {
-        headers: { Accept: 'application/json' },
-      });
-      if (response.ok) {
-        const result = await response.json() as { display_name?: string; address?: { suburb?: string; village?: string; town?: string; city_district?: string; state?: string; city?: string } };
-        locationLabel = result.display_name || locationLabel;
-        installationWard = result.address?.suburb || result.address?.village || result.address?.town || result.address?.city_district;
-        installationProvince = result.address?.state || result.address?.city;
-      }
-    } catch {
-      // Vẫn lưu tọa độ khi dịch vụ tra cứu địa chỉ tạm thời không phản hồi.
-    }
-
-    setDraft((current) => current ? {
-      ...current,
-      latitude,
-      longitude,
-      locationLabel,
-      installationWard: installationWard || current.installationWard,
-      installationProvince: installationProvince || current.installationProvince,
-    } : current);
-    setLocationPickerOpen(false);
-    message.success('Đã cập nhật vị trí ghim triển khai.');
-  };
-
   const addAttachments = (files: FileList | null, source: Attachment['source']) => {
     if (!files?.length) return;
     const additions: Attachment[] = Array.from(files).map((file, index) => {
@@ -224,12 +192,13 @@ export default function TechnicalConfigurationPage() {
   const editingValue = draft ?? configuration;
   const attachments = (editingValue.attachments ?? []) as Attachment[];
   const isPinned = typeof editingValue.latitude === 'number' && typeof editingValue.longitude === 'number';
+  const pinnedLocationText = isPinned ? `${editingValue.locationLabel || 'Đã ghim vị trí'} · ${editingValue.latitude?.toFixed(6)}, ${editingValue.longitude?.toFixed(6)}` : '';
+  const installationAreaText = [editingValue.installationWard, editingValue.installationProvince].filter(Boolean).join(' · ') || 'Đang xác định khu vực';
 
   const locationExtra = (
-    <div className={`technical-location-panel ${isPinned ? 'is-pinned' : 'is-unpinned'}`}>
-      <div>
+    <div className={`technical-location-panel compact ${isPinned ? 'is-pinned' : 'is-unpinned'}`}>
+      <div className='technical-location-heading'>
         <Typography.Text strong>Vị trí ghim triển khai <b className='required-marker'>*</b></Typography.Text>
-        <Typography.Text type='secondary'>Ghim tọa độ riêng cho thang này để kỹ thuật mở bản đồ khi khảo sát/lắp đặt.</Typography.Text>
         <span className={`technical-pin-state ${isPinned ? 'is-pinned' : 'is-unpinned'}`}>
           <EnvironmentOutlined /> {isPinned ? 'Đã ghim vị trí' : 'Chưa ghim vị trí'}
         </span>
@@ -248,10 +217,11 @@ export default function TechnicalConfigurationPage() {
         } : current)}>Xóa ghim</Button>}
       </Space>
       {isPinned && <>
-        <div className='location-pin-summary'><EnvironmentOutlined /><span>{editingValue.locationLabel || 'Đã ghim vị trí'} · {editingValue.latitude?.toFixed(6)}, {editingValue.longitude?.toFixed(6)}</span></div>
+        <div className='location-pin-summary'><EnvironmentOutlined /><Tooltip title={pinnedLocationText}><span>{pinnedLocationText}</span></Tooltip></div>
         <div className='technical-installation-area'>
-          <span>Khu vực lắp đặt</span><Typography.Text type='secondary'>Tự động từ vị trí ghim</Typography.Text>
-          <div className='technical-installation-area-value'><EnvironmentOutlined /><span>{[editingValue.installationWard, editingValue.installationProvince].filter(Boolean).join(' · ') || 'Đang xác định khu vực'}</span></div>
+          <span>Khu vực:</span>
+          <Tooltip title={installationAreaText}><div className='technical-installation-area-value'><EnvironmentOutlined /><span>{installationAreaText}</span></div></Tooltip>
+          <Typography.Text type='secondary'>Tự động từ vị trí ghim</Typography.Text>
         </div>
       </>}
     </div>
@@ -328,23 +298,17 @@ export default function TechnicalConfigurationPage() {
           </Card>
         </Space>
       )}
-      <Modal
-        title='Ghim vị trí lắp đặt'
+      <DeploymentLocationPickerModal
         open={locationPickerOpen}
+        value={isPinned ? { latitude: editingValue.latitude!, longitude: editingValue.longitude!, accuracyMeters: typeof editingValue.locationAccuracyMeters === 'number' ? editingValue.locationAccuracyMeters : undefined, label: editingValue.locationLabel, ward: editingValue.installationWard, province: editingValue.installationProvince } : undefined}
+        searchSeed={editingValue.installationAddress}
         onCancel={() => setLocationPickerOpen(false)}
-        footer={<Button onClick={() => setLocationPickerOpen(false)}>Đóng</Button>}
-        width={760}
-        destroyOnClose
-      >
-        <Typography.Paragraph type='secondary'>Chọn vị trí trên bản đồ. Tọa độ và khu vực lắp đặt sẽ được cập nhật vào cấu hình đang chỉnh sửa.</Typography.Paragraph>
-        <div style={{ height: 420 }}>
-          <LocationPickerMap
-            center={[editingValue.latitude ?? 19.8071, editingValue.longitude ?? 105.7763]}
-            pin={isPinned ? [editingValue.latitude!, editingValue.longitude!] : undefined}
-            onPick={(latitude, longitude) => void updatePinnedLocation(latitude, longitude)}
-          />
-        </div>
-      </Modal>
+        onConfirm={(location) => {
+          setDraft((current) => current ? { ...current, latitude: location.latitude, longitude: location.longitude, locationAccuracyMeters: location.accuracyMeters, locationLabel: location.label, installationWard: location.ward, installationProvince: location.province, installationAreaSource: 'PIN' } : current);
+          setLocationPickerOpen(false);
+          message.success('Đã cập nhật vị trí ghim triển khai.');
+        }}
+      />
     </PageContainer>
   );
 }
