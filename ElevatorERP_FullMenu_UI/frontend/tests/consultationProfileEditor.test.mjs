@@ -80,3 +80,21 @@ test('danh sách thang chỉ cho sửa; nhân bản và xóa nằm trong cấu h
   assert.match(technicalDrawerSource, /overlayStyle=\{\{ zIndex: 1700 \}\}/);
   assert.match(technicalDrawerSource, /getPopupContainer=\{\(\) => document\.body\}/);
 });
+
+test('khu vực lắp đặt chỉ lấy tự động từ vị trí ghim, không cho nhập tay', () => {
+  const formSource = readFileSync(
+    new URL('../src/components/TechnicalConfigurationForm.tsx', import.meta.url),
+    'utf8',
+  );
+  const editorSource = readFileSync(
+    new URL('../src/components/ConsultationProfileEditDrawer.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.doesNotMatch(formSource, /<span>Phường \/ xã<\/span>/);
+  assert.doesNotMatch(formSource, /<span>Tỉnh \/ thành phố<\/span>/);
+  assert.doesNotMatch(formSource, /onChange=\{\(event\) => patch\(\{ installationWard:/);
+  assert.doesNotMatch(formSource, /onChange=\{\(event\) => patch\(\{ installationProvince:/);
+  assert.match(editorSource, /Khu vực lắp đặt/);
+  assert.match(editorSource, /Tự động từ vị trí ghim/);
+});

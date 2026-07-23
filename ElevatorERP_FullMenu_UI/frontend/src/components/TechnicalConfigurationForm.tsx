@@ -110,10 +110,6 @@ export default function TechnicalConfigurationForm({ value, onChange, locationEx
           <span className='technical-installation-address-head'><span>Địa chỉ công trình / vị trí đặt thang <b className='required-marker'>*</b></span>{contactAddress && <Button className='technical-copy-contact-button' disabled={disabled} size='small' icon={<CopyOutlined />} onClick={() => patch({ installationAddress: contactAddress })}>Dùng địa chỉ liên hệ</Button>}</span>
           <Input disabled={disabled} value={value.installationAddress} onChange={(event) => patch({ installationAddress: event.target.value })} />
         </label>
-        <div className='technical-grid five-columns'>
-          <label><span>Phường / xã</span><Input disabled={disabled} value={value.installationWard} onChange={(event) => patch({ installationWard: event.target.value })} /></label>
-          <label><span>Tỉnh / thành phố</span><Input disabled={disabled} value={value.installationProvince} onChange={(event) => patch({ installationProvince: event.target.value })} /></label>
-        </div>
         {locationExtra}
       </div>
 
