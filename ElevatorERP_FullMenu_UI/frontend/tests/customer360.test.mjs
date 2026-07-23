@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   consultationConfigurationViewHref,
@@ -68,4 +69,22 @@ test('liên kết xem cấu hình mở chế độ chỉ đọc và giữ đư�
     consultationConfigurationViewHref('profile-123', 'config-456', 'customer-789', 'consultation-profiles'),
     '/consultation-profiles/profile-123/configurations/config-456?returnTo=customer360&customerId=customer-789&customerReturnTo=consultation-profiles',
   );
+});
+
+test('sửa đăng ký tại Customer 360 mở drawer tại chỗ và dùng chung trình sửa chuẩn', () => {
+  const customer360Page = readFileSync(
+    new URL('../src/app/business/customers/[id]/page.tsx', import.meta.url),
+    'utf8',
+  );
+  const consultationListPage = readFileSync(
+    new URL('../src/app/customers/page.tsx', import.meta.url),
+    'utf8',
+  );
+  const openEditorBody = customer360Page.match(/const openProfileEditor = \(profileId: string\) => \{([\s\S]*?)\n  \};/)?.[1] ?? '';
+
+  assert.match(openEditorBody, /setEditingProfileId\(profileId\)/);
+  assert.match(openEditorBody, /setEditingConfigurationId\(undefined\)/);
+  assert.doesNotMatch(openEditorBody, /router\.(push|replace)/);
+  assert.match(customer360Page, /<ConsultationProfileEditDrawer/);
+  assert.match(consultationListPage, /<ConsultationProfileEditDrawer/);
 });

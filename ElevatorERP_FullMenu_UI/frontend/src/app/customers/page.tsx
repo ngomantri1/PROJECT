@@ -72,6 +72,7 @@ import type { Dayjs } from 'dayjs';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppStatusTag from '@/components/AppStatusTag';
+import ConsultationProfileEditDrawer from '@/components/ConsultationProfileEditDrawer';
 import { api } from '@/lib/api';
 import { customer360ProfileHref } from '@/lib/customer360';
 import { exportCsv } from '@/lib/exportCsv';
@@ -351,16 +352,6 @@ function formatFileSize(sizeBytes?: number) {
   return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function parseJsonArray<T>(value?: string): T[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed as T[] : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function Customers() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -375,6 +366,7 @@ export default function Customers() {
   const [data, setData] = useState<CustomerRow[]>([]);
   const [masterCustomers, setMasterCustomers] = useState<CustomerMasterRow[]>([]);
   const [open, setOpen] = useState(false);
+  const [sharedEditingProfileId, setSharedEditingProfileId] = useState<string>();
   const [editingCustomer, setEditingCustomer] = useState<CustomerRow>();
   const [selectedExistingCustomerId, setSelectedExistingCustomerId] = useState<string>();
   const [duplicateConsultationCustomer, setDuplicateConsultationCustomer] = useState<CustomerMasterRow>();
@@ -685,23 +677,12 @@ export default function Customers() {
 
   const openEditDrawer = (customer: CustomerRow, returnTarget?: string) => {
     profileEditorReturnTargetRef.current = returnTarget;
-    setEditingCustomer(customer);
-    setSelectedExistingCustomerId(customer.customerId);
-    setDuplicateConsultationCustomer(undefined);
-    const legacyAttachments = parseJsonArray<CustomerAttachment>(customer.attachmentLinksJson);
-    const specs = parseJsonArray<ElevatorSpec>(customer.technicalSpecsJson).map((spec, index) => ({
-      ...spec,
-      attachments: [...(spec.attachments ?? []), ...(index === 0 ? legacyAttachments : [])],
-    }));
-    setElevatorSpecs(specs);
-    setActiveElevatorSpecId(specs[0]?.id);
-    attachmentFileByIdRef.current = {};
-    setOpen(true);
+    setSharedEditingProfileId(customer.id);
   };
 
   useEffect(() => {
     const requestedProfileId = searchParams.get('profileId');
-    if (!requestedProfileId || open || editingCustomer) return;
+    if (!requestedProfileId || open || editingCustomer || sharedEditingProfileId) return;
     const profile = data.find((item) => item.id === requestedProfileId);
     if (!profile) return;
     const returnCustomerId = searchParams.get('returnCustomerId');
@@ -711,7 +692,7 @@ export default function Customers() {
       : undefined;
     openEditDrawer(profile, returnTarget);
     router.replace('/customers');
-  }, [data, editingCustomer, open, router, searchParams]);
+  }, [data, editingCustomer, open, router, searchParams, sharedEditingProfileId]);
 
   useEffect(() => {
     const requestedCustomerId = searchParams.get('customerId');
@@ -2289,6 +2270,18 @@ export default function Customers() {
           </div>
           <ProFormText name='status' hidden />
         </DrawerForm>
+        <ConsultationProfileEditDrawer
+          profileId={sharedEditingProfileId}
+          open={Boolean(sharedEditingProfileId)}
+          onClose={() => {
+            setSharedEditingProfileId(undefined);
+            returnFromProfileEditor();
+          }}
+          onSaved={async () => {
+            await load();
+            api<CustomerMasterRow[]>('/customers').then(setMasterCustomers).catch(() => undefined);
+          }}
+        />
         <Drawer
           title={(
             <span className='technical-drawer-title'>

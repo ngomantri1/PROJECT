@@ -106,6 +106,7 @@ There is intentionally no Live/Demo/Planned label in the menu. All menu items ar
 - Customer 360 uses URL tab state (`?tab=`), so links must open the intended business tab without losing customer context.
 - Back navigation is context-aware. A detail opened from Customer 360 must carry its customer/tab/source context, and its primary back action must return to that Customer 360 context before offering a generic list destination.
 - Back labels must name the real destination, for example **Quay lại Customer 360 – [Tên khách hàng]**. Use a list fallback only when the page was opened from that list or no source context is available; nested detail links must preserve the relevant return context.
+- Editing a consultation profile from Customer 360 must keep the Customer 360 page and URL in place and open the standard shared consultation-profile editor as an overlay. The main consultation list and Customer 360 must use the same editor component, validation and save payload; save/cancel returns to the invoking screen without rendering the consultation list behind the drawer.
 - The **Thang máy** tab is for physical assets only. Preliminary configurations remain under their source consultation profile and must not inflate the asset count.
 - Receivables, progress and maintenance in Customer 360 are aggregate/read-oriented views. Mutations remain in the owning contract, asset, accounting or maintenance module.
 - Survey documents/images are optional and belong to an individual elevator configuration, not globally to the customer or consultation profile.

@@ -12,7 +12,7 @@ import AppStatusTag from '@/components/AppStatusTag';
 import Customer360TableActions from '@/components/Customer360TableActions';
 import ConsultationProfileEditDrawer from '@/components/ConsultationProfileEditDrawer';
 import { api } from '@/lib/api';
-import { consultationConfigurationViewHref, consultationProfileEditHref, consultationProfileHref, customer360EntityCounts, customer360EntityLabels, customer360TabOrder } from '@/lib/customer360';
+import { consultationConfigurationViewHref, consultationProfileHref, customer360EntityCounts, customer360EntityLabels, customer360TabOrder } from '@/lib/customer360';
 
 type ConsultationProfile = {
   id: string;
@@ -363,7 +363,8 @@ export default function Customer360Page() {
   };
 
   const openProfileEditor = (profileId: string) => {
-    router.push(consultationProfileEditHref(profileId, { customerId, customerReturnTo }));
+    setEditingProfileId(profileId);
+    setEditingConfigurationId(undefined);
   };
 
   const profileColumns: ColumnsType<ConsultationProfile> = [

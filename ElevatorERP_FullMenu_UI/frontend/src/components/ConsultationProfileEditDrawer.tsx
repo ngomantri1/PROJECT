@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { CameraOutlined, CopyOutlined, DeleteOutlined, EditOutlined, EllipsisOutlined, EnvironmentOutlined, LinkOutlined, PaperClipOutlined, PlusOutlined, PushpinOutlined, SlidersOutlined } from '@ant-design/icons';
-import { Badge, Button, Col, Drawer, Form, Input, Modal, Radio, Row, Select, Space, Tooltip, Typography, message } from 'antd';
+import { Badge, Button, Col, Drawer, Dropdown, Form, Input, Modal, Radio, Row, Select, Space, Tooltip, Typography, message } from 'antd';
 import TechnicalConfigurationForm, { type TechnicalConfigurationValues } from '@/components/TechnicalConfigurationForm';
 import { api } from '@/lib/api';
+import { cloneConsultationConfiguration, parseConsultationConfigurations, technicalConfigurationErrors } from '@/lib/consultationProfileEditor';
 
 const LocationPickerMap = dynamic(() => import('@/components/LocationPickerMap'), { ssr: false });
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
@@ -28,14 +29,13 @@ type Props = {
   onSaved: () => void | Promise<void>;
 };
 
-const statusOptions = [['NEW', 'Mới tiếp nhận'], ['CONTACTED', 'Đã liên hệ'], ['CARING', 'Đang chăm sóc'], ['WAITING_SURVEY', 'Chờ khảo sát'], ['SURVEYED', 'Đã khảo sát'], ['QUOTED', 'Đã gửi báo giá'], ['NEGOTIATING', 'Đang đàm phán'], ['CONVERTED', 'Đã chuyển sang hợp đồng'], ['PAUSED', 'Tạm dừng chăm sóc'], ['LOST', 'Không thành công']].map(([value, label]) => ({ value, label }));
 const sourceOptions = ['Marketing', 'Giới thiệu', 'Telesale', 'Khách cũ', 'Cộng tác viên', 'Khác'].map((value) => ({ value, label: value }));
 
-function parseConfigurations(raw?: string): Configuration[] {
+function parseAttachments(raw?: string): Attachment[] {
   if (!raw) return [];
   try {
     const value: unknown = JSON.parse(raw);
-    return Array.isArray(value) ? value.filter((item): item is Configuration => Boolean(item) && typeof item === 'object') : [];
+    return Array.isArray(value) ? value.filter((item): item is Attachment => Boolean(item) && typeof item === 'object') : [];
   } catch { return []; }
 }
 
@@ -63,8 +63,17 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
     if (!profileId) return;
     try {
       const response = await api<ProfileDetail>(`/consultation-profiles/${profileId}`);
+      const legacyAttachments = parseAttachments(response.profile.attachmentLinksJson);
+      const loadedConfigurations = parseConsultationConfigurations(response.profile.technicalSpecsJson).map((configuration, index) => ({
+        ...configuration,
+        attachments: [
+          ...((configuration.attachments ?? []) as Attachment[]),
+          ...(index === 0 ? legacyAttachments : []),
+        ],
+      }));
       setDetail(response);
-      setConfigurations(parseConfigurations(response.profile.technicalSpecsJson));
+      setConfigurations(loadedConfigurations);
+      pendingFilesRef.current = {};
       form.setFieldsValue({ customerType: response.customer.customerType, name: response.customer.name, phone: response.customer.phone, email: response.customer.email, address: response.customer.address, source: response.profile.source, status: response.profile.status, notes: response.profile.notes });
     } catch (error) { message.error(error instanceof Error ? error.message : 'Không thể tải đăng ký tư vấn.'); }
   }, [form, profileId]);
@@ -87,7 +96,6 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
   }, [open, initialConfigurationId, configurations]);
 
   const openTechnical = (index: number) => {
-    pendingFilesRef.current = {};
     setEditingIndex(index);
     setConfigDraft({ ...configurations[index], attachments: [...(configurations[index].attachments ?? [])] });
     setTechnicalOpen(true);
@@ -103,9 +111,50 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
   };
 
   const copyTechnical = (index: number) => {
-    const source = configurations[index];
-    const copied: Configuration = { ...source, id: `elevator-${Date.now()}`, name: `${source.name || 'Thang máy'} (bản sao)`, floorHeights: source.floorHeights?.map((floor, floorIndex) => ({ ...floor, id: `floor-${Date.now()}-${floorIndex}` })), attachments: [] };
-    setConfigurations((current) => [...current, copied]);
+    const currentConfigurations = editingIndex !== undefined && configDraft
+      ? configurations.map((item, currentIndex) => currentIndex === editingIndex ? configDraft : item)
+      : configurations;
+    const source = currentConfigurations[index];
+    const id = `elevator-${Date.now()}`;
+    const copied = cloneConsultationConfiguration(source, id);
+    const nextConfigurations = [...currentConfigurations, copied];
+    setConfigurations(nextConfigurations);
+    setEditingIndex(nextConfigurations.length - 1);
+    setConfigDraft(copied);
+    message.success('Đã nhân bản cấu hình thang. Kiểm tra nội dung rồi lưu thay đổi.');
+  };
+
+  const removeTechnical = (index: number) => {
+    Modal.confirm({
+      title: 'Xóa cấu hình thang máy?',
+      content: 'Cấu hình và danh sách tài liệu thuộc thang này sẽ bị loại khỏi đăng ký khi bạn lưu thay đổi.',
+      okText: 'Xóa cấu hình',
+      cancelText: 'Hủy',
+      okButtonProps: { danger: true },
+      onOk: () => {
+        const nextConfigurations = configurations.filter((_, currentIndex) => currentIndex !== index);
+        setConfigurations(nextConfigurations);
+        if (!nextConfigurations.length) {
+          setTechnicalOpen(false);
+          setEditingIndex(undefined);
+          setConfigDraft(undefined);
+          return;
+        }
+        const nextIndex = Math.min(index, nextConfigurations.length - 1);
+        setEditingIndex(nextIndex);
+        setConfigDraft({ ...nextConfigurations[nextIndex], attachments: [...(nextConfigurations[nextIndex].attachments ?? [])] });
+      },
+    });
+  };
+
+  const switchTechnical = (index: number) => {
+    let nextConfigurations = configurations;
+    if (editingIndex !== undefined && configDraft) {
+      nextConfigurations = configurations.map((item, currentIndex) => currentIndex === editingIndex ? configDraft : item);
+      setConfigurations(nextConfigurations);
+    }
+    setEditingIndex(index);
+    setConfigDraft({ ...nextConfigurations[index], attachments: [...(nextConfigurations[index].attachments ?? [])] });
   };
 
   const updatePin = async (latitude: number, longitude: number) => {
@@ -162,6 +211,11 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
 
   const saveTechnical = async () => {
     if (editingIndex === undefined || !configDraft) return;
+    const errors = technicalConfigurationErrors(configDraft);
+    if (errors.length) {
+      message.error(`Vui lòng hoàn tất: ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? '…' : ''}`);
+      return;
+    }
     setSaving(true);
     try {
       const updated = await uploadAttachments(configDraft);
@@ -188,9 +242,18 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
 
   const saveProfile = async (values: ProfileValues) => {
     if (!detail || !profileId) return;
+    const invalidIndex = configurations.findIndex((configuration) => technicalConfigurationErrors(configuration).length > 0);
+    if (invalidIndex >= 0) {
+      const errors = technicalConfigurationErrors(configurations[invalidIndex]);
+      message.error(`Cấu hình “${configurations[invalidIndex].name || `Thang máy ${invalidIndex + 1}`}” chưa đầy đủ: ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? '…' : ''}`);
+      openTechnical(invalidIndex);
+      return;
+    }
     setSaving(true);
     try {
-      await api(`/consultation-profiles/${profileId}`, { method: 'PUT', body: JSON.stringify({ customerId: detail.customer.id, ...values, elevatorType: detail.profile.elevatorType, technicalSpecsJson: JSON.stringify(configurations), attachmentLinksJson: detail.profile.attachmentLinksJson, isKpiEligible: detail.profile.isKpiEligible }) });
+      const uploadedConfigurations = await Promise.all(configurations.map(uploadAttachments));
+      await api(`/consultation-profiles/${profileId}`, { method: 'PUT', body: JSON.stringify({ customerId: detail.customer.id, ...values, elevatorType: detail.profile.elevatorType, technicalSpecsJson: JSON.stringify(uploadedConfigurations), attachmentLinksJson: null, isKpiEligible: detail.profile.isKpiEligible }) });
+      setConfigurations(uploadedConfigurations);
       message.success('Đã cập nhật đăng ký tư vấn.');
       onClose(); await onSaved();
     } catch (error) { message.error(error instanceof Error ? error.message : 'Không thể cập nhật đăng ký tư vấn.'); }
@@ -207,21 +270,43 @@ export default function ConsultationProfileEditDrawer({ profileId, open, initial
     {!configurationOnly && <Drawer title='Sửa đăng ký tư vấn' open={open} onClose={onClose} width='min(1120px, calc(100vw - 40px))' className='customer-form-drawer' rootClassName='customer-form-drawer-root' destroyOnClose footer={<Space><Button onClick={onClose}>Hủy</Button><Button type='primary' loading={saving} onClick={() => form.submit()}>Lưu thay đổi</Button></Space>}>
       <Form form={form} layout='vertical' onFinish={saveProfile} className='consultation-profile-edit-form'>
         <div className='form-section-heading'>Thông tin khách hàng</div>
-        <Row gutter={[16, 0]}><Col xs={24}><Form.Item name='customerType' label='Nhóm khách hàng' rules={[{ required: true }]}><Radio.Group options={[{ value: 'PERSONAL', label: 'Cá nhân' }, { value: 'BUSINESS', label: 'Doanh nghiệp' }]} /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='name' label='Tên khách hàng' rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='phone' label='Số điện thoại' rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='email' label='Email'><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='source' label='Nguồn khách hàng'><Select options={sourceOptions} /></Form.Item></Col><Col xs={24}><Form.Item name='address' label='Địa chỉ liên hệ'><Input.TextArea rows={2} /></Form.Item></Col></Row>
+        <Row gutter={[16, 0]}><Col xs={24}><Form.Item name='customerType' label='Nhóm khách hàng' rules={[{ required: true, message: 'Vui lòng chọn nhóm khách hàng' }]}><Radio.Group options={[{ value: 'PERSONAL', label: 'Cá nhân' }, { value: 'BUSINESS', label: 'Doanh nghiệp' }]} /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='name' label='Tên khách hàng' rules={[{ required: true, message: 'Vui lòng nhập tên khách hàng' }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='phone' label='Số điện thoại' rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='email' label='Email' rules={[{ type: 'email', message: 'Email không hợp lệ' }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name='source' label='Nguồn khách hàng'><Select options={sourceOptions} /></Form.Item></Col><Col xs={24}><Form.Item name='address' label='Địa chỉ liên hệ' rules={[{ required: true, message: 'Vui lòng nhập địa chỉ liên hệ' }]}><Input.TextArea rows={2} /></Form.Item></Col></Row>
         <div className='form-section-heading'>Thông tin đăng ký tư vấn</div>
-        <Row gutter={[16, 0]}><Col xs={24} md={12}><Form.Item name='status' label='Trạng thái hồ sơ' rules={[{ required: true }]}><Select options={statusOptions} /></Form.Item></Col><Col xs={24}><Form.Item name='notes' label='Yêu cầu / Ghi chú ban đầu'><Input.TextArea rows={3} placeholder='Loại thang, số tầng, tải trọng, thời gian dự kiến...' /></Form.Item></Col></Row>
+        <Form.Item name='status' hidden><Input /></Form.Item>
+        <Row gutter={[16, 0]}><Col xs={24}><Form.Item name='notes' label='Yêu cầu / Ghi chú ban đầu'><Input.TextArea rows={3} placeholder='Loại thang, số tầng, tải trọng, thời gian dự kiến...' /></Form.Item></Col></Row>
         <div className='form-section-heading'>Hồ sơ khảo sát</div>
-        <div className='customer-supplement-section'><div className='customer-supplement-heading'><span><SlidersOutlined /> Cấu hình thông số kỹ thuật thang máy <Badge count={configurations.length} showZero size='small' className='section-count-badge' /></span><Typography.Text type='secondary'>Có thể bổ sung khi đã có thông tin khảo sát</Typography.Text></div>{configurations.map((configuration, index) => <div key={configuration.id ?? index} className='elevator-spec-summary-item'><div><Typography.Text strong>{configuration.name || `Thang máy ${index + 1}`}</Typography.Text><Typography.Text type='secondary'>{configuration.floors || '—'} tầng · {configuration.capacityKg || '—'} kg · {typeLabel(configuration.elevatorType)}</Typography.Text></div><Space size={6}><Tooltip title='Nhân bản cấu hình'><Button icon={<CopyOutlined />} onClick={() => copyTechnical(index)} /></Tooltip><Tooltip title='Sửa cấu hình kỹ thuật'><Button icon={<EditOutlined />} onClick={() => openTechnical(index)} /></Tooltip></Space></div>)}<div className='customer-supplement-footer'><Button icon={<PlusOutlined />} onClick={addTechnical}>Thêm thang</Button>{configurations.length > 0 && <Button type='primary' icon={<SlidersOutlined />} onClick={() => openTechnical(0)}>Mở cấu hình chi tiết</Button>}</div></div>
+        <div className='customer-supplement-section'><div className='customer-supplement-heading'><span><SlidersOutlined /> Cấu hình thông số kỹ thuật thang máy <Badge count={configurations.length} showZero size='small' className='section-count-badge' /></span><Typography.Text type='secondary'>Có thể bổ sung khi đã có thông tin khảo sát</Typography.Text></div>{configurations.map((configuration, index) => <div key={configuration.id ?? index} className='elevator-spec-summary-item'><div><Typography.Text strong>{configuration.name || `Thang máy ${index + 1}`}</Typography.Text><Typography.Text type='secondary'>{configuration.floors || '—'} tầng · {configuration.capacityKg || '—'} kg · {typeLabel(configuration.elevatorType)}</Typography.Text></div><Space size={6}><Tooltip title='Sửa cấu hình kỹ thuật'><Button aria-label='Sửa cấu hình thang' icon={<EditOutlined />} onClick={() => openTechnical(index)} /></Tooltip></Space></div>)}<div className='customer-supplement-footer'><Button icon={<PlusOutlined />} onClick={addTechnical}>Thêm thang</Button>{configurations.length > 0 && <Button type='primary' icon={<SlidersOutlined />} onClick={() => openTechnical(0)}>Mở cấu hình chi tiết</Button>}</div></div>
       </Form>
     </Drawer>}
     <Drawer title={<span className='technical-drawer-title'><SlidersOutlined /> Cấu hình kỹ thuật thang máy</span>} open={open && technicalOpen} onClose={() => { setTechnicalOpen(false); setConfigDraft(undefined); pendingFilesRef.current = {}; if (configurationOnly) onClose(); }} width='min(1040px, calc(100vw - 64px))' className='technical-config-drawer' rootClassName='technical-config-drawer-root' destroyOnClose footer={<div className='technical-drawer-footer'><span /><Space><Button onClick={() => { setTechnicalOpen(false); if (configurationOnly) onClose(); }}>Đóng</Button><Button type='primary' loading={saving} onClick={() => void saveTechnical()}>Lưu cấu hình</Button></Space></div>}>
       {active && <>
         <div className='technical-tab-row'>
           <div className='technical-tab-list'>
-            <button type='button' className='technical-tab-button active'><span>{active.name || 'Thang máy'} ({active.floors ?? '—'} tầng)</span></button>
+            {(configurationOnly ? configurations.filter((_, index) => index === editingIndex) : configurations).map((configuration, index) => {
+              const configurationIndex = configurationOnly ? editingIndex ?? 0 : index;
+              return <button key={configuration.id ?? configurationIndex} type='button' className={`technical-tab-button ${configurationIndex === editingIndex ? 'active' : ''}`} onClick={() => switchTechnical(configurationIndex)}><span>{configuration.name || `Thang máy ${configurationIndex + 1}`} ({configuration.floors ?? '—'} tầng)</span></button>;
+            })}
             {!configurationOnly && <Button className='technical-add-tab' icon={<PlusOutlined />} onClick={addTechnical}>Thêm thang</Button>}
           </div>
-          {!configurationOnly && <Button className='technical-more-action' icon={<EllipsisOutlined />} aria-label='Thao tác cấu hình thang máy' />}
+          {!configurationOnly && editingIndex !== undefined && <Dropdown
+            trigger={['click']}
+            overlayClassName='technical-action-dropdown'
+            overlayStyle={{ zIndex: 1700 }}
+            getPopupContainer={() => document.body}
+            menu={{
+              onClick: ({ key }) => {
+                if (key === 'copy') copyTechnical(editingIndex);
+                if (key === 'delete') removeTechnical(editingIndex);
+              },
+              items: [
+                { key: 'copy', icon: <CopyOutlined />, label: 'Nhân bản cấu hình' },
+                { type: 'divider' },
+                { key: 'delete', icon: <DeleteOutlined />, label: 'Xóa cấu hình', danger: true },
+              ],
+            }}
+          >
+            <Button className='technical-more-action' icon={<EllipsisOutlined />} aria-label='Thao tác cấu hình thang máy' />
+          </Dropdown>}
         </div>
         <TechnicalConfigurationForm value={active} onChange={setConfigDraft} contactAddress={customerAddress} locationExtra={locationExtra} attachmentsExtra={attachmentsExtra} />
       </>}
