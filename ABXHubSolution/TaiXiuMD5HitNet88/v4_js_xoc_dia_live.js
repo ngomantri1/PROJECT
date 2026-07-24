@@ -10,7 +10,7 @@
     + STANDARDIZED EXPORTS: moneyTailList(), pickByXTail()
     ========================================================= */
     // Đổi true/false ở đây để bật/tắt bảng Canvas Watch.
-    var SHOW_CANVAS_WATCH = true;
+    var SHOW_CANVAS_WATCH = false;
 
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
 
