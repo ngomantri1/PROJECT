@@ -125,6 +125,20 @@
   - `ArmPopupTransitWatch(...)` now skips recovery if `HasRecentGameSignal(...)` reports a fresh game tick/snapshot.
   - This prevents killing a valid iframe game session just because the wrapper URL remains `thirdg.html`.
 
+## Latest Updates (2026-07-25)
+- Added WebView2 process-failure diagnostics in `MainWindow.xaml.cs`:
+  - main WebView now subscribes to `CoreWebView2.ProcessFailed`,
+  - popup process-failure log now includes optional reason, exit code, and description when exposed by the installed WebView2 runtime,
+  - log markers: `[Web][PROCESS-FAILED]` and `[PopupWeb][PROCESS-FAILED]`.
+- Recent supplied log covered only about ten seconds, not the reported 30-60 minute gray/frozen incident.
+  - during that window, the live game iframe still had fresh `webMain.jsp` authority signals,
+  - a `popup-pull/thirdg.html` transit signal alone is not enough to trigger recovery while a recent game-frame signal exists,
+  - one observed bet failure was a disabled confirm button (`[DIAG][CONFIRM] ... disabled`, `[BETQ][DONE] ok=0`), not proof of a crashed WebView.
+- Cross-project money-management synchronization was applied to `XocDiaTuLinhHit` and `XocDiaTuLinhZoWin`:
+  - management strategy 8 (`WinUpLoseDown`): win advances one level, loss falls one level without going below level 1,
+  - the optional `Tien thang >= 0 tu dong quay ve muc cuoc dau` control is placed below Cut Profit/Cut Loss, matching Baccarat scope rather than the strategy-7 money panel,
+  - both Xoc Dia Release builds completed with zero errors after the final UI placement correction.
+
 ## Coding Rules
 - Do not let JS local/fallback become authority when C# already has authority.
 - Do not use network/text fallback as pool authority for Canvas.

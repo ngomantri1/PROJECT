@@ -6,7 +6,7 @@
   - local mirror bootstrap
   - update/restart/apply pending
   - shortcut launch
-  - frontend build/runtime sync cho `hub.jsx` / `hub.app.js`
+  - frontend catalog/build/runtime sync cho `hub.games.js` / `hub.jsx` / `hub.app.js`
 
 ## Unfinished
 - Quyết định dứt điểm mô hình plugin UI:
@@ -26,7 +26,7 @@
   - sync sang `%LocalAppData%\AutoBetHub\web`
 - Đồng bộ source of truth giữa:
   - `Plugins/*.dll`
-  - `hub.jsx` `GAMES[]`
+  - `hub.games.js` `window.ABX_HUB_GAMES[]`
 
 ## Refactor
 - Đưa constants update repo/branding ra config thay vì hardcode.
@@ -40,8 +40,9 @@
 - Thêm target/script chính thức để `dotnet build` tự regenerate `web/hub.app.js`.
 - Kiểm tra/fix path plugin render vào `HostContainer` nếu mục tiêu là in-window plugin.
 - Review shortcut mode với plugin cần `IWebViewService`.
-- Loại bỏ drift giữa game catalog hardcode và plugin inventory thực tế.
+- Loại bỏ drift giữa `hub.games.js` catalog và plugin inventory thực tế.
 - Loại bỏ drift giữa:
+  - `hub.games.js`
   - `hub.jsx`
   - `hub.app.js`
   - `%LocalAppData%\AutoBetHub\web`
@@ -52,7 +53,8 @@
 - App đang chạy rồi mở shortcut lần 2.
 - `goHome` sau khi plugin đang active.
 - Close app khi plugin còn mở.
-- Sửa 1 menu trong `hub.jsx` rồi xác nhận `hub.app.js` và local mirror đều đổi theo.
+- Thêm/sửa 1 game trong `hub.games.js` rồi xác nhận home menu/search nhận đúng.
+- Sửa 1 logic UI trong `hub.jsx` rồi xác nhận `hub.app.js` và local mirror đều đổi theo.
 - Xác nhận `homeDiagnostics` ghi log khi front-end có lỗi.
 - Update flow:
   - manifest OK

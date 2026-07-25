@@ -19,7 +19,7 @@
 - UI/runtime: `MainWindow`.
 - Plugin boundary: `XocDiaTuLinhHitPlugin`, `PluginStubView`.
 - Browser bridge: `EnsureWebReadyAsync`, `EnsureBridgeRegisteredAsync`, `WebView2LiveBridge`, JS resource.
-- Canvas overlay/debug: `Canvas Watch` trong JS, co `window.__cw_show_panel()` va watchdog giu panel hien.
+- Canvas overlay/debug: `Canvas Watch` trong JS, co `window.__cw_show_panel()` va watchdog giu panel hien khi `CW_HIDE_CANVAS_WATCH = false`; mac dinh co the an bang flag nay.
 - Strategy engine: `IBetTask`, `GameContext`, `TaskUtil`, `MoneyManager`, `MoneyHelper`.
 - Money/risk: stake CSV, `MultiChain`, cut profit/loss, S7 `WinUpLoseKeep`.
 - Bet history: `_betAll`, `_pendingRows`, CSV append, pagination.
@@ -45,7 +45,7 @@
 - `Top10PatternFollowTask.cs`: follow top pattern 10 trong window 50.
 
 ## Data flow
-- Game state: JS scan -> `{abx:"tick", prog, progSec, progTail, totals, seq, status, username}` -> deserialize `CwSnapshot` (C# hien dung `prog/totals/seq/status`, extra fields la debug).
+- Game state: JS scan -> `{abx:"tick", prog, progSec, progTail, totals, seq, status, username}` -> deserialize `CwSnapshot`; C# dung `prog/progSec/progTail` de hien giay countdown va dung `totals/seq/status` cho nghiep vu.
 - `seq` trong packet van la chuoi digit. Voi HIT hien tai, JS doc bang `ld_bg/box_ketqua`, map `red@2x => 2` va `white@2x => 1`; C# convert ve C/L bang `TaskUtil.SeqToParityString`.
 - Snapshot: `_lastSnap` duoc update trong lock; task doc qua `ctx.GetSnap()`.
 - Start task: UI config -> `ApplyStakeRuntime` -> `BuildContext` -> `IBetTask.RunAsync`.
@@ -63,16 +63,19 @@
 - JS bet queue:
   - C# goi `window.__cw_bet(side, amount)`.
   - JS push vao `BET_QUEUE`, `processBetQueue()` goi `cwBet` lan luot.
-  - JS post `bet` hoac `bet_error` ve C#.
+  - Theo nghiep vu hien tai, neu JS nhan va thuc hien flow click thi post `bet` ve C# coi nhu thanh cong; khong doi `totals_change`, khong retry/bet lai.
+  - Side button dung `SIDE_TAIL_EXACT[WANT]` cho 7 cua, khong fallback regex hien tai.
+  - `emitClick()` dung internal-only cho cua; focus phinh dung `focusChipNode()` rieng.
 - Countdown/progress:
   - `collectProgress()` chi doc `cc.ProgressBar.progress` tu `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/HUD/countDownProgress`.
-  - Khong fallback sang label countdown/text tail cu; `prog` van la ratio `0..1`.
+  - Khong fallback sang label countdown/text tail cu; `prog` van la ratio `0..1`, `progSec` la giay con lai tren round 20s.
+  - C# hien `LblProg` theo giay; neu khong co `progTail` dong bo thi mac dinh 0s.
   - `statusByProg()` tinh status tu progress: `prog > 0` la `Chờ đặt cược`, con lai la `Chờ kết quả`.
 
 ## UI update flow
-- `tick` update progress bar, label %, last result, account header, seq UI, status text.
+- `tick` update progress bar, label giay countdown, last result, account header, seq UI, status text.
 - Status tren bang dieu khien C# doi mau theo text: `Chờ đặt cược` mau xanh la cay, `Chờ kết quả` mau do.
-- `MainWindow` hien `PrgBet/LblProg` tu `snap.prog` theo ratio; neu muon hien giay can doc them `progSec` vao model/C#.
+- `MainWindow` hien `PrgBet` tu `snap.prog` va `LblProg` theo `snap.progSec`/20s; neu khong co `progTail` thi hien 0s.
 - Task update mini panel qua callbacks:
   - `UiSetSide` -> `UpdateTabSide`.
   - `UiSetStake` -> `UpdateTabStake`.
@@ -103,11 +106,12 @@
   - Tai khoan doc bang cach tim `PlayerViewXocDia/PlayerName/name` khop ten nhan vat, sau do lay `PlayerName/Mn/mn` trong subtree cua player do.
 - Phinh/chip:
   - `cwScanChips()`/`wideScan()` tim phinh qua Label/RichText/SpriteFrame/node/path.
-  - Log da xac nhan tail phinh: `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_2..Entry_9`.
+  - Log da xac nhan tail phinh: `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/btnChoseCoin/New Node/zcontent/Entry_1..Entry_9`.
+  - Map exact: `Entry_1=500`, `Entry_2=1000`, `Entry_3=5000`, `Entry_4=10000`, `Entry_5=50000`, `Entry_6=100000`, `Entry_7=500000`, `Entry_8=1000000`, `Entry_9=5000000`; `BET_UNIT=500`.
   - `Scan200Text` in them `(Chip scan from Scan200Text)` de debug amount/x/y/w/h/clickable/tail.
 - Canvas Watch visibility:
-  - Root id `__cw_root_allin`; global recovery `window.__cw_show_panel()`.
-  - `_panelWatchdog` goi `ensureCanvasWatchVisible()` moi 1s va duoc clear trong `teardown()`.
+  - Root id `__cw_root_allin`; flag `CW_HIDE_CANVAS_WATCH` quyet dinh an/hien.
+  - Khi `CW_HIDE_CANVAS_WATCH = false`, global recovery `window.__cw_show_panel()` va `_panelWatchdog` goi `ensureCanvasWatchVisible()` moi 1s; watchdog duoc clear trong `teardown()`.
 
 ## Flow build/plugin
 - Debug co `ABX_HUB`, tham chieu `ABX.Core.dll` cua Hub va copy output vao `AutoBetHub\Plugins`.

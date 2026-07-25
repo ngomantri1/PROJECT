@@ -168,6 +168,57 @@ Tai lieu nay tom tat code hien tai de AI/dev tiep tuc sua dung huong.
 - Khong update WPF control tu background thread.
 - Khong sua pending rows tuy tien ngoai flow finalize.
 
+## Cap nhat dieu tra Prog/Countdown Pragmatic (2026-07-25)
+
+- Nguon `Prog` hien tai tren Pragmatic khong lay duoc tu countdown chinh thuc/network.
+- Pipeline doc `Prog` hien tai:
+  1. `readProgressVal()`
+  2. `collectProgress()`
+  3. neu khong co Cocos: `domReadBetCountdown()`
+  4. `countdownProviderReadFresh(12000)` neu network/json da bat duoc countdown
+  5. `domReadPragmaticVisualCountdown(contexts)` neu network cache rong
+- Da bo nhanh selector cu trong `domReadBetCountdown()`:
+  - `#countdownTime > p`
+  - `dd#countdownTime > p`
+  - `#countdownTime p`
+  - fallback LiveTables `span.seconds`, `[class*=seconds]`, `div.dpzr9oa span`
+- Ly do bo selector cu: do la logic route/game cu, co nguy co scan nham va khong phai nguon Pragmatic hien tai.
+- Log moi xac nhan `Prog` dang roi xuong visual DOM:
+  - `source=dom/pragmatic-point-countdown`
+  - `tail=div.Mh_fv.Mh_Mj/div.Mh_Mp/div.PG_PH.PG_PL/div.PG_PN/div.PG_PP/span.PG_PR`
+  - hoac `tail=div.Mh_fv.Mh_Mj/div.Mh_Mp/div.PG_PH.PG_PL/div.PG_PO/div.PG_PQ/span.PG_PR`
+- Chuoi gia tri visual DOM khong on dinh, co mau nhay `6 -> 15 -> 16 -> 15 -> 16...`, nen chua du tin cay de coi la countdown that.
+- Kiem tra toan log hien tai:
+  - `js-network-countdown = 0`
+  - `network/countdown = 0`
+  - `progSrc=.*network = 0`
+  - `__abx_network_countdown = 0`
+- Ket luan: network countdown cache hien chua co du lieu, nen chua the danh gia co giam dan hay dang tin hay khong.
+- Da them/dua user khoi JS DevTools probe `ABX_PROG_PROBE` de chay truc tiep tren frame/game popup:
+  - log top candidate visual DOM moi giay trong 15 giay,
+  - in `tail`, `class`, `x/y/w/h`, `score`, `inCurrentRegion`,
+  - in network state `__abx_network_countdown_*`,
+  - in `SUMMARY_BEST_SEQUENCE` va JSON day du de phan tich.
+- Khi nhan ket qua probe, uu tien xac dinh:
+  - co tail nao giam deu theo thoi gian hay khong,
+  - `span.PG_PR` co phai countdown that hay la so phu/road/diem,
+  - network state co bat dau co `__abx_network_countdown_sec` hay van rong.
+
+## Cap nhat status dong van Pragmatic (2026-07-25)
+
+- Man hinh game co text `DOI VAN BAI TIEP THEO` khi khong cho dat cuoc.
+- Truoc do C# dang de status bi suy ra tu `Prog`:
+  - `Prog > 0` => `Cho phep dat cuoc`
+  - `Prog <= 0/null` => `Doi ket qua`
+- Van de: khi `Prog` scan nham tu visual DOM, status cung bi sai thanh `Cho phep dat cuoc`.
+- Da them doc status text Pragmatic trong JS:
+  - source log: `[CWDBG][STATUS] pragmatic-status`
+  - ghi `status`, `tail`, `x/y/w/h`, `href`, candidates.
+- Da them logic dong van:
+  - JS: neu status imply closed (`doi van bai tiep theo`, `cho van sau`, `tam dung nhan cuoc`, `da dong cua dat cuoc`, `ket qua`) thi ep `prog=0`, `progSource=status-closed`.
+  - C#: neu snapshot status imply closed thi khong de `BuildStatusFromProg()` de len status DOM; giu `statusSource/statusTail`.
+- C# log `[STATUS][PROG]` da them `statusSrc` va `statusTail` de doi chieu node DOM status that.
+
 ## Cập nhật vào game Pragmatic (2026-07-01)
 
 - Lobby đúng của Pragmatic trên Net88 là `https://net88.fund/livecasino?provider=pragmatic`.

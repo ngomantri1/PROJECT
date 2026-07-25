@@ -1,5 +1,17 @@
 ﻿# ARCHITECTURE
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã chuẩn hóa bridge theo game Tài Xỉu Live, bỏ các phần dữ liệu Xóc Đĩa còn sót trong canvas/totals.
+- `v4_js_xoc_dia_live.js` hiện dùng các exact tail chính trong scene `LobbyNew`:
+- Username: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`.
+- Account/TK: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`.
+- Session: `LobbyNew/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbSesionId`.
+- Tổng cược Tài/Xỉu: `LobbyNew/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng x `246/785`.
+- C# UI không tự suy luận `Tên nhân vật`/`Tài khoản` từ nguồn khác; chỉ nhận `snap.username` và `snap.totals.A` từ tick bridge.
+- `Models.CwTotals` chỉ còn các trường Tài/Xỉu/TK: `T`, `X`, `A`.
+- Canvas Watch là panel debug có thể bật/tắt bằng `SHOW_CANVAS_WATCH`; panel này dùng cùng `readTotalsSafe()` với C# để tránh lệch dữ liệu.
+- Countdown bridge xuất thêm `progSec` để C# và canvas cùng hiển thị số giây thật.
+
 ## Cập nhật hôm nay (2026-06-02)
 - Đã chỉnh luồng money runtime để chuỗi tiền có thể đổi live khi task đang chạy.
 - `StrategyTabState` vẫn giữ state chạy hiện tại, nhưng `RunStakeSeq`/`RunStakeChains`/`RunStakeChainTotals` giờ có thể được refresh trong lúc run.

@@ -1,5 +1,10 @@
 ﻿# BUGS
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã xác nhận nguyên nhân tail cược không khớp UI: code còn prefix `LobbyNew`, trong khi Scan500 tại `D:\NOTE\OneDrive\Desktop\log\devtool.log` ghi `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5`.
+- Đã fix trong `v4_js_xoc_dia_live.js`: cửa Tài, cửa Xỉu, nút Đặt cược và 8 nút chip dùng tail `MiniGameScene` trực tiếp, không fallback về tail `LobbyNew`.
+- Lưu ý khi xử lý phiên: dùng `nodeSkeleton/ellipse6/lbSesionId` cho số phiên hiển thị; `nodeFont/lbSesionId` trong log là mã `#...`, không phải phiên.
+
 ## Cập nhật hôm nay (2026-07-10)
 - Đã fix bug Canvas Watch không hiển thị dù đã bỏ `root.style.display='none'`: nguyên nhân là bridge probe coi JS ready khi có hàm bridge, nhưng root `__cw_root_allin` chưa được inject/dựng.
 - Đã fix bug game chỉ mở popup/trang rời: chuyển sang cơ chế click mở Tài Xỉu từ trang chủ HIT.

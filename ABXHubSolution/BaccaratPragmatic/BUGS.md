@@ -235,3 +235,58 @@
 - Host-map dùng IP cụ thể nên có thể stale nếu provider/CDN đổi route.
 - TLS bypass phải giữ hẹp cho Pragmatic, không mở rộng sang domain khác.
 - Provider có thể đổi DOM/game marker, làm click heuristic cần cập nhật lại.
+
+## Bug hien tai - Prog Pragmatic scan nham visual DOM (cap nhat 2026-07-25)
+
+### Trieu chung
+
+- `Prog` tren Canvas Watch/C# co thay doi nhung khong dung countdown that.
+- Khi game hien trang thai dong van nhu `DOI VAN BAI TIEP THEO`, visual DOM van co the tra ve so `11/15/16/...`, lam status bi suy ra sai neu khong guard.
+- Log gan day co `Prog` nhay/lap bat thuong, khong giam deu nhu countdown:
+  - `6 -> 15 -> 16 -> 15 -> 16...`
+  - sau do co cac doan `15 -> 14 -> 13 -> 12...` nhung xen ke reset/nhay, chua du bang chung la countdown chinh thuc.
+
+### Bang chung log
+
+- `TickDiag` cho thay:
+  - `progSrc=dom/pragmatic-point-countdown`
+  - `progTail=div.Mh_fv.Mh_Mj/div.Mh_Mp/div.PG_PH.PG_PL/div.PG_PN/div.PG_PP/span.PG_PR`
+  - hoac `progTail=div.Mh_fv.Mh_Mj/div.Mh_Mp/div.PG_PH.PG_PL/div.PG_PO/div.PG_PQ/span.PG_PR`
+- `[CWDBG][COUNTDOWN] pragmatic-visual-hit` cho thay candidate co:
+  - source `dom/pragmatic-point-countdown`
+  - class/tail `PG_*`/`span.PG_PR`
+  - toa do quanh vung giua-duoi frame (`x~631`, `y~650..768`, `w/h~20..49`)
+- Toan log hien chua co network countdown:
+  - `js-network-countdown = 0`
+  - `network/countdown = 0`
+  - `progSrc=.*network = 0`
+  - `__abx_network_countdown = 0`
+
+### Nguyen nhan kha nang cao
+
+- `domReadPragmaticVisualCountdown()` dang scan cac so DOM trong vung giua-duoi frame va cham vao node `span.PG_PR`.
+- Tail `span.PG_PR` khong co ten countdown/time/timer; co kha nang la so phu/road/diem hoac element trong layout Pragmatic, khong phai countdown chinh thuc.
+- Network provider chua bat duoc field countdown nao, nen pipeline khong co nguon tot hon de uu tien.
+
+### Patch da co
+
+- Da bo selector countdown cu khoi `domReadBetCountdown()`:
+  - `#countdownTime > p`
+  - `dd#countdownTime > p`
+  - `#countdownTime p`
+  - LiveTables fallback `span.seconds`, `[class*=seconds]`, `div.dpzr9oa span`
+- Da them status DOM closed guard:
+  - JS doc `DOI VAN BAI TIEP THEO` va log `[CWDBG][STATUS] pragmatic-status`.
+  - JS ep `prog=0` khi status imply closed.
+  - C# giu status DOM closed, khong ghi de bang `BuildStatusFromProg()`.
+  - C# log them `statusSrc/statusTail`.
+- Da dua user khoi DevTools probe `ABX_PROG_PROBE` de lay bang chung tail/class/sequence.
+
+### Viec can xac minh tiep
+
+- Can output `[ABX-PROG-PROBE]` de biet trong 15 giay:
+  - top candidate nao dang duoc scanner chon,
+  - tail/class nao co chuoi giam deu that su,
+  - network state `__abx_network_countdown_*` co du lieu hay van rong.
+- Khong chot `span.PG_PR` la countdown neu chua co chuoi giam deu on dinh qua nhieu sample/round.
+- Neu probe cho thay DOM khong co countdown that, chuyen sang bat network/WebSocket Pragmatic hoac OCR/canvas crop.

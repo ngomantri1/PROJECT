@@ -1,5 +1,13 @@
 ﻿# TODO
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã hoàn thành: thêm `8. Quản lý vốn đa tầng nâng cao` (`MultiChainAdvanced`).
+- Đã hoàn thành: `MultiChainAdvanced` dùng ngưỡng từng dòng bằng tổng các phần tử trong dòng tiền và map tầng bằng net theo ngưỡng cộng dồn.
+- Đã hoàn thành: reset `TIỀN THẮNG` UI về `0` khi `MultiChainAdvanced` reset net nội bộ.
+- Đã hoàn thành: sửa hiển thị `MỨC TIỀN` cho `MultiChain` và `MultiChainAdvanced`, dùng vị trí phẳng toàn bộ chuỗi (`1/32..32/32`).
+- Đã hoàn thành: cho phép ký tự `0` trong chiến lược `1) Chuỗi cầu T/X` và `3) Chuỗi cầu I/N`; `0` bỏ qua đúng 1 ván.
+- Đã hoàn thành: thêm `TaskUtil.WaitRoundFinishNoBet(...)` để skip ván theo `session` đổi.
+
 ## Cập nhật hôm nay (2026-06-02)
 - Đã hoàn thành: fix đổi `TxtStakeCsv` khi task đang chạy để ván kế tiếp ăn chuỗi tiền mới.
 - Đã hoàn thành: giữ nguyên level hiện tại nhưng map sang giá trị của chuỗi mới cho non-`MultiChain`.
@@ -36,6 +44,13 @@
 - Quyết định lại heartbeat lease (đang tắt bằng `if(false)`).
 
 ## Task cần test lại
+- Test `MultiChainAdvanced` với chuỗi nhiều dòng:
+- net `> 0` phải reset dòng 1/mức 1/tiền thắng `0`.
+- net âm nằm trong từng khoảng ngưỡng cộng dồn phải map đúng dòng tiền.
+- net âm vượt tổng tất cả ngưỡng phải reset dòng 1/mức 1/tiền thắng `0`.
+- Test `MỨC TIỀN` cho `MultiChain` và `MultiChainAdvanced`: hiển thị đúng vị trí phẳng toàn chuỗi, kể cả khi số tiền lặp lại ở nhiều dòng.
+- Test chuỗi T/X có `0`, ví dụ `TT0XX0`: ký tự `0` bỏ qua đúng 1 ván, không đặt cược, không đổi level money.
+- Test chuỗi I/N có `0`, ví dụ `NN0II0`: ký tự `0` bỏ qua đúng 1 ván, vẫn chờ `session` đổi.
 - Test đổi chuỗi tiền khi đang chạy:
 - đang ở mức 1 của chuỗi cũ -> sửa chuỗi mới -> ván sau lên mức 2 phải lấy mức 2 của chuỗi mới.
 - Test cả non-`MultiChain` và `MultiChain` khi sửa `TxtStakeCsv` giữa phiên.

@@ -67,3 +67,11 @@
 - 4 tong cuoc:
 - khong quay lai `lbl_currentBet`, `ChipPanel/lbl_value`, hay tail cu khi chua co ly do ro rang
 - khong sua logic dat cuoc neu van de chi la scan/hien thi
+
+## Bet Follow-up (2026-06-09)
+- Da chot co che dat cuoc production: `cwBet -> abxStandaloneBetTest.betFast`.
+- Da xac nhan 4 cua `tai`, `xiu`, `chan`, `le` voi menh gia `1000`.
+- Sau reload app/page, xac nhan JS da inject dung version moi truoc khi ket luan loi bet.
+- Khi can khoanh vung nhanh, test DevTools: `await abxStandaloneBetTest.betFast('tai', 1000)`.
+- Neu co loi, doi chieu log JS `abx_cwbet_start`, `abx_cwbet_done`, `abx_cwbet_error` truoc khi sua scanner.
+- Khong dua lai fallback click/validate cua cu vao `cwBet`.

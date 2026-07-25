@@ -206,3 +206,48 @@ BaccaratPragmatic/
   4. reset main về lobby Pragmatic được build theo host hiện tại,
   5. click lại để lấy launcher token mới thay vì reload token cũ.
 - Injection popup phải dùng local `popupWeb`/`core` đã capture trước `await`. Event `DOMContentLoaded` cũ có thể bắn sau khi popup bị đóng, nên không được truy cập trực tiếp `_popupWeb` sau `await`.
+
+## Countdown/Prog flow rieng cho Pragmatic (cap nhat 2026-07-25)
+
+- Pragmatic route hien tai khong dung countdown DOM cu `#countdownTime`.
+- `domReadBetCountdown()` hien chi con 2 nguon:
+  1. `countdownProviderReadFresh(12000)` doc network/json cache neu `countdownProviderObserveText()` da bat duoc field co ten giong countdown/timeLeft/betTime/remaining.
+  2. `domReadPragmaticVisualCountdown(contexts)` scan visual DOM tren frame `/desktop/baccarat/`.
+- Nhung selector cu da bi loai khoi `domReadBetCountdown()`:
+  - `#countdownTime > p`
+  - `dd#countdownTime > p`
+  - `#countdownTime p`
+  - LiveTables fallback `span.seconds`, `[class*=seconds]`, `div.dpzr9oa span`
+- Network countdown cache hien chua co hit trong log:
+  - khong co `[CWDBG][COUNTDOWN] js-network-countdown`
+  - khong co `network/countdown`
+  - khong co `progSrc=network`
+- Vi network cache rong, `Prog` thuc te dang roi xuong `domReadPragmaticVisualCountdown()`.
+- Visual DOM source dang hit:
+  - `source=dom/pragmatic-point-countdown`
+  - `tail=div.Mh_fv.Mh_Mj/div.Mh_Mp/div.PG_PH.PG_PL/div.PG_PN/div.PG_PP/span.PG_PR`
+  - `tail=div.Mh_fv.Mh_Mj/div.Mh_Mp/div.PG_PH.PG_PL/div.PG_PO/div.PG_PQ/span.PG_PR`
+- Kien truc scanner visual:
+  - `elementFromPoint()` tren luoi diem quanh vung giua-duoi frame.
+  - scan node cha/con quanh hit point va cac `div,span,p,text,tspan`.
+  - chi chap nhan text so `0..20`, rect hop le, nam trong region hien tai.
+  - score theo khoang cach toi vung du kien, size, va tail/class co tu khoa countdown/time/timer.
+- Risk: tail `span.PG_PR` va chuoi log `6 -> 15 -> 16 -> 15 -> 16...` cho thay day co the la so phu/road/diem, chua phai countdown chinh thuc.
+- Huong debug chinh: dung DevTools probe `ABX_PROG_PROBE` de lay top candidates moi giay, gom `tail/class/rect/score/network state`, roi moi chot tail that neu co chuoi giam deu.
+
+## Status dong van Pragmatic (cap nhat 2026-07-25)
+
+- Status DOM Pragmatic co the hien `DOI VAN BAI TIEP THEO` khi round dong.
+- JS co `domReadPragmaticStatusText()` de scan status text tren `/desktop/baccarat/` va log:
+  - `[CWDBG][STATUS] pragmatic-status`
+  - `status`, `tail`, `x/y/w/h`, `href`, candidates.
+- `domStatusImpliesClosed()` coi cac text sau la closed:
+  - `doi van bai tiep theo`
+  - `cho van sau`
+  - `doi ket qua`
+  - `ket qua`
+  - `tam dung nhan cuoc`
+  - `da dong cua dat cuoc`
+- Neu status imply closed:
+  - JS ep `prog=0` va `progSource=status-closed`.
+  - C# giu status DOM va `statusTail`, khong de `BuildStatusFromProg()` ghi de thanh `Cho phep dat cuoc`.

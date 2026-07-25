@@ -197,3 +197,15 @@
   - popup watchdog recent-game-signal skip in `MainWindow.xaml.cs`.
 - Remaining risk:
   - C# history/pending still needs stricter reconciliation with actual JS execution result and actual visible table amount.
+
+## Update (2026-07-25)
+- Reported but not yet reproduced: after roughly 30-60 minutes on VPS, the game WebView can appear gray or frozen while application logging may still continue.
+- The supplied sample does not establish a renderer crash:
+  - it covers only about ten seconds,
+  - `popup-frame/webMain.jsp` authority and recent game signals were still present,
+  - the observed bet error was confirm-button-disabled and resulted in `[BETQ][DONE] ok=0`.
+- Mitigation added: main and popup WebView2 `ProcessFailed` events are now logged. This is observability only; automatic recovery must not use `thirdg.html` transit by itself as a failure signal.
+- Remaining investigation:
+  - distinguish WebView renderer/GPU/process failure from a visually stale provider frame,
+  - collect an incident-window log with the new process-failure markers,
+  - avoid reload while a fresh real-game iframe signal remains active.

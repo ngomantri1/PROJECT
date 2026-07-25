@@ -1,5 +1,15 @@
 ﻿# BUGS
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã phát hiện và fix nhóm bug canvas/bridge do dùng tail cũ sau khi game chuyển root scene sang `LobbyNew`.
+- Bug đã fix: Canvas Watch không hiện hoặc hiện sai do panel chưa được probe/reinject đủ trong frame.
+- Bug đã fix: countdown canvas lệch bảng C#; bridge hiện xuất `progSec` và canvas ưu tiên giá trị này.
+- Bug đã fix: `Phiên` đọc sai do còn dùng `MiniGameScene/...`; đã chuyển sang exact tail `LobbyNew/.../lbSesionId`.
+- Bug đã fix: `TK/Tài khoản` hiển thị `--`/`0` do đọc qua map/fallback cũ; đã chuyển sang exact tail `LobbyNew/.../lbMoneyYser`.
+- Bug đã fix: `Tên nhân vật` và `Tài khoản` C# không đồng bộ canvas; C# giờ chỉ dùng `snap.username` và `snap.totals.A`.
+- Bug đã fix: tổng cược `Tài/Xỉu` hiển thị `--` do tail `lbTotal` còn root `MiniGameScene`; đã chuyển sang `LobbyNew/.../lbTotal`.
+- Bug đã fix: còn hiển thị các cửa Xóc Đĩa trong game Tài Xỉu (`Sấp đôi`, `Tứ trắng`, `Tứ đỏ`, `3 trắng`, `3 đỏ`); đã xóa khỏi JS/model.
+
 ## Cập nhật hôm nay (2026-06-02)
 - Đã phát hiện và fix bug runtime money: sửa `TxtStakeCsv` khi đang `Dừng đặt cược` nhưng ván sau vẫn lấy stake từ chuỗi cũ.
 
@@ -18,6 +28,10 @@
 - Lease heartbeat bị vô hiệu hóa (`if (false)`), nhưng flow start/stop heartbeat vẫn tồn tại.
 
 ## Bug đã fix (đã có trong code)
+- `v4_js_xoc_dia_live.js`: cập nhật exact tail mới cho `session`, `username`, `account/TK`, tổng cược `Tài/Xỉu`.
+- `v4_js_xoc_dia_live.js`: bỏ fallback cũ cho `session`, `username`, `account/TK` để tránh lấy nhầm node.
+- `v4_js_xoc_dia_live.js` + `MainWindow.xaml.cs`: đồng bộ `Tên nhân vật`/`Tài khoản` theo một luồng tick bridge duy nhất.
+- `v4_js_xoc_dia_live.js` + `Models.cs`: xóa dữ liệu/hiển thị cửa Xóc Đĩa khỏi game Tài Xỉu.
 - `MainWindow.xaml.cs`: fix finalize pending theo `_pendingBaseSeq` khi `seq` đổi, không còn phụ thuộc riêng lock `NI`/`prog==0`.
 - `MainWindow.xaml.cs` + `Tasks/GameContext.cs` + `Tasks/MoneyManager.cs`: fix đổi chuỗi tiền live khi task đang chạy; ván kế tiếp lấy đúng mức tương ứng của chuỗi mới.
 - Guard start strategy bằng `WaitForBridgeAndGameDataAsync(...)`.
@@ -48,5 +62,5 @@
 ## Vùng code dễ lỗi
 - `MainWindow.xaml.cs`: `WebMessageReceived`, play/stop, bridge inject/probe, timers license/trial.
 - `Tasks/TaskUtil.cs`: place/judge/post-round money.
-- `v4_js_xoc_dia_live.js`: click canvas, queue cược, fallback totals/session/progress.
+- `v4_js_xoc_dia_live.js`: click canvas, queue cược, exact tail `LobbyNew`, totals/session/progress.
 - Config/stats I/O khi save liên tiếp nhiều tab.

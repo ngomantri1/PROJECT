@@ -18,6 +18,7 @@
 - Microsoft WebView2
 - Home UI:
   - source: `web/hub.jsx`
+  - game catalog: `web/hub.games.js`
   - generated runtime: `web/hub.app.js`
   - local vendor scripts trong `web/vendor`
 - Babel Standalone hiện dùng ở bước generate `hub.app.js`, không dùng runtime trong `hub.html`
@@ -46,8 +47,9 @@
 - Không load plugin trực tiếp từ source/runtime folder làm source of truth; runtime thực tế là local mirror trong `%LocalAppData%\AutoBetHub`.
 - Không phá flow attach/detach shared `WebView2`.
 - Khi sửa menu/home UI:
-  - sửa `web/hub.jsx`
-  - regenerate `web/hub.app.js`
+  - thêm/sửa game catalog trong `web/hub.games.js`
+  - sửa logic UI/tìm kiếm trong `web/hub.jsx`
+  - regenerate `web/hub.app.js` nếu `hub.jsx` đổi
   - nếu cần test runtime thực tế, sync tiếp sang `%LocalAppData%\AutoBetHub\web`
 - Không sửa tay `web/hub.app.js` như source chính.
 - Khi thêm command từ web UI, phải cập nhật đồng thời:
@@ -59,7 +61,7 @@
 ## Naming Rules
 - Plugin slug: lowercase, kebab-case, phải khớp giữa:
   - `IGamePlugin.Slug`
-  - `web/hub.html` `GAMES[].slug`
+  - `web/hub.games.js` `window.ABX_HUB_GAMES[].slug`
   - shortcut arg `--slug`
 - Named WebView host trong plugin UI phải dùng một trong các tên:
   - `AutoWebViewHost_Full`
@@ -78,7 +80,7 @@
 ## Important Rules
 - `MainWindow.xaml.cs` là orchestrator chính; mọi thay đổi lớn nên tách service thay vì nhồi thêm state.
 - `Plugins/` trong repo không phải runtime cuối cùng; host luôn ưu tiên local mirror sau bootstrap.
-- `hub.jsx` hiện là catalog hardcode, không tự sync từ plugin scan.
+- `hub.games.js` là catalog game UI duy nhất; `hub.jsx`/`hub.app.js` đọc qua `window.ABX_HUB_GAMES`, không tự sync từ plugin scan.
 - Shortcut mode dùng `NullWebViewService`; không được giả định plugin nào cũng có shared `WebView2`.
 - `dotnet build` hiện chưa tự regenerate `web/hub.app.js`; menu có thể lệch nếu chỉ sửa `hub.jsx`.
 - Host có thể chạy `web` từ `%LocalAppData%\AutoBetHub\web` thay vì từ repo/exe hiện tại.
@@ -100,6 +102,7 @@
   - `pending close`: nếu user đóng app khi plugin còn active, hub chỉ `Hide()`, set `_pendingClose = true`, và shutdown thật sau khi plugin báo đóng.
 - Có thêm pending drift cần chú ý:
   - `hub.jsx` mới nhưng `hub.app.js` cũ
+  - `hub.games.js` mới nhưng `%LocalAppData%\AutoBetHub\web\hub.games.js` cũ
   - `repo web` mới nhưng `%LocalAppData%\AutoBetHub\web` cũ
 - Activation cũng có state chống re-entry:
   - `_activating`
@@ -122,7 +125,9 @@
 - `ABX.Core` assembly identity dùng chung giữa host và plugin.
 - Shared `WebView2` attach/detach contract.
 - Update staging qua folder versioned, không ghi đè trực tiếp file đang chạy.
-- Quan hệ `web/hub.jsx` -> `web/hub.app.js` -> `%LocalAppData%\AutoBetHub\web\hub.app.js`.
+- Quan hệ catalog/runtime:
+  - `web/hub.games.js` -> `%LocalAppData%\AutoBetHub\web\hub.games.js`
+  - `web/hub.jsx` -> `web/hub.app.js` -> `%LocalAppData%\AutoBetHub\web\hub.app.js`
 - Sự ổn định của slug và command names.
 - Fallback WebView2 runtime:
   - fixed runtime nếu có

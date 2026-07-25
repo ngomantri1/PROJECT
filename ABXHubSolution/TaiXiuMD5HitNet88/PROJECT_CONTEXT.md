@@ -1,5 +1,12 @@
 ﻿# PROJECT_CONTEXT
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã đối chiếu `D:\NOTE\OneDrive\Desktop\log\devtool.log` (Scan500). Scene đang ghi nhận là `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5`.
+- Log xác nhận tổng cược dùng chung tail `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`: Tài ở `x=307`, Xỉu ở `x=805`.
+- Log xác nhận phiên hiển thị dùng `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeSkeleton/ellipse6/lbSesionId`; không nhầm với `nodeFont/lbSesionId` là mã dạng `#...`.
+- Đã đổi trực tiếp tail luồng đặt cược sang `MiniGameScene`: cửa Tài `nodeSkeleton/btnCuocTai`, cửa Xỉu `nodeSkeleton/btnCuocXiu`, nút xác nhận `menuMoney/btnFunctions/btnDatCuoc`, và 8 chip `menuMoney/btnPrices/*`.
+- Không giữ fallback `LobbyNew` cho các tail cửa cược, nút Đặt cược và chip.
+
 ## Cập nhật hôm nay (2026-07-10)
 - Đã xử lý lại bridge/canvas cho HIT Tài Xỉu theo đúng nghiệp vụ `T/X`, không còn dùng lại field Chẵn/Lẻ `C/L`.
 - Canvas Watch panel được điều khiển bằng biến JS `SHOW_CANVAS_WATCH` trong `v4_js_xoc_dia_live.js`; muốn ẩn/hiện chỉ đổi `true/false`.

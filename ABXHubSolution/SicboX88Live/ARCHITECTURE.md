@@ -122,3 +122,10 @@ Rule chi tiet:
 - Bridge dang nhay cam voi thay doi scene graph game.
 - 4 tong cuoc dang dung scene geometry; neu game doi bo cuc 2x2, map nay se can sua lai.
 - Loader JS uu tien file disk truoc embedded; neu session cu chua reload, app co the dang chay JS cu.
+
+## Bet Execution Update (2026-06-09)
+- Production path: `C# bet queue` -> `cwBet` -> `ensureAbxStandaloneBetTestApi()` -> `abxStandaloneBetTest.betFast` -> Cocos canvas.
+- API noi bo dong goi scanner chip/cua va cac ham `focusChipFast`, `tapSideFast`, `betFast` theo co che cua `devtools_sicbo_bet_test.js`.
+- `cwFocusChip` tai su dung cung API, do do thao tac focus thu cong va queue production khong bi lech implementation.
+- Da loai bo nhanh cu khong con caller: `clickBetTarget*`, `prepareBetTarget`, `focusChipFastStandalone`, `tapSideFastStandalone` va helper/config chi phuc vu nhanh nay.
+- Khi game doi scene graph, cap nhat scanner trong API `abxStandaloneBetTest`; khong them lai fallback click cu.

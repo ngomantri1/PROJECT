@@ -110,3 +110,11 @@
 - `AutoFillLoginAsync()` dang bi tat bang early return.
 - `js_home_v2.js` khong ton tai trong project.
 - `MainWindow.xaml.cs` va `v4_js_xoc_dia_live.js` van la 2 vung rui ro cao nhat khi sua.
+
+## Bet Implementation Update (2026-06-09)
+- Nguon tham chieu cua co che click la `devtools_sicbo_bet_test.js`.
+- `v4_js_xoc_dia_live.js` tao `window.abxStandaloneBetTest` qua `ensureAbxStandaloneBetTestApi()`.
+- `cwBet(side, amount)` goi truc tiep `api.betFast(side, amount, { afterChipMs: 0, afterTapMs: 0, stepPauseMs: 0 })`.
+- `cwFocusChip(amount)` goi `api.focusChipFast(...)`, nen focus chip va click cua dung chung mot implementation.
+- Da test thanh cong `tai`, `xiu`, `chan`, `le` voi menh gia `1000`.
+- Khong fallback ve co che click/validate cua cu. Cac ham dead path cu da duoc xoa khoi JS.

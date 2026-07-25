@@ -202,6 +202,18 @@
   - recent accepted game tick/snapshot is considered success,
   - recovery is skipped and watchdog is cancelled when frame authority is already live.
 
+## WebView Failure Diagnostics (2026-07-25)
+- Both main and popup WebView2 instances report `CoreWebView2.ProcessFailed`.
+- The diagnostic helper records process-failure kind and, when the runtime supports them, `Reason`, `ExitCode`, and `ProcessDescription` without taking a hard dependency on a newer WebView2 API surface.
+- Process failure is diagnostic only. Popup recovery remains guarded by `HasRecentGameSignal(...)`; a wrapper `thirdg.html` URL must not override a fresh game-frame authority signal.
+
+## Sibling Xoc Dia Money Management (2026-07-25)
+- `XocDiaTuLinhHit` and `XocDiaTuLinhZoWin` follow the same money-management UI scope as Baccarat for the non-negative profit reset option:
+  - control is below Cut Profit/Cut Loss,
+  - it is available independently of the selected money strategy,
+  - it resets the running profit display and the next stake level when enabled and cumulative profit reaches zero or above.
+- Both projects also implement `WinUpLoseDown` as strategy 8 in `MoneyManager` and `MoneyHelper` for normal and multi-chain flows.
+
 ## UI Validation Notes (2026-05-20)
 - Pattern validator limits in `MainWindow.xaml.cs`:
   - B/P strategy pattern `<mau_qua_khu>`: `1..20`

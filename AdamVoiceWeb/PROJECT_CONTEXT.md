@@ -2,91 +2,130 @@
 
 ## Tổng quan
 - Project: **AdamVoiceWeb**
-- Loại sản phẩm: web SaaS tạo giọng nói AI tiếng Việt cho khách hàng phổ thông.
+- Loại sản phẩm: web SaaS tạo giọng nói AI tiếng Việt.
 - Mục tiêu chính:
-  - khách đăng ký tài khoản;
+  - người dùng đăng nhập bằng Google;
   - mua credits bằng chuyển khoản thủ công;
   - admin duyệt đơn và cộng điểm;
-  - khách dùng điểm để tạo file audio MP3.
-- Trạng thái hiện tại:
-  - nghiệp vụ trừ/hoàn điểm đã hoạt động;
-  - UI trang tạo giọng đã được tối ưu mạnh cho desktop và mobile;
-  - tạo giọng hiện là flow async, không reload toàn trang.
+  - người dùng dùng điểm để tạo file audio MP3.
+
+## Trạng thái hiện tại
+- Nguồn dữ liệu chính đã chuyển sang **SQLite**, không còn lấy `App_Data/db.json` làm datastore runtime chính.
+- Audio đang lưu local theo `Storage:DataRootPath`; cấu hình hiện tại là `"."` nên runtime đang dùng:
+  - `app.db` ở thư mục gốc project;
+  - `audio/` ở thư mục gốc project.
+- `App_Data/db.json` chỉ còn vai trò **legacy import** khi bootstrap DB trống.
+- Đăng nhập Google đã hoạt động; admin được xác định theo danh sách email cấu hình.
+- Trang mua gói đã có:
+  - tạo/reuse đơn đang mở;
+  - popup bước 2;
+  - QR chuyển khoản sinh local;
+  - trạng thái `Pending` và `Reported`.
+- Trang tạo giọng đang là flow async, không reload toàn trang.
+- `Enhance` hiện là tùy chọn **ẩn phía server**:
+  - người dùng chỉ bật/tắt bằng nút `Enhance`;
+  - nội dung hiển thị trong ô nhập không cần chèn tag biểu cảm;
+  - server có thể AI-enhance trước khi gửi sang ElevenLabs.
 
 ## Công nghệ sử dụng
 - ASP.NET Core Razor Pages / C#
-- Cookie Authentication
-- JSON local datastore: `App_Data/db.json`
+- EF Core + SQLite
+- Cookie Authentication + Google OAuth
 - Frontend:
   - Razor `.cshtml`
   - CSS thuần: `wwwroot/css/app.css`
   - JS thuần: `wwwroot/js/app.js`
 - TTS provider: ElevenLabs qua `Services/ElevenLabsService.cs`
-- Mock/demo audio khi chưa cấu hình API key
+- AI Enhance: `Services/AiEnhanceService.cs`
+  - ưu tiên OpenAI Responses API nếu có `OpenAI:ApiKey`;
+  - fallback về rule-based enhance nếu chưa cấu hình key.
 
 ## Flow hoạt động chính
 
-### Đăng ký / đăng nhập
-- `Register.cshtml.cs`: tạo user mới, hash password, seed điểm test theo logic hiện có.
-- `Login.cshtml.cs`: xác thực username/password, kiểm tra khóa tài khoản, tạo cookie claims.
-- Role đang dùng:
-  - `Admin`
-  - `Member`
+### Đăng nhập
+1. Người dùng vào `/Login`.
+2. Bấm đăng nhập bằng Google.
+3. ASP.NET Core OAuth nhận callback `/signin-google`.
+4. Hệ thống tìm hoặc tạo user theo `AuthProvider = Google` và `ExternalId`.
+5. Nếu email nằm trong `Authentication:Google:AdminEmails` thì gán role `Admin`, ngược lại là `Member`.
+
+Ghi chú:
+- `Register` / password login cũ hiện không còn là flow chính của sản phẩm.
+- Tài liệu và code mới phải ưu tiên Google login là mặc định.
 
 ### Tạo giọng nói
-1. User nhập nội dung tại `/Index`.
+1. Người dùng nhập nội dung tại `/Index`.
 2. JS đếm ký tự theo thời gian thực.
-3. User chọn giọng đọc qua popup chọn giọng hoặc dùng giọng đã lưu từ lần trước.
-4. User chỉnh preset giọng:
-   - `Bình thường`
-   - `Hài hước`
-   - `Quảng cáo`
-   - `Truyền cảm`
-   - `Tin tức`
-   - `TikTok Trend`
+3. Người dùng chọn giọng và chỉnh các tham số:
+  - tốc độ đọc;
+  - độ ổn định;
+  - độ giống giọng;
+  - phong cách.
+4. Có 2 tùy chọn xử lý text:
+  - `Tự tối ưu văn bản tiếng Việt trước khi tạo giọng`;
+  - `Enhance`.
 5. Khi bấm tạo:
-   - mở modal xác nhận nội bộ, không dùng `window.confirm()`;
-   - sau khi đồng ý, JS submit async qua handler `Generate`;
-   - UI chuyển focus ngay sang `Lịch sử gần đây`;
-   - chèn item pending `Đang tạo...` ngay lập tức.
+  - submit async qua handler `Generate`;
+  - UI chèn item pending vào lịch sử gần đây;
+  - không reload toàn trang.
 6. Server:
-   - validate text;
-   - validate voice;
-   - validate quyền user;
-   - validate limit ký tự, limit spam, số dư điểm;
-   - normalize text nếu bật `AutoNormalize`;
-   - trừ điểm và ghi transaction `UsePoint`;
-   - gọi ElevenLabs.
+  - validate text, voice, quyền user, limit spam, số dư điểm;
+  - normalize text nếu bật `AutoNormalize`;
+  - nếu bật `Enhance` thì server có thể gọi `AiEnhanceService`;
+  - gọi ElevenLabs để sinh audio;
+  - trừ điểm theo `CharacterCount` của nội dung gốc đã normalize, không lấy số ký tự sau enhance để tính tiền.
 7. Thành công:
-   - lưu `VoiceJob` trạng thái `Completed`;
-   - cập nhật `RecentHistory` trả về dạng JSON;
-   - hiển thị thông báo thành công dạng nổi, tự ẩn sau 2 giây;
-   - không reload cả trang.
+  - lưu `VoiceJob` trạng thái `Completed`;
+  - cập nhật lịch sử;
+  - trả toast nổi cho UI.
 8. Lỗi:
-   - hoàn điểm;
-   - tạo transaction `RefundPoint`;
-   - lưu `VoiceJob` trạng thái `Refunded`;
-   - trả lỗi về UI.
+  - hoàn điểm;
+  - tạo `PointTransaction` loại `RefundPoint`;
+  - lưu `VoiceJob` trạng thái `Refunded`.
+
+### Enhance
+- Mục tiêu UX hiện tại:
+  - chỉ có nút/toggle `Enhance`;
+  - không bắt buộc hiển thị tag biểu cảm vào textarea cho người dùng.
+- Mục tiêu nghiệp vụ:
+  - khi bật `Enhance`, server enrich text trước khi gửi sang ElevenLabs;
+  - đầu ra giọng đọc giàu cảm xúc hơn flow thường;
+  - không làm thay đổi nghĩa nội dung gốc.
+- `AiEnhanceService` hiện có 2 mode:
+  - AI thật qua OpenAI nếu có key;
+  - fallback rule-based nếu chưa có key hoặc AI lỗi.
 
 ### Mua gói / credits
-1. User vào `/Packages`, chọn chu kỳ tháng hoặc năm.
-2. Chọn gói Starter / Pro / Business.
-3. Tạo `PurchaseOrder` trạng thái `Pending`.
-4. Hệ thống sinh `OrderCode` và `TransferContent`.
-5. User chuyển khoản thủ công và xác nhận đã chuyển khoản.
-6. Admin duyệt order tại `/Admin`.
-7. Khi duyệt:
-   - order chuyển `Paid`;
-   - cộng điểm;
-   - tạo transaction `PurchaseApproved`.
+1. Người dùng vào `/Packages`, chọn chu kỳ tháng hoặc năm.
+2. Bấm `Mua ngay` ở gói muốn mua.
+3. Hệ thống:
+  - nếu đã có đơn mở `Pending` hoặc `Reported` thì reuse đơn đó;
+  - hiển thị toast cảnh báo màu đỏ, tự ẩn sau 3 giây;
+  - mở popup bước 2 để người dùng tiếp tục theo dõi.
+4. Popup bước 2 hiển thị:
+  - tóm tắt gói;
+  - số tiền;
+  - credits;
+  - nội dung chuyển khoản;
+  - QR chuyển khoản sinh local;
+  - thông tin ngân hàng / chủ tài khoản / số tài khoản.
+5. Khi người dùng bấm `Tôi đã chuyển khoản`:
+  - đơn chuyển từ `Pending` sang `Reported`;
+  - ghi `ConfirmedAt`;
+  - admin có thể lọc để duyệt nhanh hơn.
+6. Admin duyệt:
+  - đơn chuyển `Paid`;
+  - cộng điểm;
+  - tạo transaction `PurchaseApproved`.
 
-### Giọng của bạn
-- `/MyVoices` cho user quản lý giọng riêng.
-- Có 2 kiểu:
-  - user tự thêm `Voice ID` đã có;
-  - user gửi request voice riêng để admin duyệt.
-- Admin duyệt bằng cách điền `ApiVoiceId`, `PointRate`, note.
-- Voice riêng chỉ hiển thị với `OwnerUserId` tương ứng.
+## Lưu trữ runtime
+- `Storage:DataRootPath = "."`:
+  - `app.db`: database SQLite chính;
+  - `audio/`: file audio đã tạo.
+- Nếu `Storage:DataRootPath` để trống:
+  - app fallback sang `App_RuntimeData/`.
+- `AppDataPaths` là nơi resolve path runtime.
+- Không hardcode đường dẫn ổ đĩa như `D:\...` trong nghiệp vụ.
 
 ## Coding rules
 - Không bỏ validate server-side dù frontend đã chặn.
@@ -95,116 +134,42 @@
   - `BalanceAfter`
   - `PointAmount`
   - `Type`
-- Chỉ đọc/ghi DB qua `DataStore.Read()` hoặc `DataStore.Update()`.
-- Không ghi trực tiếp `App_Data/db.json` từ PageModel.
-- Không đưa ElevenLabs API key ra client.
+- Không truy cập dữ liệu nghiệp vụ bằng ghi file JSON trực tiếp.
+- Dùng `AppDbContext` cho dữ liệu chính.
+- Chỉ ghi file runtime qua path do `AppDataPaths` cấp.
+- Không đưa ElevenLabs API key, Google ClientSecret, OpenAI API key ra client.
 - Không tạo audio nếu chưa trừ điểm thành công.
 - Nếu tạo audio lỗi sau khi trừ điểm, bắt buộc hoàn điểm.
-- Không cho user thấy voice riêng của user khác.
+- Không cho người dùng thấy custom voice của người khác.
 - Không phá local persistence đang dùng cho UX:
   - draft text;
   - selected voice;
   - selected preset;
   - recent voices.
 
-## Naming rules
-- Model dùng PascalCase:
-  - `AppUser`
-  - `VoiceOption`
-  - `PointPackage`
-  - `PurchaseOrder`
-  - `VoiceJob`
-  - `PointTransaction`
-- PageModel theo tên page:
-  - `IndexModel`
-  - `PackagesModel`
-  - `AdminModel`
-- Status string đang dùng:
-  - Order: `Pending`, `Paid`, `Cancelled`
-  - VoiceJob: `Processing`, `Completed`, `Failed`, `Refunded`
-  - VoiceOption: `Approved`, `Pending`, `Rejected`
-  - Transaction: `Completed`, `Pending`, `Cancelled`
-- Transaction type:
-  - `UsePoint`
-  - `RefundPoint`
-  - `PurchaseApproved`
-  - `AdminAdjust`
-  - `AddPoint`
-
 ## Rule quan trọng
 - **Điểm = tiền**: mọi thay đổi điểm phải audit được.
 - **Audio đã tạo = cache**: nghe lại / tải lại không trừ điểm.
-- **Voice ownership**:
-  - system voice dùng chung;
-  - custom voice chỉ chủ sở hữu thấy.
+- **Google login là flow chính**: password flow cũ chỉ được xem là legacy nếu còn tồn tại.
 - **Voice ID khác Model ID**:
   - `ApiVoiceId` là ID giọng;
-  - `DefaultModelId` là model ElevenLabs;
-  - không được map nhầm 2 giá trị này.
-- **Mock mode** chỉ phục vụ local/demo.
-- **UI async chỉ là trình bày**: server vẫn là nguồn đúng cuối cùng cho điểm, voice, quyền, trạng thái job.
+  - `DefaultModelId` là model ElevenLabs.
+- **Enhance là xử lý server-side**:
+  - UI không phải là nguồn sự thật cho text đã enhance;
+  - phần gọi AI và phần gửi ElevenLabs phải được kiểm soát ở backend.
 
-## WebSocket flow
+## WebSocket / realtime
 - Hiện tại **không dùng WebSocket / SignalR**.
-- Tất cả cập nhật realtime đang là giả lập qua:
+- Realtime đang là giả lập qua:
   - fetch async;
-  - pending item trên UI;
-  - re-render danh sách lịch sử từ JSON response.
-- Nếu thêm realtime sau này:
-  - chỉ dùng để báo trạng thái job;
-  - không chuyển nghiệp vụ trừ/hoàn điểm ra khỏi server transaction flow.
-
-## Pending flow
-
-### Purchase pending
-- `PurchaseOrder.Status = Pending`: order đã tạo, chờ admin đối soát.
-- `ConfirmedAt`: user đã bấm xác nhận chuyển khoản.
-- `Paid`: admin duyệt và cộng điểm.
-- `Cancelled`: hủy order.
-
-### Custom voice pending
-- `VoiceOption.Status = Pending`
-- `OwnerUserId != null`
-- `IsSystemVoice = false`
-- Sau duyệt:
-  - `Status = Approved`
-  - `IsActive = true`
-  - có `ApiVoiceId`
-
-### Voice job pending
-- Chưa có queue/background worker thật.
-- Pending hiện tại là **pending UI**:
-  - JS chèn item `Đang tạo giọng...` vào `RecentHistory`;
-  - khi server trả thành công thì thay bằng item thật;
-  - khi lỗi thì xóa pending item và hiển thị alert.
-
-## Threading / UI rules
-- Razor Pages chạy request/response, không có desktop UI thread.
-- `DataStore` dùng `_lock` để tránh ghi JSON đồng thời trong cùng process.
-- Không dùng `.Result` hoặc `.Wait()` với `ElevenLabsService`.
-- `app.js` chỉ xử lý UX:
-  - popup;
-  - preset;
-  - audio player;
-  - localStorage;
-  - async partial update.
-- Trên mobile:
-  - sidebar là drawer;
-  - `Giọng nói` và `Lịch sử` là bottom-sheet/popup;
-  - popup chọn giọng và popup xác nhận phải hiển thị gọn, không phá vùng nhập.
-- Trên desktop:
-  - trang tạo giọng ưu tiên 3 vùng nhìn thấy cùng lúc;
-  - không để scroll chồng chéo vô nghĩa giữa 3 cột.
+  - pending item;
+  - re-render lịch sử từ JSON response.
 
 ## Những điều tuyệt đối không được phá
 - Không phá logic:
   - tạo mới thì trừ điểm;
   - nghe lại / tải lại không trừ điểm.
 - Không phá auto-refund khi ElevenLabs lỗi.
-- Không bỏ `BalanceBefore / BalanceAfter` trong transaction.
-- Không bỏ kiểm tra `OwnerUserId` khi lấy custom voice.
-- Không đưa API key ra client.
-- Không làm mất local draft text.
-- Không làm mỗi lần tạo giọng reload cả trang như flow cũ.
-- Không để nhiều audio trong lịch sử phát song song.
-- Không làm popup mobile che sai hoặc đẩy vỡ layout nhập nội dung.
+- Không bỏ `BalanceBefore / BalanceAfter`.
+- Không hardcode path máy dev vào code nghiệp vụ.
+- Không làm mất `app.db` hoặc `audio/` khi đổi môi trường chạy.

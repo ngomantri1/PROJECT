@@ -182,3 +182,49 @@
 - [ ] Kiểm tra log còn `CertificateCommonNameIsIncorrect`, `Err Unknown`, `File Not Found` hay không.
 - [ ] Nếu CloudFront IP `13.227.227.64` đổi hoặc stale, cân nhắc đưa host-map thành cấu hình hoặc probe DNS/IP trước khi tạo WebView2 environment.
 - [ ] Xác nhận `AutoBetHub` đang load đúng DLL mới sau rebuild.
+
+## Da lam ngay 2026-07-25 - Dieu tra Prog Pragmatic
+
+- [x] Ra soat log `COUNTDOWN`, `TickDiag`, `STATUS][PROG` de xac dinh `Prog` dang lay tu dau.
+- [x] Xac nhan `Prog` hien dang roi vao visual DOM scanner:
+  - `progSrc=dom/pragmatic-point-countdown`
+  - tail thuong gap: `div.Mh_fv.Mh_Mj/div.Mh_Mp/div.PG_PH.PG_PL/div.PG_PN/div.PG_PP/span.PG_PR`
+  - tail thuong gap: `div.Mh_fv.Mh_Mj/div.Mh_Mp/div.PG_PH.PG_PL/div.PG_PO/div.PG_PQ/span.PG_PR`
+- [x] Xac nhan visual DOM hit chua dang tin:
+  - log co chuoi nhay `6 -> 15 -> 16 -> 15 -> 16...`
+  - tail `span.PG_PR` khong co ten countdown/time/timer ro rang.
+- [x] Kiem tra network countdown cache tren log hien tai:
+  - `js-network-countdown = 0`
+  - `network/countdown = 0`
+  - `progSrc=.*network = 0`
+  - `__abx_network_countdown = 0`
+- [x] Ket luan: network cache chua co du lieu, chua the noi network countdown dang giam dan/on dinh.
+- [x] Bo nhanh selector cu trong `domReadBetCountdown()`:
+  - `#countdownTime > p`
+  - `dd#countdownTime > p`
+  - `#countdownTime p`
+  - LiveTables fallback `span.seconds`, `[class*=seconds]`, `div.dpzr9oa span`
+- [x] Tao khoi JS DevTools probe `ABX_PROG_PROBE` de user chay va gui lai output:
+  - scan top visual DOM candidates moi giay trong 15 giay.
+  - log `tail`, `class`, `x/y/w/h`, `score`, `inCurrentRegion`.
+  - log network state `__abx_network_countdown_*`.
+  - in `SUMMARY_BEST_SEQUENCE` va JSON day du.
+
+## Can lam tiep - Prog Pragmatic sau probe
+
+- [ ] Doc output `[ABX-PROG-PROBE]` user gui lai.
+- [ ] Neu co candidate giam deu theo thoi gian:
+  - chot tail/class/region cua countdown that,
+  - harden `domReadPragmaticVisualCountdown()` de chi chap nhan tail do,
+  - loai `span.PG_PR` sai neu can.
+- [ ] Neu khong co candidate DOM giam deu:
+  - coi visual DOM la khong du tin cay,
+  - uu tien bat CDP/WebSocket/network message cho Pragmatic.
+- [ ] Neu network probe/cache van rong:
+  - bo sung log raw message co chua `GameInfo/eventType/messageType`,
+  - tim field countdown/timeLeft/betTime/remaining trong stream that.
+- [ ] Neu ca DOM va network deu khong co countdown:
+  - can nhac OCR/canvas crop rieng vung countdown, chi dung lam fallback cuoi.
+- [ ] Sau khi chot nguon Prog moi:
+  - kiem tra status `DOI VAN BAI TIEP THEO` van ep `prog=0` dung,
+  - kiem tra C# khong con ghi de status DOM thanh `prog-derived` khi round dong.

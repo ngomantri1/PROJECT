@@ -1,5 +1,10 @@
 ﻿# TODO
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã hoàn thành: lấy tail mới nhất từ `D:\NOTE\OneDrive\Desktop\log\devtool.log` (Scan500) cho UI `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5`.
+- Đã hoàn thành: đổi tail trực tiếp cho cửa Tài, cửa Xỉu, nút Đặt cược và 8 chip sang `MiniGameScene`; không giữ fallback `LobbyNew` cho các tail này.
+- Cần test lại: đặt cược Tài/Xỉu với từng mệnh giá chip sau khi inject bridge mới.
+
 ## Cập nhật hôm nay (2026-07-10)
 - Đã hoàn thành: hiển thị Canvas Watch bằng `SHOW_CANVAS_WATCH=true`.
 - Đã hoàn thành: sửa bridge readiness để reinject khi có `window.cc` nhưng chưa có root `__cw_root_allin`.

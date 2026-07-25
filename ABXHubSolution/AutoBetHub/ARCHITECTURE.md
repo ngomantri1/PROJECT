@@ -6,7 +6,7 @@
 - `MainWindow.xaml`, `MainWindow.xaml.cs`
   - shell UI + runtime orchestrator.
 - `web/`
-  - home shell (`hub.html`), source JSX (`hub.jsx`), generated runtime (`hub.app.js`), vendor scripts, card assets.
+  - home shell (`hub.html`), game catalog (`hub.games.js`), source JSX (`hub.jsx`), generated runtime (`hub.app.js`), vendor scripts, card assets.
 - `Hosting/`
   - plugin discovery/loading path đang dùng thực tế.
 - `Services/`
@@ -67,9 +67,13 @@
 - `Services/HostContext.cs`
   - duplicate implementation của `HostContext`, hiện không phải path đang dùng.
 - `web/hub.html`
-  - shell chỉ load vendor + `hub.app.js`.
+  - shell load vendor, `hub.games.js`, rồi `hub.app.js`.
+- `web/hub.games.js`
+  - source duy nhất cho danh sách game hiển thị ở home UI.
+  - gán `window.ABX_HUB_GAMES`; mỗi item giữ `title`, `slug`, `tag`, `gradient`, `img`.
 - `web/hub.jsx`
-  - source thật của menu/home UI.
+  - source thật của logic menu/home UI và tìm kiếm.
+  - đọc catalog từ `window.ABX_HUB_GAMES`, không hardcode danh sách game.
 - `web/hub.app.js`
   - JS generated từ `hub.jsx`; file app runtime thực sự load.
 - `web/vendor/*`
@@ -129,7 +133,8 @@
 
 ## UI Update Flow
 - Home UI:
-  - source edit ở `hub.jsx`
+  - catalog edit ở `hub.games.js`
+  - source logic edit ở `hub.jsx`
   - runtime thực tế ở `hub.app.js`
   - React state + `localStorage` + `sessionStorage`
   - không bind trực tiếp sang WPF ngoài message bridge.
@@ -141,7 +146,8 @@
   - plugin báo closed -> shutdown
 - Build caveat:
   - `dotnet build` hiện chưa có target tự compile `hub.jsx` -> `hub.app.js`
-  - vì vậy UI/menu có thể lệch giữa source và runtime JS
+  - vì vậy logic UI có thể lệch giữa source và runtime JS nếu sửa `hub.jsx` mà không regenerate
+  - thêm game thông thường chỉ sửa `hub.games.js`; không cần sửa `hub.jsx` hoặc sửa tay `hub.app.js`
 
 ## OCR / Canvas Flow
 - Không thấy source OCR/canvas trong host repo này.
@@ -157,7 +163,9 @@
   - `HostContext` root vs `Services/HostContext.cs`
   - `Hosting/PluginLoadContext.cs` vs root `PluginLoadContext.cs`
 - `hub.html` hiện chỉ là shell, không phải nơi sửa menu chính.
+- Khi thêm/sửa game hiển thị trên home, sửa `hub.games.js`.
 - Khi debug menu/home:
+  - kiểm tra `hub.games.js`
   - kiểm tra cả `hub.jsx`
   - `hub.app.js`
   - `%LocalAppData%\AutoBetHub\web`

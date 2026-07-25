@@ -1,107 +1,88 @@
 # TODO
 
-## Task đang làm
-- Ổn định UX của trang `/Index` sau đợt redesign lớn:
-  - async generate;
-  - popup chọn giọng;
-  - popup xác nhận tạo giọng;
-  - lịch sử gần đây;
-  - mobile bottom-sheet/popup;
-  - toast nổi 2 giây.
-
 ## Ưu tiên cao
-- Đổi mật khẩu admin mặc định khi chạy thật.
-- Tách config production/API key khỏi source code.
-- Thêm logging chi tiết cho:
-  - ElevenLabs error
-  - refund flow
-  - order approval
-  - async generate handler
-- Chuẩn hóa lại build flow để không còn dùng `dotnet build -o` ở solution level.
+- Dọn secrets ra khỏi source code:
+  - `ElevenLabs:ApiKey`
+  - `Authentication:Google:ClientSecret`
+  - `OpenAI:ApiKey`
+- Dọn nốt legacy auth:
+  - chặn hoặc bỏ hẳn flow `Register` / password login cũ nếu sản phẩm đã chốt dùng Google login.
+- Cleanup luồng `Enhance` phía client:
+  - xóa code preview/tag cũ còn sót trong `wwwroot/js/app.js`;
+  - nếu không còn dùng preview thủ công thì bỏ endpoint/JS thừa liên quan `EnhanceText`.
+- Thêm logging chi tiết hơn cho:
+  - ElevenLabs error;
+  - OpenAI enhance error;
+  - refund flow;
+  - order approval;
+  - process exit bất thường khi debug.
 - Backup tự động cho:
-  - `App_Data/db.json`
-  - `wwwroot/audio`
-- Xem xét chuyển `DataStore` JSON sang SQL Server/PostgreSQL trước khi scale thật.
+  - `app.db`
+  - thư mục `audio/`
+- Thêm cleanup audio theo `BusinessRules:AudioRetentionDays`.
+
+## Task đang mở
+- Rà lại hoàn toàn trang `/Index` sau loạt thay đổi gần đây:
+  - Google login;
+  - SQLite runtime;
+  - hidden AI Enhance;
+  - toast nổi;
+  - button layout desktop/mobile.
+- Rà lại trang `/Packages` trên mobile:
+  - popup bước 2 chỉ mở đúng khi user bấm `Mua ngay`;
+  - không tự bật sai khi chỉ mở trang với đơn cũ;
+  - thông báo đơn cũ màu đỏ, tự ẩn sau 3 giây, không xô layout.
 
 ## Task chưa hoàn thành
 - Chưa có thanh toán tự động; vẫn là chuyển khoản thủ công + admin duyệt.
-- Chưa có queue/background job thật cho tạo giọng dài/chậm.
-- Chưa có cleanup audio theo `BusinessRules:AudioRetentionDays`.
-- Chưa có quên mật khẩu / reset mật khẩu.
-- Chưa có CAPTCHA/chống bot khi đăng ký.
-- Chưa có phân trang/lọc mạnh cho:
-  - admin
-  - history
-  - transactions
+- Chưa có queue/background worker thật cho job TTS dài.
+- Chưa có email/Zalo báo khi đơn được duyệt.
+- Chưa có cleanup retention thật cho audio cũ.
 - Chưa có export CSV/Excel.
-- Chưa có audit log riêng cho admin ngoài `PointTransaction`.
-- Chưa có thông báo email/Zalo khi order được duyệt.
+- Chưa có audit log riêng cho thao tác admin ngoài `PointTransaction`.
+- Chưa có cơ chế lock/chặn spam nâng cao ngoài limit hiện tại.
 
 ## Task cần refactor
 - Tách logic tạo giọng trong `IndexModel` thành service riêng, ví dụ `VoiceJobService`.
 - Tách logic billing/order/admin approve thành `BillingService`.
-- Tách phần localStorage/UI state trong `app.js` thành nhóm hàm nhỏ hơn.
-- Tách `app.css` thành:
+- Giảm độ lớn của `wwwroot/js/app.js`.
+- Tách `wwwroot/css/app.css` theo:
   - layout
   - components
   - pages
   - responsive
 - Chuẩn hóa status/type bằng constants hoặc enum thay vì string rải rác.
-- Giảm coupling giữa `_Layout.cshtml` và JS point-balance update.
 
-## Task ưu tiên test lại
-- Flow async tạo giọng:
-  - mở confirm modal;
-  - tạo pending item;
-  - focus sang lịch sử ngay lúc pending;
-  - render lại item completed.
-- Success toast:
-  - nổi đè lên layout;
-  - tự ẩn sau 2 giây;
-  - không làm xê dịch composer.
-- Voice picker:
-  - search;
-  - filter `Tất cả / Giọng của bạn / Gần đây`;
-  - preview voice;
-  - giữ selected voice cho lần sau.
-- Preset:
-  - giữ preset cho lần sau;
-  - text active phải trắng;
-  - mobile hiển thị nhiều dòng, không kéo ngang.
-- Draft text:
-  - lưu localStorage;
-  - mở lại trang vẫn còn;
-  - nút xóa hoạt động đúng.
-- History player:
-  - không phát song song;
-  - icon play/pause đổi đúng;
-  - seek bar hoạt động trên desktop và mobile;
-  - `RecentHistory` có nút tải xuống.
-- Mobile popup:
-  - popup `Giọng nói`
-  - popup `Lịch sử`
-  - popup `Chọn giọng`
-  - popup xác nhận tạo giọng
-- Sidebar point display:
-  - điểm hiển thị dưới logo;
-  - topbar không còn card điểm.
-
-## Task cần test nghiệp vụ lại
-- Tạo giọng mock khi không có API key.
-- Tạo giọng thật với `DefaultModelId` hợp lệ và `ApiVoiceId` hợp lệ.
-- Trường hợp `model_not_found` / `voice not found` phải hoàn điểm đúng.
-- User không đủ điểm.
-- User bị khóa.
-- `MaxCharactersPerJob`.
-- `MaxJobsPer10Minutes`.
-- Order pending → confirm → admin approve → cộng điểm đúng.
-- Admin reject order không cộng điểm.
-- User A không thấy custom voice của user B.
+## Task cần test lại
+- Google login:
+  - tài khoản mới tạo đúng;
+  - email admin vào đúng role `Admin`;
+  - email thường vào đúng role `Member`.
+- Flow tạo giọng async:
+  - pending item;
+  - cập nhật lịch sử;
+  - hoàn điểm khi lỗi;
+  - không reload cả trang.
+- Flow hidden Enhance:
+  - bật `Enhance` nhưng textarea không bị chèn tag;
+  - request backend vẫn dùng text enrich;
+  - fallback hoạt động đúng khi chưa có `OpenAI:ApiKey`.
+- Flow mua gói:
+  - tạo đơn mới;
+  - reuse đơn `Pending`/`Reported`;
+  - toast cảnh báo màu đỏ, tự ẩn sau 3 giây;
+  - popup bước 2 desktop/mobile;
+  - `Pending -> Reported -> Paid`.
+- QR local:
+  - hiển thị nhanh và ổn định;
+  - không phụ thuộc dịch vụ QR bên ngoài.
+- Runtime storage:
+  - `app.db` và `audio/` chạy đúng khi đổi máy/server;
+  - không phụ thuộc đường dẫn ổ đĩa cố định.
 
 ## Nâng cấp nên làm sau MVP
-- Dùng object storage như S3/R2 cho audio.
-- Thêm queue + SignalR nếu cần realtime thật.
+- Đưa audio sang object storage như R2/S3 khi cần scale hơn.
+- Nếu cần realtime thật thì thêm queue + SignalR.
 - Webhook thanh toán tự động.
-- Affiliate / giới thiệu bạn bè thật sự.
-- Library preset nội dung marketing / bán hàng / TikTok.
 - API nội bộ cho khách tích hợp.
+- Trang admin log/monitor rõ hơn cho TTS, payment, enhance.

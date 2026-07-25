@@ -30,7 +30,7 @@
   - `v4_js_xoc_dia_live.js`: exposes `__cw_startPush`, `__cw_stopPush`, `__cw_bet`, `cwBet`.
 - `EnsureWebReadyAsync` gan `WebMessageReceived` dung 1 lan; `tick` cap nhat `_lastSnap`, UI, NI sequence va finalize pending bet.
 - Start flow bat push moi 240ms: `window.__cw_startPush && window.__cw_startPush(240)`.
-- Tick JS gui `prog` dang ratio `0..1`; nguon progress HIT duy nhat la `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/HUD/countDownProgress` (`cc.ProgressBar.progress`), khong fallback countdown/text tail cu. `progSec/progTail` neu co chi la field debug phu, khong dung lam nghiep vu.
+- Tick JS gui `prog` dang ratio `0..1`; nguon progress HIT duy nhat la `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/HUD/countDownProgress` (`cc.ProgressBar.progress`), khong fallback countdown/text tail cu. `progSec` la giay con lai quy doi theo 20s, `progTail` xac nhan co dong bo countdown; neu khong co `progTail` thi UI mac dinh 0s.
 - Status game tinh truc tiep tu `prog`: `prog > 0` la `Chờ đặt cược`, `prog = 0` hoac khong doc duoc la `Chờ kết quả`; C# hien `Chờ đặt cược` mau xanh la cay, `Chờ kết quả` mau do.
 
 ## Pending flow
@@ -45,7 +45,7 @@
 - `EvalJsAsync` phai chay tren UI Dispatcher vi WebView2 la UI component.
 - Moi task phai ton trong `CancellationToken`.
 - `TaskUtil.PlaceBet` da co gate/cooldown theo tab; khong dat cuoc truc tiep neu khong can.
-- Canvas Watch phai luon co the hien bang `window.__cw_show_panel()`; JS co `_panelWatchdog` ep panel hien va clear trong `teardown`.
+- Canvas Watch co the an bang `CW_HIDE_CANVAS_WATCH = true`; khi can debug doi ve `false` roi reload/reinject, sau do co the goi `window.__cw_show_panel()`. JS co `_panelWatchdog` giu panel hien khi khong bi flag an va clear trong `teardown`.
 
 ## Coding rules
 - Khong rewrite code lon trong `MainWindow.xaml.cs` neu khong can; file nay dang gom nhieu flow cu/moi.
@@ -72,13 +72,15 @@
 - Khong xoa resource/image injection trong plugin, vi XAML va converter can StaticResource/shared icons.
 - Khong doi cach tinh win tax: mac dinh win delta * 0.98, Task 17 co payout rieng.
 - Khong bo wait bridge/game data truoc khi start task; no tranh crash khi chua co seq/cocos.
-- Khong doi `prog` sang giay tho trong packet chinh; task hien dang so sanh `prog` voi `DecisionPercent` theo ratio.
+- Khong doi `prog` sang giay tho trong packet chinh; `prog` van la ratio, con `progSec` la field giay rieng. Vao tien hien dung `DecisionSeconds`/giay con lai, khong con dua vao phan tram.
 - Countdown/progress HIT dung 1 nguon `HUD/countDownProgress`; khong dung fallback `lbl_countdown`, khong doi `prog` sang giay tho.
 - Chuoi ket qua HIT dung `ld_bg/box_ketqua`, khong dung path cu `thongke1/thongke2/label/num`. Khong tra C/L truc tiep vao `snap.seq`; `snap.seq` phai van la chuoi digit de C# `SeqToParityString`, `IsWin`, UI icon hoat dong.
 - Nguon `box_ketqua` chi dam bao dung CHAN/LE. Khong dung de cham cac cua can phan biet chinh xac `0/1/2/3/4` nhu no hu/Task 17 neu can ket qua dac biet.
 - Tong cuoc 7 cua HIT dung tail `MainXocDia/Canvas/MainUIParent/XocDiaViewModel/ld_bg/ListLabel/TotalMoney`, gom theo layout 2 dong: top[1]=CHAN, top[0]=LE, bottom[0]=SAP_DOI, bottom[1]=DO3_TRANG1, bottom[2]=TRANG3_DO1, bottom[3]=TU_TRANG, bottom[4]=TU_DO.
 - Ten nhan vat doc tu `RoomScenebinhThuongXocDia/FootterRoomUi/Left/buttonName/NameUser`; tai khoan doc bang cach tim `PlayerViewXocDia/PlayerName/name` khop ten nhan vat roi lay `PlayerName/Mn/mn` trong cung subtree, de tranh nhay sang nguoi choi khac.
-- Scan phinh/chip: `Scan200Text` co block `(Chip scan from Scan200Text)` lay tu `cwScanChips`; cac tail phinh dang o `ld_bg/btnChoseCoin/New Node/zcontent/Entry_2..Entry_9`.
+- Scan phinh/chip: `Scan200Text` co block `(Chip scan from Scan200Text)` lay tu `cwScanChips`; cac tail phinh dang o `ld_bg/btnChoseCoin/New Node/zcontent/Entry_1..Entry_9`, map `Entry_1=500`, `Entry_2=1000`, ... `Entry_9=5000000`.
+- Dat cuoc JS HIT: side button dung `SIDE_TAIL_EXACT[WANT]` cho 7 cua va khong fallback regex. `emitClick()` da quay ve internal-only cho cua; focus phinh dung `focusChipNode()` rieng de xu ly phinh 500.
+- JS bet ack hien theo nghiep vu "gui lenh xuong JS coi nhu thanh cong": khong doi tong cuoc van post `bet`, khong retry/bet lai theo `totals_change`.
 
 ## Nhung dieu tuyet doi khong duoc pha
 - Host/plugin lifecycle: `CreateView`, `Stop`, `ShutdownFromHost`, cleanup WebView/CTS/lease.
@@ -87,5 +89,5 @@
 - Gate/cooldown chong ban dup trong `TaskUtil.PlaceBet`.
 - Embedded resource `v4_js_xoc_dia_live.js` va build target copy plugin sang Hub.
 - Multi-tab runtime state trong `StrategyTabState`; dung active tab dung cach.
-- Canvas Watch overlay phuc vu debug/van hanh; khong an `root.style.display='none'`, khong xoa `__cw_show_panel`/watchdog neu chua co thay the.
+- Canvas Watch overlay phuc vu debug/van hanh nhung mac dinh co the an bang `CW_HIDE_CANVAS_WATCH = true`; khong xoa `__cw_show_panel`/watchdog neu chua co thay the.
 - Khi sua totals/account/status/progress trong JS, khong fallback ve tail nghiep vu cu neu da chot tail HIT moi; sai tail se lam UI nhay gia tri hoac hien `--`.

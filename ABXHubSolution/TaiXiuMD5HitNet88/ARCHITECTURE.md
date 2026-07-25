@@ -1,5 +1,10 @@
 ﻿# ARCHITECTURE
 
+## Cập nhật hôm nay (2026-07-25)
+- `devtool.log` từ Scan500 xác nhận UI Tài Xỉu hiện tại có prefix `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5`.
+- Mapping dữ liệu đã xác nhận: tổng Tài/Xỉu cùng tail `Main/borderTabble/nodeFont/lbTotal`, chọn Tài `x=307` và Xỉu `x=805`; phiên hiển thị là `Main/borderTabble/nodeSkeleton/ellipse6/lbSesionId`.
+- Mapping thao tác cược đã cập nhật trong `v4_js_xoc_dia_live.js`: `btnCuocTai`, `btnCuocXiu`, `btnDatCuoc` và toàn bộ `menuMoney/btnPrices/*` dùng prefix `MiniGameScene` trực tiếp; không fallback về `LobbyNew`.
+
 ## Cập nhật hôm nay (2026-07-10)
 - HIT Tài Xỉu hiện đọc dữ liệu bằng Cocos scene traversal + tail matching trong `v4_js_xoc_dia_live.js`.
 - Canvas Watch được dựng trong DOM root `__cw_root_allin`; bridge probe trong `MainWindow.xaml.cs` phải coi root này là điều kiện ready khi `window.cc` đã sẵn sàng.

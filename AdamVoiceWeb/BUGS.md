@@ -1,171 +1,161 @@
 # BUGS
 
-## Bug hiện tại
-- Chưa ghi nhận bug nghiệp vụ blocking nào mới sau đợt chỉnh UI gần nhất.
-- Vẫn còn warning build:
-  - `NETSDK1194`
-  - nguyên nhân: dùng `dotnet build -o` ở solution level.
-  - đây không phải bug runtime nhưng cần dọn lại quy trình build.
-- `BusinessRules:AudioRetentionDays` chưa có tác dụng thực tế vì chưa có cleanup job.
-- Password hash hiện vẫn là dạng demo, chưa đạt chuẩn production.
-- JSON datastore vẫn có rủi ro khi chạy nhiều instance.
+## Bug/rủi ro hiện tại
+
+### Secrets đang nằm trong `appsettings.json`
+- Mức độ: nghiêm trọng.
+- Hiện có key/secret cấu hình trực tiếp trong source.
+- Rủi ro:
+  - lộ API key;
+  - lộ Google OAuth secret;
+  - khó tách môi trường dev/prod.
+
+### Client-side Enhance còn code legacy
+- Triệu chứng:
+  - `wwwroot/js/app.js` vẫn còn dấu vết flow enhance kiểu cũ:
+    - gọi `?handler=EnhanceText`;
+    - xử lý `enhanceEditor`, `enhanceTextOverlay`, `enhanceOriginal`.
+- Hiện định hướng sản phẩm đã đổi:
+  - chỉ giữ nút `Enhance`;
+  - phần enrich text chạy ngầm phía server.
+- Rủi ro:
+  - hành vi UI/backend dễ lệch nhau;
+  - sau này sửa tiếp dễ phát sinh bug ẩn.
+
+### Debug process đôi lúc thoát bất thường
+- Triệu chứng:
+  - chạy một thời gian thì process `AdamVoiceWeb.exe` có thể thoát với code `-1`;
+  - chưa thu được stack trace rõ nguyên nhân.
+- Trạng thái:
+  - chưa chốt nguyên nhân gốc;
+  - cần tăng logging / bắt unhandled exception tốt hơn.
+
+### `AudioRetentionDays` chưa có cleanup job thật
+- Cấu hình đã có nhưng chưa có job dọn file/audio cũ.
+- Rủi ro:
+  - đầy dung lượng disk theo thời gian.
+
+### SQLite + audio local chưa phù hợp cho multi-instance
+- Trạng thái hiện tại phù hợp web nhỏ / 1 server.
+- Rủi ro khi scale ngang:
+  - mỗi instance có thể có `app.db` và `audio/` riêng;
+  - khó đồng bộ file audio;
+  - backup/restore phải làm đúng theo node đang chạy.
+
+### AI Enhance phụ thuộc cấu hình OpenAI
+- Nếu không có `OpenAI:ApiKey`:
+  - app fallback sang enhance rule-based;
+  - chất lượng biểu cảm sẽ kém phong phú hơn AI thật.
+- Đây không phải bug blocking, nhưng là giới hạn chất lượng hiện tại.
 
 ## Bug đã fix
 
-### Nhầm Model ID và Voice ID của ElevenLabs
-- Triệu chứng:
-  - tạo giọng lỗi `400 model_not_found`
-  - message kiểu: model ID không tồn tại.
-- Nguyên nhân:
-  - lấy nhầm `Voice ID` gán vào `DefaultModelId`, hoặc ngược lại.
+### Chuyển runtime chính từ JSON sang SQLite
+- Trước đây app phụ thuộc `App_Data/db.json`.
+- Hiện đã chuyển sang:
+  - `AppDbContext`
+  - `app.db`
+  - `SqliteBootstrapService`
+- `App_Data/db.json` chỉ còn để import legacy.
+
+### Đường dẫn runtime không còn hardcode ổ đĩa
+- Trước đây người dùng cần nghĩ tới kiểu `D:\AdamVoiceData\...`.
+- Hiện app lấy path qua `Storage:DataRootPath`.
+- Cấu hình hiện tại dùng `"."` nên tự chạy theo thư mục project/deploy.
+
+### Login/Register lỗi LINQ không translate được với SQLite
+- Triệu chứng cũ:
+  - `string.Equals(..., StringComparison.OrdinalIgnoreCase)` gây lỗi LINQ translate.
+- Kết quả:
+  - flow login/register cũ đã được sửa để tương thích SQLite.
+
+### Mua gói lỗi LINQ trên SQLite
+- Triệu chứng cũ:
+  - query phần gói năm / discount từng lỗi không translate được.
+- Kết quả:
+  - flow `/Packages` đã được sửa để chạy ổn với SQLite.
+
+### QR thanh toán lấy ngoài bị chậm/không ổn định
+- Triệu chứng cũ:
+  - QR có lúc ra, có lúc không;
+  - phụ thuộc dịch vụ ngoài nên chậm.
 - Fix:
-  - `DefaultModelId` dùng model thật, ví dụ `eleven_flash_v2_5`;
-  - `ApiVoiceId` dùng đúng voice ID, ví dụ của Adam.
-- Ghi chú:
-  - đây là rule quan trọng, rất dễ tái phát khi sửa config.
+  - chuyển sang sinh QR local để ổn định và nhanh hơn.
 
-### Chọn giọng / preset không nhớ cho lần sau
-- Triệu chứng:
-  - vào lại trang bị mất giọng đã chọn hoặc preset đã chọn.
+### Đơn mua gói thiếu trạng thái phân biệt sau khi user báo chuyển khoản
+- Triệu chứng cũ:
+  - user bấm đã chuyển khoản nhưng đơn vẫn khó phân biệt với `Pending`.
 - Fix:
-  - lưu vào `localStorage`:
-    - selected voice
-    - selected preset
-    - recent voices
+  - thêm trạng thái `Reported`;
+  - admin ưu tiên duyệt các đơn `Reported`.
 
-### Nội dung nhập bị mất khi tắt/mở lại
-- Triệu chứng:
-  - draft text mất sau reload hoặc mở lại trang.
+### Đã có đơn mở nhưng user không được báo rõ
+- Triệu chứng cũ:
+  - bấm mua tiếp hoặc báo chuyển khoản lại mà thiếu thông báo rõ ràng.
 - Fix:
-  - lưu draft text bằng `localStorage`.
+  - hệ thống reuse đơn `Pending`/`Reported`;
+  - hiển thị toast cảnh báo màu đỏ;
+  - toast tự ẩn sau 3 giây;
+  - toast nổi, không xô layout.
 
-### Lịch sử gần đây phát nhiều audio song song
-- Triệu chứng:
-  - click nhiều item thì audio phát chồng.
+### Runtime file trong root làm `dotnet watch` dễ bị kích
+- Triệu chứng cũ:
+  - khi lưu `app.db` / `audio/` ngay trong project root, watcher dev có thể bị ảnh hưởng.
 - Fix:
-  - dùng shared audio player;
-  - reset item cũ khi phát item mới.
+  - thêm `Watch="false"` trong `AdamVoiceWeb.csproj` cho:
+    - `app.db`
+    - `app.db-*`
+    - `audio/**/*`
+    - `App_RuntimeData/**/*`
 
-### Lịch sử gần đây không hiện seek bar / icon play-pause không đúng
-- Triệu chứng:
-  - audio đang chạy nhưng icon không đổi;
-  - không tua được trong recent history;
-  - mobile từng có trường hợp không thấy thanh seek.
-- Fix:
-  - state `idle/playing/paused` cho từng item;
-  - mở `history-audio-bar` trên item active;
-  - đồng bộ current time / duration / progress.
+## Rủi ro kỹ thuật còn lại
 
-### Popup chọn giọng auto-open khi mới vào trang
-- Triệu chứng:
-  - mở `/Index` là popup voice picker bật sẵn.
-- Fix:
-  - gọi `closeVoicePicker()` khi load.
-
-### Popup mobile cao thấp không đồng đều
-- Triệu chứng:
-  - popup `Giọng nói`, `Lịch sử`, `Chọn giọng` không cùng chiều cao, nhìn lệch.
-- Fix:
-  - chuẩn hóa height/max-height của bottom-sheet/popup mobile.
-
-### Success alert chèn vào layout
-- Triệu chứng:
-  - alert thành công đẩy composer xuống thay vì nổi đè lên.
-- Fix:
-  - success alert dùng `alert-floating`;
-  - `position: absolute` trong `#indexMessageStack`;
-  - auto-hide sau 2 giây.
-
-### Native confirm / alert không đồng bộ theme
-- Triệu chứng:
-  - popup xác nhận tạo giọng và một số alert dùng UI hệ điều hành, lệch style trang.
-- Fix:
-  - thay `confirm()` tạo giọng bằng modal nội bộ;
-  - lỗi `chưa nhập nội dung` chuyển sang alert trong trang.
-
-### Điểm hiển thị ở topbar làm bố cục rối
-- Triệu chứng:
-  - card điểm ở topbar chiếm chỗ, không hợp layout mới.
-- Fix:
-  - chuyển điểm xuống dưới logo sidebar;
-  - bỏ card điểm ở topbar.
-
-## Bug chưa fix / rủi ro kỹ thuật
-
-### Race condition ngoài single process
-- `DataStore` chỉ lock trong cùng process.
-- Nếu nhiều instance:
-  - có thể lost update;
-  - có thể lệch điểm / order / voice job.
-- Workaround:
-  - chạy 1 instance;
-  - hoặc chuyển sang SQL trước khi scale.
-
-### Refund không cùng transaction vật lý với API call
+### Refund không nằm trong một transaction vật lý với API call ngoài
 - Flow hiện tại:
   - trừ điểm
-  - gọi API
-  - lỗi thì hoàn điểm
-- Nếu process chết ở giữa:
-  - có thể cần xử lý tay.
-- Workaround:
-  - thêm recovery flow / queue / transaction DB thật.
+  - gọi ElevenLabs
+  - nếu lỗi thì hoàn điểm
+- Nếu process chết đúng giữa đoạn này:
+  - có thể cần recovery thủ công.
 
-### Audio local storage
-- Audio đang nằm trong `wwwroot/audio`.
-- Rủi ro:
-  - đầy disk;
-  - mất file khi deploy sai.
-
-### File CSS/JS đã lớn
-- `app.css` và `app.js` đang ôm khá nhiều logic UI.
-- Rủi ro:
-  - dễ đè rule responsive;
-  - khó lần bug popup/history.
-
-## Nguyên nhân bug thường gặp
-- Nhầm `Voice ID` với `Model ID`.
-- Sửa popup mobile nhưng quên desktop, hoặc ngược lại.
-- Sửa CSS responsive nhưng không test cả:
-  - desktop
-  - tablet
-  - mobile
-- Ghi đè layout nhưng quên giữ `data-point-balance` / hook JS.
-- Chỉnh UI history nhưng bỏ sót player state dùng chung.
-- Chỉnh localStorage key hoặc flow restore mà quên migrate logic cũ.
+### Password flow cũ còn tồn tại ở mức code
+- Sản phẩm đã chuyển hướng sang Google login là chính.
+- Nếu page/endpoint password cũ còn mở:
+  - dễ gây hiểu nhầm;
+  - tăng diện tích bảo trì;
+  - có thể phát sinh bug auth song song 2 flow.
 
 ## Workaround tạm thời
 - Trước khi update production:
-  - backup `App_Data/db.json`
-  - backup `wwwroot/audio`
-  - backup `appsettings.json`
+  - backup `app.db`
+  - backup thư mục `audio/`
+  - backup file config theo môi trường
 - Nếu khách báo mất điểm:
   - kiểm tra `PointTransactions`
   - kiểm tra `VoiceJobs`
   - nếu cần, hoàn thủ công bằng `AdminAdjust`
-- Nếu tạo giọng lỗi ElevenLabs:
-  - kiểm tra `DefaultModelId`
-  - kiểm tra `ApiVoiceId`
-  - kiểm tra API key
+- Nếu `Enhance` cho output chưa đủ phong phú:
+  - kiểm tra `OpenAI:ApiKey`
+  - kiểm tra `OpenAI:EnhanceModel`
+  - nếu chưa có key thì hiểu rằng app đang dùng fallback rule-based
 
 ## Vùng code dễ lỗi
 - `Pages/Index.cshtml.cs`
   - trừ điểm
   - hoàn điểm
-  - async JSON generate flow
-- `Pages/Index.cshtml`
-  - popup confirm
-  - popup voice/history
-  - recent history layout
+  - hidden enhance
+  - async generate JSON flow
+- `Pages/Packages.cshtml.cs`
+  - tạo/reuse đơn
+  - đổi trạng thái `Pending` / `Reported` / `Paid`
 - `wwwroot/js/app.js`
-  - shared history audio
-  - localStorage restore
-  - async generate
-  - popup open/close
-- `wwwroot/css/app.css`
-  - responsive popup
-  - floating alert
-  - 3-column desktop layout
+  - pending history
+  - toast nổi
+  - mobile popup
+  - enhance legacy cleanup
+- `Services/AiEnhanceService.cs`
+  - prompt AI
+  - validate không đổi nghĩa text gốc
 - `Services/ElevenLabsService.cs`
   - payload/model/voice mapping
   - lưu file audio

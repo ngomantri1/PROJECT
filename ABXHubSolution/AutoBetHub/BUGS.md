@@ -2,7 +2,7 @@
 
 ## Current Bugs
 - `dotnet build` không tự compile `web/hub.jsx` sang `web/hub.app.js`.
-  - Sửa menu trong `hub.jsx` không đảm bảo app runtime đổi theo.
+  - Sửa logic UI/tìm kiếm trong `hub.jsx` không đảm bảo app runtime đổi theo.
   - Đã quan sát drift thực tế giữa title trong `hub.jsx` và `hub.app.js`.
 - Runtime có thể dùng `web` trong `%LocalAppData%\AutoBetHub` thay vì `web` cạnh exe/repo.
   - Sửa file trong repo chưa chắc app đang chạy dùng bản đó.
@@ -15,7 +15,7 @@
   - XAML có `HostContainer` và `HostContent`.
   - Source hiện tại không thấy `HostContent.Content = view` hay `HostContainer.Visibility = Visible`.
   - Nếu plugin không tự mở window riêng, path embed sẽ không hiển thị gì.
-- Catalog game ở `web/hub.html` là hardcode.
+- Catalog game UI đã được tách sang `web/hub.games.js`, nhưng vẫn là catalog thủ công.
   - Plugin runtime lại được scan từ `Plugins/*.dll`.
   - Hai nguồn này có thể lệch nhau, gây slug tồn tại trong DLL nhưng không có trên UI hoặc ngược lại.
 - Shortcut mode có thể không tương thích với plugin cần shared WebView.
@@ -39,6 +39,11 @@
   - `hub.html` hiện load vendor local
   - runtime JS ở `hub.app.js`
 - Host đã có `homeDiagnostics` để log lỗi front-end sớm vào `hub_*.log`.
+- Catalog game home đã được tách khỏi `hub.jsx`/`hub.app.js`:
+  - `hub.html` load `hub.games.js` trước `hub.app.js`
+  - `hub.games.js` gán `window.ABX_HUB_GAMES`
+  - `hub.jsx` và `hub.app.js` đọc catalog từ `window.ABX_HUB_GAMES`
+  - logic tìm kiếm cũ vẫn dùng `matchesGame(...)` và `filteredGames`
 
 ## Unfixed
 - Chưa có target chính thức để tự build `hub.app.js` khi `hub.jsx` đổi.
@@ -55,6 +60,7 @@
   - home UI trong shared WebView
   - plugin có thể embed hoặc tự quản window
 - Home UI hiện có 3 lớp dễ drift:
+  - `hub.games.js` catalog
   - `hub.jsx` source
   - `hub.app.js` generated
   - `%LocalAppData%\AutoBetHub\web` runtime mirror
@@ -68,11 +74,11 @@
   - hoặc web auto-check
 - Khi thêm plugin mới:
   - cập nhật DLL
-  - cập nhật `hub.jsx` slug/title/card
-  - regenerate `hub.app.js`
-  - nếu app đang dùng local mirror, sync sang `%LocalAppData%\AutoBetHub\web`
+  - cập nhật `hub.games.js` slug/title/tag/img
+  - nếu app đang dùng local mirror, sync `hub.games.js` sang `%LocalAppData%\AutoBetHub\web`
   - test shortcut `--slug`
 - Khi debug “sửa menu không ăn”, luôn kiểm tra:
+  - timestamp `hub.games.js`
   - timestamp `hub.jsx`
   - timestamp `hub.app.js`
   - file trong `%LocalAppData%\AutoBetHub\web`
@@ -80,6 +86,7 @@
 ## Fragile Areas
 - `MainWindow.xaml.cs`
 - `web/hub.html`
+- `web/hub.games.js`
 - `web/hub.jsx`
 - `web/hub.app.js`
 - plugin load path từ `Plugins/` -> local mirror

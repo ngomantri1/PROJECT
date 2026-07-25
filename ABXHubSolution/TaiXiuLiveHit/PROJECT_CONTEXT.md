@@ -1,5 +1,17 @@
 ﻿# PROJECT_CONTEXT
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã thêm quản lý vốn `8. Quản lý vốn đa tầng nâng cao` (`MultiChainAdvanced`).
+- `MultiChainAdvanced` dùng chung `StakeChains`/`MoneyChainIndex`/`MoneyChainStep` với `MultiChain`, nhưng cách xét tầng dựa trên `MoneyChainProfit` như net xuyên suốt toàn bộ cụm chuỗi.
+- Ngưỡng từng dòng của `MultiChainAdvanced` hiện là tổng các phần tử trong dòng tiền, ví dụ `5000-3000-2000-1000` có ngưỡng `11,000`.
+- Mapping tầng nâng cao dựa trên ngưỡng cộng dồn: dòng 1 khi `net > -threshold[0]`; dòng n khi `-(sum threshold[0..n]) < net <= -(sum threshold[0..n-1])`.
+- Nếu `net > 0` hoặc `net <= -sum(all thresholds)` thì reset về dòng 1, mức 1 và `net=0`.
+- Đã sửa hiển thị `MỨC TIỀN` cho cả `MultiChain` và `MultiChainAdvanced`: dùng vị trí phẳng toàn bộ chuỗi, ví dụ `5000(1)-3000(2)-...-33000(32)` hiển thị `1/32..32/32`.
+- Đã sửa luồng `MultiChainAdvanced` để khi net reset về `0` thì ô `TIỀN THẮNG` trên UI cũng reset theo state nội bộ.
+- Đã thêm ký tự `0` cho chiến lược `1) Chuỗi cầu T/X` và `3) Chuỗi cầu I/N`.
+- Với chuỗi cầu, `0` nghĩa là bỏ qua đúng 1 ván: không đặt cược, không cập nhật thắng/thua, không cập nhật quản lý vốn, chỉ chờ `session` đổi rồi chuyển sang ký tự tiếp theo.
+- Phạm vi sửa chính: `MainWindow.xaml`, `MainWindow.xaml.cs`, `Tasks/GameContext.cs`, `Tasks/MoneyHelper.cs`, `Tasks/TaskUtil.cs`, `Tasks/SeqParityFollowTask.cs`, `Tasks/SeqMajorMinorTask.cs`, và các task dùng `MoneyHelper.IsMultiChainStrategy(...)`.
+
 ## Cập nhật hôm nay (2026-06-02)
 - Đã fix lỗi: khi task nghiệp vụ đang chạy (`Bắt đầu cược` đã chuyển sang `Dừng đặt cược`), sửa `TxtStakeCsv` nhưng ván sau vẫn ăn chuỗi tiền cũ.
 - Kỳ vọng nghiệp vụ mới:
@@ -49,12 +61,14 @@
 4. `WebMessageReceived` cập nhật snapshot/UI/trạng thái ván.
 5. Play:
 - Validate input theo chiến lược.
+- Chuỗi cầu T/X và I/N cho phép ký tự `0` để bỏ qua đúng 1 ván.
 - Chờ `WaitForBridgeAndGameDataAsync`.
 - Build `GameContext`.
 - Chạy `IBetTask.RunAsync(...)` theo index `0..17`.
 6. Task gọi `TaskUtil.PlaceBet` -> JS queue `__cw_bet` -> `bet/bet_error/bet_perf`.
 7. Khi ván chốt: finalize pending rows, cập nhật win/loss/stats/money.
 8. Nếu đang chạy mà người dùng sửa `TxtStakeCsv`, runtime phải ăn chuỗi tiền mới từ ván kế tiếp mà không restart task.
+9. Với `MultiChainAdvanced`, post-round money cập nhật net xuyên suốt, map lại dòng/mức theo ngưỡng cộng dồn, rồi đồng bộ `TIỀN THẮNG` và `MỨC TIỀN` UI.
 
 ## Coding rules
 - UI update chỉ qua `Dispatcher`.
@@ -75,6 +89,7 @@
 - Không bỏ qua finalize `_pendingRows` khi round kết thúc.
 - Không phá sync global fields giữa tabs (`SyncGlobalFieldsFromActive`).
 - Không làm mất level/state quản lý vốn hiện tại khi chỉ đổi chuỗi tiền lúc task đang chạy.
+- Không cập nhật quản lý vốn/thắng thua khi chuỗi cầu gặp ký tự `0` skip ván.
 
 ## WebSocket/bridge flow
 - Nguồn dữ liệu nghiệp vụ chính là bridge `postMessage`.
@@ -97,7 +112,7 @@
 - Contract JS: `window.__cw_bet`, `window.__cw_startPush`, schema `abx=*`.
 - Flow start an toàn: ensure web -> inject bridge -> wait data -> run task.
 - Mapping strategy index `0..17`.
-- Logic money strategy (`MoneyManager`/`MoneyHelper`) và state MultiChain trong `GameContext`.
+- Logic money strategy (`MoneyManager`/`MoneyHelper`) và state MultiChain/MultiChainAdvanced trong `GameContext`.
 - Cơ chế sửa chuỗi tiền live: đổi chuỗi mới nhưng vẫn giữ level hiện tại để ván sau lấy đúng mức tương ứng của chuỗi mới.
 - Cơ chế license/trial/lease và release lease khi stop/close.
 - Atomic save config/stats.

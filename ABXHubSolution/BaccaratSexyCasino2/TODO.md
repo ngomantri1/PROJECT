@@ -162,3 +162,17 @@
 - Need live retest:
   - run one 30k bet and confirm real table shows full 30k before confirm/finalize,
   - run one app login/open-game flow and confirm no second forced load after frame authority starts.
+
+## Update (2026-07-25)
+- Capture a complete log that includes the actual 30-60 minute gray/frozen WebView incident. The short sample received so far is insufficient to reproduce or classify the failure.
+- When the incident occurs, preserve surrounding log lines for:
+  - `[Web][PROCESS-FAILED]`
+  - `[PopupWeb][PROCESS-FAILED]`
+  - `[PopupWeb][STUCK-DETECT]`, `[PopupWeb][STUCK-WATCH]`, `[PopupWeb][STUCK-RECOVERY]`
+  - `[TickDiag]`, `[CANVAS][DISPLAY-PUSH-RESULT]`
+  - `[DIAG][CONFIRM]`, `[BETQ][DONE]`.
+- If no process-failure marker is emitted during a gray screen, add render-health diagnostics before enabling any automatic reload:
+  - page lifecycle/CDP crash signal,
+  - periodic visual/pixel or screenshot health check,
+  - cooldown and betting-phase protection for any recovery action.
+- Retest Xoc Dia management strategy 8 and the non-negative profit reset option with both normal and multi-chain money management.

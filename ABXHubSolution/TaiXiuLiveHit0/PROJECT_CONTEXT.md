@@ -1,5 +1,18 @@
 ﻿# PROJECT_CONTEXT
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã đồng bộ lại bridge/canvas cho đúng game Tài Xỉu Live, không dùng logic Xóc Đĩa còn sót.
+- Canvas Watch có cấu hình bật/tắt bằng `SHOW_CANVAS_WATCH = true/false` trong `v4_js_xoc_dia_live.js`.
+- Nguồn dữ liệu chính hiện tại lấy trực tiếp từ Cocos tail mới trong scene `LobbyNew`.
+- `Phiên`: đọc exact tail `LobbyNew/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbSesionId`, không fallback tail cũ.
+- `TK/Tài khoản`: đọc exact tail `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`, không fallback `MiniGameScene/Canvas/FootterRoomUi/...`.
+- `Username/Tên nhân vật`: đọc exact tail `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`, không fallback scan/cache cũ.
+- `Tổng cược Tài/Xỉu`: dùng tail `LobbyNew/MiniGameNode/TopUI/TxGameLive/Main/borderTabble/nodeFont/lbTotal`, chọn theo x chuẩn `TÀI=246`, `XỈU=785`.
+- Countdown trên Canvas Watch ưu tiên số giây thật (`progSec`) do bridge đọc, để hiển thị giống bảng C#.
+- C# panel bên phải đồng bộ một luồng duy nhất: `Tên nhân vật = snap.username`, `Tài khoản = snap.totals.A`.
+- `CwTotals` chỉ còn `T`, `X`, `A`; đã xóa các cửa Xóc Đĩa: `Sấp đôi`, `Tứ trắng`, `Tứ đỏ`, `3 trắng`, `3 đỏ`.
+- Các thay đổi JS nằm trong embedded resource, sau khi sửa phải build/restart app hoặc reload plugin để nạp JS mới.
+
 ## Cập nhật hôm nay (2026-06-02)
 - Đã fix lỗi: khi task nghiệp vụ đang chạy (`Bắt đầu cược` đã chuyển sang `Dừng đặt cược`), sửa `TxtStakeCsv` nhưng ván sau vẫn ăn chuỗi tiền cũ.
 - Kỳ vọng nghiệp vụ mới:

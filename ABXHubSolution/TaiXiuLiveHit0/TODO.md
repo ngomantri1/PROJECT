@@ -1,5 +1,14 @@
 ﻿# TODO
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã hoàn thành: bật/tắt Canvas Watch bằng cấu hình `SHOW_CANVAS_WATCH`.
+- Đã hoàn thành: đồng bộ countdown canvas theo `progSec` để khớp bảng C#.
+- Đã hoàn thành: thay tail mới cho `Phiên`, `TK`, `Username`, tổng cược `Tài/Xỉu` theo scene `LobbyNew`.
+- Đã hoàn thành: bỏ fallback tail cũ cho `Phiên`, `TK`, `Username`.
+- Đã hoàn thành: C# chỉ dùng một luồng `snap.username` và `snap.totals.A` cho `Tên nhân vật` và `Tài khoản`.
+- Đã hoàn thành: xóa các cửa Xóc Đĩa còn sót khỏi canvas/model (`Sấp đôi`, `Tứ trắng`, `Tứ đỏ`, `3 trắng`, `3 đỏ`).
+- Cần test lại sau restart app/plugin: Canvas Watch hiển thị `TK | TÀI | XỈU` đúng với hình game và bảng C#.
+
 ## Cập nhật hôm nay (2026-06-02)
 - Đã hoàn thành: fix đổi `TxtStakeCsv` khi task đang chạy để ván kế tiếp ăn chuỗi tiền mới.
 - Đã hoàn thành: giữ nguyên level hiện tại nhưng map sang giá trị của chuỗi mới cho non-`MultiChain`.
@@ -36,6 +45,10 @@
 - Quyết định lại heartbeat lease (đang tắt bằng `if(false)`).
 
 ## Task cần test lại
+- Test Canvas Watch sau khi reload JS embedded: không còn các cửa Xóc Đĩa.
+- Test `Tên nhân vật` và `Tài khoản` trên bảng C# khớp canvas.
+- Test tổng cược `TÀI/XỈU` trên canvas khớp số hiển thị trong game.
+- Test countdown canvas và C# cùng số giây.
 - Test đổi chuỗi tiền khi đang chạy:
 - đang ở mức 1 của chuỗi cũ -> sửa chuỗi mới -> ván sau lên mức 2 phải lấy mức 2 của chuỗi mới.
 - Test cả non-`MultiChain` và `MultiChain` khi sửa `TxtStakeCsv` giữa phiên.

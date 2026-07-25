@@ -122,3 +122,13 @@
 ## Build / Quality Snapshot
 - Build Debug van co the fail neu `SicboX88Live.exe` dang lock file output.
 - Warning nullability/dead code van con nhieu o `MainWindow`, `Models`, `Tasks/*`.
+
+## Resolved Bet Issue (2026-06-09)
+- Trieu chung truoc day: queue bet khong focus phinh va khong click vao cua duoc chon, du pending C# da duoc enqueue dung.
+- Nguyen nhan: `cwBet` con di qua nhanh click/scanner cu, khac voi co che da test thanh cong trong `devtools_sicbo_bet_test.js`.
+- Da xu ly: `cwBet` va `cwFocusChip` dung chung `window.abxStandaloneBetTest`; lenh dat cuoc goi `betFast(side, amount)` truc tiep.
+- Da test thanh cong: `tai`, `xiu`, `chan`, `le` voi `1000`.
+- Da xoa dead path cu va khong co fallback ve nhanh nay.
+
+## Remaining Bet Risk
+- Sau khi sua `v4_js_xoc_dia_live.js`, page/app phai reload de tranh JS da inject van la ban cu.
