@@ -1,12 +1,20 @@
 ﻿# BUGS
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã xử lý tiếp các case Canvas Watch hiển thị `Username: --`, `TK: --`, `Phiên: --`, `TÀI: --`, `XỈU: --` khi HIT đổi root scene từ `LobbyNew` sang `MiniGameScene`.
+- Username có fallback `MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser`.
+- Tài khoản có fallback `MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel`.
+- Phiên có fallback `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId`.
+- Tổng cược Tài/Xỉu có fallback `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`, giữ Tài `x=307`, Xỉu `x=805`.
+- Bet tail có fallback `MiniGameScene/...` cho cửa Tài/Xỉu, phỉnh, và nút xác nhận đặt cược; không dùng lại scan động theo tên ngắn.
+
 ## Cập nhật hôm nay (2026-07-10)
 - Đã fix bug Canvas Watch không hiển thị dù đã bỏ `root.style.display='none'`: nguyên nhân là bridge probe coi JS ready khi có hàm bridge, nhưng root `__cw_root_allin` chưa được inject/dựng.
 - Đã fix bug game chỉ mở popup/trang rời: chuyển sang cơ chế click mở Tài Xỉu từ trang chủ HIT.
 - Đã fix bug tên nhân vật trên bảng C# null trong khi Canvas Watch có username: nguyên nhân C# gate theo URL game cũ; đã cho phép cập nhật khi `_isGameUi` đúng.
-- Đã fix bug tài khoản null: tail cũ `MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel` không còn đúng; tail mới là `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`.
-- Đã fix bug phiên dùng tail cũ `TxGameLive`; tail HIT hiện tại là `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`.
-- Đã fix bug tổng cược Tài/Xỉu không hiển thị: tail hiện tại là `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng tọa độ Tài `x=313`, Xỉu `x=799`.
+- Đã fix bug tài khoản null: tail chính là `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`, fallback `MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel`.
+- Đã fix bug phiên dùng tail cũ `TxGameLive`; tail chính hiện tại là `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId`.
+- Đã fix bug tổng cược Tài/Xỉu không hiển thị: tail chính hiện tại là `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng tọa độ Tài `x=307`, Xỉu `x=805`.
 - Đã loại bỏ bug/nhầm lẫn do dùng lại code Chẵn/Lẻ: `CwTotals` và Canvas Watch không còn các field/cửa `SD`, `TT`, `T3T`, `T3D`, `TD`.
 - Đã tăng công cụ debug `Scan200Text` lên `Scan500Text` và cho scan money text để tìm tail mới khi UI HIT đổi.
 
@@ -31,7 +39,7 @@
 - `MainWindow.xaml.cs`: fix finalize pending theo `_pendingBaseSeq` khi `seq` đổi, không còn phụ thuộc riêng lock `NI`/`prog==0`.
 - `MainWindow.xaml.cs` + `Tasks/GameContext.cs` + `Tasks/MoneyManager.cs`: fix đổi chuỗi tiền live khi task đang chạy; ván kế tiếp lấy đúng mức tương ứng của chuỗi mới.
 - `MainWindow.xaml.cs`: bridge probe/reinject đã kiểm tra root `__cw_root_allin`, tránh trạng thái hàm bridge có nhưng Canvas Watch chưa hiển thị.
-- `v4_js_xoc_dia_live.js`: đã cập nhật tail HIT cho username, tài khoản, phiên, tổng cược Tài/Xỉu.
+- `v4_js_xoc_dia_live.js`: đã cập nhật tail HIT cho username, tài khoản, phiên, tổng cược Tài/Xỉu, kèm fallback `MiniGameScene/...`.
 - `v4_js_xoc_dia_live.js` + `Models.cs`: đã bỏ các field/cửa Chẵn/Lẻ khỏi totals Tài/Xỉu.
 - Guard start strategy bằng `WaitForBridgeAndGameDataAsync(...)`.
 - Bridge reinject theo lifecycle top doc + frame.
@@ -50,7 +58,7 @@
 - State round phụ thuộc heuristic (`session`, `seq`, `prog`) hơn là state machine tách biệt.
 - Tồn tại song song branch legacy/new làm tăng độ phức tạp.
 - Money runtime trước đây snapshot chuỗi tiền lúc start và `MoneyManager` giữ `_seq` cố định, nên thay đổi UI không vào được vòng task đang chạy.
-- HIT đổi node/tail theo UI mới; các tail cũ dạng `MiniGameScene/.../TxGameLive/...` hoặc `moneyLabel` có thể không còn đúng.
+- HIT đổi node/tail theo UI mới; code hiện ưu tiên `LobbyNew/.../TaiXiuMD5/...` và fallback `MiniGameScene/.../TaiXiuMD5/...` hoặc `MiniGameScene/Canvas/FootterRoomUi/...` theo log scan.
 - Một số code cũ dùng lại naming Chẵn/Lẻ (`C/L`, `Chan/Le`) trong khi nghiệp vụ HIT là Tài/Xỉu (`T/X`), dễ gây lệch model và UI.
 
 ## Workaround tạm thời
@@ -66,6 +74,6 @@
 - `MainWindow.xaml.cs`: `WebMessageReceived`, play/stop, bridge inject/probe, timers license/trial.
 - `Tasks/TaskUtil.cs`: place/judge/post-round money.
 - `v4_js_xoc_dia_live.js`: click canvas, queue cược, fallback totals/session/progress.
-- `v4_js_xoc_dia_live.js`: vùng tail HIT cho username/tài khoản/phiên/tổng T/X và root `__cw_root_allin`.
+- `v4_js_xoc_dia_live.js`: vùng tail HIT cho username/tài khoản/phiên/tổng T/X, bet tail fallback, và root `__cw_root_allin`.
 - `Models.cs`: `CwTotals` phải giữ đúng `T`, `X`, `A`; không thêm lại field Chẵn/Lẻ.
 - Config/stats I/O khi save liên tiếp nhiều tab.

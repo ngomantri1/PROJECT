@@ -1,13 +1,21 @@
 ﻿# ARCHITECTURE
 
+## Cập nhật hôm nay (2026-07-25)
+- `v4_js_xoc_dia_live.js` hiện ưu tiên tail `LobbyNew/.../TaiXiuMD5/...` và fallback tail `MiniGameScene/.../TaiXiuMD5/...` cho các nguồn dữ liệu khi HIT đổi scene root.
+- Username: chính `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`, fallback `MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser`.
+- Tài khoản: chính `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`, fallback `MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel`.
+- Phiên: chính `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId`, fallback `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId`.
+- Tổng Tài/Xỉu: chính `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`, fallback `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`; Tài `x=307`, Xỉu `x=805`.
+- Bet queue dùng tail chính `LobbyNew/...` và fallback `MiniGameScene/...` cho cửa Tài/Xỉu, phỉnh `menuMoney/btnPrices/*`, và nút xác nhận `menuMoney/btnFunctions/btnDatCuoc`. Luồng bet không dùng fallback scan động theo tên ngắn.
+
 ## Cập nhật hôm nay (2026-07-10)
 - HIT Tài Xỉu hiện đọc dữ liệu bằng Cocos scene traversal + tail matching trong `v4_js_xoc_dia_live.js`.
 - Canvas Watch được dựng trong DOM root `__cw_root_allin`; bridge probe trong `MainWindow.xaml.cs` phải coi root này là điều kiện ready khi `window.cc` đã sẵn sàng.
 - `v4_js_xoc_dia_live.js` đang là nguồn đọc trực tiếp:
-- username: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`
-- tài khoản: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`
-- phiên: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`
-- tổng Tài/Xỉu: tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, Tài `x=313`, Xỉu `x=799`
+- username chính: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`
+- tài khoản chính: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`
+- phiên chính: `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId`
+- tổng Tài/Xỉu chính: tail `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`, Tài `x=307`, Xỉu `x=805`
 - `CwTotals` trong `Models.cs` chỉ có `T`, `X`, `A`. Các field Chẵn/Lẻ cũ (`SD`, `TT`, `T3T`, `T3D`, `TD`) đã bị loại bỏ khỏi model và JS totals.
 - `Scan500Text` dùng để debug khi game đổi node/tail; kết quả log phải là căn cứ trước khi đổi tail production.
 
@@ -76,7 +84,7 @@
 - push `tick`
 - bet queue
 - `bet/bet_error/bet_perf`
-- đọc username/tài khoản/phiên/tổng cược T/X bằng tail HIT chính xác
+- đọc username/tài khoản/phiên/tổng cược T/X bằng tail HIT chính xác, có fallback `MiniGameScene/...` khi root scene đổi
 - dựng Canvas Watch và các nút debug `Scan500Money`, `Scan500Bet`, `Scan500Text`
 - `Models.cs`:
 - `CwTotals` chỉ biểu diễn `T`, `X`, `A`
@@ -108,6 +116,6 @@
 - Không dùng OCR lib.
 - Dùng Cocos scene traversal + tail matching trong JS.
 - Dùng `PointerEvent` lên canvas để click chip/side/confirm.
-- Có fallback source cho progress/seq, nhưng username/tài khoản/phiên/tổng T/X đang ưu tiên tail HIT đã xác nhận bằng log.
+- Có fallback source cho progress/seq; username/tài khoản/phiên/tổng T/X ưu tiên tail `LobbyNew/...` và fallback `MiniGameScene/...` đã xác nhận bằng log.
 - Canvas Watch hiển thị username, tài khoản, phiên, Tài, Xỉu; không hiển thị các cửa Chẵn/Lẻ.
 - Khi cần tìm tail mới, dùng `Scan500Text` vì tool này scan cả money text và tăng giới hạn từ 200 lên 500.

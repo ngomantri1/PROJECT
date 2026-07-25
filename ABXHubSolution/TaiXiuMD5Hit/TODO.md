@@ -1,13 +1,20 @@
 ﻿# TODO
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã hoàn thành: cập nhật tail chính `TaiXiuMD5` cho username, tài khoản, phiên, tổng cược Tài/Xỉu.
+- Đã hoàn thành: thêm fallback `MiniGameScene/...` cho username, tài khoản, phiên, tổng cược Tài/Xỉu.
+- Đã hoàn thành: thêm fallback `MiniGameScene/...` cho bet tail gồm cửa Tài/Xỉu, phỉnh `menuMoney/btnPrices/*`, và nút xác nhận `menuMoney/btnFunctions/btnDatCuoc`.
+- Đã hoàn thành: giữ tọa độ tổng cược Tài `x=307`, Xỉu `x=805`.
+- Đã hoàn thành: không bật lại fallback scan động theo tên ngắn trong luồng bet.
+
 ## Cập nhật hôm nay (2026-07-10)
 - Đã hoàn thành: hiển thị Canvas Watch bằng `SHOW_CANVAS_WATCH=true`.
 - Đã hoàn thành: sửa bridge readiness để reinject khi có `window.cc` nhưng chưa có root `__cw_root_allin`.
 - Đã hoàn thành: mở Tài Xỉu từ trang chủ HIT bằng click/home flow, không phụ thuộc popup rời.
-- Đã hoàn thành: đổi username/tên nhân vật sang tail duy nhất `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`.
-- Đã hoàn thành: đổi tài khoản sang tail `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`.
-- Đã hoàn thành: đổi phiên sang tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`.
-- Đã hoàn thành: đổi tổng cược Tài/Xỉu sang tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, phân biệt Tài `x=313`, Xỉu `x=799`.
+- Đã hoàn thành: đổi username/tên nhân vật sang tail chính `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`.
+- Đã hoàn thành: đổi tài khoản sang tail chính `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`.
+- Đã hoàn thành: đổi phiên sang tail chính `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId`.
+- Đã hoàn thành: đổi tổng cược Tài/Xỉu sang tail chính `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`, phân biệt Tài `x=307`, Xỉu `x=805`.
 - Đã hoàn thành: đổi `Scan200Text` thành `Scan500Text` và cho phép scan text dạng tiền.
 - Đã hoàn thành: bỏ code/model các cửa Chẵn/Lẻ (`SD`, `TT`, `T3T`, `T3D`, `TD`) khỏi project HIT Tài Xỉu.
 
@@ -59,6 +66,8 @@
 - Canvas Watch sau restart app: phải hiện khi `SHOW_CANVAS_WATCH=true`, ẩn khi `false`.
 - Canvas Watch chỉ hiển thị `TK`, `TÀI`, `XỈU`, không còn `SẤP ĐÔI`, `TỨ TRẮNG`, `TỨ ĐỎ`, `3 TRẮNG`, `3 ĐỎ`.
 - Bảng C# phải nhận đúng tên nhân vật, tài khoản, phiên, tổng cược Tài/Xỉu từ tick bridge.
+- Test fallback `MiniGameScene/...` cho username, tài khoản, phiên, tổng cược Tài/Xỉu khi root scene không còn là `LobbyNew`.
+- Test fallback `MiniGameScene/...` cho bet cửa Tài/Xỉu, phỉnh, và nút ĐẶT CƯỢC.
 - Bấm `Scan500Text` phải thấy được text dạng tiền/tổng cược và tail tương ứng trong DevTools log.
 - Task 17 (multi-side): finalize winners + account delta + pending rows.
 - Trial/license expiry theo local timezone và release lease khi đóng app.

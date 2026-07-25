@@ -1,14 +1,23 @@
 ﻿# PROJECT_CONTEXT
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã rà lại log `D:\NOTE\OneDrive\Desktop\log\devtool.log` và cập nhật tail HIT theo UI mới dạng `TaiXiuMD5`.
+- Username đọc ưu tiên `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`, fallback `MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser`.
+- Tài khoản đọc ưu tiên `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`, fallback `MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel`. Lưu ý tail chính vẫn viết `lbMoneyYser`.
+- Phiên đọc ưu tiên `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId`, fallback `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId`.
+- Tổng cược Tài/Xỉu dùng chung tail ưu tiên `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`, fallback `MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`; giữ tọa độ Tài `x=307`, Xỉu `x=805`.
+- Bet tail đã có fallback `MiniGameScene/...`: cửa Tài/Xỉu `nodeSkeleton/btnCuocTai`/`btnCuocXiu`, phỉnh `menuMoney/btnPrices/{Btn20M,btn5M,btn1M,btn500K,btn100K,btn50k,btn10k,btn1K}`, nút xác nhận `menuMoney/btnFunctions/btnDatCuoc`.
+- Luồng bet tiền đang ổn; thay đổi chỉ bổ sung fallback tail, không bật lại scan động theo tên ngắn cho bet.
+
 ## Cập nhật hôm nay (2026-07-10)
 - Đã xử lý lại bridge/canvas cho HIT Tài Xỉu theo đúng nghiệp vụ `T/X`, không còn dùng lại field Chẵn/Lẻ `C/L`.
 - Canvas Watch panel được điều khiển bằng biến JS `SHOW_CANVAS_WATCH` trong `v4_js_xoc_dia_live.js`; muốn ẩn/hiện chỉ đổi `true/false`.
 - Bridge readiness phải đợi root Canvas Watch `__cw_root_allin` tồn tại. Nếu `window.cc` đã có nhưng root chưa có thì phải reinject `_appJs`; không được coi bridge ready quá sớm.
 - Luồng mở game từ trang chủ đã dùng cơ chế click mở Tài Xỉu từ home, giống project ZoWin, thay vì chỉ mở popup/trang rời.
-- Nguồn username/tên nhân vật duy nhất: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`.
-- Nguồn tài khoản duy nhất: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`. Lưu ý tail game viết là `lbMoneyYser`, không sửa thành `lbMoneyUser`.
-- Nguồn phiên: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`.
-- Nguồn tổng cược Tài/Xỉu dùng chung tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng tọa độ `x=313` cho Tài và `x=799` cho Xỉu.
+- Nguồn username/tên nhân vật chính: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`.
+- Nguồn tài khoản chính: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`. Lưu ý tail game viết là `lbMoneyYser`, không sửa thành `lbMoneyUser`.
+- Nguồn phiên hiện tại: `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId`.
+- Nguồn tổng cược Tài/Xỉu hiện tại dùng chung tail `LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng tọa độ `x=307` cho Tài và `x=805` cho Xỉu.
 - `CwTotals` chỉ còn `T`, `X`, `A`. Tài Xỉu không có `SD`, `TT`, `T3T`, `T3D`, `TD`; không thêm lại các field/cửa của Chẵn/Lẻ.
 - `Scan500Text` thay cho `Scan200Text`, có scan cả text dạng tiền để tìm tail mới khi game đổi UI.
 
