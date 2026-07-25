@@ -1,14 +1,24 @@
 ﻿# PROJECT_CONTEXT
 
+## Cập nhật hôm nay (2026-07-25)
+- Đã bổ sung fallback tail cho các dữ liệu Canvas Watch/tick trong `v4_js_xoc_dia_live.js`, ưu tiên tail `LobbyNew/...` trước rồi fallback `MiniGameScene/...`.
+- Username thử theo thứ tự: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser` -> `MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser`.
+- Tài khoản/TK thử theo thứ tự: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser` -> `MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel`.
+- Phiên thử theo thứ tự: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId` -> `MiniGameScene/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`.
+- Tổng cược Tài/Xỉu thử tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal` -> `MiniGameScene/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, vẫn phân biệt bằng tọa độ `x=313` cho Tài và `x=799` cho Xỉu.
+- Đã rà log `D:\NOTE\OneDrive\Desktop\log\devtool.log` ngày 2026-07-25 và bổ sung fallback tail đặt cược `MiniGameScene/...` cho cửa Tài/Xỉu, phỉnh và nút `btnDatCuoc`.
+- Tail đặt cược hiện dùng dạng candidates: cửa/phỉnh/nút xác nhận ưu tiên `LobbyNew/MiniGameNode/TopUI/TxGame2/...` trước, fallback `MiniGameScene/MiniGameNode/TopUI/TxGame2/...` sau.
+- Flow cược vẫn giữ đúng nghiệp vụ ZoWin/HIT hiện tại: click cửa 1 lần -> click phỉnh theo plan -> click xác nhận 1 lần; không fallback sang `window.cwBet(...)`.
+
 ## Cập nhật hôm nay (2026-07-10)
 - Đã xử lý lại bridge/canvas cho HIT Tài Xỉu theo đúng nghiệp vụ `T/X`, không còn dùng lại field Chẵn/Lẻ `C/L`.
 - Canvas Watch panel được điều khiển bằng biến JS `SHOW_CANVAS_WATCH` trong `v4_js_xoc_dia_live.js`; muốn ẩn/hiện chỉ đổi `true/false`.
 - Bridge readiness phải đợi root Canvas Watch `__cw_root_allin` tồn tại. Nếu `window.cc` đã có nhưng root chưa có thì phải reinject `_appJs`; không được coi bridge ready quá sớm.
 - Luồng mở game từ trang chủ đã dùng cơ chế click mở Tài Xỉu từ home, giống project ZoWin, thay vì chỉ mở popup/trang rời.
-- Nguồn username/tên nhân vật duy nhất: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`.
-- Nguồn tài khoản duy nhất: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`. Lưu ý tail game viết là `lbMoneyYser`, không sửa thành `lbMoneyUser`.
-- Nguồn phiên: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`.
-- Nguồn tổng cược Tài/Xỉu dùng chung tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng tọa độ `x=313` cho Tài và `x=799` cho Xỉu.
+- Nguồn username/tên nhân vật ưu tiên: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser`.
+- Nguồn tài khoản ưu tiên: `LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser`. Lưu ý tail game viết là `lbMoneyYser`, không sửa thành `lbMoneyUser`.
+- Nguồn phiên ưu tiên: `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbSesionId`.
+- Nguồn tổng cược Tài/Xỉu ưu tiên dùng chung tail `LobbyNew/MiniGameNode/TopUI/TxGame2/Main/borderTabble/nodeFont/lbTotal`, phân biệt bằng tọa độ `x=313` cho Tài và `x=799` cho Xỉu.
 - Cơ chế đặt cược đã chỉnh giống project `TaiXiuThuongZoWin`: click cửa Tài/Xỉu đúng 1 lần, sau đó click các phỉnh theo plan, cuối cùng click nút xác nhận đặt cược đúng 1 lần.
 - Đã bỏ fallback sang engine cược cũ `window.cwBet(...)` trong queue Tài/Xỉu vì engine cũ có thể click lại cửa theo từng phỉnh, sai nghiệp vụ HIT hiện tại.
 - Tail đặt cược HIT xác nhận từ `D:\NOTE\OneDrive\Desktop\log\devtool.log`:
@@ -96,6 +106,7 @@
 - Không phá sync global fields giữa tabs (`SyncGlobalFieldsFromActive`).
 - Không làm mất level/state quản lý vốn hiện tại khi chỉ đổi chuỗi tiền lúc task đang chạy.
 - Không thay các tail HIT hiện tại nếu chưa có log `Scan500Text` xác nhận tail mới.
+- Khi thêm fallback tail, phải giữ thứ tự ưu tiên tail production hiện tại trước rồi fallback sau; không thay hẳn tail chính nếu chưa có log xác nhận.
 - Không bật lại fallback `window.cwBet(...)` cho Tài/Xỉu nếu yêu cầu nghiệp vụ vẫn là cửa chỉ click 1 lần; fallback cũ có thể click cửa lặp theo phỉnh.
 - Không thêm lại các cửa Chẵn/Lẻ (`Sấp đôi`, `Tứ trắng`, `Tứ đỏ`, `3 trắng`, `3 đỏ`) vào Canvas Watch hoặc `CwTotals` của project Tài Xỉu HIT.
 

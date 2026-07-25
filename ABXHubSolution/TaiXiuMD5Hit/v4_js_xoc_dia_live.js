@@ -808,6 +808,7 @@
 
     /* ---------------- helpers for totals by (x, tail) ---------------- */
     var TAIL_TOTAL_EXACT = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal';
+    var TAIL_TOTAL_FALLBACK = 'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal';
     var X_TAI = 307; // TÀI
     var X_XIU = 805; // XỈU
     function tailEquals(t, exact) {
@@ -859,10 +860,22 @@
     window.moneyTailList = moneyTailList;
     window.pickByXTail = pickByXTail;
     window.cwPickTai = function () {
-        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_TAI, TAIL_TOTAL_EXACT);
+        var list = moneyTailList(TAIL_TOTAL_EXACT);
+        var tail = TAIL_TOTAL_EXACT;
+        if (!list.length) {
+            list = moneyTailList(TAIL_TOTAL_FALLBACK);
+            tail = TAIL_TOTAL_FALLBACK;
+        }
+        return pickByXTail(list, X_TAI, tail);
     };
     window.cwPickXiu = function () {
-        return pickByXTail(moneyTailList(TAIL_TOTAL_EXACT), X_XIU, TAIL_TOTAL_EXACT);
+        var list = moneyTailList(TAIL_TOTAL_EXACT);
+        var tail = TAIL_TOTAL_EXACT;
+        if (!list.length) {
+            list = moneyTailList(TAIL_TOTAL_FALLBACK);
+            tail = TAIL_TOTAL_FALLBACK;
+        }
+        return pickByXTail(list, X_XIU, tail);
     };
     window.cwPickChan = window.cwPickTai;
     window.cwPickLe = window.cwPickXiu;
@@ -872,8 +885,13 @@
         S.money = buildMoneyRects(); // keep map for overlays & legacy helpers
 
         var list = moneyTailList(TAIL_TOTAL_EXACT);
-        var mT = pickByXTail(list, X_TAI, TAIL_TOTAL_EXACT); // TÀI
-        var mX = pickByXTail(list, X_XIU, TAIL_TOTAL_EXACT); // XỈU
+        var tail = TAIL_TOTAL_EXACT;
+        if (!list.length) {
+            list = moneyTailList(TAIL_TOTAL_FALLBACK);
+            tail = TAIL_TOTAL_FALLBACK;
+        }
+        var mT = pickByXTail(list, X_TAI, tail); // TÀI
+        var mX = pickByXTail(list, X_XIU, tail); // XỈU
         // Account (A) keeps old robust resolver
         if (!S.selAcc)
             autoBindAcc(S);
@@ -2769,9 +2787,15 @@
             }
 
             // 2) Ghi đè TK + Tài/Xỉu nếu lấy được qua moneyTailList()
-            var ACC_TAIL_EXACT = 'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser';
+            var ACC_TAILS = [
+                'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbMoneyYser',
+                'MiniGameScene/Canvas/FootterRoomUi/Left/buttonMoney/moneyLabel'
+            ];
 
-            var TX_TOTAL_TAIL = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal';
+            var TX_TOTAL_TAILS = [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbTotal'
+            ];
             var TX_TAI_X = 307; // TÀI
             var TX_XIU_X = 805; // XỈU
 
@@ -2779,9 +2803,15 @@
 
                 // 2.1 TK (tài khoản)
                 try {
-                    var accList = window.moneyTailList(ACC_TAIL_EXACT) || [];
-                    if (accList.length) {
-                        var acc = accList[accList.length - 1]; // thường là label dưới cùng
+                    var acc = null;
+                    for (var ai = 0; ai < ACC_TAILS.length; ai++) {
+                        var accList = window.moneyTailList(ACC_TAILS[ai]) || [];
+                        if (accList.length) {
+                            acc = accList[accList.length - 1]; // thường là label dưới cùng
+                            break;
+                        }
+                    }
+                    if (acc) {
                         var aval = (typeof acc.val === 'number')
                          ? acc.val
                          : Number(acc.val || 0) || null;
@@ -2794,7 +2824,12 @@
 
                 // 2.2 Tổng TÀI / XỈU trong Tài Xỉu Live
                 try {
-                    var txList = window.moneyTailList(TX_TOTAL_TAIL) || [];
+                    var txList = [];
+                    for (var ti = 0; ti < TX_TOTAL_TAILS.length; ti++) {
+                        txList = window.moneyTailList(TX_TOTAL_TAILS[ti]) || [];
+                        if (txList.length)
+                            break;
+                    }
                     if (txList.length) {
                         var bestTai = null,
                         bestXiu = null;
@@ -2949,14 +2984,19 @@
 
     function readSessionSafe() {
         try {
-            var TAIL = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId';
+            var TAILS = [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeFont/lbSesionId'
+            ];
             var txt = '';
 
             // 1) Thử lấy qua collectLabels() nếu đã có sẵn label
             if (typeof collectLabels === 'function') {
                 var labels = collectLabels();
                 if (labels && labels.length) {
-                    var tailLc = TAIL.toLowerCase();
+                    var tailLcs = TAILS.map(function (t) {
+                        return t.toLowerCase();
+                    });
                     for (var i = 0; i < labels.length; i++) {
                         var l = labels[i];
                         var tl = String(l.tail || l.tl || '').toLowerCase();
@@ -2964,7 +3004,7 @@
                             continue;
 
                         // ưu tiên khớp đúng tail, hoặc chứa lbSesionId
-                        if (tl === tailLc ||
+                        if (tailLcs.indexOf(tl) !== -1 ||
                             (tl.indexOf('lbsesionid') !== -1 && tl.indexOf('borderTabble'.toLowerCase()) !== -1)) {
                             txt = String(l.text || '').trim();
                             if (txt)
@@ -3023,9 +3063,13 @@
                     return '';
                 }
 
-                var node = findByTail(TAIL);
-                if (node) {
-                    txt = getNodeText(node);
+                for (var ti = 0; ti < TAILS.length; ti++) {
+                    var node = findByTail(TAILS[ti]);
+                    if (node) {
+                        txt = getNodeText(node);
+                        if (txt)
+                            break;
+                    }
                 }
             }
 
@@ -3045,8 +3089,16 @@
 
     window.readSessionSafe = readSessionSafe;
 
-    // Read username from the single approved lobby tail only.
+    // Read username from approved lobby tail, then legacy scene fallback.
     function readUsernameInfo() {
+        var USER_TAILS = [{
+                tail: 'LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser',
+                src: 'tail_lobby_lbNameUser'
+            }, {
+                tail: 'MiniGameScene/Canvas/FootterRoomUi/Left/buttonName/NameUser',
+                src: 'tail_minigame_NameUser'
+            }
+        ];
         function normalizeUser(s) {
             return String(s || '').trim().replace(/\s+/g, ' ');
         }
@@ -3084,12 +3136,17 @@
         }
 
         try {
-            var node = findByTail('LobbyNew/Canvas/MainUIParent/NewLobby/Footder/footerBar/Normal/lbNameUser');
-            var txt = normalizeUser(nodeTextSafeBridge(node));
-            return {
-                username: txt,
-                src: txt ? 'tail_lobby_lbNameUser' : 'none'
-            };
+            for (var ti = 0; ti < USER_TAILS.length; ti++) {
+                var item = USER_TAILS[ti];
+                var node = findByTail(item.tail);
+                var txt = normalizeUser(nodeTextSafeBridge(node));
+                if (txt) {
+                    return {
+                        username: txt,
+                        src: item.src
+                    };
+                }
+            }
         } catch (_) {}
 
         return {
@@ -3432,38 +3489,70 @@
     // --- Bet TÀI/XỈU bằng chip menuMoney + nút ĐẶT CƯỢC ---
 
     // Nút cửa TÀI / XỈU trên bàn chính
-    var TX_TAIL_BTN_TAI = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeSkeleton/btnCuocTai';
-    var TX_TAIL_BTN_XIU = 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeSkeleton/btnCuocXiu';
+    var TX_TAIL_BTN_TAI = [
+        'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeSkeleton/btnCuocTai',
+        'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeSkeleton/btnCuocTai'
+    ];
+    var TX_TAIL_BTN_XIU = [
+        'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeSkeleton/btnCuocXiu',
+        'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/nodeSkeleton/btnCuocXiu'
+    ];
 
     // Nút ĐẶT CƯỢC (menuMoney/btnFunctions/btnDatCuoc)
-    var TX_TAIL_BTN_DATCUOC =
-        'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc';
+    var TX_TAIL_BTN_DATCUOC = [
+        'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc',
+        'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnFunctions/btnDatCuoc'
+    ];
 
     // Chip ở hàng menuMoney/btnPrices (ở giữa màn hình, KHÔNG phải TipDealer)
     var TX_MENU_CHIP_CONFIG = [{
             amount: 20000000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/Btn20M'
+            tailEnds: [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/Btn20M',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/Btn20M'
+            ]
         }, {
             amount: 5000000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn5M'
+            tailEnds: [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn5M',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn5M'
+            ]
         }, {
             amount: 1000000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn1M'
+            tailEnds: [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn1M',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn1M'
+            ]
         }, {
             amount: 500000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn500K'
+            tailEnds: [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn500K',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn500K'
+            ]
         }, {
             amount: 100000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn100K'
+            tailEnds: [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn100K',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn100K'
+            ]
         }, {
             amount: 50000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn50k'
+            tailEnds: [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn50k',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn50k'
+            ]
         }, {
             amount: 10000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn10k'
+            tailEnds: [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn10k',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn10k'
+            ]
         }, {
             amount: 1000,
-            tailEnd: 'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn1K'
+            tailEnds: [
+                'LobbyNew/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn1K',
+                'MiniGameScene/MiniGameNode/TopUI/TaiXiuMD5/Main/borderTabble/menuMoney/btnPrices/btn1K'
+            ]
         }
     ];
     var TX_BET_DELAY = {
@@ -3559,6 +3648,17 @@
         });
         return hit;
     }
+    function txFindNodeByTailEnds(tailEnds) {
+        if (!tailEnds)
+            return null;
+        var list = Object.prototype.toString.call(tailEnds) === '[object Array]' ? tailEnds : [tailEnds];
+        for (var i = 0; i < list.length; i++) {
+            var n = txFindNodeByTailEnd(list[i]);
+            if (n)
+                return n;
+        }
+        return null;
+    }
 
     // Scan xem chip nào ở menuMoney đang tồn tại
     function txScanMenuChips() {
@@ -3566,13 +3666,13 @@
         var seen = {};
         for (var i = 0; i < TX_MENU_CHIP_CONFIG.length; i++) {
             var cfg = TX_MENU_CHIP_CONFIG[i];
-            var n = txFindNodeByTailEnd(cfg.tailEnd);
+            var n = txFindNodeByTailEnds(cfg.tailEnds || cfg.tailEnd);
             if (!n)
                 continue;
             seen[String(cfg.amount)] = 1;
             out.push({
                 amount: cfg.amount,
-                tailEnd: cfg.tailEnd,
+                tailEnd: (cfg.tailEnds && cfg.tailEnds[0]) || cfg.tailEnd,
                 node: n
             });
         }
@@ -3626,7 +3726,7 @@
 
     function txClickSide(side) {
         var isTai = (String(side || '').toUpperCase() === 'TAI');
-        var n = txFindNodeByTailEnd(isTai ? TX_TAIL_BTN_TAI : TX_TAIL_BTN_XIU);
+        var n = txFindNodeByTailEnds(isTai ? TX_TAIL_BTN_TAI : TX_TAIL_BTN_XIU);
         if (!n) {
             console.warn('[cwBetTx] Không tìm thấy nút cửa', side);
             return txSetErr('side_not_found_' + side);
@@ -3641,7 +3741,7 @@
     }
 
     async function txClickDatCuoc() {
-        var n = txFindNodeByTailEnd(TX_TAIL_BTN_DATCUOC);
+        var n = txFindNodeByTailEnds(TX_TAIL_BTN_DATCUOC);
         if (!n) {
             console.warn('[cwBetTx] Không tìm thấy nút ĐẶT CƯỢC');
             return txSetErr('datcuoc_not_found');
