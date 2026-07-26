@@ -46,7 +46,30 @@ public sealed record DisplayState(
     string? TableId,
     string? TableName,
     long? Round,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    int? Progress = null);
+
+/// <summary>
+/// Payload sent from Native Host to the local Desktop named pipe.
+/// Display is retained for compact consumers; Snapshot is the authoritative
+/// Chrome reading used by the migrated legacy WPF pipeline.
+/// </summary>
+public sealed record DesktopPipeEnvelope(
+    DisplayState Display,
+    GameSnapshot? Snapshot = null,
+    LegacyTickEnvelope? LegacyTick = null);
+
+/// <summary>
+/// Exact legacy JSON emitted by safePost in v4_js_xoc_dia_live.js. RawTick is
+/// intentionally opaque between Chrome and the legacy WPF receiver.
+/// </summary>
+public sealed record LegacyTickEnvelope(
+    string RawTick,
+    int? TabId = null,
+    int? FrameId = null,
+    string? Href = null,
+    string? FramePath = null,
+    DateTimeOffset? ObservedAtUtc = null);
 
 public sealed record ActionIntent(
     string Kind,

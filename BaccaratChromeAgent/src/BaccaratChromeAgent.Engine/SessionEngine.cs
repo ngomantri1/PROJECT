@@ -61,8 +61,9 @@ public sealed class SessionEngine
             Sequence: state.Sequence,
             TableId: state.ActiveTableId,
             TableName: state.TableName,
-            Round: state.LastRound,
-            UpdatedAtUtc: DateTimeOffset.UtcNow);
+            Round: snapshot.Round ?? state.LastRound,
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            Progress: snapshot.Progress);
 
         // Mọi logic chiến lược và ActionIntent sẽ được chuyển vào đây ở giai đoạn sau.
         return new EngineResponse(display);

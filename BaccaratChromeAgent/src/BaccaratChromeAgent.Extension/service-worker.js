@@ -6,6 +6,7 @@ const roadPacketCounts = new Map();
 const webSocketFrameCounts = new Map();
 const activeTables = new Map();
 const activeGameFrames = new Map();
+const legacyAuthorities = new Map();
 
 function legacyFrameScore(payload) {
   const href = String(payload?.diagnostics?.frameHref ?? "");
@@ -15,10 +16,13 @@ function legacyFrameScore(payload) {
 }
 
 function selectLegacyGameFrame(tabId, frameId, payload) {
+  const href = String(payload?.diagnostics?.frameHref ?? "");
+  const rawScore = Number(payload?.diagnostics?.gameScore ?? 0) || 0;
+  if (rawScore < 1200 && !/\/player\/singleBacTable\.jsp/i.test(href)) return false;
   const candidate = {
     frameId,
     score: legacyFrameScore(payload),
-    href: String(payload?.diagnostics?.frameHref ?? ""),
+    href,
     tableId: String(payload?.tableId ?? "")
   };
   const current = activeGameFrames.get(tabId);
@@ -206,6 +210,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     activeTables.delete(tabId);
     activeGameFrames.delete(tabId);
     roadPacketCounts.delete(tabId);
+    legacyAuthorities.delete(tabId);
   }
 });
 
@@ -220,6 +225,84 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     }
     return;
   }
+  if (message.type === "legacy_scout") {
+    const tabId = sender.tab?.id;
+    const frameId = sender.frameId ?? 0;
+    const scout = message.payload?.scout;
+    const score = Number(scout?.score ?? 0) || 0;
+    const contextId = String(scout?.contextId ?? "");
+    if (tabId === undefined || !contextId || score < 1200) return;
+
+    const href = String(scout?.href ?? "");
+    const preferredScore = score + (/\/player\/singleBacTable\.jsp/i.test(href) ? 1200 : 0);
+    const current = legacyAuthorities.get(tabId);
+    const sameContext = current?.frameId === frameId && current?.contextId === contextId;
+    if (sameContext) return;
+    // Keep one stable authority. webMain can proxy the game and report a high
+    // score, but the original data owner is singleBacTable.
+    if (current && preferredScore <= current.preferredScore + 250) return;
+
+    const authority = { frameId, contextId, score, preferredScore, token: crypto.randomUUID() };
+    legacyAuthorities.set(tabId, authority);
+    sendDiagnostic(tabId, "legacy-authority-selected", {
+      frameId,
+      contextId,
+      score,
+      preferredScore,
+      href
+    });
+    chrome.tabs.sendMessage(tabId, {
+      type: "start_legacy_authority",
+      payload: { contextId: authority.contextId, token: authority.token }
+    }, { frameId }).catch((error) => {
+      sendDiagnostic(tabId, "legacy-authority-delivery-failed", { frameId, error: String(error?.message ?? error) });
+    });
+    return;
+  }
+  if (message.type === "legacy_tick") {
+    const rawTick = String(message.payload?.rawTick ?? "");
+    let tick;
+    try { tick = JSON.parse(rawTick); } catch (_) { return; }
+    if (tick?.abx !== "tick") return;
+
+    const nativePort = connectNative();
+    const tabId = sender.tab?.id;
+    const frameId = sender.frameId ?? 0;
+    const selectionPayload = {
+      tableId: String(tick.seqTableId ?? tick.tableId ?? ""),
+      tableName: String(tick.seqTableName ?? tick.tableName ?? ""),
+      sequence: String(tick.seq ?? ""),
+      diagnostics: {
+        frameHref: String(message.payload?.href ?? ""),
+        isGameFrame: true,
+        gameScore: Number(tick.contextScore ?? 0) || 0
+      }
+    };
+
+    if (tabId !== undefined && !selectLegacyGameFrame(tabId, frameId, selectionPayload)) return;
+    if (tabId !== undefined && selectionPayload.tableId && !activeTables.has(tabId)) {
+      activeTables.set(tabId, selectionPayload.tableId);
+      sendDiagnostic(tabId, "active-table-selected", { tableId: selectionPayload.tableId });
+    }
+
+    const sessionId = `${tabId ?? "unknown"}`;
+    if (tabId !== undefined) sessions.set(sessionId, { tabId, frameId });
+    if (!nativePort) return;
+    nativePort.postMessage({
+      type: "legacy_tick",
+      sessionId,
+      payload: {
+        rawTick,
+        tabId: tabId ?? null,
+        frameId,
+        href: String(message.payload?.href ?? ""),
+        framePath: String(message.payload?.framePath ?? ""),
+        observedAtUtc: String(message.payload?.observedAtUtc ?? new Date().toISOString())
+      }
+    });
+    return;
+  }
+
   if (message.type !== "game_snapshot" && message.type !== "ping" && message.type !== "stop") return;
 
   const nativePort = connectNative();

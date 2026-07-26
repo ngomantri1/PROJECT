@@ -26,7 +26,9 @@
 
   function readLegacySnapshot() {
     const score = gameScore();
-    if (score < 1200 && !/\/player\/(?:webMain|singleBacTable|gamehall)\.jsp/i.test(location.pathname)) return;
+    // Do not publish the game-hall preview. It contains stale tables while the
+    // real singleBacTable frame is still loading.
+    if (score < 1200 && !/\/player\/singleBacTable\.jsp/i.test(location.pathname)) return;
 
     try {
       if (typeof window.__cw_startPush === "function") window.__cw_startPush(360);

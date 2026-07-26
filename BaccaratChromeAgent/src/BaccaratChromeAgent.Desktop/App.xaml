@@ -1,0 +1,18 @@
+﻿<Application
+    x:Class="BaccaratSexyCasino2.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!--  Dùng pack URI: pack://application:,,,/Assembly;component/<path>  -->
+            <BitmapImage x:Key="ImgPLAYER" UriSource="pack://application:,,,/BaccaratChromeAgent.Desktop;component/Assets/side/PLAYER.png" />
+            <BitmapImage x:Key="ImgBANKER" UriSource="pack://application:,,,/BaccaratChromeAgent.Desktop;component/Assets/side/BANKER.png" />
+            <BitmapImage x:Key="ImgTIE" UriSource="pack://application:,,,/BaccaratChromeAgent.Desktop;component/Assets/side/TIE.png" />
+            <BitmapImage x:Key="ImgTHANG" UriSource="pack://application:,,,/BaccaratChromeAgent.Desktop;component/Assets/kq/THANG.png" />
+            <BitmapImage x:Key="ImgTHUA" UriSource="pack://application:,,,/BaccaratChromeAgent.Desktop;component/Assets/kq/THUA.png" />
+            <BitmapImage x:Key="ImgHOA" UriSource="pack://application:,,,/BaccaratChromeAgent.Desktop;component/Assets/kq/HOA.png" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
+
