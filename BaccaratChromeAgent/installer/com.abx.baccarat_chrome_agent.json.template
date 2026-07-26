@@ -1,0 +1,7 @@
+{
+  "name": "com.abx.baccarat_chrome_agent",
+  "description": "Baccarat Chrome Agent Native Host",
+  "path": "C:\\Program Files\\BaccaratChromeAgent\\BaccaratChromeAgent.NativeHost.exe",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://REPLACE_WITH_PACKED_EXTENSION_ID/"]
+}
