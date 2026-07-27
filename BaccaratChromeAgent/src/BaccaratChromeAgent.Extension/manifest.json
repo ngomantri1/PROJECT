@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4aLqhRAUvCX9zJiR1LmSWZdKGFC9MGPrTrO4EHTG1qPBj7Wymsha7EkQut2CAHQdGEv71hsBbcqBOeFSVw49HrCTjekqpD5wU8bEP6MmutQVVUMImt9ysIqjwrN2gfgTbZ+VyG8hAH2XnPuriHunz0ZAHdfm62FX355rZDWbOxIxLyadJm2jEUOLs9wrc2Hkzb1o6dHLuLLGg6lxmxOyrOcKJETraG1Y7H1Si0cIzx6pSRIZBcD0xzso452ip/BYc9RnnoftFiBihCJVzF7oG6qBfn697lWT3sXpm4o/bilptqH8Gm32mTbA8NCv49KGAFtYGb8W1AHq4mIOqceT9QIDAQAB",
+  "name": "Baccarat Chrome Agent",
+  "version": "0.1.0",
+  "description": "Bridge read-only giữa Chrome và BaccaratChromeAgent Engine.",
+  "permissions": ["nativeMessaging", "storage", "debugger"],
+  "host_permissions": ["https://*/*"],
+  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://*/*"],
+      "js": ["debugger-bootstrap.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://*/*"],
+      "js": ["webview-compat.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://*/*"],
+      "js": ["legacy-v4_js_xoc_dia_live.js", "legacy-push-start.js"],
+      "world": "MAIN",
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://*/*"],
+      "js": ["content-bridge.js", "canvas-overlay.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

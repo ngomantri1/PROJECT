@@ -344,6 +344,12 @@ namespace BaccaratSexyCasino2
         // Chrome is the runtime browser. The Native Host pipe carries both
         // original legacy ticks and user-authorized bet intents.
         private ChromeGameBridge? _chromeGameBridge;
+        private CancellationTokenSource? _chromeHandshakeCts;
+        private TaskCompletionSource<bool>? _chromeGameDataHandshake;
+        private bool _chromeLaunchRequested;
+        // The embedded WebView2 code remains only as a migration fallback.
+        // Production runtime uses the isolated Chrome profile and local extension.
+        private bool IsChromeLocalExtensionMode => true;
         private bool _didStartupNav = false;
         private bool _webHooked = false;
         private CancellationTokenSource? _navCts, _userCts, _passCts, _stakeCts, _sideRateCts;
@@ -2069,7 +2075,15 @@ try{
             _chromeGameBridge.ConnectionChanged += connected =>
             {
                 if (connected)
+                {
                     Log("[CHROME-BRIDGE] Native Host pipe is ready.");
+                    if (_chromeLaunchRequested)
+                        SetChromeRuntimeState("Native Host đã kết nối. Đang chờ dữ liệu game từ extension...", Brushes.DarkOrange);
+                }
+                else if (_chromeLaunchRequested)
+                {
+                    SetChromeRuntimeState("Mất kết nối Native Host. Đang chờ extension kết nối lại...", Brushes.DarkOrange);
+                }
             };
             _chromeGameBridge.EnvelopeReceived += OnChromeBridgeEnvelope;
             _chromeGameBridge.Start();
@@ -2079,6 +2093,7 @@ try{
         {
             if (envelope.LegacyTick is { RawTick.Length: > 0 } legacyTick)
             {
+                NotifyChromeGameDataReceived();
                 _ = Dispatcher.BeginInvoke(new Action(async () =>
                 {
                     try
@@ -2101,6 +2116,7 @@ try{
                 return;
             }
 
+            NotifyChromeGameDataReceived();
             // Compatibility fallback for a pre-2B extension only. The normal
             // Chrome bridge path above always sends the original raw tick.
             var tick = LegacySnapshotAdapter.ToLegacyTick(snapshot, envelope.Display);
@@ -2115,6 +2131,117 @@ try{
                     Log("[CHROME-BRIDGE][APPLY] " + ex);
                 }
             }));
+        }
+
+        private void NotifyChromeGameDataReceived()
+        {
+            if (!_chromeLaunchRequested)
+                return;
+
+            _chromeGameDataHandshake?.TrySetResult(true);
+            SetChromeRuntimeState("Đã kết nối và nhận dữ liệu game.", Brushes.ForestGreen);
+        }
+
+        private void SetChromeRuntimeState(string message, Brush color)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() => SetChromeRuntimeState(message, color)));
+                return;
+            }
+
+            try
+            {
+                if (TxtChromeRuntimeState != null)
+                {
+                    TxtChromeRuntimeState.Text = message;
+                    TxtChromeRuntimeState.Foreground = color;
+                }
+            }
+            catch { /* The window may be closing. */ }
+        }
+
+        private async Task<bool> OpenChromeLocalExtensionAsync(bool checkLicense)
+        {
+            await SaveConfigAsync();
+            if (checkLicense && !await EnsureLicenseAsync())
+                return false;
+
+            var runtime = ExtensionRuntimeVerifier.Verify();
+            if (!runtime.IsValid || runtime.Runtime is null)
+            {
+                var message = runtime.ErrorCode switch
+                {
+                    "runtime-not-found" => "Runtime extension bị thiếu. Hãy cài lại Tool.",
+                    "runtime-hash-mismatch" or "runtime-file-hash-mismatch" => "Runtime extension sai checksum. Hãy cài lại Tool.",
+                    _ => "Runtime extension không hợp lệ: " + runtime.Message
+                };
+                SetChromeRuntimeState(message, Brushes.Firebrick);
+                Log("[CHROME-LAUNCH][" + runtime.ErrorCode + "] " + runtime.Message);
+                return false;
+            }
+
+            var cleanupResult = ExtensionRuntimeMaintenance.CleanupObsoleteVersions(runtime.Runtime);
+            Log("[EXTENSION-RUNTIME] cleanup=" + cleanupResult);
+
+            // Arm the handshake before starting Chrome: Native Messaging can connect
+            // immediately on a fast machine, and that first tick must not be missed.
+            _chromeLaunchRequested = true;
+            _chromeHandshakeCts?.Cancel();
+            _chromeHandshakeCts?.Dispose();
+            _chromeHandshakeCts = new CancellationTokenSource();
+            _chromeGameDataHandshake = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var launch = ChromeLocalExtensionLauncher.Launch(T(TxtUrl), runtime.Runtime);
+            if (!launch.Started)
+            {
+                _chromeLaunchRequested = false;
+                _chromeHandshakeCts.Cancel();
+                var message = launch.ErrorCode == "tool-browser-missing"
+                    ? "Trình duyệt riêng của Tool đang thiếu. Hãy cài lại Setup.exe đầy đủ browser runtime."
+                    : launch.ErrorCode == "chrome-not-found"
+                        ? "Không tìm thấy Google Chrome trên máy này."
+                    : launch.ErrorCode.StartsWith("chrome-policy-", StringComparison.Ordinal)
+                        ? "Chrome policy đang chặn extension cục bộ. " + launch.Message
+                    : launch.Message;
+                SetChromeRuntimeState(message, Brushes.Firebrick);
+                Log("[CHROME-LAUNCH][" + launch.ErrorCode + "] " + launch.Message);
+                return false;
+            }
+
+            Log("[CHROME-LAUNCH] Chrome opened: " + launch.ChromePath + " | extension=" + runtime.Runtime.ExtensionId);
+            if (_chromeGameDataHandshake.Task.IsCompleted)
+            {
+                SetChromeRuntimeState("Đã kết nối và nhận dữ liệu game.", Brushes.ForestGreen);
+            }
+            else
+            {
+                SetChromeRuntimeState("Chrome đã mở với profile riêng. Đang chờ extension handshake...", Brushes.DarkOrange);
+                _ = WatchChromeHandshakeAsync(_chromeHandshakeCts.Token, _chromeGameDataHandshake.Task);
+            }
+            return true;
+        }
+
+        private async Task WatchChromeHandshakeAsync(CancellationToken cancellationToken, Task dataHandshake)
+        {
+            try
+            {
+                var completed = await Task.WhenAny(dataHandshake, Task.Delay(TimeSpan.FromSeconds(20), cancellationToken));
+                if (completed == dataHandshake || cancellationToken.IsCancellationRequested)
+                    return;
+
+                if (_chromeGameBridge?.IsConnected == true)
+                {
+                    SetChromeRuntimeState("Chrome đã mở và Native Host đã kết nối, nhưng extension chưa gửi dữ liệu game.", Brushes.DarkOrange);
+                    Log("[CHROME-LAUNCH] Handshake timeout: Native Host connected but no game data.");
+                }
+                else
+                {
+                    SetChromeRuntimeState("Chrome đã mở nhưng Native Host chưa đăng ký hoặc extension chưa handshake.", Brushes.Firebrick);
+                    Log("[CHROME-LAUNCH] Handshake timeout: Native Host pipe is not connected.");
+                }
+            }
+            catch (OperationCanceledException) { }
         }
 
 
@@ -4268,6 +4395,8 @@ try{
 
         private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            try { _chromeHandshakeCts?.Cancel(); } catch { }
+            try { _chromeHandshakeCts?.Dispose(); } catch { }
             try { _chromeGameBridge?.Dispose(); } catch { }
             try { await SaveConfigAsync(); } catch { }
             try { await DisableCdpNetworkTapAsync(); } catch { }
@@ -4279,8 +4408,7 @@ try{
 
         private async void OpenUrl_Click(object sender, RoutedEventArgs e)
         {
-            await SaveConfigAsync();
-            await NavigateIfNeededAsync(T(TxtUrl).Trim());
+            await OpenChromeLocalExtensionAsync(checkLicense: true);
         }
         private void Exit_Click(object sender, RoutedEventArgs e) => Close();
         private void StartLoop_Click(object sender, RoutedEventArgs e)
@@ -14966,6 +15094,14 @@ try{
         {
             try
             {
+                if (IsChromeLocalExtensionMode)
+                {
+                    _cfg.UseTrial = false;
+                    if (ChkTrial != null) ChkTrial.IsChecked = false;
+                    await OpenChromeLocalExtensionAsync(checkLicense: true);
+                    return;
+                }
+
                 _cfg.UseTrial = false;
                 if (ChkTrial != null) ChkTrial.IsChecked = false;
                 await SaveConfigAsync();
@@ -17859,10 +17995,20 @@ try{
                         return;
                 }
 
-                var useChromeNativeBetBridge = _chromeGameBridge?.IsConnected == true &&
-                    !string.IsNullOrWhiteSpace(CloneAuthoritativeRawSnap()?.seq);
-                if (useChromeNativeBetBridge)
+                if (IsChromeLocalExtensionMode)
                 {
+                    // Chrome is the only game runtime in the new architecture.  Never
+                    // fall back to the dormant WebView2 path here: that path opens a
+                    // new browser through VaoXocDia_Click when __cw_bet is unavailable.
+                    if (_chromeGameBridge?.IsConnected != true)
+                    {
+                        Log("[PlayStart] Chrome Native Host is not connected; do not open the legacy WebView2/browser fallback.");
+                        SetChromeRuntimeState("Chrome chưa kết nối Native Host. Hãy chờ dữ liệu game rồi thử lại.", Brushes.DarkOrange);
+                        MessageBox.Show("Chrome của Tool chưa kết nối Native Host. Hãy chờ trạng thái dữ liệu game rồi bấm lại.",
+                            "Baccarat Chrome Agent", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+
                     Log("[PlayStart] Chrome Native Host is ready; skip dormant WebView2 bridge checks.");
                 }
                 else

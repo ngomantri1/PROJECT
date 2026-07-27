@@ -1,13 +1,12 @@
-; Build with: ISCC /DExtensionId=<stable Chrome extension ID> /DExtensionUrl=<unlisted Web Store URL> BaccaratChromeAgent.iss
+; Build with installer\build-installer.ps1. ExtensionId comes from manifest.key.
 #ifndef ExtensionId
-  #error ExtensionId is required. Use the permanent Chrome Web Store extension ID.
+  #error ExtensionId is required.
 #endif
-#ifndef ExtensionUrl
-  #define ExtensionUrl ""
+#ifndef AppVersion
+  #define AppVersion "0.1.0"
 #endif
 
 #define AppName "Baccarat Chrome Agent"
-#define AppVersion "0.1.0"
 #define HostName "com.abx.baccarat_chrome_agent"
 
 [Setup]
@@ -27,6 +26,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 [Files]
 Source: "..\artifacts\publish\desktop\*"; DestDir: "{app}\desktop"; Flags: recursesubdirs ignoreversion
 Source: "..\artifacts\publish\nativehost\*"; DestDir: "{app}\nativehost"; Flags: recursesubdirs ignoreversion
+Source: "..\artifacts\publish\browser\*"; DestDir: "{app}\browser"; Flags: recursesubdirs ignoreversion
+Source: "..\artifacts\publish\extension\*"; DestDir: "{app}\extension\v{#AppVersion}"; Flags: recursesubdirs ignoreversion
+Source: "..\artifacts\publish\extension\extension-runtime.json"; DestDir: "{app}\extension"; Flags: ignoreversion
 
 [Registry]
 Root: HKCU; Subkey: "Software\Google\Chrome\NativeMessagingHosts\{#HostName}"; ValueType: string; ValueName: ""; ValueData: "{app}\nativehost\{#HostName}.json"; Flags: uninsdeletekey
@@ -36,18 +38,16 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\desktop\BaccaratChromeAgent.
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\desktop\BaccaratChromeAgent.Desktop.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\desktop\BaccaratChromeAgent.Desktop.exe"; Description: "Mở {#AppName}"; Flags: nowait postinstall skipifsilent
-Filename: "{#ExtensionUrl}"; Description: "Cài Chrome extension"; Flags: postinstall shellexec skipifsilent; Check: HasExtensionUrl
+Filename: "{app}\desktop\BaccaratChromeAgent.Desktop.exe"; Description: "Open {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [Tasks]
-Name: "desktopicon"; Description: "Tạo biểu tượng ngoài Desktop"; Flags: unchecked
+Name: "desktopicon"; Description: "Create a desktop icon"; Flags: unchecked
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\extension"
+Type: filesandordirs; Name: "{app}\browser"
 
 [Code]
-function HasExtensionUrl: Boolean;
-begin
-  Result := '{#ExtensionUrl}' <> '';
-end;
-
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ManifestPath, NativePath, Contents: String;

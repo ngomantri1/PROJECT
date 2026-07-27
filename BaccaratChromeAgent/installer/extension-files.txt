@@ -1,0 +1,10 @@
+# Runtime files allowed in the local Chrome extension payload.
+# Paths are relative to src\BaccaratChromeAgent.Extension.
+manifest.json
+service-worker.js
+debugger-bootstrap.js
+webview-compat.js
+legacy-v4_js_xoc_dia_live.js
+legacy-push-start.js
+content-bridge.js
+canvas-overlay.js

@@ -5,3 +5,6 @@ artifacts/
 *.pem
 *.pfx
 distribution.settings.json
+!installer/extension-files.txt
+!installer/extension-runtime.template.json
+!src/BaccaratChromeAgent.Extension/manifest.json
