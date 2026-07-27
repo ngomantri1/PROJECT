@@ -39,6 +39,21 @@ function connectNative() {
   try {
     port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
     port.onMessage.addListener((message) => {
+      if (message?.type === "bet_command") {
+        const target = sessions.get(message.sessionId);
+        if (!target) return;
+        chrome.tabs.sendMessage(target.tabId, {
+          type: "execute_legacy_bet",
+          payload: message.payload ?? {}
+        }, { frameId: target.frameId }).catch((error) => {
+          sendDiagnostic(target.tabId, "legacy-bet-delivery-failed", {
+            requestId: String(message?.payload?.requestId ?? ""),
+            frameId: target.frameId,
+            error: String(error?.message ?? error)
+          });
+        });
+        return;
+      }
       const target = sessions.get(message.sessionId);
       if (target) {
         chrome.tabs.sendMessage(target.tabId, { type: "engine_response", payload: message.payload }, { frameId: target.frameId }).catch(() => {});
@@ -299,6 +314,17 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         framePath: String(message.payload?.framePath ?? ""),
         observedAtUtc: String(message.payload?.observedAtUtc ?? new Date().toISOString())
       }
+    });
+    return;
+  }
+
+  if (message.type === "legacy_bet_result") {
+    const tabId = sender.tab?.id;
+    if (tabId === undefined) return;
+    connectNative()?.postMessage({
+      type: "bet_result",
+      sessionId: String(tabId),
+      payload: message.payload ?? {}
     });
     return;
   }

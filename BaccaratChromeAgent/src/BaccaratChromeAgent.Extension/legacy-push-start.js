@@ -59,6 +59,41 @@
     }
   });
 
+  window.addEventListener("message", (event) => {
+    if (event.source !== window || event.data?.source !== "bca-content-bridge" ||
+        event.data?.type !== "execute_legacy_bet") return;
+
+    const payload = event.data.payload ?? {};
+    const requestId = String(payload.requestId ?? "");
+    const side = String(payload.side ?? "");
+    const amount = Number(payload.amount ?? 0);
+    const roundId = Number(payload.roundId ?? 0);
+
+    (async () => {
+      let result;
+      try {
+        if (typeof window.__cw_bet_enqueue !== "function") {
+          result = "err:legacy-bet-enqueue-missing";
+        } else {
+          // This is the original legacy implementation, running in the
+          // authority frame selected from its own frame scouts.
+          result = String(await window.__cw_bet_enqueue({
+            tabId: "chrome-native-host",
+            roundId,
+            side,
+            amount
+          }));
+        }
+      } catch (error) {
+        result = `err:${String(error?.message ?? error)}`;
+      }
+      window.postMessage({
+        source: "bca-legacy-bet-result",
+        payload: { requestId, side, amount, roundId, result, observedAtUtc: new Date().toISOString() }
+      }, "*");
+    })();
+  });
+
   // The original script already starts its own scout loop. This callback is
   // deliberately not a direct __cw_startPush call: authority must be granted
   // first, exactly as it was by the old WebView2 host.

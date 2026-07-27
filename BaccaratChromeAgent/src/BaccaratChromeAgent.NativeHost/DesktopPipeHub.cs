@@ -15,6 +15,8 @@ internal sealed class DesktopPipeHub : IDisposable
     private NamedPipeServerStream? _client;
     private DesktopPipeEnvelope? _lastEnvelope;
 
+    internal event Func<DesktopPipeCommand, Task>? CommandReceived;
+
     public DesktopPipeHub() => _ = AcceptLoopAsync(_shutdown.Token);
 
     public async Task PublishAsync(DisplayState display, GameSnapshot? snapshot = null, LegacyTickEnvelope? legacyTick = null)
@@ -37,8 +39,21 @@ internal sealed class DesktopPipeHub : IDisposable
                 await pipe.WaitForConnectionAsync(cancellationToken);
                 lock (_gate) _client = pipe;
                 if (_lastEnvelope is not null) await WriteAsync(pipe, JsonSerializer.Serialize(_lastEnvelope), cancellationToken);
-                var buffer = new byte[1];
-                while (pipe.IsConnected && await pipe.ReadAsync(buffer, cancellationToken) > 0) { }
+                while (pipe.IsConnected && await ReadAsync(pipe, cancellationToken) is { } raw)
+                {
+                    DesktopPipeCommand? command = null;
+                    try { command = JsonSerializer.Deserialize<DesktopPipeCommand>(raw); }
+                    catch { }
+                    if (command is null || string.IsNullOrWhiteSpace(command.Type))
+                        continue;
+
+                    var handlers = CommandReceived;
+                    if (handlers is not null)
+                    {
+                        foreach (Func<DesktopPipeCommand, Task> handler in handlers.GetInvocationList())
+                            await handler(command);
+                    }
+                }
             }
             catch (OperationCanceledException) { break; }
             catch { }

@@ -117,6 +117,14 @@ chrome.runtime.onMessage.addListener((message) => {
     }, "*");
     return;
   }
+  if (message.type === "execute_legacy_bet") {
+    window.postMessage({
+      source: "bca-content-bridge",
+      type: "execute_legacy_bet",
+      payload: message.payload ?? {}
+    }, "*");
+    return;
+  }
   if (message.type !== "engine_response") return;
   window.dispatchEvent(new CustomEvent("bca-engine-state", { detail: message.payload.display ?? {} }));
 });
@@ -137,5 +145,13 @@ window.addEventListener("message", (event) => {
       href: location.href,
       observedAtUtc: new Date().toISOString()
     }
+  }).catch(() => {});
+});
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window || event.data?.source !== "bca-legacy-bet-result") return;
+  chrome.runtime.sendMessage({
+    type: "legacy_bet_result",
+    payload: event.data.payload ?? {}
   }).catch(() => {});
 });

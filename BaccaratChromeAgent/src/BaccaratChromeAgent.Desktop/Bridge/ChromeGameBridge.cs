@@ -8,8 +8,8 @@ using BaccaratChromeAgent.Protocol;
 namespace BaccaratSexyCasino2;
 
 /// <summary>
-/// Read-only client for the Native Host Desktop pipe. It never sends a bet
-/// command; Stage 2A only relays Chrome snapshots into the legacy WPF logic.
+/// Duplex client for the Native Host Desktop pipe. Chrome remains the only
+/// browser executor; this class only carries user-authorized bet intents.
 /// </summary>
 internal sealed class ChromeGameBridge : IDisposable
 {
@@ -19,7 +19,10 @@ internal sealed class ChromeGameBridge : IDisposable
         PropertyNameCaseInsensitive = true
     };
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly object _gate = new();
     private readonly Action<string> _log;
+    private NamedPipeClientStream? _pipe;
 
     internal event Action<DesktopPipeEnvelope>? EnvelopeReceived;
     internal event Action<bool>? ConnectionChanged;
@@ -27,6 +30,37 @@ internal sealed class ChromeGameBridge : IDisposable
     internal ChromeGameBridge(Action<string> log) => _log = log;
 
     internal void Start() => _ = ListenAsync(_shutdown.Token);
+
+    internal bool IsConnected
+    {
+        get { lock (_gate) return _pipe?.IsConnected == true; }
+    }
+
+    internal async Task<string> SendBetAsync(string side, long amount, long roundId, CancellationToken cancellationToken)
+    {
+        NamedPipeClientStream? pipe;
+        lock (_gate) pipe = _pipe;
+        if (pipe is null || !pipe.IsConnected)
+            return "err:chrome-bridge-disconnected";
+
+        var command = new DesktopPipeCommand(
+            "place_bet",
+            Guid.NewGuid().ToString("N"),
+            side,
+            amount,
+            roundId);
+        try
+        {
+            await WriteAsync(pipe, JsonSerializer.Serialize(command), cancellationToken);
+            _log($"[CHROME-BRIDGE][BET][TX] request={command.RequestId} side={side} amount={amount:N0} round={roundId}");
+            return "queued";
+        }
+        catch (Exception ex)
+        {
+            _log("[CHROME-BRIDGE][BET][TX-ERR] " + ex.Message);
+            return "err:" + ex.Message;
+        }
+    }
 
     private async Task ListenAsync(CancellationToken cancellationToken)
     {
@@ -36,6 +70,7 @@ internal sealed class ChromeGameBridge : IDisposable
             {
                 using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
                 await pipe.ConnectAsync(1500, cancellationToken);
+                lock (_gate) _pipe = pipe;
                 ConnectionChanged?.Invoke(true);
                 _log("[CHROME-BRIDGE] Connected to Native Host pipe.");
 
@@ -55,6 +90,7 @@ internal sealed class ChromeGameBridge : IDisposable
                 ConnectionChanged?.Invoke(false);
             }
 
+            finally { lock (_gate) _pipe = null; }
             try { await Task.Delay(1500, cancellationToken); }
             catch (OperationCanceledException) { break; }
         }
@@ -72,6 +108,21 @@ internal sealed class ChromeGameBridge : IDisposable
         return Encoding.UTF8.GetString(body);
     }
 
+    private async Task WriteAsync(Stream stream, string message, CancellationToken cancellationToken)
+    {
+        await _writeLock.WaitAsync(cancellationToken);
+        try
+        {
+            var body = Encoding.UTF8.GetBytes(message);
+            var header = new byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian(header, body.Length);
+            await stream.WriteAsync(header, cancellationToken);
+            await stream.WriteAsync(body, cancellationToken);
+            await stream.FlushAsync(cancellationToken);
+        }
+        finally { _writeLock.Release(); }
+    }
+
     private static async Task<bool> ReadExactlyAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)
     {
         var offset = 0;
@@ -87,6 +138,7 @@ internal sealed class ChromeGameBridge : IDisposable
     public void Dispose()
     {
         _shutdown.Cancel();
+        _writeLock.Dispose();
         _shutdown.Dispose();
     }
 }

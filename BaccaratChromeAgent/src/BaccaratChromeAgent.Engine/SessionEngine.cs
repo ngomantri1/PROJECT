@@ -22,6 +22,7 @@ public sealed class SessionEngine
         var snapshotTableId = snapshot.TableId?.Trim();
         if (!string.IsNullOrWhiteSpace(snapshotTableId) &&
             (string.IsNullOrWhiteSpace(state.ActiveTableId) ||
+             IsProvisionalTableId(state.ActiveTableId) ||
              string.Equals(snapshotTableId, state.ActiveTableId, StringComparison.Ordinal)))
         {
             state.ActiveTableId = snapshotTableId;
@@ -71,6 +72,9 @@ public sealed class SessionEngine
 
     public EngineResponse Stop(string sessionId) => new(
         new DisplayState("connected", "Đã dừng", string.Empty, null, null, null, DateTimeOffset.UtcNow));
+
+    private static bool IsProvisionalTableId(string? tableId) =>
+        string.IsNullOrWhiteSpace(tableId) || string.Equals(tableId.Trim(), "0", StringComparison.Ordinal);
 
     private static void ApplyRoadInfo(SessionState state, RoadInfoSnapshot road)
     {

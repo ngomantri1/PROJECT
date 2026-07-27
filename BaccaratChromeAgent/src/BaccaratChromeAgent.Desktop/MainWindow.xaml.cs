@@ -341,7 +341,8 @@ namespace BaccaratSexyCasino2
         private DateTime _autoLoginLast = DateTime.MinValue;
 
         private bool _uiReady = false;
-        // Stage 2A: read-only Native Host client. No betting command is sent by this object.
+        // Chrome is the runtime browser. The Native Host pipe carries both
+        // original legacy ticks and user-authorized bet intents.
         private ChromeGameBridge? _chromeGameBridge;
         private bool _didStartupNav = false;
         private bool _webHooked = false;
@@ -394,7 +395,7 @@ namespace BaccaratSexyCasino2
         // Stage 2A: Chrome extension is the sole sequence authority. The old
         // DOM-bootstrap/CDP-append route cannot run because WebView2/CDP is off.
         // Keep the legacy synchronizer, but feed it the authoritative extension snapshot.
-        private static readonly bool UseDomBootstrapCdpAppendSeq = false;
+        private static readonly bool UseDomBootstrapCdpAppendSeq = true;
         // Policy: bootstrap/rebase from the DOM board, then append new rounds from CDP/WS only.
         // DOM ahead after bootstrap is diagnostic only; it must not settle sequence/history.
         private static readonly bool EnableDomRecoveryAfterMissingNetworkWinner = false;
@@ -4893,7 +4894,22 @@ try{
                         snap.statusSource = statusSourceForSnap;
                         snap.statusTail = statusTailForSnap;
                         MergeNetworkBetPoolIntoSnapshot(snap, source);
-                        if (UseDomBootstrapCdpAppendSeq)
+                        if (string.Equals(source, "chrome-native-host", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Chrome already forwards the original safePost tick
+                            // from v4_js_xoc_dia_live.js. There is no WebView2 CDP
+                            // stream in this runtime, so do not route this tick
+                            // through the old DOM/CDP accumulator.
+                            var exactSeq = FilterResultDisplaySeqWindow(snap.seq ?? snap.rawSeq ?? "");
+                            var exactRawSeq = FilterResultDisplaySeqWindow(snap.rawSeq ?? snap.seq ?? "");
+                            snap.seq = exactSeq;
+                            snap.rawSeq = exactRawSeq;
+                            snap.seqVersion = boardSeqVersion > 0 ? boardSeqVersion : exactSeq.Length;
+                            snap.seqEvent = string.IsNullOrWhiteSpace(boardSeqEvent) ? "chrome-legacy-raw" : boardSeqEvent;
+                            snap.seqSource = "chrome-legacy-raw";
+                            LogSeqRxIfChanged(snap.seq, snap.rawSeq, snap.seqVersion ?? 0, snap.seqEvent, snap.seqMode, snap.seqAppend, snap.prog ?? 0, statusRawForLogic, source);
+                        }
+                        else if (UseDomBootstrapCdpAppendSeq)
                         {
                             lock (_roundStateLock)
                             {
@@ -5207,9 +5223,15 @@ try{
                             snap.niSeq = niSeqText;
                         }
                         catch { }
-                        lock (_roundStateLock)
+                        // The Chrome path has already assigned the exact legacy
+                        // JavaScript sequence above. The WebView2/CDP cache is
+                        // empty in this runtime and must not overwrite it.
+                        if (!string.Equals(source, "chrome-native-host", StringComparison.OrdinalIgnoreCase))
                         {
-                            ApplyNetworkSeqAuthorityLocked(snap);
+                            lock (_roundStateLock)
+                            {
+                                ApplyNetworkSeqAuthorityLocked(snap);
+                            }
                         }
                         bool skipDisplayPush;
                         string skipDisplayReason;
@@ -16647,6 +16669,10 @@ try{
             if (tab.TaskCts == null || tab.TaskCts.IsCancellationRequested || !tab.IsRunning)
                 return (false, "task-not-running");
 
+            if (_chromeGameBridge?.IsConnected == true &&
+                !string.IsNullOrWhiteSpace(CloneAuthoritativeRawSnap()?.seq))
+                return (true, "chrome-native-host");
+
             var now = DateTime.UtcNow;
             if (_betWebNavigatingSinceUtc != DateTime.MinValue &&
                 (now - _betWebNavigatingSinceUtc) < TimeSpan.FromSeconds(5))
@@ -17406,6 +17432,9 @@ try{
                 },
                 EvalJsAsync = (js) => ExecuteOnBetWebAsync(js),
                 EvalJsAwaitResultAsync = (js) => ExecuteOnBetWebAwaitResultAsync(js),
+                SendChromeBetAsync = (side, amount, roundId, token) =>
+                    _chromeGameBridge?.SendBetAsync(side, amount, roundId, token)
+                    ?? Task.FromResult("err:chrome-bridge-not-started"),
                 Log = (s) => Log(s),
 
                 StakeSeq = stakeSeqArr,
@@ -17707,6 +17736,12 @@ try{
             tab.DecisionState = new DecisionState();
             var ctx = BuildContext(tab, runId, useRawWinAmount);
             ctx.Log?.Invoke($"[TASK][RUN] start | tab={tab.Id} | run={runId} | task={task.DisplayName}");
+            if (ctx.SendChromeBetAsync is not null)
+            {
+                ctx.Log?.Invoke($"[TASK][PRECHECK][OK] tab={tab.Id} | run={runId} | bridge=chrome-native-host");
+                await task.RunAsync(ctx, ct);
+                return;
+            }
             // === Preflight: chờ __cw_bet sẵn sàng trước khi chạy chiến lược ===
             bool preflightOk = false;
             for (int i = 0; i < 25; i++) // 25 * 200ms ~= 5s
@@ -17824,6 +17859,14 @@ try{
                         return;
                 }
 
+                var useChromeNativeBetBridge = _chromeGameBridge?.IsConnected == true &&
+                    !string.IsNullOrWhiteSpace(CloneAuthoritativeRawSnap()?.seq);
+                if (useChromeNativeBetBridge)
+                {
+                    Log("[PlayStart] Chrome Native Host is ready; skip dormant WebView2 bridge checks.");
+                }
+                else
+                {
                 ResetSeqSyncStateForPlayStart();
                 await LogBridgeProbeAsync("play-start-pre-ensure");
                 await EnsureToolBridgeInjectedAsync();
@@ -17898,6 +17941,7 @@ try{
                         Log("[DEC] Vẫn chưa có dữ liệu, tạm hoãn khởi động chiến lược.");
                         return;
                     }
+                }
                 }
 
                 // Chuẩn bị & chạy Task chiến lược (giữ nguyên)

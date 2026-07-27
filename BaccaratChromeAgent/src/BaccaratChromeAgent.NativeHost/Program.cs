@@ -10,7 +10,53 @@ var engine = new SessionEngine(HostLog.Write);
 using var desktopPipe = new DesktopPipeHub();
 using var input = Console.OpenStandardInput();
 using var output = Console.OpenStandardOutput();
+using var nativeWriteLock = new SemaphoreSlim(1, 1);
+var lastChromeSessionId = "";
+EngineResponse? lastGameResponse = null;
 HostLog.Write("[HOST][START] Native Messaging connected");
+
+async Task WriteNativeAsync(object value)
+{
+    await nativeWriteLock.WaitAsync();
+    try
+    {
+        await NativeMessaging.WriteAsync(output, JsonSerializer.Serialize(value, json), CancellationToken.None);
+    }
+    finally { nativeWriteLock.Release(); }
+}
+
+desktopPipe.CommandReceived += async command =>
+{
+    if (!string.Equals(command.Type, "place_bet", StringComparison.OrdinalIgnoreCase))
+    {
+        HostLog.Write($"[HOST][CMD][REJECT] unsupported={command.Type}");
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(lastChromeSessionId))
+    {
+        HostLog.Write($"[HOST][BET][REJECT] request={command.RequestId} reason=no-active-chrome-session");
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(command.Side) || command.Amount is null || command.Amount <= 0)
+    {
+        HostLog.Write($"[HOST][BET][REJECT] request={command.RequestId} reason=invalid-intent");
+        return;
+    }
+
+    HostLog.Write($"[HOST][BET][TX] request={command.RequestId} session={lastChromeSessionId} side={command.Side} amount={command.Amount} round={command.RoundId}");
+    await WriteNativeAsync(new BridgeMessage(
+        "bet_command",
+        lastChromeSessionId,
+        JsonSerializer.SerializeToElement(new
+        {
+            requestId = command.RequestId,
+            side = command.Side,
+            amount = command.Amount,
+            roundId = command.RoundId
+        }, json)));
+};
 
 static EngineResponse ObserveDiagnostic(JsonElement payload)
 {
@@ -25,6 +71,7 @@ while (await NativeMessaging.ReadAsync(input, CancellationToken.None) is { } raw
         var message = JsonSerializer.Deserialize<BridgeMessage>(raw, json)
             ?? throw new InvalidOperationException("Native message is empty.");
         var sessionId = string.IsNullOrWhiteSpace(message.SessionId) ? "default" : message.SessionId;
+        if (message.Type == "legacy_tick") lastChromeSessionId = sessionId;
         HostLog.Write($"[HOST][RX] type={message.Type} session={sessionId}");
 
         GameSnapshot? snapshot = null;
@@ -35,6 +82,7 @@ while (await NativeMessaging.ReadAsync(input, CancellationToken.None) is { } raw
             snapshot = message.Payload.Deserialize<GameSnapshot>(json)
                 ?? throw new InvalidOperationException("Snapshot is missing.");
             response = engine.ObserveSnapshot(sessionId, snapshot);
+            lastGameResponse = response;
         }
         else if (message.Type == "legacy_tick")
         {
@@ -42,7 +90,17 @@ while (await NativeMessaging.ReadAsync(input, CancellationToken.None) is { } raw
                 ?? throw new InvalidOperationException("Legacy tick is missing.");
             snapshot = LegacyTickReader.ToDisplaySnapshot(legacyTick);
             response = engine.ObserveSnapshot(sessionId, snapshot);
+            lastGameResponse = response;
             HostLog.Write($"[HOST][LEGACY-TICK] session={sessionId} bytes={Encoding.UTF8.GetByteCount(legacyTick.RawTick)} table={snapshot.TableId ?? "-"} seqLen={snapshot.Sequence.Length}");
+        }
+        else if (message.Type == "bet_result")
+        {
+            var result = message.Payload.ValueKind is JsonValueKind.Undefined ? "{}" : message.Payload.GetRawText();
+            HostLog.Write($"[HOST][BET][RESULT] session={sessionId} payload={result}");
+            // A bet acknowledgement has no snapshot. Keep the latest game state
+            // so the extension overlay does not erase its current sequence.
+            response = lastGameResponse ?? new EngineResponse(
+                new DisplayState("connected", "Bet result received", "", null, null, null, DateTimeOffset.UtcNow));
         }
         else
         {
@@ -56,15 +114,15 @@ while (await NativeMessaging.ReadAsync(input, CancellationToken.None) is { } raw
         }
 
         await desktopPipe.PublishAsync(response.Display, message.Type == "legacy_tick" ? null : snapshot, legacyTick);
-        await NativeMessaging.WriteAsync(output, JsonSerializer.Serialize(new BridgeMessage(
-            "engine_response", sessionId, JsonSerializer.SerializeToElement(response, json)), json), CancellationToken.None);
+        await WriteNativeAsync(new BridgeMessage(
+            "engine_response", sessionId, JsonSerializer.SerializeToElement(response, json)));
     }
     catch (Exception ex)
     {
         HostLog.Write($"[HOST][ERROR] {ex.GetType().Name}: {ex.Message}");
         // stdout là protocol Native Messaging; lỗi chỉ được trả qua protocol, không Console.WriteLine.
         var error = new { type = "engine_error", message = ex.Message };
-        await NativeMessaging.WriteAsync(output, JsonSerializer.Serialize(error, json), CancellationToken.None);
+        await WriteNativeAsync(error);
     }
 }
 
@@ -97,6 +155,7 @@ internal static class LegacyTickReader
     private static int? Number(JsonElement root, string name)
     {
         if (!root.TryGetProperty(name, out var value)) return null;
+        if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return null;
         if (value.TryGetInt32(out var number)) return number;
         return int.TryParse(value.ToString(), out number) ? number : null;
     }

@@ -20,6 +20,9 @@ namespace BaccaratSexyCasino2.Tasks
         // Thực thi JS: trả về chuỗi (Web.ExecuteScriptAsync)
         public Func<string, Task<string>> EvalJsAsync { get; init; }
         public Func<string, Task<string>>? EvalJsAwaitResultAsync { get; init; }
+        // Chrome Native Host path. It invokes the original __cw_bet_enqueue in
+        // the selected Chrome game frame, never the dormant WebView2 control.
+        public Func<string, long, long, CancellationToken, Task<string>>? SendChromeBetAsync { get; init; }
 
         // Ghi log ra UI/File tuỳ bạn
         public Action<string> Log { get; init; }

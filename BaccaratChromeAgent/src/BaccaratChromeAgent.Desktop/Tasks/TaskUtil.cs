@@ -280,7 +280,9 @@ namespace BaccaratSexyCasino2.Tasks
             var sendAt = DateTime.UtcNow;
             try
             {
-                var evalTask = ctx.EvalJsAsync(js);
+                var evalTask = ctx.SendChromeBetAsync is not null
+                    ? ctx.SendChromeBetAsync(side, amount, roundId, ct)
+                    : ctx.EvalJsAsync(js);
                 var completed = await Task.WhenAny(evalTask, Task.Delay(BetSendTimeoutMs, ct));
                 if (completed != evalTask)
                 {

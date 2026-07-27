@@ -60,6 +60,17 @@ public sealed record DesktopPipeEnvelope(
     LegacyTickEnvelope? LegacyTick = null);
 
 /// <summary>
+/// Command sent by the legacy WPF process to the Native Host over the local
+/// named pipe. The host forwards it to the already selected Chrome game frame.
+/// </summary>
+public sealed record DesktopPipeCommand(
+    string Type,
+    string RequestId,
+    string? Side = null,
+    decimal? Amount = null,
+    long? RoundId = null);
+
+/// <summary>
 /// Exact legacy JSON emitted by safePost in v4_js_xoc_dia_live.js. RawTick is
 /// intentionally opaque between Chrome and the legacy WPF receiver.
 /// </summary>
