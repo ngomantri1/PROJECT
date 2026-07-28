@@ -8,7 +8,7 @@ if (window.top !== window || !isGameSurface) {
 } else {
 const host = document.createElement("div");
 host.id = "baccarat-chrome-agent-overlay";
-host.style.cssText = "position:fixed;top:14px;right:14px;z-index:2147483647;pointer-events:none;display:block;";
+  host.style.cssText = "position:fixed;top:14px;left:14px;z-index:2147483647;pointer-events:none;display:block;";
 const shadow = host.attachShadow({ mode: "closed" });
 const canvas = document.createElement("canvas");
 canvas.width = 330;

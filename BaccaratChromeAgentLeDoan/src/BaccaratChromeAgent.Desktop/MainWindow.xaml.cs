@@ -2206,6 +2206,52 @@ try{
             return true;
         }
 
+        /// <summary>
+        /// Login flow for the local Chrome mode when the customer opens/selects
+        /// Chrome manually. This deliberately does not launch a new browser.
+        /// The existing extension/native-host connection remains the only data
+        /// source; if it is not connected yet, the user is told to open Chrome
+        /// with the installed extension first.
+        /// </summary>
+        private async Task<bool> ConnectExistingChromeExtensionAsync(bool checkLicense)
+        {
+            await SaveConfigAsync();
+            if (checkLicense && !await EnsureLicenseAsync())
+                return false;
+
+            _chromeLaunchRequested = true;
+            _chromeHandshakeCts?.Cancel();
+            _chromeHandshakeCts?.Dispose();
+            _chromeHandshakeCts = new CancellationTokenSource();
+            _chromeGameDataHandshake = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var snap = CloneAuthoritativeRawSnap();
+            var hasSnapshot = snap is not null &&
+                              (!string.IsNullOrWhiteSpace(snap.seq) ||
+                               !string.IsNullOrWhiteSpace(snap.tableName) ||
+                               snap.tableId.HasValue);
+
+            if (_chromeGameBridge?.IsConnected == true && hasSnapshot)
+            {
+                _chromeGameDataHandshake.TrySetResult(true);
+                SetChromeRuntimeState("Đã kết nối và nhận dữ liệu game.", Brushes.ForestGreen);
+                Log("[CHROME-BRIDGE] Reused existing Chrome connection; no browser launch.");
+                return true;
+            }
+
+            if (_chromeGameBridge?.IsConnected == true)
+            {
+                SetChromeRuntimeState("Chrome đã kết nối, đang chờ dữ liệu game...", Brushes.DarkOrange);
+                Log("[CHROME-BRIDGE] Native Host connected; waiting for legacy snapshot.");
+                _ = WatchChromeHandshakeAsync(_chromeHandshakeCts.Token, _chromeGameDataHandshake.Task);
+                return true;
+            }
+
+            SetChromeRuntimeState("Chưa kết nối Chrome. Hãy mở Chrome có extension Baccarat Chrome Agent rồi vào bàn.", Brushes.DarkOrange);
+            Log("[CHROME-BRIDGE] Login requested without launching Chrome; Native Host is not connected.");
+            return false;
+        }
+
         private async Task WatchChromeHandshakeAsync(CancellationToken cancellationToken, Task dataHandshake)
         {
             try
@@ -15040,7 +15086,7 @@ try{
                 {
                     _cfg.UseTrial = false;
                     if (ChkTrial != null) ChkTrial.IsChecked = false;
-                    await OpenChromeLocalExtensionAsync(checkLicense: true);
+                    await ConnectExistingChromeExtensionAsync(checkLicense: true);
                     return;
                 }
 
