@@ -1,11 +1,40 @@
-Đọc các file:
+Trước khi làm bất kỳ thay đổi nào, hãy đọc và hiểu các tài liệu context của project:
+
 - PROJECT_CONTEXT.md
 - ARCHITECTURE.md
+- BUSINESS_RULES.md
+- CURRENT_STATE.md
 - TODO.md
 - BUGS.md
+- AGENTS.md nếu có
+- và các file tài liệu liên quan được tham chiếu trong những file trên.
+
+Sau đó:
+
+1. Hiểu mục tiêu tổng thể của project.
+2. Hiểu kiến trúc và các module chính.
+3. Hiểu các quy tắc nghiệp vụ quan trọng.
+4. Xác định trạng thái hiện tại của project.
+5. Xác định công việc đang làm dở.
+6. Xác định TODO và BUG còn tồn tại.
+7. Xác định các file/class/function có liên quan tới công việc hiện tại.
+
+Không sửa code ngay.
+
+Trước tiên hãy trả lời cho tôi một bản tóm tắt ngắn gồm:
+
+- Project này làm gì
+- Kiến trúc chính
+- Công việc gần nhất đang thực hiện
+- Những gì đã hoàn thành
+- Việc cần làm tiếp theo
+- Bug đang còn
+- Các file/module quan trọng liên quan
+
+Nếu tài liệu mâu thuẫn với source code, hãy ưu tiên kiểm tra source code hiện tại và báo cho tôi biết sự khác biệt.
 
 Trong quá trình sửa không được encoding sang dạng mã khác. Tôi đang dùng UTF8 (tiếng việt)
 Hãy giải thích file nào cần sửa và patch tối thiểu.
 Không chạy : npm run lint, npm run build, git diff --check
 
-Tôi cần rà soát project theo checklist trong file : Elevator ERP UI Standard.docs, DESIGN.md xem đã làm đúng chưa ? Phần nào chưa được cần sửa lại. Tôi cần sửa để áp dụng chung
+

@@ -1,0 +1,11 @@
+<Application x:Class="BaccaratChromeAgent.Desktop.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="Accent" Color="#1976D2" />
+    <Style TargetType="TextBox"><Setter Property="Margin" Value="0,4,0,4"/><Setter Property="Padding" Value="8,6"/></Style>
+    <Style TargetType="ComboBox"><Setter Property="Margin" Value="0,4,0,4"/><Setter Property="Padding" Value="8,6"/></Style>
+    <Style TargetType="Button"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="14,8"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+  </Application.Resources>
+</Application>

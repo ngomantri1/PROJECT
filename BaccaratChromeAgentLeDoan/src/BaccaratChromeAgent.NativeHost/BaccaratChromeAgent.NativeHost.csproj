@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BaccaratChromeAgent.Protocol\BaccaratChromeAgent.Protocol.csproj" />
+    <ProjectReference Include="..\BaccaratChromeAgent.Engine\BaccaratChromeAgent.Engine.csproj" />
+  </ItemGroup>
+</Project>

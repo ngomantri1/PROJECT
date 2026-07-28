@@ -1,65 +1,437 @@
-Hãy phân tích toàn bộ project hiện tại và tự động tạo các file context chuẩn cho AI coding.
+Hãy phân tích project hiện tại và xây dựng bộ tài liệu context chuẩn dành cho AI coding.
 
-Tạo các file sau vào thư mục docs:
+MỤC TIÊU:
+Sau khi hoàn thành, một AI khác không có lịch sử chat hiện tại phải có thể đọc bộ tài liệu này để:
+- hiểu project dùng để làm gì
+- hiểu kiến trúc và các module chính
+- hiểu các quy tắc nghiệp vụ
+- biết những phần code quan trọng
+- biết trạng thái hiện tại
+- biết TODO và BUG còn tồn tại
+- có thể tiếp tục phát triển project mà không cần đọc lại toàn bộ source ngay từ đầu
 
-- PROJECT_CONTEXT.md
-- ARCHITECTURE.md
-- TODO.md
-- BUGS.md
+==================================================
+1. TRƯỚC KHI TẠO FILE
+==================================================
 
-Yêu cầu chi tiết:
+Hãy phân tích project hiện tại một cách có chọn lọc.
 
-# PROJECT_CONTEXT.md
+Ưu tiên đọc:
+- file solution/project/package/config chính
+- entry point
+- cấu trúc thư mục
+- các module/service/controller/model/view quan trọng
+- database/schema/migration nếu có
+- API/WebSocket/network layer nếu có
+- background worker/thread/task nếu có
+- UI flow nếu có
+- OCR/canvas/browser automation nếu có
+- các file README/config/document hiện có
+- các phần code đang được sử dụng thực tế
+
+Không cần đọc:
+- bin/
+- obj/
+- node_modules/
+- packages cache
+- build output
+- generated files
+- dependency source
+- file binary
+- file log lớn
+- file không liên quan đến logic project
+
+Không rewrite hoặc refactor source code.
+Không thay đổi logic chương trình.
+Chỉ phân tích và tạo tài liệu.
+
+Nếu project lớn:
+- không cần đọc từng file
+- hãy xác định kiến trúc trước
+- sau đó đọc sâu các file/module quan trọng nhất
+
+==================================================
+2. TẠO CẤU TRÚC FILE
+==================================================
+
+Tạo:
+
+/AGENTS.md
+
+/docs/PROJECT_CONTEXT.md
+/docs/ARCHITECTURE.md
+/docs/BUSINESS_RULES.md
+/docs/CURRENT_STATE.md
+/docs/TODO.md
+/docs/BUGS.md
+
+Nếu thư mục docs chưa tồn tại thì tạo mới.
+
+==================================================
+3. AGENTS.md
+==================================================
+
+AGENTS.md phải ngắn gọn và chỉ chứa những chỉ dẫn AI cần tuân thủ khi làm việc với project.
+
 Bao gồm:
-- mô tả tổng quan project
-- công nghệ sử dụng
-- flow hoạt động chính
-- coding rules
+
+- project là gì
+- stack/công nghệ chính
+- nơi chứa tài liệu context
+- coding conventions quan trọng
+- naming conventions quan trọng
+- nguyên tắc sửa code
+- quy tắc threading/async/UI nếu có
+- quy tắc database/API/WebSocket nếu có
+- những vùng nhạy cảm không được phá
+- yêu cầu build/test sau khi sửa nếu phù hợp
+- yêu cầu ưu tiên thay đổi tối thiểu
+- không refactor ngoài phạm vi task nếu không cần thiết
+
+AGENTS.md KHÔNG được:
+- chứa lịch sử dài
+- chứa TODO chi tiết
+- chứa BUG chi tiết
+- copy architecture dài
+- copy source code dài
+
+Nếu cần thông tin chi tiết, hãy tham chiếu tới file trong docs/.
+
+==================================================
+4. PROJECT_CONTEXT.md
+==================================================
+
+Bao gồm thông tin ổn định giúp AI hiểu project:
+
+# Project Overview
+- mục đích project
+- đối tượng/người dùng chính
+- chức năng chính
+
+# Technology Stack
+- language
+- framework
+- runtime
+- database
+- thư viện/framework quan trọng
+- external services quan trọng
+
+# Main Application Flow
+- flow hoạt động chính từ đầu tới cuối
+
+# Important Components
+- module/service/class quan trọng
+- trách nhiệm của từng phần
+
+# Coding Conventions
+- coding rules đã quan sát được
 - naming rules
-- các rule quan trọng
-- websocket flow
-- pending flow
-- threading/UI rules
+- error handling
+- logging
+- async/threading conventions
+
+# Important Technical Rules
+- các invariant/rule kỹ thuật quan trọng
 - những điều tuyệt đối không được phá
 
-# ARCHITECTURE.md
-Bao gồm:
-- cấu trúc project
-- module chính
-- dependency giữa các module
-- file nào phụ trách gì
-- data flow
-- websocket packet flow
+# External Integration
+Nếu có:
+- API
+- WebSocket
+- database
+- browser
+- OCR
+- canvas
+- filesystem
+- external service
+
+# Important Paths
+Liệt kê các file/thư mục quan trọng để AI biết nên bắt đầu đọc ở đâu.
+
+Chỉ ghi những điều có thể xác nhận từ source/config/document hiện tại.
+Không tự suy diễn nghiệp vụ.
+
+==================================================
+5. ARCHITECTURE.md
+==================================================
+
+Mô tả kiến trúc kỹ thuật của hệ thống.
+
+Bao gồm khi phù hợp:
+
+# High-Level Architecture
+- frontend
+- backend
+- desktop
+- service
+- database
+- worker
+- external system
+
+# Project Structure
+- các thư mục/module chính
+- trách nhiệm của từng module
+
+# Dependency Flow
+Ví dụ:
+UI
+→ Service
+→ Repository
+→ Database
+
+hoặc flow thực tế của project.
+
+# Data Flow
+- dữ liệu đi từ đâu
+- được xử lý ở đâu
+- lưu ở đâu
+- trả về đâu
+
+# Important Runtime Flows
+
+Nếu project có thì mô tả:
+- WebSocket flow
+- packet/message flow
+- reconnect flow
+- pending request flow
+- API request flow
+- authentication flow
+- background task flow
+- threading flow
 - UI update flow
-- OCR/canvas flow nếu có
+- OCR flow
+- canvas/image flow
+- event flow
 
-# TODO.md
+# Key Files / Classes
+
+Dùng dạng:
+
+`path/to/file`
+- ClassName
+- MethodName()
+- trách nhiệm
+
+Không copy source code dài.
+
+# Architectural Constraints
+- dependency không nên phá
+- thread affinity
+- state ownership
+- lifecycle
+- singleton/service scope
+- concurrency rules
+- các constraint quan trọng khác
+
+Chỉ ghi kiến trúc hiện đang tồn tại.
+Không mô tả kiến trúc mong muốn như thể đã triển khai.
+
+==================================================
+6. BUSINESS_RULES.md
+==================================================
+
+Tách riêng nghiệp vụ khỏi kiến trúc.
+
 Bao gồm:
-- task đang làm
-- task chưa hoàn thành
-- task cần refactor
-- task ưu tiên cao
-- task cần test lại
 
-# BUGS.md
+# Core Business Rules
+- các rule nghiệp vụ đã có trong code
+
+# Conditions / Decisions
+Ví dụ:
+- nếu A thì B
+- nếu C thì không được D
+- trường hợp đặc biệt
+
+# Validation Rules
+
+# Calculation Rules
+
+# State / Status Rules
+
+# Important Edge Cases
+
+# Data Meaning
+Giải thích các field/status/type quan trọng nếu có thể xác định chắc chắn.
+
+Với mỗi rule quan trọng, nếu hữu ích hãy ghi nơi implementation:
+
+Source:
+`path/to/file`
+`Class.Method()`
+
+KHÔNG tự tạo business rule dựa trên suy đoán.
+
+Nếu chưa chắc:
+ghi rõ:
+
+`Status: Chưa xác nhận`
+
+thay vì biến giả thuyết thành sự thật.
+
+==================================================
+7. CURRENT_STATE.md
+==================================================
+
+Đây là file để AI mới tiếp tục công việc nhanh nhất.
+
+Phải NGẮN, tập trung vào trạng thái hiện tại.
+
 Bao gồm:
-- bug hiện tại
-- bug đã fix
-- bug chưa fix
-- nguyên nhân bug
-- workaround tạm thời
-- vùng code dễ lỗi
 
-Yêu cầu quan trọng:
-- Không rewrite code.
-- Chỉ đọc và phân tích project.
-- Tóm tắt ngắn gọn nhưng đầy đủ.
-- Format markdown sạch đẹp.
-- Có heading rõ ràng.
-- Có bullet list rõ ràng.
+# Current Project State
+- project hiện build/chạy ở trạng thái nào nếu xác định được
+
+# Current Work
+- chức năng/tính năng hiện đang được phát triển nếu xác định được
+
+# Recently Changed
+- thay đổi gần đây có thể xác định chắc chắn từ git/source/chat hiện tại
+
+# Active Areas
+- module/file đang có khả năng được làm việc nhiều nhất
+
+# Current Known Problems
+- vấn đề đang tồn tại
+
+# Next Suggested Actions
+- những việc hợp lý tiếp theo nếu có bằng chứng rõ ràng
+
+# Important Files For Next Session
+- file nên đọc đầu tiên khi tiếp tục
+
+Không biến file này thành nhật ký dài.
+
+Mục tiêu:
+AI mới đọc file này trong 1–2 phút là biết project hiện đang ở đâu.
+
+==================================================
+8. TODO.md
+==================================================
+
+Chỉ ghi TODO có bằng chứng.
+
+Tìm từ:
+- TODO
+- FIXME
+- HACK
+- NotImplemented
+- placeholder
+- comment
+- code chưa hoàn thiện
+- task thể hiện rõ trong project/chat hiện tại
+
+Phân loại:
+
+# High Priority
+
+# In Progress
+
+# Pending
+
+# Refactor / Technical Debt
+
+# Needs Testing
+
+Mỗi mục nếu có thể ghi:
+
+- mô tả
+- file/module liên quan
+- lý do
+- trạng thái
+
+Không tự sáng tạo hàng loạt TODO chỉ vì thấy code có thể cải thiện.
+
+Phân biệt rõ:
+
+Confirmed TODO
+và
+Suggested Improvement
+
+Nếu chỉ là đề xuất của AI, phải đặt dưới:
+
+# Suggested Improvements
+
+không được coi là TODO đã được người dùng yêu cầu.
+
+==================================================
+9. BUGS.md
+==================================================
+
+Phân loại:
+
+# Open Bugs
+
+# Investigating
+
+# Fixed Bugs
+
+# Known Risks / Fragile Areas
+
+Mỗi bug nếu có thông tin thì ghi:
+
+- triệu chứng
+- nguyên nhân
+- trạng thái
+- file/module liên quan
+- workaround nếu có
+- cách fix nếu đã fix
+- cần test lại gì
+
+Không được tự gọi một đoạn code là "bug" nếu chưa có bằng chứng.
+
+Nếu chỉ nghi ngờ, ghi:
+
+`Status: Suspected / Chưa xác nhận`
+
+Fixed Bugs chỉ giữ tóm tắt ngắn gọn những bug có giá trị tham khảo về sau.
+Không biến BUGS.md thành changelog vô hạn.
+
+==================================================
+10. NGUYÊN TẮC CHUNG CHO TẤT CẢ FILE
+==================================================
+
+- Markdown sạch và dễ đọc.
+- Heading rõ ràng.
+- Bullet list ngắn gọn.
 - Ưu tiên thông tin quan trọng cho AI coding.
-- Giảm tối đa token thừa.
-- Chỉ tập trung vào logic quan trọng.
+- Không copy source code dài.
+- Không ghi nội dung trùng lặp giữa nhiều file.
+- Dùng đường dẫn file, class, method/function thay cho việc paste code.
+- Không suy đoán thông tin không thể xác nhận.
+- Không biến giả thuyết thành fact.
+- Không ghi những chi tiết debug tạm thời không có giá trị lâu dài.
+- Không ghi nội dung thừa chỉ để làm tài liệu dài hơn.
+- Tối ưu để giảm token khi AI đọc lại trong các phiên sau.
+- Ưu tiên thông tin có giá trị cao và ổn định.
+- Source code hiện tại là nguồn sự thật chính.
+- Nếu tài liệu cũ có mâu thuẫn với source thì ưu tiên source.
+- Không sửa source code trong nhiệm vụ này.
+
+==================================================
+11. KIỂM TRA SAU KHI TẠO
+==================================================
 
 Sau khi tạo xong:
-- lưu trực tiếp các file markdown vào project.
+
+1. Đọc lại 7 file vừa tạo.
+2. Loại bỏ nội dung trùng lặp.
+3. Kiểm tra các đường dẫn/class/method đã ghi có tồn tại thực tế.
+4. Kiểm tra không có thông tin suy đoán được viết như sự thật.
+5. Bảo đảm CURRENT_STATE.md ngắn gọn.
+6. Bảo đảm AGENTS.md không bị phình to.
+7. Bảo đảm PROJECT_CONTEXT.md và ARCHITECTURE.md chứa thông tin tương đối ổn định.
+8. Bảo đảm TODO.md và BUGS.md phản ánh trạng thái thực, không phải danh sách do AI tự tưởng tượng.
+
+Sau đó lưu trực tiếp các file vào project.
+
+Cuối cùng chỉ báo cáo ngắn gọn:
+
+- Các file đã tạo
+- Project/stack đã nhận diện
+- Các module chính
+- Số TODO xác nhận được
+- Số BUG xác nhận được
+- Có thông tin nào chưa chắc chắn cần tôi xác nhận hay không
+
+Không sửa source code.
