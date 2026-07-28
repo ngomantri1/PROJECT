@@ -2222,6 +2222,50 @@ try{
             return true;
         }
 
+        /// <summary>
+        /// Login flow for a manually opened Chrome profile. Do not launch a
+        /// second browser here; reuse only the existing extension/native-host
+        /// connection and its legacy Chrome snapshot.
+        /// </summary>
+        private async Task<bool> ConnectExistingChromeExtensionAsync(bool checkLicense)
+        {
+            await SaveConfigAsync();
+            if (checkLicense && !await EnsureLicenseAsync())
+                return false;
+
+            _chromeLaunchRequested = true;
+            _chromeHandshakeCts?.Cancel();
+            _chromeHandshakeCts?.Dispose();
+            _chromeHandshakeCts = new CancellationTokenSource();
+            _chromeGameDataHandshake = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var snap = CloneAuthoritativeRawSnap();
+            var hasSnapshot = snap is not null &&
+                              (!string.IsNullOrWhiteSpace(snap.seq) ||
+                               !string.IsNullOrWhiteSpace(snap.tableName) ||
+                               snap.tableId.HasValue);
+
+            if (_chromeGameBridge?.IsConnected == true && hasSnapshot)
+            {
+                _chromeGameDataHandshake.TrySetResult(true);
+                SetChromeRuntimeState("Đã kết nối và nhận dữ liệu game.", Brushes.ForestGreen);
+                Log("[CHROME-BRIDGE] Reused existing Chrome connection; no browser launch.");
+                return true;
+            }
+
+            if (_chromeGameBridge?.IsConnected == true)
+            {
+                SetChromeRuntimeState("Chrome đã kết nối, đang chờ dữ liệu game...", Brushes.DarkOrange);
+                Log("[CHROME-BRIDGE] Native Host connected; waiting for legacy snapshot.");
+                _ = WatchChromeHandshakeAsync(_chromeHandshakeCts.Token, _chromeGameDataHandshake.Task);
+                return true;
+            }
+
+            SetChromeRuntimeState("Chưa kết nối Chrome. Hãy mở Chrome có extension Baccarat Chrome Agent rồi vào bàn.", Brushes.DarkOrange);
+            Log("[CHROME-BRIDGE] Login requested without launching Chrome; Native Host is not connected.");
+            return false;
+        }
+
         private async Task WatchChromeHandshakeAsync(CancellationToken cancellationToken, Task dataHandshake)
         {
             try
@@ -14151,6 +14195,12 @@ try{
 
         private void ApplyNetworkSeqAuthorityLocked(CwSnapshot? snap)
         {
+            // Chrome extension legacy snapshot is the sole authority. The
+            // desktop must never replace its B/P/T sequence with a network/CDP
+            // candidate or hold it behind network bootstrap state.
+            return;
+
+#pragma warning disable CS0162
             if (snap == null) return;
 
             if (UseDomBootstrapCdpAppendSeq)
@@ -14206,13 +14256,13 @@ try{
             }
 
             snap.niSeq = _niSeq.ToString();
+#pragma warning restore CS0162
         }
 
         private CwSnapshot? CloneAuthoritativeRawSnap()
         {
             CwSnapshot? clone;
             lock (_snapLock) clone = CloneSnapRaw(_lastSnap);
-            lock (_roundStateLock) ApplyNetworkSeqAuthorityLocked(clone);
             return clone;
         }
 
@@ -14220,9 +14270,7 @@ try{
         {
             CwSnapshot? clone;
             lock (_snapLock) clone = CloneSnapForTasks(_lastSnap);
-            lock (_roundStateLock) ApplyNetworkSeqAuthorityLocked(clone);
-            if (clone != null)
-                clone.seq = FilterPlayableSeq(clone.seq);
+            // Keep the original legacy Chrome sequence, including T.
             return clone;
         }
 
@@ -15098,6 +15146,8 @@ try{
                 {
                     _cfg.UseTrial = false;
                     if (ChkTrial != null) ChkTrial.IsChecked = false;
+                    // Đăng nhập Tool phải tự mở phiên Chrome riêng của Tool rồi nạp
+                    // extension/bridge; không yêu cầu người dùng mở Chrome trước.
                     await OpenChromeLocalExtensionAsync(checkLicense: true);
                     return;
                 }
@@ -17557,7 +17607,9 @@ try{
             return new GameContext
             {
                 GetSnap = () => CloneAuthoritativeTaskSnap(),
-                GetRawSnap = () => CloneAuthoritativeRawSnap(),
+                // Both task views must consume the same unfiltered legacy
+                // snapshot, including B/P/T.
+                GetRawSnap = () => CloneAuthoritativeTaskSnap(),
                 TabId = tab.Id,
                 RunId = runId,
                 IsRunActive = () => tab.RunId == runId && tab.TaskCts != null && !tab.TaskCts.IsCancellationRequested && tab.IsRunning,
@@ -21338,7 +21390,9 @@ try{
                 seqTableName = snap.seqTableName,
                 seqTableId = snap.seqTableId,
                 seqTableSource = snap.seqTableSource,
-                seq = FilterPlayableSeq(snap.seq),
+                // Keep B/P/T from the legacy Chrome snapshot. TaskUtil needs T
+                // to settle the current round before waiting for the next one.
+                seq = snap.seq,
                 seqVersion = snap.seqVersion,
                 seqEvent = snap.seqEvent,
                 seqSource = snap.seqSource,
