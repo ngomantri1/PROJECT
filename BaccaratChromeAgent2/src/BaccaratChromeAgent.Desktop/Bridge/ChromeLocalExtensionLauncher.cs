@@ -20,12 +20,6 @@ internal static class ChromeLocalExtensionLauncher
 {
     public static ChromeLaunchResult Launch(string url, ExtensionRuntimeInfo runtime)
     {
-        if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var target) ||
-            (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps))
-        {
-            return ChromeLaunchResult.Failure("chrome-url-invalid", "The URL must start with http:// or https://.");
-        }
-
         var chromePath = FindToolBrowserExecutable();
         if (chromePath is null)
             return ChromeLaunchResult.Failure(
@@ -40,19 +34,30 @@ internal static class ChromeLocalExtensionLauncher
                 "ChromeProfile");
             Directory.CreateDirectory(profileDirectory);
 
+            // URL is optional.  The browser must still start while the user is
+            // editing the URL field or when the saved value is malformed.  A
+            // valid http(s) URL is opened directly; otherwise Chrome starts at
+            // its normal new-tab page and the user can navigate manually.
+            var arguments = new System.Collections.Generic.List<string>
+            {
+                Quote("--user-data-dir=" + profileDirectory),
+                Quote("--load-extension=" + runtime.DirectoryPath),
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--new-window"
+            };
+
+            if (Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var target) &&
+                (target.Scheme == Uri.UriSchemeHttp || target.Scheme == Uri.UriSchemeHttps))
+            {
+                arguments.Add(Quote(target.AbsoluteUri));
+            }
+
             var startInfo = new ProcessStartInfo
             {
                 FileName = chromePath,
                 UseShellExecute = false,
-                Arguments = string.Join(" ", new[]
-                {
-                    Quote("--user-data-dir=" + profileDirectory),
-                    Quote("--load-extension=" + runtime.DirectoryPath),
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--new-window",
-                    Quote(target.AbsoluteUri)
-                })
+                Arguments = string.Join(" ", arguments)
             };
 
             Process.Start(startInfo);
