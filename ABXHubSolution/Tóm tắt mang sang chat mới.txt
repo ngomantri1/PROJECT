@@ -58,14 +58,13 @@ Tạo:
 
 /AGENTS.md
 
-/docs/PROJECT_CONTEXT.md
-/docs/ARCHITECTURE.md
-/docs/BUSINESS_RULES.md
-/docs/CURRENT_STATE.md
-/docs/TODO.md
-/docs/BUGS.md
+/PROJECT_CONTEXT.md
+/ARCHITECTURE.md
+/BUSINESS_RULES.md
+/CURRENT_STATE.md
+/TODO.md
+/BUGS.md
 
-Nếu thư mục docs chưa tồn tại thì tạo mới.
 
 ==================================================
 3. AGENTS.md
@@ -95,7 +94,6 @@ AGENTS.md KHÔNG được:
 - copy architecture dài
 - copy source code dài
 
-Nếu cần thông tin chi tiết, hãy tham chiếu tới file trong docs/.
 
 ==================================================
 4. PROJECT_CONTEXT.md
