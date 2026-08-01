@@ -98,6 +98,10 @@
         } catch (_) {}
         __cw_applyCanvasWatchVisibilityNow();
         try {
+            if (visible && typeof window.__cw_startPanelDebugTimers === 'function') window.__cw_startPanelDebugTimers();
+            if (!visible && typeof window.__cw_stopPanelDebugTimers === 'function') window.__cw_stopPanelDebugTimers();
+        } catch (_) {}
+        try {
             if (window.top && window.top !== window)
                 window.top.postMessage({ __cw_cmd: 'canvas_watch_visible', visible: visible ? 1 : 0 }, '*');
         } catch (_) {}
@@ -603,16 +607,47 @@
         } catch (_) {}
         return false;
     }
+    function __cwCloneForPost(value, seen) {
+        try {
+            if (value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+            if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') return undefined;
+            var tag = Object.prototype.toString.call(value);
+            if (tag === '[object Node]' || tag === '[object Element]' || tag === '[object Document]' ||
+                tag === '[object Window]' || tag === '[object Event]' || value.nodeType) return undefined;
+            seen = seen || [];
+            if (seen.indexOf(value) >= 0) return undefined;
+            seen.push(value);
+            if (Array.isArray(value)) {
+                var arr = [];
+                for (var i = 0; i < value.length; i++) {
+                    var av = __cwCloneForPost(value[i], seen);
+                    arr.push(typeof av === 'undefined' ? null : av);
+                }
+                return arr;
+            }
+            var out = {};
+            for (var k in value) {
+                if (!Object.prototype.hasOwnProperty.call(value, k)) continue;
+                var cv = __cwCloneForPost(value[k], seen);
+                if (typeof cv !== 'undefined') out[k] = cv;
+            }
+            return out;
+        } catch (_) { return undefined; }
+    }
+    function __cwJsonPost(obj) {
+        try { return JSON.stringify(__cwCloneForPost(obj, [])); } catch (_) { return JSON.stringify({}); }
+    }
     function __abxPost(obj) {
+        var json = __cwJsonPost(obj);
         try {
             if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
-                window.chrome.webview.postMessage(JSON.stringify(obj));
+                window.chrome.webview.postMessage(json);
                 return true;
             }
         } catch (_) {}
         try {
             if (window.parent && window.parent !== window && typeof window.parent.postMessage === 'function') {
-                window.parent.postMessage(obj, '*');
+                window.parent.postMessage({ __cw_json_message: json }, '*');
                 return true;
             }
         } catch (_) {}
@@ -1127,6 +1162,136 @@
             return 'fail';
         }
     };
+
+    // Lightweight recovery API is installed in every document, including the
+    // outer vipbet wrapper where the full game bridge intentionally does not boot.
+    (function __cwInstallRecoveryApiEverywhere() {
+        function localFrameSummary() {
+            var frames = [];
+            try {
+                var nodes = document.querySelectorAll('iframe,frame');
+                for (var i = 0; i < nodes.length && i < 20; i++) {
+                    var visible = 0;
+                    try {
+                        var r = nodes[i].getBoundingClientRect(), cs = getComputedStyle(nodes[i]);
+                        visible = r.width > 100 && r.height > 80 && cs.display !== 'none' && cs.visibility !== 'hidden' ? 1 : 0;
+                    } catch (_) {}
+                    frames.push({
+                        index: i,
+                        id: String(nodes[i].id || ''),
+                        src: String(nodes[i].src || nodes[i].getAttribute('src') || ''),
+                        visible: visible
+                    });
+                }
+            } catch (_) {}
+            return frames;
+        }
+        if (typeof window.__cw_detectBaccaratContext !== 'function') {
+            window.__cw_detectBaccaratContext = function () {
+                var href = String(location.href || ''), low = href.toLowerCase(), frames = localFrameSummary();
+                var joined = frames.map(function (x) { return String(x.src || '').toLowerCase(); }).join('|');
+                var hall = frames.find(function (x) { return String(x.id || '').toLowerCase() === 'iframegamehall' || String(x.src || '').toLowerCase().indexOf('/player/gamehall.jsp') >= 0; });
+                var game = frames.find(function (x) { return String(x.id || '').toLowerCase() === 'iframegame' || String(x.src || '').toLowerCase().indexOf('/player/singlebactable.jsp') >= 0; });
+                var kind = game && game.visible
+                    ? 'GAME_TABLE'
+                    : (hall && hall.visible
+                        ? 'GAME_HALL'
+                        : (low.indexOf('/player/singlebactable.jsp') >= 0
+                            ? 'GAME_TABLE'
+                            : (low.indexOf('/player/gamehall.jsp') >= 0
+                                ? 'GAME_HALL'
+                                : (low.indexOf('/player/webmain.jsp') >= 0 || joined.indexOf('/player/webmain.jsp') >= 0
+                                    ? 'PROVIDER_ENTRY' : 'WRAPPER'))));
+                return JSON.stringify({ ok: true, kind: kind, href: href, apiReady: 0, frames: frames,
+                    controller: hall || game ? 1 : 0,
+                    hallFramePresent: hall ? 1 : 0, hallFrameVisible: hall && hall.visible ? 1 : 0,
+                    gameFramePresent: game ? 1 : 0, gameFrameVisible: game && game.visible ? 1 : 0 });
+            };
+            window.__cw_detectBaccaratContext.__cw_stub = 1;
+        }
+        if (typeof window.__cw_listBaccaratTables !== 'function') {
+            window.__cw_listBaccaratTables = function () {
+                return JSON.stringify({ ok: false, kind: 'WRAPPER', href: String(location.href || ''),
+                    count: 0, tables: [], reason: 'use-deep-api-or-select-game-frame', apiReady: 0 });
+            };
+            window.__cw_listBaccaratTables.__cw_stub = 1;
+        }
+        if (typeof window.__cw_goBaccaratHall !== 'function') {
+            window.__cw_goBaccaratHall = async function () {
+                return JSON.stringify({ ok: false, reason: 'use-deep-api-or-select-game-frame', apiReady: 0 });
+            };
+            window.__cw_goBaccaratHall.__cw_stub = 1;
+        }
+        if (typeof window.__cw_loadBaccaratTable !== 'function') {
+            window.__cw_loadBaccaratTable = async function () {
+                return JSON.stringify({ ok: false, reason: 'use-deep-api-or-select-game-frame', apiReady: 0 });
+            };
+            window.__cw_loadBaccaratTable.__cw_stub = 1;
+        }
+
+        if (!window.__cw_recovery_rpc_installed) {
+            window.__cw_recovery_rpc_installed = 1;
+            window.addEventListener('message', async function (ev) {
+                try {
+                    var msg = ev && ev.data;
+                    if (!msg || msg.__cw_recovery_rpc !== 1 || !msg.id || !ev.source) return;
+                    var fn = null;
+                    if (msg.method === 'detect') fn = window.__cw_detectBaccaratContext;
+                    else if (msg.method === 'list') fn = window.__cw_listBaccaratTables;
+                    else if (msg.method === 'goHall') fn = window.__cw_goBaccaratHall;
+                    else if (msg.method === 'loadTable') fn = window.__cw_loadBaccaratTable;
+                    if (typeof fn !== 'function') return;
+                    var result = await fn(msg.args || {});
+                    ev.source.postMessage({
+                        __cw_recovery_rpc_result: 1,
+                        id: String(msg.id),
+                        method: String(msg.method || ''),
+                        href: String(location.href || ''),
+                        apiReady: fn.__cw_stub ? 0 : 1,
+                        result: result
+                    }, '*');
+                } catch (_) {}
+            }, true);
+        }
+
+        window.__cw_callBaccaratFrameApi = function (method, args, timeoutMs) {
+            return new Promise(function (resolve) {
+                var id = 'cwrec-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+                var responses = [], done = false;
+                function finish() {
+                    if (done) return;
+                    done = true;
+                    try { window.removeEventListener('message', onResult, true); } catch (_) {}
+                    responses.sort(function (a, b) { return Number(b.apiReady || 0) - Number(a.apiReady || 0); });
+                    resolve(responses);
+                }
+                function onResult(ev) {
+                    var msg = ev && ev.data;
+                    if (!msg || msg.__cw_recovery_rpc_result !== 1 || String(msg.id || '') !== id) return;
+                    responses.push(msg);
+                }
+                window.addEventListener('message', onResult, true);
+                var frames = [];
+                try { frames = Array.from(document.querySelectorAll('iframe,frame')); } catch (_) { frames = []; }
+                for (var i = 0; i < frames.length; i++) {
+                    try { frames[i].contentWindow.postMessage({ __cw_recovery_rpc: 1, id: id, method: method, args: args || {} }, '*'); } catch (_) {}
+                }
+                setTimeout(finish, Math.max(300, Number(timeoutMs || 1500)));
+            });
+        };
+        window.__cw_detectBaccaratContextDeep = function (timeoutMs) {
+            return window.__cw_callBaccaratFrameApi('detect', {}, timeoutMs);
+        };
+        window.__cw_listBaccaratTablesDeep = function (timeoutMs) {
+            return window.__cw_callBaccaratFrameApi('list', {}, timeoutMs);
+        };
+        window.__cw_goBaccaratHallDeep = function (timeoutMs) {
+            return window.__cw_callBaccaratFrameApi('goHall', {}, timeoutMs);
+        };
+        window.__cw_loadBaccaratTableDeep = function (request, timeoutMs) {
+            return window.__cw_callBaccaratFrameApi('loadTable', request || {}, timeoutMs);
+        };
+    })();
 
     function __cw_boot() {
     try {
@@ -2600,25 +2765,24 @@
             var domCountdown = domReadBetCountdown();
             if (domCountdown && domCountdown.value != null) {
                 S._progIsSec = true;
+                S._progSource = 'game-dom-countdown|' + String(domCountdown.source || 'top');
                 S._progTail = domCountdown.tail || 'body/div#themeZone.game.scenes_default.baccarat_normal/div#countdown.icon_progress.progress_countdown/dl.progress_no/dd#countdownTime/p';
+                try { window.__cw_prog_source = S._progSource; } catch (_) {}
                 try { window.__cw_prog_tail = S._progTail; } catch (_) {}
                 return domCountdown.value;
             }
-            var domCards = domScanBaccaratCards();
-            var domActive = domPickActiveCard(domCards);
-            if (domActive && domActive.countdown != null) {
-                S._progIsSec = true;
-                S._progTail = 'dom/baccarat/countdown';
-                try { window.__cw_prog_tail = S._progTail; } catch (_) {}
-                return domActive.countdown;
-            }
-            S._progTail = 'dom/baccarat';
+            S._progSource = 'missing-game-countdown';
+            S._progTail = '';
+            try { window.__cw_prog_source = S._progSource; } catch (_) {}
             try { window.__cw_prog_tail = S._progTail; } catch (_) {}
             return null;
         }
         var cd = readCountdownSec();
-        if (cd != null)
+        if (cd != null) {
+            S._progSource = 'game-cocos-countdown';
+            try { window.__cw_prog_source = S._progSource; } catch (_) {}
             return cd;
+        }
         S._progIsSec = false;
         var bars = [];
         walkNodes(function (n) {
@@ -2637,7 +2801,9 @@
             }
         });
         if (!bars.length) {
+            S._progSource = 'missing-game-countdown';
             S._progTail = '';
+            window.__cw_prog_source = S._progSource;
             window.__cw_prog_tail = '';
             return null;
         }
@@ -2649,9 +2815,11 @@
         var barPick = (cs[0] || bars[0]);
         var bar = barPick.comp;
         try {
+            S._progSource = 'game-cocos-progress';
             S._progTail = barPick.tail || '';
         } catch (e) {}
         try {
+            window.__cw_prog_source = S._progSource;
             window.__cw_prog_tail = barPick.tail || '';
         } catch (e) {}
         var pr = (bar && typeof bar.progress !== 'undefined') ? bar.progress : 0;
@@ -3973,6 +4141,8 @@
                 var ctx = contexts[i];
                 var doc = ctx && ctx.doc ? ctx.doc : null;
                 if (!doc)
+                    continue;
+                if (String(ctx.href || '').toLowerCase().indexOf('singlebactable.jsp') === -1)
                     continue;
                 var nodes = [];
                 try {
@@ -9253,12 +9423,28 @@
     root.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;display:none!important;visibility:hidden!important;';
     document.body.appendChild(root);
     var _panelOwnerTimer = null;
-    try {
-        __cw_applyPanelDisplayOwner(root);
-        _panelOwnerTimer = setInterval(function () {
+    function __cw_panelDebugAllowed() {
+        try { return __cw_isCanvasWatchVisible() || window.__cw_panel_autostart === 1 || window.__cw_panel_autostart === true; }
+        catch (_) { return false; }
+    }
+    function __cw_startPanelDebugTimers() {
+        try {
+            if (!__cw_panelDebugAllowed() || _panelOwnerTimer) return;
             __cw_applyPanelDisplayOwner(root);
-        }, 800);
-    } catch (_) {}
+            _panelOwnerTimer = setInterval(function () {
+                if (__cw_panelDebugAllowed()) __cw_applyPanelDisplayOwner(root);
+            }, 800);
+        } catch (_) {}
+    }
+    function __cw_stopPanelDebugTimers() {
+        try {
+            if (_panelOwnerTimer) clearInterval(_panelOwnerTimer);
+        } catch (_) {}
+        _panelOwnerTimer = null;
+    }
+    window.__cw_startPanelDebugTimers = __cw_startPanelDebugTimers;
+    window.__cw_stopPanelDebugTimers = __cw_stopPanelDebugTimers;
+    __cw_startPanelDebugTimers();
     var panel = document.createElement('div');
     panel.style.cssText = 'position:fixed;top:10px;right:10px;width:820px;background:#08130f;color:#bff;border:1px solid #0a0;border-radius:10px;padding:8px;font:12px/1.35 Consolas,monospace;pointer-events:auto;z-index:2147483647';
     panel.innerHTML = '' +
@@ -10282,9 +10468,9 @@
     var CHIP_TAIL_ROW4 = 'xdlive/canvas/bg/tipdealer/tabtipdealer/tipcontent/views/contentchat/row4/itemtip/lbmoney';
     var DENOMS_DESC = [10000000, 5000000, 1000000, 500000, 100000, 50000, 20000, 10000, 5000, 2000, 1000];
     var cfgBet = {
-    delayPick: 70,
-    delayTap: 55,
-    delayBetweenSteps: 60
+    delayPick: 180,
+    delayTap: 90,
+    delayBetweenSteps: 90
     };
 
     function clickAtWin(x, y) {
@@ -11616,7 +11802,7 @@
         }
         if (!domMinimalClick(info.el))
             return false;
-        await sleep(140);
+        await sleep(220);
         return true;
     }
     async function domFocusChip(amount) {
@@ -12607,7 +12793,7 @@
                     else
                         clickRectCenter(rectFromNodeScreen(target));
                 }
-                await sleep(140);
+                await sleep(200);
                 var t = getComp(target, cc.Toggle);
                 if (t && !t.isChecked) {
                     t.isChecked = true;
@@ -12631,7 +12817,7 @@
             else
                 clickRectCenter(rectFromNodeScreen(target2));
         }
-        await sleep(140);
+        await sleep(200);
         var tg = getComp(target2, cc.Toggle);
         if (tg && !tg.isChecked) {
             tg.isChecked = true;
@@ -12805,15 +12991,15 @@
                 }
                 var before0 = sampleTotalsNow();
                 var targetClickedOne = clickBetTarget(tgt);
-                var appliedOne = await waitForTotalsChange(before0, side, 150).catch(function () {
+                var appliedOne = await waitForTotalsChange(before0, side, 220).catch(function () {
                     return false;
                 });
                 if (!appliedOne && isDomMode) {
-        appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 140).catch(function () {
+        appliedOne = await domWaitPendingConfirmEnabled(confirmBeforeEnabled, 220).catch(function () {
                         return false;
                     });
                     if (!appliedOne) {
-        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 140).catch(function () {
+        var stakeHitOne = await domWaitTargetStakeUnits(tgt, X, 220).catch(function () {
                             return null;
                         });
                         appliedOne = !!(stakeHitOne && stakeHitOne.val === X);
@@ -12844,7 +13030,7 @@
                         return failBet('confirm failed', { side: side, amount: raw, chipUnits: X });
                     }
                 }
-                await sleep(15);
+                await sleep(90);
                 clearBetError();
                 return true;
             }
@@ -12900,7 +13086,7 @@
                             denom: step.val,
                             turn: i2 + 1
                         });
-                    var appliedStep = await waitForTotalsChange(beforeStep, side, 100).catch(function () {
+                    var appliedStep = await waitForTotalsChange(beforeStep, side, 220).catch(function () {
                         return false;
                     });
                     if (!appliedStep) {
@@ -12913,7 +13099,7 @@
                             return failBet('bet click not reflected', { side: side, amount: raw, chipUnits: step.val, turn: i2 + 1 });
                         }
                     }
-                    await sleep(15);
+                    await sleep(90);
                 }
             }
             if (isDomMode) {
@@ -13307,6 +13493,8 @@
     }
     function brInstallSeqMutationObserver() {
         try {
+            if (!__cw_panelDebugAllowed())
+                return false;
             if (__cw_hasCocos())
                 return false;
             if (_seqDomObserver || typeof MutationObserver === 'undefined')
@@ -13411,6 +13599,8 @@
     function start() {
         if (S.running)
             return;
+        if (!__cw_panelDebugAllowed())
+            return;
         S.running = true;
         S.timer = setInterval(tick, S.tickMs);
         tick();
@@ -13426,6 +13616,7 @@
         } catch (e) {}
         S.timer = null;
         brRemoveSeqMutationObserver('stop');
+        __cw_stopPanelDebugTimers();
         setStateUI();
     }
 
@@ -13565,10 +13756,7 @@
         try {
             window.__cw_last_panel_snapshot = null;
         } catch (e) {}
-        try {
-            if (_panelOwnerTimer)
-                clearInterval(_panelOwnerTimer);
-        } catch (e) {}
+        __cw_stopPanelDebugTimers();
         try {
             root.remove();
         } catch (e) {}
@@ -13587,6 +13775,7 @@
         } catch (_) {}
 
         function safePost(obj) {
+            var json = __cwJsonPost(obj);
             try {
                 try {
                     cwDbg('POST', 'safePost outgoing', {
@@ -13598,10 +13787,10 @@
                     }, 2000, 'post|' + (obj && obj.abx ? obj.abx : '') + '|' + (obj && obj.seqVersion != null ? obj.seqVersion : '') + '|' + (obj && obj.seqEvent ? obj.seqEvent : ''));
                 } catch (_) {}
                 if (window.chrome && chrome.webview && typeof chrome.webview.postMessage === 'function') {
-                    chrome.webview.postMessage(JSON.stringify(obj));
+                    chrome.webview.postMessage(json);
                 } else {
                     // Fallback: gửi lên TOP bằng DOM message, TOP_FORWARD sẽ relay về C#
-                    parent.postMessage(obj, '*');
+                    parent.postMessage({ __cw_json_message: json }, '*');
                 }
             } catch (e) {
                 try {
@@ -13611,7 +13800,7 @@
                     }, 0, 'post-fail|' + (obj && obj.abx ? obj.abx : ''));
                 } catch (_) {}
                 try {
-                    parent.postMessage(obj, '*');
+                    parent.postMessage({ __cw_json_message: json }, '*');
                 } catch (_) {}
             }
         }
@@ -13925,6 +14114,314 @@
                 return 0;
             }
         }
+
+        function __cw_tableCodeFromName(name) {
+            try {
+                var m = /(?:^|\b)C\s*0*(\d{1,3})(?:\b|$)/i.exec(String(name || ''));
+                return m ? ('C' + String(parseInt(m[1], 10))) : '';
+            } catch (_) { return ''; }
+        }
+
+        function __cw_normalizeTableName(name) {
+            try {
+                return String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[đĐ]/g, 'd').replace(/\s+/g, ' ').trim().toUpperCase();
+            } catch (_) { return String(name || '').replace(/\s+/g, ' ').trim().toUpperCase(); }
+        }
+
+        window.__cw_tableCodeFromName = __cw_tableCodeFromName;
+        function __cw_scanRecoveryBaccaratCards() {
+            var out = [], seen = [];
+            try {
+                var candidates = document.querySelectorAll('div,span,a,strong,b,h1,h2,h3,h4,p');
+                var innerW = Number(window.innerWidth || 1600);
+                var innerH = Number(window.innerHeight || 900);
+                for (var i = 0; i < candidates.length && i < 6000; i++) {
+                    var el = candidates[i];
+                    var txt = domCollapse(el.innerText || el.textContent || '');
+                    if (!txt || txt.length > 120) continue;
+                    var m = txt.match(/\bBaccarat\s*[A-Z0-9]+\b/i);
+                    if (!m) continue;
+                    var root = domFindCardRoot(el, {
+                        doc: document,
+                        innerWidth: innerW,
+                        innerHeight: innerH,
+                        win: window
+                    });
+                    if (!root || seen.indexOf(root) >= 0) continue;
+                    var r = root.getBoundingClientRect(), cs = getComputedStyle(root);
+                    if (!r || r.width < 180 || r.height < 90 ||
+                        cs.display === 'none' || cs.visibility === 'hidden') continue;
+                    if (r.width > innerW * 0.95 || r.height > innerH * 0.95) continue;
+                    seen.push(root);
+                    out.push({ root: root, title: m[0] });
+                }
+            } catch (_) {}
+            return out;
+        }
+
+        function __cw_scrollRecoveryHall() {
+            try {
+                var nodes = document.querySelectorAll('div,main,section,article');
+                var best = null, bestScore = 0;
+                for (var i = 0; i < nodes.length && i < 4000; i++) {
+                    var el = nodes[i];
+                    if (el.scrollHeight <= el.clientHeight + 100 || el.clientHeight < 180) continue;
+                    var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+                    if (r.width < 300 || r.height < 180 || cs.display === 'none' || cs.visibility === 'hidden') continue;
+                    var score = (el.scrollHeight - el.clientHeight) + Math.round(r.width * r.height / 1000);
+                    if (score > bestScore) { best = el; bestScore = score; }
+                }
+                var target = best || document.scrollingElement || document.documentElement;
+                var before = Number(target.scrollTop || 0);
+                var max = Math.max(0, Number(target.scrollHeight || 0) - Number(target.clientHeight || 0));
+                var step = Math.max(240, Math.round(Number(target.clientHeight || window.innerHeight || 800) * 0.75));
+                var next = before + step;
+                if (next >= max - 5) next = 0;
+                target.scrollTop = next;
+                try { target.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (_) {}
+                return { moved: Math.abs(next - before) > 1 ? 1 : 0, before: before, after: next, max: max };
+            } catch (_) {
+                return { moved: 0, before: 0, after: 0, max: 0 };
+            }
+        }
+        window.__cw_listBaccaratTables = function () {
+            var cards = __cw_scanRecoveryBaccaratCards();
+            if (!cards.length) cards = domScanBaccaratCards(true) || [];
+            var out = [];
+            for (var i = 0; i < cards.length && out.length < 30; i++) {
+                var card = cards[i]; if (!card || !card.root) continue;
+                var title = String(card.title || '').trim(), root = card.root, href = '', tag = '', visible = false;
+                try {
+                    var target = root.querySelector('a[href],button,[role="button"],[onclick]') || root;
+                    tag = String(target && target.tagName || '');
+                    var anchor = target && target.closest ? target.closest('a[href]') : null;
+                    if (!anchor && root.querySelector) anchor = root.querySelector('a[href]');
+                    href = anchor ? String(anchor.href || anchor.getAttribute('href') || '') : '';
+                    var r = root.getBoundingClientRect(), cs = getComputedStyle(root);
+                    visible = r.width > 100 && r.height > 50 && cs.display !== 'none' && cs.visibility !== 'hidden';
+                } catch (_) {}
+                out.push({ title: title, tableId: inferBaccaratTableIdFromName(title), tableCode: __cw_tableCodeFromName(title),
+                    href: href, visible: visible ? 1 : 0, clickableTag: tag,
+                    contextHref: String(card._ctxHref || ''), contextSource: String(card._ctxSource || '') });
+            }
+            // WebView2 chỉ cấp CoreWebView2Frame cho webMain, còn iframeGameHall
+            // là frame con cùng origin. Đọc trực tiếp API đã inject trong frame con
+            // để C# vẫn nhận được danh sách bàn mà không cần đăng ký frame cấp 2.
+            if (!out.length) {
+                try {
+                    var hallFrame = document.querySelector('#iframeGameHall,iframe[src*="gamehall.jsp" i]');
+                    var hallWin = hallFrame && hallFrame.contentWindow;
+                    if (hallWin && hallWin !== window && typeof hallWin.__cw_listBaccaratTables === 'function') {
+                        var nestedRaw = hallWin.__cw_listBaccaratTables();
+                        var nested = JSON.parse(String(nestedRaw || ''));
+                        if (nested && Number(nested.count || 0) > 0)
+                            return String(nestedRaw);
+                    }
+                } catch (_) {}
+            }
+            var contextHref = String(location.href || ''), contextLow = contextHref.toLowerCase();
+            var contextKind = out.length > 1 || contextLow.indexOf('/player/gamehall.jsp') >= 0
+                ? 'GAME_HALL'
+                : (contextLow.indexOf('/player/singlebactable.jsp') >= 0 ? 'GAME_TABLE'
+                    : (contextLow.indexOf('/player/webmain.jsp') >= 0 ? 'PROVIDER_ENTRY' : 'UNKNOWN'));
+            return JSON.stringify({ ok: true, kind: contextKind, href: contextHref, count: out.length, tables: out });
+        };
+
+        window.__cw_detectBaccaratContext = function () {
+            try {
+                var href = String(location.href || ''), lowHref = href.toLowerCase();
+                var cards = domScanBaccaratCards(true) || [];
+                var hallFrame = document.querySelector('#iframeGameHall,iframe[src*="gamehall.jsp" i]');
+                var gameFrame = document.querySelector('#iframeGame,iframe[src*="singleBacTable.jsp" i]');
+                function shown(el) {
+                    try {
+                        if (!el) return false;
+                        var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+                        return r.width > 100 && r.height > 80 && cs.display !== 'none' && cs.visibility !== 'hidden';
+                    } catch (_) { return false; }
+                }
+                function frameHref(el) {
+                    try {
+                        var nested = el && el.contentWindow ? String(el.contentWindow.location.href || '') : '';
+                        if (nested && nested !== 'about:blank') return nested;
+                    } catch (_) {}
+                    try { return String(el && (el.src || el.getAttribute('src')) || ''); } catch (_) { return ''; }
+                }
+                var offline = false, reconnecting = false;
+                try { offline = navigator.onLine === false; } catch (_) {}
+                try {
+                    var statusNode = document.querySelector('[id*="noComm" i],[class*="no-comm" i],[class*="reconnect" i],[id*="reconnect" i]');
+                    var statusText = String(statusNode && (statusNode.innerText || statusNode.textContent) || '');
+                    reconnecting = /no\s*comm|reconnect|reload/i.test(statusText);
+                } catch (_) {}
+                var hallVisible = shown(hallFrame), gameVisible = shown(gameFrame);
+                var hallHref = frameHref(hallFrame), gameHref = frameHref(gameFrame);
+                var isController = !!(hallFrame || gameFrame);
+                var kind = 'PROVIDER_ENTRY';
+                if (offline || reconnecting) kind = 'DISCONNECTED';
+                else if (gameVisible) kind = 'GAME_TABLE';
+                else if (hallVisible || cards.length > 1 || lowHref.indexOf('/player/gamehall.jsp') >= 0) kind = 'GAME_HALL';
+                else if (lowHref.indexOf('/player/singlebactable.jsp') >= 0 || __cw_hasCocos()) kind = 'GAME_TABLE';
+                else if (lowHref.indexOf('/player/webmain.jsp') >= 0) kind = 'PROVIDER_ENTRY';
+                return JSON.stringify({ ok: true, kind: kind, href: href, online: offline ? 0 : 1,
+                    controller: isController ? 1 : 0, cardCount: cards.length,
+                    hallFramePresent: hallFrame ? 1 : 0, hallFrameVisible: hallVisible ? 1 : 0, hallFrameHref: hallHref,
+                    gameFramePresent: gameFrame ? 1 : 0, gameFrameVisible: gameVisible ? 1 : 0, gameFrameHref: gameHref });
+            } catch (e) {
+                return JSON.stringify({ ok: false, kind: 'UNKNOWN', reason: String(e && e.message || e) });
+            }
+        };
+
+        window.__cw_goBaccaratHall = function () {
+            try {
+                var cards = domScanBaccaratCards(true) || [];
+                if (cards.length > 1)
+                    return JSON.stringify({ ok: true, reason: 'already-hall', count: cards.length, href: String(location.href || '') });
+
+                var hallFrame = document.querySelector('#iframeGameHall,iframe[src*="gamehall.jsp" i]');
+                var gameFrame = document.querySelector('#iframeGame,iframe[src*="singleBacTable.jsp" i]');
+                if (hallFrame) {
+                    try {
+                        hallFrame.style.display = 'block'; hallFrame.style.visibility = 'visible'; hallFrame.removeAttribute('hidden');
+                        if (gameFrame && gameFrame !== hallFrame) { gameFrame.style.display = 'none'; gameFrame.style.visibility = 'hidden'; }
+                        hallFrame.scrollIntoView({ block: 'start' });
+                        return JSON.stringify({ ok: true, reason: 'hall-frame-shown', href: String(hallFrame.src || hallFrame.getAttribute('src') || '') });
+                    } catch (_) {}
+                }
+
+                var candidates = Array.from(document.querySelectorAll('a,button,[role="button"],[onclick],[title],[aria-label]'));
+                for (var i = 0; i < candidates.length; i++) {
+                    var el = candidates[i], txt = __cw_normalizeTableName(
+                        String(el.getAttribute('title') || '') + ' ' + String(el.getAttribute('aria-label') || '') + ' ' + String(el.innerText || el.textContent || ''));
+                    if (!/(GAME\s*HALL|LOBBY|HOME|DANH\s*SACH\s*BAN|SANH)/.test(txt)) continue;
+                    try {
+                        var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+                        if (!(r.width > 4 && r.height > 4 && cs.display !== 'none' && cs.visibility !== 'hidden')) continue;
+                        el.scrollIntoView({ block: 'center' });
+                        el.click();
+                        return JSON.stringify({ ok: true, reason: 'hall-control-clicked', text: txt.slice(0, 80) });
+                    } catch (_) {}
+                }
+
+                var href = String(location.href || '');
+                if (/\/player\/singleBacTable\.jsp/i.test(href)) {
+                    var hallUrl = href.replace(/\/player\/singleBacTable\.jsp/i, '/player/gamehall.jsp');
+                    location.replace(hallUrl);
+                    return JSON.stringify({ ok: true, reason: 'hall-location-replace', href: hallUrl });
+                }
+                return JSON.stringify({ ok: false, reason: 'hall-route-not-found', href: href });
+            } catch (e) {
+                return JSON.stringify({ ok: false, reason: 'hall-route-error', error: String(e && e.message || e) });
+            }
+        };
+        window.__cw_openBaccaratTableByIdentity = function (request) {
+            var req = request || {};
+            try {
+                var hallFrame = document.querySelector('#iframeGameHall,iframe[src*="gamehall.jsp" i]');
+                var hallWin = hallFrame && hallFrame.contentWindow;
+                if (hallWin && hallWin !== window && typeof hallWin.__cw_openBaccaratTableByIdentity === 'function') {
+                    var nestedRaw = hallWin.__cw_openBaccaratTableByIdentity(req);
+                    var nested = JSON.parse(String(nestedRaw || ''));
+                    if (nested && nested.ok)
+                        return String(nestedRaw);
+                }
+            } catch (_) {}
+            var wantId = Number(req.tableId || 0) || 0;
+            var wantCode = String(req.tableCode || '').trim().toUpperCase();
+            var wantName = __cw_normalizeTableName(req.tableName || ''), cards = __cw_scanRecoveryBaccaratCards(), match = null, by = '';
+            if (!cards.length) cards = domScanBaccaratCards(true) || [];
+            for (var i = 0; i < cards.length; i++) {
+                var c = cards[i]; if (!c || !c.root) continue;
+                var n = String(c.title || '').trim(), id = inferBaccaratTableIdFromName(n), code = __cw_tableCodeFromName(n), nn = __cw_normalizeTableName(n);
+                if (wantId > 0 && id === wantId) { match = c; by = 'table-id'; break; }
+                if (!match && wantCode && code === wantCode) { match = c; by = 'table-code'; }
+                if (!match && wantName && nn === wantName) { match = c; by = 'table-name'; }
+                if (!match && wantCode && nn.indexOf(wantCode) >= 0) { match = c; by = 'table-code-name'; }
+            }
+            if (!match) {
+                var scroll = __cw_scrollRecoveryHall();
+                return JSON.stringify({ ok: false, reason: scroll.moved ? 'table-search-scrolled' : 'table-not-found',
+                    scroll: scroll, available: cards.slice(0, 30).map(function (c) { return String(c && c.title || ''); }) });
+            }
+            var root = match.root, target = null, href = '';
+            try {
+                var r = root.getBoundingClientRect(), cs = getComputedStyle(root);
+                if (!(r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden'))
+                    return JSON.stringify({ ok: false, reason: 'table-not-visible', tableName: String(match.title || '') });
+                root.scrollIntoView({ block: 'center', inline: 'center' });
+                var openNodes = root.querySelectorAll('a[href],button,[role="button"],[onclick],div,span');
+                for (var oi = 0; oi < openNodes.length; oi++) {
+                    var openText = __cw_normalizeTableName(openNodes[oi].innerText || openNodes[oi].textContent || '');
+                    if (/^(MO BAI|OPEN)$/.test(openText)) { target = openNodes[oi]; break; }
+                }
+                target = target || root.querySelector('[onclick],a[href],button,[role="button"]') || root;
+                var a = target.closest ? target.closest('a[href]') : null;
+                if (!a && root.querySelector) a = root.querySelector('a[href]');
+                href = a ? String(a.href || a.getAttribute('href') || '') : '';
+                r = target.getBoundingClientRect();
+                var cx = Math.max(1, Math.round(r.left + r.width / 2));
+                var cy = Math.max(1, Math.round(r.top + r.height / 2));
+                var hit = document.elementFromPoint(cx, cy);
+                var eventTarget = hit && root.contains(hit) ? hit : target;
+                ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach(function (type) {
+                    var Ctor = type.indexOf('pointer') === 0 && typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
+                    eventTarget.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: type.indexOf('down') >= 0 ? 1 : 0 }));
+                });
+                target.click();
+            } catch (e) { return JSON.stringify({ ok: false, reason: 'click-error', error: String(e && e.message || e) }); }
+            return JSON.stringify({ ok: true, reason: 'clicked', matchedBy: by, tableId: inferBaccaratTableIdFromName(String(match.title || '')),
+                tableName: String(match.title || ''), tableCode: __cw_tableCodeFromName(String(match.title || '')), href: href,
+                targetTag: String(target && target.tagName || ''), targetText: domCollapse(target && (target.innerText || target.textContent) || '').slice(0, 60) });
+        };
+
+        window.__cw_loadBaccaratTable = async function (request) {
+            try {
+                var state = JSON.parse(window.__cw_detectBaccaratContext());
+                if (!state || state.kind !== 'GAME_HALL') {
+                    var route = JSON.parse(await window.__cw_goBaccaratHall());
+                    if (!route || !route.ok)
+                        return JSON.stringify({ ok: false, reason: 'hall-route-failed', route: route || null });
+                }
+                for (var attempt = 1; attempt <= 20; attempt++) {
+                    var openedRaw = await window.__cw_openBaccaratTableByIdentity(request || {});
+                    var opened = JSON.parse(String(openedRaw || ''));
+                    if (opened && opened.ok)
+                        return JSON.stringify({ ok: true, reason: 'table-clicked', attempt: attempt, result: opened });
+                    await new Promise(function (resolve) { setTimeout(resolve, 500); });
+                }
+                return JSON.stringify({ ok: false, reason: 'table-not-found-after-scroll', request: request || {} });
+            } catch (e) {
+                return JSON.stringify({ ok: false, reason: 'load-table-error', error: String(e && e.message || e) });
+            }
+        };
+
+        window.__cw_startBaccaratRecoveryWatchdog = function (request) {
+            try {
+                window.__cw_baccarat_recovery_request = request || window.__cw_baccarat_recovery_request || {};
+                if (window.__cw_baccarat_recovery_watchdog) return 'already-running';
+                window.__cw_baccarat_recovery_watchdog = setInterval(function () {
+                    try {
+                        var state = JSON.parse(window.__cw_detectBaccaratContext());
+                        var lastTick = Number(window.__abx_last_authority_snapshot_at || 0) || 0;
+                        var staleMs = lastTick > 0 ? Date.now() - lastTick : 999999;
+                        if ((state.kind === 'DISCONNECTED' || state.kind === 'GAME_HALL') && staleMs >= 3000) {
+                            var lastPost = Number(window.__cw_baccarat_recovery_post_at || 0) || 0;
+                            if (Date.now() - lastPost < 3000) return;
+                            window.__cw_baccarat_recovery_post_at = Date.now();
+                            __abxPost({ abx: 'table_recovery_needed', reason: state.kind.toLowerCase(),
+                                staleMs: staleMs, href: String(location.href || ''), request: window.__cw_baccarat_recovery_request || {} });
+                        }
+                    } catch (_) {}
+                }, 1000);
+                return 'started';
+            } catch (e) { return 'error:' + String(e && e.message || e); }
+        };
+        window.__cw_stopBaccaratRecoveryWatchdog = function () {
+            try { if (window.__cw_baccarat_recovery_watchdog) clearInterval(window.__cw_baccarat_recovery_watchdog); } catch (_) {}
+            window.__cw_baccarat_recovery_watchdog = null;
+            return 'stopped';
+        };
 
         function readTableContextSafe(existingTotals, forceFresh) {
             var now = Date.now();
@@ -14592,6 +15089,8 @@
             var snap = {
                 abx: 'tick',
                 prog: p,
+                progSource: String(window.__cw_prog_source || (S && S._progSource) || ''),
+                progTail: String(window.__cw_prog_tail || (S && S._progTail) || ''),
                 totals: t,
                 tableName: tableCtx && tableCtx.name ? String(tableCtx.name || '') : '',
                 tableId: tableCtx && tableCtx.id ? Number(tableCtx.id || 0) || 0 : 0,

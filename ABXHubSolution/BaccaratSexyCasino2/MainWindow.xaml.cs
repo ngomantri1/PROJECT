@@ -342,6 +342,19 @@ namespace BaccaratSexyCasino2
         private bool _uiReady = false;
         private bool _didStartupNav = false;
         private bool _webHooked = false;
+        private int _webRecoveryBusy;
+        private int _webRecoveryRendererCrashed;
+        private long _webLifecycleGeneration;
+        private CancellationTokenSource? _webHealthWatchCts;
+        private CancellationTokenSource? _webRecoveryCts;
+        private DateTime _lastFreshGameTickUtc = DateTime.MinValue;
+        private DateTime _lastWebRecoveryUtc = DateTime.MinValue;
+        private bool _webRendererHealthy = true;
+        private DateTime _lastFrameDisposedLogUtc = DateTime.MinValue;
+        private DateTime _lastFreshGameTickLogUtc = DateTime.MinValue;
+        private string _lastBaccaratViewState = "UNKNOWN";
+        private DateTime _lastBaccaratViewStateUtc = DateTime.MinValue;
+        private DateTime _nonGameViewSinceUtc = DateTime.MinValue;
         private CancellationTokenSource? _navCts, _userCts, _passCts, _stakeCts, _sideRateCts;
 
         // ====== JS Awaiters ======
@@ -724,6 +737,22 @@ namespace BaccaratSexyCasino2
             public long GameShoe { get; set; }
             public long GameRound { get; set; }
             public DateTime SeenAtUtc { get; set; }
+        }
+
+        private sealed class TableRecoveryBookmark
+        {
+            public long TableId { get; set; }
+            public string TableName { get; set; } = "";
+            public string TableCode { get; set; } = "";
+            public string SingleTableUrl { get; set; } = "";
+            public string ProviderEntryUrl { get; set; } = "";
+            public string GameHallUrl { get; set; } = "";
+            public string MainHost { get; set; } = "";
+            public string FramePath { get; set; } = "";
+            public string ContextId { get; set; } = "";
+            public string Source { get; set; } = "";
+            public DateTime CapturedAtUtc { get; set; }
+            public int StableTicks { get; set; }
         }
 
 
@@ -1190,6 +1219,12 @@ Ví dụ không hợp lệ:
         private const int PopupTransitMaxRecoverAttempts = 1;
         private readonly object _playerFlowCacheLock = new();
         private string _lastPlayerFlowGameUrl = "";
+        private readonly object _tableRecoveryLock = new();
+        private TableRecoveryBookmark? _tableRecoveryBookmark;
+        private string _tableRecoveryCandidateKey = "";
+        private int _tableRecoveryCandidateStable;
+        private int _tableRecoveryBusy;
+        private DateTime _lastTableRecoveryUtc = DateTime.MinValue;
         private DateTime _lastPlayerFlowGameAtUtc = DateTime.MinValue;
         private string _lastPlayerFlowSourceHost = "";
         private const string Wv2ZipResNameX64 = "BaccaratSexyCasino2.ThirdParty.WebView2Fixed_win-x64.zip";
@@ -1264,7 +1299,11 @@ Ví dụ không hợp lệ:
           window.localStorage.setItem(__abxCwVisibleKey, visible ? '1' : '0');
         }
       }catch(_){}
-      try{ if (typeof window.__abxCwEnforceSinglePanel === 'function') window.__abxCwEnforceSinglePanel(); }catch(_){}
+      try{
+        if (typeof window.__abxCwEnforceSinglePanel === 'function') window.__abxCwEnforceSinglePanel();
+        if (visible && typeof window.__abxStartSinglePanelTimer === 'function') window.__abxStartSinglePanelTimer();
+        if (!visible && typeof window.__abxStopSinglePanelTimer === 'function') window.__abxStopSinglePanelTimer();
+      }catch(_){}
       return visible ? 'Canvas Watch visible' : 'Canvas Watch hidden';
     }
     window.__abx_set_canvas_watch_visible = __abxCwSetDebugVisible;
@@ -1585,14 +1624,29 @@ Ví dụ không hợp lệ:
       }catch(_){}
     }
     window.__abxCwEnforceSinglePanel = __abxCwEnforceSinglePanel;
+    function __abxStartSinglePanelTimer(){
+      try{
+        if (!__abxCwIsDebugVisible() && window.__cw_panel_autostart !== 1 && window.__cw_panel_autostart !== true) return;
+        if (!window.__abxCwSinglePanelTimer)
+          window.__abxCwSinglePanelTimer = setInterval(__abxCwEnforceSinglePanel, 500);
+      }catch(_){}
+    }
+    function __abxStopSinglePanelTimer(){
+      try{ if (window.__abxCwSinglePanelTimer) clearInterval(window.__abxCwSinglePanelTimer); }catch(_){}
+      try{ window.__abxCwSinglePanelTimer = null; }catch(_){}
+    }
+    window.__abxStartSinglePanelTimer = __abxStartSinglePanelTimer;
+    window.__abxStopSinglePanelTimer = __abxStopSinglePanelTimer;
     try{ __abxCwEnforceSinglePanel(); }catch(_){}
-    try{ if (!window.__abxCwSinglePanelTimer) window.__abxCwSinglePanelTimer = setInterval(__abxCwEnforceSinglePanel, 500); }catch(_){}
+    __abxStartSinglePanelTimer();
     if (!__abxTopForwardAlready){
       window.addEventListener('message', function(ev){
         try{
           var d = ev && ev.data; if(!d) return;
           try{ if (d && d.__cw_cmd === 'canvas_watch_visible') __abxCwSetDebugVisible(!!d.visible); }catch(_){}
-          var s = (typeof d==='string') ? d : JSON.stringify(d);
+          var s = (d && typeof d.__cw_json_message === 'string')
+            ? d.__cw_json_message
+            : ((typeof d==='string') ? d : JSON.stringify(d));
           if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage){
             window.chrome.webview.postMessage(s);
           }
@@ -1609,11 +1663,27 @@ Ví dụ không hợp lệ:
     try{
       if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function'){
         var __orig = window.chrome.webview.postMessage.bind(window.chrome.webview);
+        function __frameClone(v, seen){
+          try{
+            if (v == null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return v;
+            if (typeof v === 'function' || typeof v === 'symbol' || typeof v === 'bigint') return undefined;
+            if (v.nodeType || Object.prototype.toString.call(v) === '[object Window]' || Object.prototype.toString.call(v) === '[object Event]') return undefined;
+            seen = seen || [];
+            if (seen.indexOf(v) >= 0) return undefined;
+            seen.push(v);
+            if (Array.isArray(v)) return v.map(function(x){ var y=__frameClone(x,seen); return typeof y==='undefined'?null:y; });
+            var o={}; for (var k in v){ if(!Object.prototype.hasOwnProperty.call(v,k)) continue; var c=__frameClone(v[k],seen); if(typeof c!=='undefined') o[k]=c; }
+            return o;
+          }catch(_){ return undefined; }
+        }
         window.chrome.webview.postMessage = function(p){
           try{ __orig(p); }
           catch(e){
-            try{ parent.postMessage((typeof p==='string'? JSON.parse(p):p), '*'); }
-            catch(_){ try{ parent.postMessage({abx:'raw', value:String(p)}, '*'); }catch(__){} }
+            try{
+              var __json = (typeof p === 'string') ? p : JSON.stringify(__frameClone(p, []));
+              parent.postMessage({__cw_json_message:__json}, '*');
+            }
+            catch(_){ try{ parent.postMessage({__cw_json_message:JSON.stringify({abx:'raw', value:String(p)})}, '*'); }catch(__){} }
           }
         };
       }
@@ -1622,11 +1692,13 @@ Ví dụ không hợp lệ:
       window.addEventListener('message', function(ev){
         try{
           var d = ev && ev.data; if(!d) return;
-          var s = (typeof d==='string') ? d : JSON.stringify(d);
+          var s = (d && typeof d.__cw_json_message === 'string')
+            ? d.__cw_json_message
+            : ((typeof d==='string') ? d : JSON.stringify(d));
           if (window.chrome && window.chrome.webview) {
             window.chrome.webview.postMessage(s);
           } else {
-            try { parent.postMessage(d, '*'); } catch(_){}
+            try { parent.postMessage({__cw_json_message:s}, '*'); } catch(_){}
           }
         }catch(_){}
       }, true);
@@ -2874,9 +2946,9 @@ try{
             _enableCdpNetworkTap = isDebug;
             _enableCdpObservedContextTap = true;
             _enableHttpResponseBodyTap = UseDomBootstrapCdpAppendSeq || isDebug;
-            _enableJsFileLog = true;
+            _enableJsFileLog = isDebug;
             _enableJsPushDebug = isDebug;
-            _enablePerfTimingLog = isDebug || _cfg.EnablePerfTimingLog;
+            _enablePerfTimingLog = isDebug && _cfg.EnablePerfTimingLog;
 
             if (log)
             {
@@ -2918,7 +2990,7 @@ try{
         w.__cw_seq_diag = 1;
         w.__cw_console_to_host = 1;
         w.__cw_console_passthrough = 0;
-        w.__cw_panel_autostart = 1;
+        w.__cw_panel_autostart = {(_enableJsPushDebug ? 1 : 0)};
         w.__abx_login_username = {loginUserJs};
         w.__abx_username = {loginUserJs};
       }} catch(_e) {{}}
@@ -3767,6 +3839,7 @@ try{
             // 5) Gắn event 1 lần (đã có _webHooked guard bên trong)
             HookWebViewEventsOnce();
             _webInitDone = true;
+            StartWebHealthWatchdog();
         }
 
 
@@ -4196,6 +4269,8 @@ try{
 
         private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            try { _webHealthWatchCts?.Cancel(); } catch { }
+            try { _webRecoveryCts?.Cancel(); } catch { }
             try { await SaveConfigAsync(); } catch { }
             try { await DisableCdpNetworkTapAsync(); } catch { }
             StopLogPump();       // <-- tắt pump
@@ -4578,7 +4653,10 @@ try{
             {
                 await popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TOP_FORWARD);
                 if (!string.IsNullOrEmpty(_appJs))
+                {
                     await popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_appJs);
+                    Log($"[BRIDGE][FULL-SCRIPT-REGISTERED] owner=popup | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+                }
                 await popupWeb.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(FRAME_AUTOSTART);
                 popupWeb.CoreWebView2.FrameCreated += PopupCore_FrameCreated_Bridge;
                 popupWeb.CoreWebView2.DOMContentLoaded += PopupCore_DOMContentLoaded_Bridge;
@@ -4638,8 +4716,16 @@ try{
                 if (!string.IsNullOrEmpty(key) && key != _popupLastDocKey)
                 {
                     await _popupWeb.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
-                    if (!string.IsNullOrEmpty(_appJs))
+                    var bootProbeRaw = await _popupWeb.CoreWebView2.ExecuteScriptAsync(
+                        "(function(){return !!(window.__cw_boot_done || typeof window.__cw_startPush==='function');})()" );
+                    var alreadyBooted = string.Equals(bootProbeRaw, "true", StringComparison.OrdinalIgnoreCase);
+                    if (!alreadyBooted && !string.IsNullOrEmpty(_appJs))
+                    {
                         await _popupWeb.CoreWebView2.ExecuteScriptAsync(_appJs);
+                        Log($"[BRIDGE][FULL-SCRIPT-FALLBACK-INJECT] owner=popup | doc={Shrink(key, 100)} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+                    }
+                    else if (alreadyBooted)
+                        Log($"[BRIDGE][FULL-SCRIPT-SKIP-BOOTED] owner=popup | doc={Shrink(key, 100)} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
                     await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_AUTOSTART_SINGLE_BAC);
                     await _popupWeb.CoreWebView2.ExecuteScriptAsync(POPUP_TOP_START_PUSH_SINGLE_BAC);
                     _popupLastDocKey = key;
@@ -4766,8 +4852,20 @@ try{
                     var snap = ParseCwSnapshotLoose(jrootTick);
                     if (snap == null)
                         return;
-                    if (!ShouldAcceptAuthorityTick(snap, source, out _))
+                    if (!ShouldAcceptAuthorityTick(snap, source, out var tickRouteReason))
                         return;
+
+                    if (string.Equals(tickRouteReason, "authority", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(tickRouteReason, "authority-lost-accept", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _lastFreshGameTickUtc = DateTime.UtcNow;
+                        _webRendererHealthy = true;
+                        if ((_lastFreshGameTickUtc - _lastFreshGameTickLogUtc) > TimeSpan.FromSeconds(3))
+                        {
+                            _lastFreshGameTickLogUtc = _lastFreshGameTickUtc;
+                            Log($"[WV2][FRESH-GAME-TICK] generation={Volatile.Read(ref _webLifecycleGeneration)} | context={Shrink(snap.contextId, 96)} | framePath={Shrink(snap.framePath, 120)} | href={TrimHrefForLog(snap.href)}");
+                        }
+                    }
 
                     CwSnapshot? prevUiSnap;
                     lock (_snapLock) prevUiSnap = CloneSnapRaw(_lastSnap);
@@ -5160,7 +5258,7 @@ try{
                             {
                                 if (progUi.HasValue)
                                 {
-                                    const double progMaxSec = 20;
+                                    const double progMaxSec = 15;
                                     var sec = Math.Max(0, Math.Min(progMaxSec, progUi.Value));
                                     var secInt = (int)Math.Round(sec, MidpointRounding.AwayFromZero);
                                     var ratio = (progMaxSec > 0) ? (sec / progMaxSec) : 0;
@@ -5223,7 +5321,8 @@ try{
                         }));
                     }
 
-                    MarkRealGameSignalIfAny(snap, source);
+                    if (MarkRealGameSignalIfAny(snap, source))
+                        CaptureTableRecoveryBookmark(snap, source);
                     ObservePopupStuckState(snap, source);
                     _lastGameTickUtc = DateTime.UtcNow;
                     if ((_lastGameTickUtc - _lastTickDiagLogUtc) > TimeSpan.FromSeconds(2))
@@ -6303,7 +6402,7 @@ try{
             {
                 var f = e.Frame;
                 TrackPopupFrameRef(f);
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
+                _ = TryExecuteFrameScriptAsync(f, FRAME_SHIM, Volatile.Read(ref _webLifecycleGeneration), "popup-frame-created:shim");
                 f.WebMessageReceived += PopupFrame_WebMessageReceived;
                 f.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 _ = InjectGameBridgeOnFrameIfNeededAsync(f, "frame-created-probe");
@@ -6608,35 +6707,221 @@ try{
             }
         }
 
-        private void Web_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+        private async void Web_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
         {
             try
             {
-                var src = Web?.CoreWebView2?.Source ?? Web?.Source?.ToString() ?? "";
-                Log("[Web][PROCESS-FAILED] kind=" + e.ProcessFailedKind.ToString() +
-                    BuildProcessFailedLogDetail(e) +
-                    " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
+                if (!Dispatcher.CheckAccess())
+                {
+                    await Dispatcher.InvokeAsync(() => HandleWebProcessFailedAsync(Web, "main", e)).Task.Unwrap();
+                    return;
+                }
+                await HandleWebProcessFailedAsync(Web, "main", e);
             }
             catch (Exception ex)
             {
-                Log("[Web][PROCESS-FAILED][ERR] " + ex.Message);
+                Log("[WV2][PROCESS-FAILED-HANDLER-ERR] owner=main | " + ex);
             }
         }
 
-        private void PopupWeb_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+        private async void PopupWeb_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
         {
             try
             {
-                var src = GetBetWebViewSource(_popupWeb);
-                Log("[PopupWeb][PROCESS-FAILED] kind=" + e.ProcessFailedKind.ToString() +
-                    BuildProcessFailedLogDetail(e) +
-                    " | url=" + (string.IsNullOrWhiteSpace(src) ? "<empty>" : Shrink(src, 220)));
-                if (!IsLikelyBetGameReadyUrl(src))
-                    ArmPopupTransitWatch("process-failed", src);
+                if (!Dispatcher.CheckAccess())
+                {
+                    await Dispatcher.InvokeAsync(() => HandleWebProcessFailedAsync(_popupWeb, "popup", e)).Task.Unwrap();
+                    return;
+                }
+                await HandleWebProcessFailedAsync(_popupWeb, "popup", e);
             }
             catch (Exception ex)
             {
-                Log("[PopupWeb][PROCESS-FAILED][ERR] " + ex.Message);
+                Log("[WV2][PROCESS-FAILED-HANDLER-ERR] owner=popup | " + ex);
+            }
+        }
+
+        private void StopTasksForRendererRecovery(string reason)
+        {
+            try
+            {
+                var tabs = _strategyTabs.Where(t => t.IsRunning).ToList();
+                // Recovery WebView chỉ tạm mất context trình duyệt; không phải thao tác
+                // Dừng cược của người dùng. Giữ nguyên task/run-id/cấp vốn và trạng thái nút.
+                TaskUtil.ClearBetCooldown();
+                SetPlayButtonState(tabs.Count > 0);
+                Log($"[WV2][BET-TASKS-PRESERVED] reason={Shrink(reason, 160)} | tabs={tabs.Count}");
+            }
+            catch (Exception ex)
+            {
+                Log("[WV2][BET-TASKS-PRESERVE-ERR] " + ex);
+            }
+        }
+
+        private void ClearDeadWebFrameState(string reason)
+        {
+            _mainFrameBridgeArmed.Clear();
+            _mainFrameRefs.Clear();
+            _popupFrameRefs.Clear();
+            _frameInjectedDocKeys.Clear();
+            _frameAuthorityCandidates.Clear();
+            _authorityContextId = "";
+            _authorityToken = "";
+            _authorityHref = "";
+            _authorityFramePath = "";
+            _authorityScore = 0;
+            _authorityConfidence = "";
+            _authoritySignals = "";
+            _authorityLockedAtUtc = DateTime.MinValue;
+            _authorityLastSeenUtc = DateTime.MinValue;
+            _lastAuthorityBestKey = "";
+            _lastAuthorityBestStable = 0;
+            _lastBaccaratFrameKey = "";
+            _lastBaccaratFrameHref = "";
+            _lastMainFramesRearmUtc = DateTime.MinValue;
+            _canvasDisplayTargetStates.Clear();
+            _canvasDisplayDropLogUtc.Clear();
+            _lastCanvasPrimaryTarget = "";
+            _lastDocKey = null;
+            var generation = Interlocked.Increment(ref _webLifecycleGeneration);
+            Log($"[WV2][FRAME-STATE-CLEARED] reason={Shrink(reason, 160)} | generation={generation}");
+        }
+
+        private static bool IsFrameLifecycleException(Exception ex)
+        {
+            var msg = ex?.Message ?? "";
+            return IsDisposedFrameException(ex) ||
+                   msg.IndexOf("disposed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   msg.IndexOf("destroyed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   msg.IndexOf("closed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   msg.IndexOf("CoreWebView2Frame members cannot be accessed", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private async Task<(bool Ok, string Result)> TryExecuteFrameScriptAsync(
+            CoreWebView2Frame frame, string script, long expectedGeneration, string targetKey)
+        {
+            if (frame == null || expectedGeneration != Volatile.Read(ref _webLifecycleGeneration))
+                return (false, "stale-generation");
+            try
+            {
+                var result = await frame.ExecuteScriptAsync(script);
+                if (expectedGeneration != Volatile.Read(ref _webLifecycleGeneration))
+                    return (false, "stale-generation");
+                return (true, result ?? "");
+            }
+            catch (Exception ex) when (IsFrameLifecycleException(ex))
+            {
+                DropMainFrameRef(frame);
+                DropPopupFrameRef(frame);
+                _frameInjectedDocKeys.TryRemove(RuntimeHelpers.GetHashCode(frame), out _);
+                var now = DateTime.UtcNow;
+                if ((now - _lastFrameDisposedLogUtc) > TimeSpan.FromSeconds(2))
+                {
+                    _lastFrameDisposedLogUtc = now;
+                    Log($"[WV2][FRAME-DISPOSED] target={Shrink(targetKey, 120)} | generation={Volatile.Read(ref _webLifecycleGeneration)} | reason={Shrink(ex.Message, 220)}");
+                }
+                return (false, "disposed-frame");
+            }
+        }
+
+        private async Task<bool> WaitForFreshGameTickAsync(DateTime baselineUtc, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            var until = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < until)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_lastFreshGameTickUtc > baselineUtc)
+                    return true;
+                await Task.Delay(250, cancellationToken);
+            }
+            return _lastFreshGameTickUtc > baselineUtc;
+        }
+
+        private async Task<bool> TrySoftReloadWebViewAsync(WebView2 targetWeb, string owner, string reason, CancellationToken cancellationToken)
+        {
+            if (targetWeb?.CoreWebView2 == null)
+                return false;
+            var baseline = _lastFreshGameTickUtc;
+            ClearDeadWebFrameState(reason);
+            Log($"[WV2][SOFT-RELOAD-BEGIN] owner={owner} | reason={Shrink(reason, 160)} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+            try
+            {
+                targetWeb.CoreWebView2.Reload();
+                if (await WaitForFreshGameTickAsync(baseline, TimeSpan.FromSeconds(15), cancellationToken))
+                {
+                    _webRendererHealthy = true;
+                    Log($"[WV2][SOFT-RELOAD-OK] owner={owner} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+                    return true;
+                }
+                Log($"[WV2][SOFT-RELOAD-TIMEOUT] owner={owner} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[WV2][SOFT-RELOAD-ERR] owner={owner} | err={Shrink(ex.Message, 220)}");
+            }
+            return false;
+        }
+
+        private async Task HandleWebProcessFailedAsync(WebView2? failedWeb, string owner, CoreWebView2ProcessFailedEventArgs e)
+        {
+            var src = GetBetWebViewSource(failedWeb);
+            var age = _lastFreshGameTickUtc == DateTime.MinValue ? -1 : Math.Max(0, (DateTime.UtcNow - _lastFreshGameTickUtc).TotalSeconds);
+            Log($"[WV2][PROCESS-FAILED] owner={owner} | kind={e.ProcessFailedKind} | {BuildProcessFailedLogDetail(e)} | tickAgeSec={(age < 0 ? "-" : age.ToString("0.0", CultureInfo.InvariantCulture))} | generation={Volatile.Read(ref _webLifecycleGeneration)} | url={Shrink(src, 220)}");
+            _webRendererHealthy = false;
+            StopTasksForRendererRecovery($"process-failed:{owner}:{e.ProcessFailedKind}");
+            if (Interlocked.Exchange(ref _webRecoveryBusy, 1) != 0)
+            {
+                Volatile.Write(ref _webRecoveryRendererCrashed, 1);
+                Log("[WV2][RECOVERY-SKIP] reason=already-running | renderer-crashed-again=1");
+                return;
+            }
+            Volatile.Write(ref _webRecoveryRendererCrashed, 0);
+            _webRecoveryCts?.Cancel();
+            _webRecoveryCts = new CancellationTokenSource();
+            var token = _webRecoveryCts.Token;
+            _lastWebRecoveryUtc = DateTime.UtcNow;
+            Log($"[WV2][RECOVERY-BEGIN] owner={owner} | kind={e.ProcessFailedKind} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+            try
+            {
+                var recoveryBookmark = CloneTableRecoveryBookmark();
+                var kind = e.ProcessFailedKind.ToString();
+                var browserExited = kind.IndexOf("BrowserProcessExited", StringComparison.OrdinalIgnoreCase) >= 0;
+                var target = failedWeb ?? (owner.Equals("popup", StringComparison.OrdinalIgnoreCase) ? _popupWeb : Web);
+                var softBaseline = _lastFreshGameTickUtc;
+                var softOk = !browserExited && target != null && await TrySoftReloadWebViewAsync(target, owner, "process-failed", token);
+                if (Volatile.Read(ref _webRecoveryRendererCrashed) != 0)
+                    softOk = false;
+                if (softOk && recoveryBookmark != null)
+                    softOk = await WaitForRecoveredTableTickAsync(recoveryBookmark, softBaseline, TimeSpan.FromSeconds(5), token);
+                if (!softOk && recoveryBookmark != null)
+                    softOk = await RestoreBookmarkedTableAsync("process-failed-soft-reload", token);
+                if (Volatile.Read(ref _webRecoveryRendererCrashed) != 0)
+                    softOk = false;
+                if (!softOk)
+                {
+                    Volatile.Write(ref _webRecoveryRendererCrashed, 0);
+                    if (owner.Equals("popup", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var popupUrl = src;
+                        DestroyPopupWeb();
+                        var popup = await EnsurePopupWebReadyAsync();
+                        if (popup?.CoreWebView2 != null && !string.IsNullOrWhiteSpace(popupUrl))
+                            popup.CoreWebView2.Navigate(popupUrl);
+                    }
+                    else
+                    {
+                        await RecreateMainWebViewAsync("process-failed", token);
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Log($"[WV2][RECOVERY-ERR] owner={owner} | err={ex}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _webRecoveryBusy, 0);
             }
         }
 
@@ -14000,7 +14285,11 @@ try{
             lock (_snapLock) clone = CloneSnapForTasks(_lastSnap);
             lock (_roundStateLock) ApplyNetworkSeqAuthorityLocked(clone);
             if (clone != null)
+            {
                 clone.seq = FilterPlayableSeq(clone.seq);
+                if (!string.Equals(clone.progSource?.Split('|')[0], "game-dom-countdown", StringComparison.OrdinalIgnoreCase))
+                    clone.prog = null;
+            }
             return clone;
         }
 
@@ -14394,25 +14683,43 @@ try{
       for(const t of seq){ top.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:cx,clientY:cy,view:window})); }
       try{ top.click(); }catch(_){}
     };
-    const roots = Array.from(document.querySelectorAll('a.home-popular__game,.home-popular__game,a[class*=""home-popular__game""],[class*=""home-popular__game""]'));
+    const raw = Array.from(document.querySelectorAll(
+      'a,button,[role=""button""],.home-popular__game,[class*=""provider""],[class*=""vendor""],[class*=""casino-game""],[class*=""game-card""],img'
+    ));
+    const roots = [];
+    const seen = new Set();
+    for(const node of raw){
+      const el = (node.closest && node.closest('a,button,[role=""button""],[class*=""provider""],[class*=""vendor""],[class*=""game-card""]')) || node;
+      if(!seen.has(el)){ seen.add(el); roots.push(el); }
+    }
     const picks = [];
     for(const el of roots){
       if(!vis(el)) continue;
-      const txt = low(el.textContent || el.innerText || el.getAttribute('title') || el.getAttribute('aria-label') || '');
+      const imgs = Array.from(el.querySelectorAll ? el.querySelectorAll('img') : []);
+      if(el.tagName === 'IMG') imgs.push(el);
+      const media = imgs.map(x=>(x.getAttribute('alt')||'')+' '+(x.getAttribute('title')||'')+' '+(x.getAttribute('src')||'')).join(' ');
+      const style = getComputedStyle(el);
+      const txt = low((el.textContent || el.innerText || '')+' '+(el.getAttribute('title')||'')+' '+(el.getAttribute('aria-label')||'')+' '+media+' '+(style.backgroundImage||''));
       const anc = (el.closest && el.closest('a[href]')) || (el.tagName==='A' ? el : null);
       const href = low((anc && anc.getAttribute('href')) || '');
+      const r = el.getBoundingClientRect();
       let score = 0;
+      if (txt.includes('sexyco')) score += 150;
+      if (txt.includes('ae sexy') || txt.includes('aesexy')) score += 130;
       if (txt.includes('xoc') && txt.includes('dia')) score += 95;
       if (txt.includes('baccarat') || txt.includes('single bac') || txt.includes('sexyco')) score += 75;
+      if (txt.includes('sexy')) score += 55;
       if (txt.includes('rong ho') || txt.includes('ngau ham')) score += 35;
       if (txt.includes('live')) score += 12;
       if (href.includes('baccarat') || href.includes('casino') || href.includes('live')) score += 20;
       if (txt.includes('hoan tra') || txt.includes('toi da') || txt.includes('khuyen mai') || txt.includes('%')) score -= 25;
+      if (r.width > innerWidth * .8 || r.height > innerHeight * .8) score -= 120;
       picks.push({el, score, txt:txt.slice(0,90), href:href.slice(0,120)});
     }
-    if(!picks.length) return 'vipbet-no-card';
-    picks.sort((a,b)=>b.score-a.score);
-    const best = picks[0];
+    const matched = picks.filter(x=>x.score >= 45);
+    if(!matched.length) return 'vipbet-no-card';
+    matched.sort((a,b)=>b.score-a.score);
+    const best = matched[0];
     fire(best.el);
     return 'clicked-vipbet|score=' + best.score + '|txt=' + best.txt + '|href=' + best.href;
   }catch(e){
@@ -15178,32 +15485,50 @@ try{
             }
         }
 
-        private async Task ResetWebViewProfileAndReloadAsync(string? url)
+        private async Task<bool> RecreateMainWebViewAsync(string reason, CancellationToken cancellationToken)
         {
-            if (_wv2Resetting) return;
-            var now = DateTime.UtcNow;
-            if (now - _lastWv2ResetUtc < TimeSpan.FromSeconds(20))
-            {
-                Log("[WV2] Skip reset (recently attempted)");
-                return;
-            }
+            if (_wv2Resetting)
+                return false;
             _wv2Resetting = true;
+            var recoveryUrl = Web?.Source?.ToString();
+            if (CloneTableRecoveryBookmark() != null && IsPlayerFlowUrl(recoveryUrl))
+                recoveryUrl = GetConfiguredWrapperUrl();
+            if (string.IsNullOrWhiteSpace(recoveryUrl)) recoveryUrl = _lastGameUrl;
+            if (string.IsNullOrWhiteSpace(recoveryUrl)) recoveryUrl = _cfg?.Url;
+            if (string.IsNullOrWhiteSpace(recoveryUrl)) recoveryUrl = DEFAULT_URL;
+            Log($"[WV2][HARD-RECREATE-BEGIN] reason={Shrink(reason, 160)} | url={Shrink(recoveryUrl, 220)}");
             try
             {
-                Log("[WV2] Reset profile + reload...");
-                _lastWv2ResetUtc = now;
+                StopTasksForRendererRecovery(reason);
+                ClearDeadWebFrameState(reason);
 
-                try
+                var oldWeb = Web;
+                if (oldWeb != null)
                 {
-                    if (Web != null && Web.CoreWebView2 != null)
+                    try
                     {
-                        try { Web.CoreWebView2.ProcessFailed -= Web_ProcessFailed; } catch { }
-                        try { Web.CoreWebView2.Stop(); } catch { }
-                        try { Web.CoreWebView2.Navigate("about:blank"); } catch { }
+                        var core = oldWeb.CoreWebView2;
+                        if (core != null)
+                        {
+                            core.NewWindowRequested -= NewWindowRequested;
+                            core.ProcessFailed -= Web_ProcessFailed;
+                            core.WebMessageReceived -= CoreWebView2_WebMessageReceived;
+                            core.WebResourceResponseReceived -= CoreWebView2_WebResourceResponseReceived;
+                            core.FrameCreated -= CoreWebView2_FrameCreated_Bridge;
+                            core.FrameNavigationStarting -= CoreWebView2_FrameNavigationStarting_Bridge;
+                            core.FrameNavigationCompleted -= CoreWebView2_FrameNavigationCompleted_Bridge;
+                            core.DOMContentLoaded -= MainCore_DOMContentLoaded_Bridge;
+                            try { core.Stop(); } catch { }
+                        }
+                        oldWeb.NavigationCompleted -= Web_NavigationCompleted;
                     }
+                    catch { }
+                    try { WebLayerRoot.Children.Remove(oldWeb); } catch { }
+                    try { oldWeb.Dispose(); } catch { }
+                    Log("[WV2][HARD-RECREATE-OLD-DISPOSED]");
                 }
-                catch { }
 
+                _webEnv = null;
                 _webInitDone = false;
                 _webHooked = false;
                 _webMsgHooked = false;
@@ -15211,29 +15536,76 @@ try{
                 _frameNavHooked = false;
                 _domHooked = false;
                 _navModeHooked = false;
-                _mainFrameBridgeArmed.Clear();
-                _mainFrameRefs.Clear();
-                _popupFrameRefs.Clear();
-                _frameInjectedDocKeys.Clear();
+                _topForwardId = null;
+                _appJsRegId = null;
+                _autoStartId = null;
+                _lastDocKey = null;
+                _cdpTapOwners.Clear();
+                _cdpTapOwnerCoreHash.Clear();
+                _cdpTapOwnerGeneration.Clear();
+                _wsUrlByRequestId.Clear();
+                _httpResponseByRequestKey.Clear();
 
-                try { await DeleteDirectoryWithRetryAsync(Wv2UserDataDir); }
-                catch (Exception ex) { Log("[WV2] Delete user-data failed: " + ex.Message); }
+                var newWeb = new WebView2
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                    CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = Wv2UserDataDir }
+                };
+                Web = newWeb;
+                WebLayerRoot.Children.Insert(0, newWeb);
+                Panel.SetZIndex(newWeb, 0);
+                Log("[WV2][HARD-RECREATE-CONTROL-CREATED]");
 
                 await EnsureWebReadyAsync();
-                if (!string.IsNullOrWhiteSpace(url))
+                await EnsureBridgeRegisteredAsync();
+                await InjectOnNewDocAsync();
+                await ApplyRuntimePerfToBetWebAsync();
+                _didStartupNav = false;
+                Log($"[WV2][HARD-RECREATE-NAVIGATE] url={Shrink(recoveryUrl, 220)}");
+                await NavigateIfNeededAsync(recoveryUrl);
+                Log("[WV2][HARD-RECREATE-WRAPPER-READY]");
+                if (Volatile.Read(ref _webRecoveryRendererCrashed) != 0)
                 {
-                    _didStartupNav = false;
-                    await NavigateIfNeededAsync(url);
+                    Log("[WV2][HARD-RECREATE-ABORT] reason=renderer-crashed-during-wrapper-load");
+                    return false;
                 }
+                var bookmark = CloneTableRecoveryBookmark();
+                var ok = bookmark != null
+                    ? await RestoreBookmarkedTableAsync("hard-recreate", cancellationToken)
+                    : await WaitForFreshGameTickAsync(_lastFreshGameTickUtc, TimeSpan.FromSeconds(20), cancellationToken);
+                if (ok)
+                {
+                    _webRendererHealthy = true;
+                    Log("[WV2][HARD-RECREATE-DONE]");
+                }
+                else
+                    Log("[WV2][HARD-RECREATE-FAIL] reason=no-fresh-game-tick");
+                return ok;
             }
+            catch (OperationCanceledException) { return false; }
             catch (Exception ex)
             {
-                Log("[WV2] Reset failed: " + ex);
+                Log("[WV2][HARD-RECREATE-FAIL] " + ex);
+                return false;
             }
             finally
             {
+                _lastWv2ResetUtc = DateTime.UtcNow;
                 _wv2Resetting = false;
             }
+        }
+
+        private async Task ResetWebViewProfileAndReloadAsync(string? url)
+        {
+            if (DateTime.UtcNow - _lastWv2ResetUtc < TimeSpan.FromSeconds(20))
+            {
+                Log("[WV2] Skip reset (recently attempted)");
+                return;
+            }
+            _webRecoveryCts?.Cancel();
+            _webRecoveryCts = new CancellationTokenSource();
+            await RecreateMainWebViewAsync(string.IsNullOrWhiteSpace(url) ? "manual-reset" : "manual-reset-url", _webRecoveryCts.Token);
         }
 
         private async Task StartGameNavWatchdogAsync(string? url)
@@ -15264,6 +15636,99 @@ try{
 
             Log("[WV2] Watchdog: không thấy game tick, reset profile + reload");
             await ResetWebViewProfileAndReloadAsync(url ?? _lastGameUrl);
+        }
+
+        private void StartWebHealthWatchdog()
+        {
+            if (_webHealthWatchCts != null)
+                return;
+            var cts = new CancellationTokenSource();
+            _webHealthWatchCts = cts;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (!cts.IsCancellationRequested)
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(500), cts.Token);
+                        if (cts.IsCancellationRequested)
+                            break;
+                        await Dispatcher.InvokeAsync(async () =>
+                        {
+                            if (_webRecoveryBusy != 0 || _wv2Resetting || !_webRendererHealthy)
+                                return;
+                            if (!IsAnyTabRunning())
+                            {
+                                _nonGameViewSinceUtc = DateTime.MinValue;
+                                return;
+                            }
+                            if (_lastFreshGameTickUtc == DateTime.MinValue ||
+                                (string.IsNullOrWhiteSpace(_authorityContextId) && !_isGameUi))
+                                return;
+                            var age = DateTime.UtcNow - _lastFreshGameTickUtc;
+                            var preflightState = await DetectBaccaratRecoveryStateAsync(cts.Token);
+                            if (preflightState == "TABLE_ACTIVE")
+                            {
+                                _nonGameViewSinceUtc = DateTime.MinValue;
+                                return;
+                            }
+                            if (_nonGameViewSinceUtc == DateTime.MinValue)
+                            {
+                                _nonGameViewSinceUtc = DateTime.UtcNow;
+                                Log($"[WV2][NON-GAME-VIEW-BEGIN] state={preflightState} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+                                return;
+                            }
+                            var nonGameAge = DateTime.UtcNow - _nonGameViewSinceUtc;
+                            if (nonGameAge < TimeSpan.FromSeconds(3))
+                                return;
+
+                            Log($"[WV2][HEALTH-NON-GAME-VIEW] viewAgeSec={nonGameAge.TotalSeconds:0.0} | tickAgeSec={age.TotalSeconds:0.0} | state={preflightState} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+                            StopTasksForRendererRecovery("health-non-game-view");
+                            if (Interlocked.Exchange(ref _webRecoveryBusy, 1) != 0)
+                            {
+                                Volatile.Write(ref _webRecoveryRendererCrashed, 1);
+                                return;
+                            }
+                            Volatile.Write(ref _webRecoveryRendererCrashed, 0);
+                            _webRendererHealthy = false;
+                            _webRecoveryCts?.Cancel();
+                            _webRecoveryCts = new CancellationTokenSource();
+                            try
+                            {
+                                var token = _webRecoveryCts.Token;
+                                Log("[WV2][RECOVERY-BEGIN] reason=health-non-game-view");
+                                var healthBookmark = CloneTableRecoveryBookmark();
+                                var healthBaseline = _lastFreshGameTickUtc;
+                                var routeFirst = preflightState == "GAME_HALL" ||
+                                                 preflightState == "PROVIDER_ENTRY" ||
+                                                 preflightState == "DISCONNECTED" ||
+                                                 preflightState == "UNKNOWN";
+                                var softOk = routeFirst && healthBookmark != null &&
+                                             await RestoreBookmarkedTableAsync("health-" + preflightState.ToLowerInvariant(), token);
+                                if (!routeFirst)
+                                    softOk = await TrySoftReloadWebViewAsync(Web, "main", "health-non-game-view", token);
+                                if (softOk && healthBookmark != null)
+                                    softOk = await WaitForRecoveredTableTickAsync(healthBookmark, healthBaseline, TimeSpan.FromSeconds(5), token);
+                                if (!softOk && healthBookmark != null)
+                                    softOk = await RestoreBookmarkedTableAsync("health-non-game-view", token);
+                                if (!softOk)
+                                    await RecreateMainWebViewAsync("health-non-game-view", token);
+                            }
+                            catch (Exception ex)
+                            {
+                                Log("[WV2][HEALTH-RECOVERY-ERR] " + ex);
+                            }
+                            finally
+                            {
+                                _nonGameViewSinceUtc = DateTime.MinValue;
+                                Interlocked.Exchange(ref _webRecoveryBusy, 0);
+                            }
+                        }).Task.Unwrap();
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) { Log("[WV2][HEALTH-WATCH-ERR] " + ex); }
+            });
         }
 
         private async Task<bool> WaitForGameNavigationAsync(TimeSpan timeout)
@@ -15882,6 +16347,520 @@ try{
                 url.IndexOf("/error?", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static string RecoveryName(string? value) => TextNorm.U(value ?? "").Replace("  ", " ");
+
+        private static string RecoveryCode(string? value)
+        {
+            var m = Regex.Match(value ?? "", @"(?:^|\b)C\s*0*(\d{1,3})(?:\b|$)", RegexOptions.IgnoreCase);
+            return m.Success && int.TryParse(m.Groups[1].Value, out var n) && n > 0 ? "C" + n.ToString(CultureInfo.InvariantCulture) : "";
+        }
+
+        private static bool IsRecoveryUrl(string? url, string part)
+        {
+            return !string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url, UriKind.Absolute, out _) &&
+                   url.IndexOf(part, StringComparison.OrdinalIgnoreCase) >= 0 &&
+                   url.IndexOf("about:blank", StringComparison.OrdinalIgnoreCase) < 0 &&
+                   url.IndexOf("/error", StringComparison.OrdinalIgnoreCase) < 0;
+        }
+
+        private static string RecoveryUrlForLog(string? url)
+        {
+            try { return Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.GetLeftPart(UriPartial.Path) : Shrink(url ?? "", 180); }
+            catch { return Shrink(url ?? "", 180); }
+        }
+
+        private TableRecoveryBookmark? CloneTableRecoveryBookmark()
+        {
+            lock (_tableRecoveryLock)
+            {
+                var b = _tableRecoveryBookmark;
+                if (b == null) return null;
+                return new TableRecoveryBookmark
+                {
+                    TableId = b.TableId, TableName = b.TableName, TableCode = b.TableCode,
+                    SingleTableUrl = b.SingleTableUrl, ProviderEntryUrl = b.ProviderEntryUrl, GameHallUrl = b.GameHallUrl,
+                    MainHost = b.MainHost, FramePath = b.FramePath, ContextId = b.ContextId, Source = b.Source,
+                    CapturedAtUtc = b.CapturedAtUtc, StableTicks = b.StableTicks
+                };
+            }
+        }
+
+        private void CaptureTableRecoveryBookmark(CwSnapshot snap, string source)
+        {
+            if (snap == null) return;
+            var id = snap.tableId.GetValueOrDefault() > 0 ? snap.tableId.Value : snap.seqTableId.GetValueOrDefault();
+            if (id <= 0) id = _activeTableId > 0 ? _activeTableId : (_netObservedTableId > 0 ? _netObservedTableId : _netSeqTableId);
+            var name = (snap.tableName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(name)) name = (snap.seqTableName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(name)) name = (snap.totals?.TB ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(name)) name = _activeTableName.Trim();
+            if (id <= 0 && string.IsNullOrWhiteSpace(name)) return;
+            if (snap.prog == null && string.IsNullOrWhiteSpace(snap.status) && snap.totals == null) return;
+            var code = RecoveryCode(name);
+            if (id <= 0 && !string.IsNullOrWhiteSpace(code) && int.TryParse(code[1..], out var n)) id = 1000 + n;
+            var mainHost = GetCurrentMainHost();
+            var key = $"{id}|{RecoveryName(name)}|{code}|{mainHost}";
+            var strongGameEvidence =
+                TextContainsIgnoreCase(snap.href, "singleBacTable.jsp") ||
+                TextContainsIgnoreCase(snap.dataHref, "singleBacTable.jsp") ||
+                TextContainsIgnoreCase(snap.proxyChildHref, "singleBacTable.jsp") ||
+                TextContainsIgnoreCase(snap.signals, "gameMain") ||
+                TextContainsIgnoreCase(snap.signals, "zoneBet") ||
+                TextContainsIgnoreCase(snap.signals, "betArea") ||
+                TextContainsIgnoreCase(snap.proxyChildSignals, "gameMain") ||
+                TextContainsIgnoreCase(snap.proxyChildSignals, "zoneBet") ||
+                TextContainsIgnoreCase(snap.proxyChildSignals, "betArea");
+            var gameViewConfirmed =
+                string.Equals(_lastBaccaratViewState, "TABLE_ACTIVE", StringComparison.Ordinal) &&
+                _lastBaccaratViewStateUtc != DateTime.MinValue &&
+                DateTime.UtcNow - _lastBaccaratViewStateUtc <= TimeSpan.FromSeconds(2);
+            lock (_tableRecoveryLock)
+            {
+                if (_tableRecoveryBookmark != null && _tableRecoveryBookmark.StableTicks >= 2 &&
+                    string.Equals($"{_tableRecoveryBookmark.TableId}|{RecoveryName(_tableRecoveryBookmark.TableName)}|{_tableRecoveryBookmark.TableCode}|{_tableRecoveryBookmark.MainHost}", key, StringComparison.Ordinal))
+                    return;
+                if (_tableRecoveryBookmark != null && _tableRecoveryBookmark.StableTicks >= 2 &&
+                    (!gameViewConfirmed || !strongGameEvidence))
+                {
+                    return;
+                }
+            }
+            var single = IsRecoveryUrl(snap.href, "singlebactable.jsp") ? snap.href! :
+                         (IsRecoveryUrl(_lastBaccaratFrameHref, "singlebactable.jsp") ? _lastBaccaratFrameHref : "");
+            var flow = "";
+            if (TryGetRecentPlayerFlowGameUrl(1800, out var cached, out _)) flow = cached;
+            var entry = IsRecoveryUrl(snap.href, "webmain.jsp") ? snap.href! :
+                        (IsRecoveryUrl(snap.topHref, "webmain.jsp") ? snap.topHref! :
+                        ((IsRecoveryUrl(flow, "webmain.jsp") || IsRecoveryUrl(flow, "gamehall.jsp") || IsRecoveryUrl(flow, "apilogin")) ? flow : ""));
+            var hall = IsRecoveryUrl(snap.href, "gamehall.jsp") ? snap.href : (IsRecoveryUrl(snap.topHref, "gamehall.jsp") ? snap.topHref : "");
+            lock (_tableRecoveryLock)
+            {
+                var previous = _tableRecoveryBookmark;
+                if (!string.Equals(_tableRecoveryCandidateKey, key, StringComparison.Ordinal))
+                {
+                    _tableRecoveryCandidateKey = key;
+                    _tableRecoveryCandidateStable = 1;
+                }
+                else _tableRecoveryCandidateStable++;
+                var stable = _tableRecoveryCandidateStable;
+                if (stable < 2) return;
+                _tableRecoveryBookmark = new TableRecoveryBookmark
+                {
+                    TableId = id, TableName = name, TableCode = code, SingleTableUrl = single,
+                    ProviderEntryUrl = entry, GameHallUrl = hall, MainHost = mainHost,
+                    FramePath = snap.framePath ?? "", ContextId = snap.contextId ?? "", Source = source,
+                    CapturedAtUtc = DateTime.UtcNow, StableTicks = stable
+                };
+                if (stable == 2 || previous == null || previous.TableId != id || !string.Equals(previous.TableName, name, StringComparison.OrdinalIgnoreCase))
+                    Log($"[TABLE-RECOVERY][BOOKMARK] tableId={id} | tableName={Shrink(name, 80)} | tableCode={code} | singleUrl={RecoveryUrlForLog(single)} | entryUrl={RecoveryUrlForLog(entry)} | framePath={Shrink(snap.framePath, 100)} | source={Shrink(source, 80)} | stable={stable}");
+            }
+        }
+
+        private bool RecoveryIdentityMatches(TableRecoveryBookmark b)
+        {
+            CwSnapshot? current; lock (_snapLock) current = CloneSnapRaw(_lastSnap);
+            if (current == null) return false;
+            var id = current.tableId.GetValueOrDefault();
+            if (id <= 0) id = current.seqTableId.GetValueOrDefault();
+            var name = (current.tableName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(name)) name = (current.seqTableName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(name)) name = (current.totals?.TB ?? "").Trim();
+            if (id <= 0 && string.IsNullOrWhiteSpace(name)) return false;
+            if (current.prog == null && string.IsNullOrWhiteSpace(current.status) && current.totals == null) return false;
+            return (b.TableId > 0 && id == b.TableId) ||
+                    (!string.IsNullOrWhiteSpace(b.TableName) && RecoveryName(name) == RecoveryName(b.TableName));
+        }
+
+        private async Task<bool> WaitForRecoveredTableTickAsync(TableRecoveryBookmark b, DateTime baseline, TimeSpan timeout, CancellationToken ct)
+        {
+            var until = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < until)
+            {
+                ct.ThrowIfCancellationRequested();
+                var viewState = await DetectBaccaratRecoveryStateAsync(ct);
+                if (_lastFreshGameTickUtc > baseline && _lastRealGameSignalUtc > baseline)
+                {
+                    if (viewState == "TABLE_ACTIVE" && RecoveryIdentityMatches(b))
+                    {
+                        Log($"[TABLE-RECOVERY][VERIFY-OK] view=TABLE_ACTIVE | expectedId={b.TableId} | expectedName={Shrink(b.TableName, 80)}");
+                        return true;
+                    }
+                    if (DateTime.UtcNow - _lastTableRecoveryUtc > TimeSpan.FromSeconds(2))
+                    {
+                        _lastTableRecoveryUtc = DateTime.UtcNow;
+                        Log($"[TABLE-RECOVERY][VERIFY-PENDING] view={viewState} | identity={(RecoveryIdentityMatches(b) ? "match" : "wrong")} | expectedId={b.TableId} | expectedName={Shrink(b.TableName, 80)}");
+                    }
+                }
+                await Task.Delay(250, ct);
+            }
+            return false;
+        }
+
+        private async Task<List<(string Owner, string Frame, string Raw)>> ProbeBaccaratTablesAsync(CancellationToken ct)
+        {
+            var result = new List<(string, string, string)>();
+            const string js = "(function(){try{return typeof window.__cw_listBaccaratTables==='function'?window.__cw_listBaccaratTables():'';}catch(e){return '';}})()";
+            ReArmExistingMainFrames("table-recovery-probe");
+            async Task Probe(string owner, string frame, Func<Task<string>> call)
+            {
+                try
+                {
+                    var raw = NormalizeJsEvalResult(await call());
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        result.Add((owner, frame, raw));
+                        Log($"[TABLE-RECOVERY][HALL-PROBE] owner={owner} | frame={frame} | {SummarizeRecoveryHallProbe(raw)}");
+                    }
+                }
+                catch { }
+            }
+            if (Web?.CoreWebView2 != null) await Probe("main", "top", () => Web.CoreWebView2.ExecuteScriptAsync(js));
+            foreach (var item in GetMainArmedFramesSnapshot()) { ct.ThrowIfCancellationRequested(); var g = Volatile.Read(ref _webLifecycleGeneration); await Probe("main", item.id.ToString(CultureInfo.InvariantCulture), async () => (await TryExecuteFrameScriptAsync(item.frame, js, g, "main-frame-" + item.id)).Result); }
+            if (_popupWeb?.CoreWebView2 != null) await Probe("popup", "top", () => _popupWeb.CoreWebView2.ExecuteScriptAsync(js));
+            foreach (var item in _popupFrameRefs.ToArray()) { ct.ThrowIfCancellationRequested(); var g = Volatile.Read(ref _webLifecycleGeneration); await Probe("popup", item.Key.ToString(CultureInfo.InvariantCulture), async () => (await TryExecuteFrameScriptAsync(item.Value, js, g, "popup-frame-" + item.Key)).Result); }
+            return result;
+        }
+
+        private static string SummarizeRecoveryHallProbe(string raw)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+                var href = root.TryGetProperty("href", out var h) ? h.GetString() ?? "" : "";
+                var kind = root.TryGetProperty("kind", out var k) ? k.GetString() ?? "UNKNOWN" : "UNKNOWN";
+                var count = root.TryGetProperty("count", out var c) && c.TryGetInt32(out var n) ? n : 0;
+                var names = new List<string>();
+                if (root.TryGetProperty("tables", out var tables) && tables.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in tables.EnumerateArray().Take(8))
+                    {
+                        if (item.TryGetProperty("title", out var title)) names.Add(Shrink(title.GetString() ?? "", 40));
+                    }
+                }
+                return $"kind={kind} | href={RecoveryUrlForLog(href)} | count={count} | tables={(names.Count == 0 ? "-" : string.Join(",", names))}";
+            }
+            catch { return "invalid-json"; }
+        }
+
+        private static bool RecoveryHallProbeHasCards(string raw)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(raw);
+                return doc.RootElement.TryGetProperty("count", out var count) && count.TryGetInt32(out var n) && n > 0;
+            }
+            catch { return false; }
+        }
+
+        private async Task<string> DetectBaccaratRecoveryStateAsync(CancellationToken ct)
+        {
+            const string js = "(function(){try{return typeof window.__cw_detectBaccaratContext==='function'?window.__cw_detectBaccaratContext():'';}catch(e){return '';}})()";
+            var observations = new List<(string Kind, bool Controller, bool GameVisible, bool HallVisible, string Href)>();
+            async Task Read(Func<Task<string>> call)
+            {
+                try
+                {
+                    var raw = NormalizeJsEvalResult(await call());
+                    if (string.IsNullOrWhiteSpace(raw)) return;
+                    using var doc = JsonDocument.Parse(raw);
+                    var root = doc.RootElement;
+                    var kind = root.TryGetProperty("kind", out var k) ? k.GetString() ?? "" : "";
+                    if (string.IsNullOrWhiteSpace(kind)) return;
+                    bool Flag(string name)
+                    {
+                        if (!root.TryGetProperty(name, out var value)) return false;
+                        return value.ValueKind == JsonValueKind.True ||
+                               (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var n) && n != 0);
+                    }
+                    var href = root.TryGetProperty("href", out var hrefEl) ? hrefEl.GetString() ?? "" : "";
+                    observations.Add((kind.ToUpperInvariant(), Flag("controller"), Flag("gameFrameVisible"), Flag("hallFrameVisible"), href));
+                }
+                catch { }
+            }
+
+            if (Web?.CoreWebView2 != null) await Read(() => Web.CoreWebView2.ExecuteScriptAsync(js));
+            foreach (var item in GetMainArmedFramesSnapshot())
+            {
+                ct.ThrowIfCancellationRequested();
+                var generation = Volatile.Read(ref _webLifecycleGeneration);
+                await Read(async () => (await TryExecuteFrameScriptAsync(item.frame, js, generation, "detect-state-main-" + item.id)).Result);
+            }
+            if (_popupWeb?.CoreWebView2 != null) await Read(() => _popupWeb.CoreWebView2.ExecuteScriptAsync(js));
+            foreach (var item in _popupFrameRefs.ToArray())
+            {
+                ct.ThrowIfCancellationRequested();
+                var generation = Volatile.Read(ref _webLifecycleGeneration);
+                await Read(async () => (await TryExecuteFrameScriptAsync(item.Value, js, generation, "detect-state-popup-" + item.Key)).Result);
+            }
+
+            string state;
+            var controllers = observations.Where(x => x.Controller).ToList();
+            if (controllers.Count > 0)
+            {
+                if (controllers.Any(x => x.GameVisible))
+                    state = "TABLE_ACTIVE";
+                else if (controllers.Any(x => x.HallVisible))
+                    state = "GAME_HALL";
+                else if (controllers.Any(x => x.Kind == "DISCONNECTED"))
+                    state = "DISCONNECTED";
+                else
+                    state = "PROVIDER_ENTRY";
+            }
+            else if (observations.Any(x => x.Kind == "GAME_TABLE" &&
+                                           x.Href.IndexOf("singleBacTable.jsp", StringComparison.OrdinalIgnoreCase) >= 0))
+                state = "TABLE_ACTIVE";
+            else if (observations.Any(x => x.Kind == "GAME_HALL"))
+                state = "GAME_HALL";
+            else if (observations.Any(x => x.Kind == "DISCONNECTED"))
+                state = "DISCONNECTED";
+            else if (observations.Any(x => x.Kind == "PROVIDER_ENTRY"))
+                state = "PROVIDER_ENTRY";
+            else
+                state = "UNKNOWN";
+
+            _lastBaccaratViewState = state;
+            _lastBaccaratViewStateUtc = DateTime.UtcNow;
+            return state;
+        }
+
+        private async Task<bool> TryShowBaccaratHallAsync(CancellationToken ct)
+        {
+            const string js = "(function(){try{return typeof window.__cw_goBaccaratHall==='function'?window.__cw_goBaccaratHall():'';}catch(e){return JSON.stringify({ok:false,reason:String(e)});}})()";
+            ReArmExistingMainFrames("table-recovery-go-hall");
+            async Task<bool> Go(string owner, string frame, Func<Task<string>> call)
+            {
+                try
+                {
+                    var raw = NormalizeJsEvalResult(await call());
+                    if (string.IsNullOrWhiteSpace(raw)) return false;
+                    using var doc = JsonDocument.Parse(raw);
+                    var root = doc.RootElement;
+                    var ok = root.TryGetProperty("ok", out var okEl) && okEl.ValueKind == JsonValueKind.True;
+                    var reason = root.TryGetProperty("reason", out var reasonEl) ? reasonEl.GetString() ?? "" : "";
+                    var href = root.TryGetProperty("href", out var hrefEl) ? hrefEl.GetString() ?? "" : "";
+                    Log($"[TABLE-RECOVERY][GO-HALL] owner={owner} | frame={frame} | ok={(ok ? 1 : 0)} | reason={Shrink(reason, 80)} | href={RecoveryUrlForLog(href)}");
+                    return ok;
+                }
+                catch { return false; }
+            }
+
+            if (Web?.CoreWebView2 != null && await Go("main", "top", () => Web.CoreWebView2.ExecuteScriptAsync(js))) return true;
+            foreach (var item in GetMainArmedFramesSnapshot())
+            {
+                ct.ThrowIfCancellationRequested();
+                var generation = Volatile.Read(ref _webLifecycleGeneration);
+                if (await Go("main", item.id.ToString(CultureInfo.InvariantCulture),
+                    async () => (await TryExecuteFrameScriptAsync(item.frame, js, generation, "go-hall-main-" + item.id)).Result))
+                    return true;
+            }
+            if (_popupWeb?.CoreWebView2 != null && await Go("popup", "top", () => _popupWeb.CoreWebView2.ExecuteScriptAsync(js))) return true;
+            foreach (var item in _popupFrameRefs.ToArray())
+            {
+                ct.ThrowIfCancellationRequested();
+                var generation = Volatile.Read(ref _webLifecycleGeneration);
+                if (await Go("popup", item.Key.ToString(CultureInfo.InvariantCulture),
+                    async () => (await TryExecuteFrameScriptAsync(item.Value, js, generation, "go-hall-popup-" + item.Key)).Result))
+                    return true;
+            }
+            return false;
+        }
+
+        private string GetConfiguredWrapperUrl()
+        {
+            var raw = (TxtUrl?.Text ?? _cfg?.Url ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+                raw = DEFAULT_URL;
+            if (!Regex.IsMatch(raw, @"^\w+://", RegexOptions.IgnoreCase))
+                raw = "https://" + raw;
+            return Uri.TryCreate(raw, UriKind.Absolute, out var url) ? url.ToString() : DEFAULT_URL;
+        }
+
+        private async Task<bool> RouteRecoveryToBaccaratHallAsync(TableRecoveryBookmark b, int attempt, CancellationToken ct)
+        {
+            // Chỉ công nhận game hall khi WebView chính đang ở wrapper của nhà cái.
+            // webMain/gamehall/singleBac top-level có thể vẫn hiện danh sách bàn nhưng
+            // click vào bàn sẽ tạo iframe game 0x0/hidden vì thiếu context của wrapper.
+            var wrapperUrl = GetConfiguredWrapperUrl();
+            var currentUrl = Web?.CoreWebView2?.Source ?? Web?.Source?.ToString() ?? "";
+            var wrapperHost = TryExtractHost(wrapperUrl);
+            var currentHost = TryExtractHost(currentUrl);
+            var mustReturnToWrapper = IsPlayerFlowUrl(currentUrl) ||
+                                      !string.Equals(currentHost, wrapperHost, StringComparison.OrdinalIgnoreCase);
+            if (_popupWeb != null)
+                ClosePopupHost();
+            if (mustReturnToWrapper)
+            {
+                Log($"[TABLE-RECOVERY][ENTRY-ROUTE] attempt={attempt} | mode=wrapper | url={RecoveryUrlForLog(wrapperUrl)}");
+                await NavigateIfNeededAsync(wrapperUrl);
+                await Task.Delay(750, ct);
+            }
+
+            var probe = await ProbeBaccaratTablesAsync(ct);
+            if (probe.Any(x => RecoveryHallProbeHasCards(x.Raw)))
+            {
+                Log("[TABLE-RECOVERY][HALL-READY] source=probe");
+                return true;
+            }
+
+            if (await TryShowBaccaratHallAsync(ct))
+            {
+                var hallUntil = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+                while (DateTime.UtcNow < hallUntil)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await Task.Delay(500, ct);
+                    probe = await ProbeBaccaratTablesAsync(ct);
+                    if (probe.Any(x => RecoveryHallProbeHasCards(x.Raw)))
+                    {
+                        Log("[TABLE-RECOVERY][HALL-READY] source=go-hall-js");
+                        return true;
+                    }
+                }
+            }
+
+            // webMain/gamehall/singleBac chỉ hợp lệ khi nằm trong wrapper của nhà cái.
+            // Điều hướng chúng thành top-level làm iframe game 0x0/hidden và mất session cha.
+            // Chờ trang chủ sẵn sàng rồi chỉ bấm provider một lần. Sau đó chờ đúng
+            // iframeGameHall được tạo trong webMain trước khi chọn bàn.
+            var clickUntil = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+            while (DateTime.UtcNow < clickUntil)
+            {
+                ct.ThrowIfCancellationRequested();
+                probe = await ProbeBaccaratTablesAsync(ct);
+                if (probe.Any(x => RecoveryHallProbeHasCards(x.Raw)))
+                {
+                    Log("[TABLE-RECOVERY][HALL-READY] source=wrapper-probe");
+                    return true;
+                }
+
+                var click = await ClickXocDiaTitleAsync(12000);
+                Log($"[TABLE-RECOVERY][ENTRY-ROUTE-RESULT] result={Shrink(click, 120)}");
+                if (click.StartsWith("clicked", StringComparison.OrdinalIgnoreCase))
+                {
+                    var hallUntil = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+                    while (DateTime.UtcNow < hallUntil)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        await Task.Delay(500, ct);
+                        probe = await ProbeBaccaratTablesAsync(ct);
+                        if (probe.Any(x => RecoveryHallProbeHasCards(x.Raw)))
+                        {
+                            Log("[TABLE-RECOVERY][HALL-READY] source=provider-click");
+                            return true;
+                        }
+                    }
+                    break;
+                }
+                await Task.Delay(500, ct);
+            }
+
+            Log($"[TABLE-RECOVERY][ENTRY-ROUTE-BLOCKED] attempt={attempt} | reason=gamehall-not-ready-no-direct-table-fallback");
+            return false;
+        }
+
+        private async Task<bool> OpenBookmarkedTableFromHallAsync(TableRecoveryBookmark b, CancellationToken ct)
+        {
+            var req = JsonSerializer.Serialize(new { tableId = b.TableId, tableName = b.TableName, tableCode = b.TableCode });
+            var js = $"(function(){{try{{return typeof window.__cw_openBaccaratTableByIdentity==='function'?window.__cw_openBaccaratTableByIdentity({req}):'';}}catch(e){{return JSON.stringify({{ok:false,reason:String(e)}});}}}})()";
+            ReArmExistingMainFrames("table-recovery-open");
+            async Task<bool> Open(string owner, string frame, Func<Task<string>> call)
+            {
+                try
+                {
+                    var raw = NormalizeJsEvalResult(await call());
+                    if (raw.IndexOf("\"ok\":true", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        Log($"[TABLE-RECOVERY][TABLE-MATCH] context={owner}/{frame} | {Shrink(raw, 400)}");
+                        Log("[TABLE-RECOVERY][TABLE-CLICK] ok=1");
+                        return true;
+                    }
+                    if (!string.IsNullOrWhiteSpace(raw))
+                        Log($"[TABLE-RECOVERY][TABLE-OPEN-MISS] context={owner}/{frame} | {Shrink(raw, 300)}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"[TABLE-RECOVERY][TABLE-OPEN-ERR] context={owner}/{frame} | {Shrink(ex.Message, 180)}");
+                }
+                return false;
+            }
+            if (Web?.CoreWebView2 != null && await Open("main", "top", () => Web.CoreWebView2.ExecuteScriptAsync(js))) return true;
+            foreach (var item in GetMainArmedFramesSnapshot()) { ct.ThrowIfCancellationRequested(); var g = Volatile.Read(ref _webLifecycleGeneration); if (await Open("main", item.id.ToString(CultureInfo.InvariantCulture), async () => (await TryExecuteFrameScriptAsync(item.frame, js, g, "main-frame-" + item.id)).Result)) return true; }
+            if (_popupWeb?.CoreWebView2 != null && await Open("popup", "top", () => _popupWeb.CoreWebView2.ExecuteScriptAsync(js))) return true;
+            foreach (var item in _popupFrameRefs.ToArray()) { ct.ThrowIfCancellationRequested(); var g = Volatile.Read(ref _webLifecycleGeneration); if (await Open("popup", item.Key.ToString(CultureInfo.InvariantCulture), async () => (await TryExecuteFrameScriptAsync(item.Value, js, g, "popup-frame-" + item.Key)).Result)) return true; }
+            return false;
+        }
+
+        private async Task<bool> RestoreBookmarkedTableAsync(string reason, CancellationToken ct)
+        {
+            if (Interlocked.Exchange(ref _tableRecoveryBusy, 1) != 0) return false;
+            try
+            {
+                var b = CloneTableRecoveryBookmark();
+                if (b == null || (b.TableId <= 0 && string.IsNullOrWhiteSpace(b.TableName))) return false;
+                Log($"[TABLE-RECOVERY][BEGIN] reason={reason} | tableId={b.TableId} | tableName={Shrink(b.TableName, 80)}");
+                var baseline = _lastFreshGameTickUtc;
+                if (await WaitForRecoveredTableTickAsync(b, baseline, TimeSpan.FromSeconds(1), ct)) return true;
+                // Không điều hướng trực tiếp vào singleBacTable.jsp sau renderer crash:
+                // URL có thể chứa session cũ/khác host và đã gây crash lặp trong log thực tế.
+                Log("[TABLE-RECOVERY][DIRECT-TABLE-SKIP] reason=renderer-safe-provider-route");
+                for (var attempt = 0; attempt < 2; attempt++)
+                {
+                    var hallUntil = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+                    var routed = false;
+                    while (DateTime.UtcNow < hallUntil)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        if (await WaitForRecoveredTableTickAsync(b, baseline, TimeSpan.FromMilliseconds(250), ct)) return true;
+                        if (!routed)
+                        {
+                            routed = true;
+                            if (!await RouteRecoveryToBaccaratHallAsync(b, attempt + 1, ct))
+                            {
+                                Log($"[TABLE-RECOVERY][STATE] state=PROVIDER_ENTRY_OR_DISCONNECTED | attempt={attempt + 1}");
+                                break;
+                            }
+                        }
+                        var probes = await ProbeBaccaratTablesAsync(ct);
+                        if (probes.Any(x => RecoveryHallProbeHasCards(x.Raw)))
+                        {
+                            var clicked = false;
+                            for (var clickAttempt = 1; clickAttempt <= 3; clickAttempt++)
+                            {
+                                ct.ThrowIfCancellationRequested();
+                                Log($"[TABLE-RECOVERY][TABLE-CLICK-ATTEMPT] attempt={clickAttempt}/3 | expected={b.TableCode}/{Shrink(b.TableName, 80)}");
+                                if (await OpenBookmarkedTableFromHallAsync(b, ct))
+                                {
+                                    clicked = true;
+                                    if (await WaitForRecoveredTableTickAsync(b, baseline, TimeSpan.FromSeconds(3), ct))
+                                    {
+                                        _lastTableRecoveryUtc = DateTime.UtcNow;
+                                        Log("[TABLE-RECOVERY][RESTORED] tasks=preserved");
+                                        return true;
+                                    }
+                                    Log($"[TABLE-RECOVERY][TABLE-CLICK-NO-TRANSITION] attempt={clickAttempt}/3");
+                                }
+                                if (clickAttempt < 3)
+                                    await Task.Delay(700, ct);
+                            }
+                            if (clicked && await WaitForRecoveredTableTickAsync(b, baseline, TimeSpan.FromSeconds(6), ct))
+                            {
+                                _lastTableRecoveryUtc = DateTime.UtcNow;
+                                Log("[TABLE-RECOVERY][RESTORED] tasks=preserved");
+                                return true;
+                            }
+                            Log($"[TABLE-RECOVERY][TABLE-OPEN-FAILED] expected={b.TableCode}/{Shrink(b.TableName, 80)} | clicked={(clicked ? 1 : 0)}");
+                            break;
+                        }
+                        await Task.Delay(500, ct);
+                    }
+                    if (attempt == 0) await Task.Delay(3000, ct);
+                }
+                return false;
+            }
+            finally { Interlocked.Exchange(ref _tableRecoveryBusy, 0); }
+        }
+
         private static string TryExtractHost(string? rawUrl)
         {
             try
@@ -15925,7 +16904,7 @@ try{
             if (!string.IsNullOrWhiteSpace(prevUrl))
             {
                 var age = prevAt == DateTime.MinValue ? "-" : (DateTime.UtcNow - prevAt).TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s";
-                Log("[PlayerFlowCache] cleared reason=" + reason + " | age=" + age + " | prev=" + Shrink(prevUrl, 220));
+                Log("[PlayerFlowCache] cleared reason=" + reason + " | age=" + age + " | prev=" + RecoveryUrlForLog(prevUrl));
             }
         }
 
@@ -15952,7 +16931,7 @@ try{
 
             if (!string.Equals(prevUrl, url, StringComparison.OrdinalIgnoreCase))
             {
-                Log("[PlayerFlowCache] game-url=" + Shrink(url, 260) + " | host=" + (string.IsNullOrWhiteSpace(sourceHost) ? "-" : sourceHost));
+                Log("[PlayerFlowCache] game-url=" + RecoveryUrlForLog(url) + " | host=" + (string.IsNullOrWhiteSpace(sourceHost) ? "-" : sourceHost));
             }
         }
 
@@ -16020,7 +16999,7 @@ try{
                 popup.CoreWebView2.Navigate(entryUrl);
             });
 
-            Log("[VaoXocDia] player-flow cache routed popup to: " + entryUrl);
+            Log("[VaoXocDia] player-flow cache routed popup to: " + RecoveryUrlForLog(entryUrl));
             return true;
         }
 
@@ -16201,14 +17180,15 @@ try{
             return false;
         }
 
-        private void MarkRealGameSignalIfAny(CwSnapshot? snap, string source)
+        private bool MarkRealGameSignalIfAny(CwSnapshot? snap, string source)
         {
             if (!IsRealGameSignalSnapshot(snap, source, out var reason))
-                return;
+                return false;
 
             _lastRealGameSignalUtc = DateTime.UtcNow;
             _lastRealGameSignalReason = reason;
             _popupStuckSinceUtc = DateTime.MinValue;
+            return true;
         }
 
         private void ObservePopupStuckState(CwSnapshot? snap, string source)
@@ -16924,12 +17904,15 @@ try{
 
         private void ProbeFrameBridgeAsync(CoreWebView2Frame frame, string owner, string stage)
         {
+            var generation = Volatile.Read(ref _webLifecycleGeneration);
             _ = Dispatcher.InvokeAsync(async () =>
             {
                 try
                 {
                     if (frame == null) return;
-                    var raw = await frame.ExecuteScriptAsync(BridgeProbeScript);
+                    var execution = await TryExecuteFrameScriptAsync(frame, BridgeProbeScript, generation, owner + ":" + stage);
+                    if (!execution.Ok) return;
+                    var raw = execution.Result;
                     var payload = JsonSerializer.Deserialize<string>(raw) ?? raw ?? "";
                     payload = Shrink(payload, 900);
                     var key = $"{owner}|{stage}|{payload}";
@@ -18903,7 +19886,10 @@ try{
                 _topForwardId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TOP_FORWARD);
 
             if (_appJsRegId == null && !string.IsNullOrEmpty(_appJs))
+            {
                 _appJsRegId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(_appJs);
+                Log($"[BRIDGE][FULL-SCRIPT-REGISTERED] owner=main | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+            }
 
             if (_autoStartId == null)
                 _autoStartId = await Web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(FRAME_AUTOSTART);
@@ -18923,12 +19909,15 @@ try{
 
             if (!_domHooked)
             {
-                Web.CoreWebView2.DOMContentLoaded += async (_, __) =>
-                {
-                    try { await InjectOnNewDocAsync(); } catch { }
-                };
+                Web.CoreWebView2.DOMContentLoaded += MainCore_DOMContentLoaded_Bridge;
                 _domHooked = true;
             }
+        }
+
+        private async void MainCore_DOMContentLoaded_Bridge(object? sender, CoreWebView2DOMContentLoadedEventArgs e)
+        {
+            try { await InjectOnNewDocAsync(); }
+            catch (Exception ex) { Log("[Bridge.DOMContentLoaded] " + ex.Message); }
         }
 
 
@@ -18947,10 +19936,17 @@ try{
 
             if (!string.IsNullOrEmpty(key) && key != _lastDocKey)
             {
-                // Tiêm lại ngay trên tài liệu hiện tại (phòng khi AddScript chưa kịp chạy vì timing)
                 await Web.CoreWebView2.ExecuteScriptAsync(TOP_FORWARD);
-                if (!string.IsNullOrEmpty(_appJs))
+                var bootProbeRaw = await Web.CoreWebView2.ExecuteScriptAsync(
+                    "(function(){return !!(window.__cw_boot_done || typeof window.__cw_startPush==='function');})()" );
+                var alreadyBooted = string.Equals(bootProbeRaw, "true", StringComparison.OrdinalIgnoreCase);
+                if (!alreadyBooted && !string.IsNullOrEmpty(_appJs))
+                {
                     await Web.CoreWebView2.ExecuteScriptAsync(_appJs);
+                    Log($"[BRIDGE][FULL-SCRIPT-FALLBACK-INJECT] owner=main | doc={Shrink(key, 100)} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+                }
+                else if (alreadyBooted)
+                    Log($"[BRIDGE][FULL-SCRIPT-SKIP-BOOTED] owner=main | doc={Shrink(key, 100)} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
 
                 // Kích autostart trên top (idempotent - nếu không có __cw_startPush thì không sao)
                 await Web.CoreWebView2.ExecuteScriptAsync(FRAME_AUTOSTART);
@@ -19049,7 +20045,7 @@ try{
                 var runProbe = shouldAttachHandlers || stageNeedsProbe;
                 if (shouldAttachHandlers)
                 {
-                    _ = frame.ExecuteScriptAsync(FRAME_SHIM);
+                    _ = TryExecuteFrameScriptAsync(frame, FRAME_SHIM, Volatile.Read(ref _webLifecycleGeneration), stage + ":shim");
                     frame.WebMessageReceived += MainFrame_WebMessageReceived_Bridge;
                     frame.NavigationCompleted += Frame_NavigationCompleted_Bridge;
                 }
@@ -19281,8 +20277,8 @@ try{
             {
                 var f = sender as CoreWebView2Frame;
                 if (f == null) return;
-
-                _ = f.ExecuteScriptAsync(FRAME_SHIM);
+                var generation = Volatile.Read(ref _webLifecycleGeneration);
+                _ = TryExecuteFrameScriptAsync(f, FRAME_SHIM, generation, "dom-content-loaded:shim");
                 ProbeFrameBridgeAsync(f, "Frame", "dom-content-loaded");
             }
             catch (Exception ex)
@@ -19420,7 +20416,8 @@ try{
         {
             try
             {
-                var raw = await frame.ExecuteScriptAsync(
+                var generation = Volatile.Read(ref _webLifecycleGeneration);
+                var execution = await TryExecuteFrameScriptAsync(frame,
                     "(function(){try{" +
                     "var href=String(location.href||'');" +
                     "var key=String((performance&&performance.timeOrigin)||Date.now());" +
@@ -19439,7 +20436,12 @@ try{
                     "if(hasCC){score+=300;sig.push('cocos');}" +
                     "var ccnt=qc('canvas'); if(ccnt>0){score+=Math.min(500,ccnt*120);sig.push('canvas'+ccnt);}" +
                     "return JSON.stringify({href:href,key:key,hasCC:hasCC,score:score,signals:sig.join(',')});" +
-                    "}catch(_){return JSON.stringify({href:'',key:'',hasCC:false,score:0,signals:''});}})();");
+                    "}catch(_){return JSON.stringify({href:'',key:'',hasCC:false,score:0,signals:''});}})();",
+                    generation,
+                    "frame-doc-probe");
+                if (!execution.Ok)
+                    return null;
+                var raw = execution.Result;
                 var json = JsonSerializer.Deserialize<string>(raw) ?? "";
                 if (string.IsNullOrWhiteSpace(json))
                     return null;
@@ -19495,12 +20497,27 @@ try{
                 return false;
             }
 
+            var generation = Volatile.Read(ref _webLifecycleGeneration);
+            var shim = await TryExecuteFrameScriptAsync(frame, FRAME_SHIM, generation, stage + ":shim");
+            if (!shim.Ok) return false;
+            var bootProbe = await TryExecuteFrameScriptAsync(frame,
+                "(function(){return !!(window.__cw_boot_done || typeof window.__cw_startPush==='function');})()",
+                generation, stage + ":boot-probe");
+            if (!bootProbe.Ok) return false;
+            var alreadyBooted = string.Equals(bootProbe.Result, "true", StringComparison.OrdinalIgnoreCase);
+            if (!alreadyBooted && !string.IsNullOrEmpty(_appJs))
+            {
+                var full = await TryExecuteFrameScriptAsync(frame, _appJs, generation, stage + ":full-script");
+                if (!full.Ok) return false;
+                Log($"[BRIDGE][FULL-SCRIPT-FALLBACK-INJECT] owner=frame | doc={Shrink(docKey, 100)} | generation={generation} | href={TrimHrefForLog(probe.Href)}");
+            }
+            else if (alreadyBooted)
+                Log($"[BRIDGE][FULL-SCRIPT-SKIP-BOOTED] owner=frame | doc={Shrink(docKey, 100)} | generation={generation} | href={TrimHrefForLog(probe.Href)}");
+            if (!(await TryExecuteFrameScriptAsync(frame, FRAME_AUTOSTART, generation, stage + ":autostart")).Ok)
+                return false;
+            if (!(await TryExecuteFrameScriptAsync(frame, START_PUSH_NOW, generation, stage + ":push-now")).Ok)
+                return false;
             _frameInjectedDocKeys[frameRefKey] = docKey;
-            _ = frame.ExecuteScriptAsync(FRAME_SHIM);
-            if (!string.IsNullOrEmpty(_appJs))
-                _ = frame.ExecuteScriptAsync(_appJs);
-            _ = frame.ExecuteScriptAsync(FRAME_AUTOSTART);
-            _ = frame.ExecuteScriptAsync(START_PUSH_NOW);
 
             var hrefLog = probe.Href ?? "";
             if (hrefLog.Length > 160)
@@ -19883,6 +20900,11 @@ try{
 
         private void CleanupWebStuff()
         {
+            try { _webHealthWatchCts?.Cancel(); } catch { }
+            _webHealthWatchCts = null;
+            try { _webRecoveryCts?.Cancel(); } catch { }
+            _webRecoveryCts = null;
+            Interlocked.Increment(ref _webLifecycleGeneration);
             // 1) huỷ các CTS liên quan đến web / auto login
             try { _navCts?.Cancel(); } catch { }
             _navCts = null;
