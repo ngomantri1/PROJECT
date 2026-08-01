@@ -62,8 +62,15 @@ namespace BaccaratSexyCasino2.Tasks
         {
             if (string.IsNullOrEmpty(digitSeq)) return "";
             char[] a = new char[digitSeq.Length];
-            for (int i = 0; i < digitSeq.Length; i++) a[i] = DigitToParity(digitSeq[i]);
-            return new string(a);
+            int count = 0;
+            for (int i = 0; i < digitSeq.Length; i++)
+            {
+                char result = char.ToUpperInvariant(digitSeq[i]);
+                // Tie is retained in the raw sequence for settlement, but it
+                // must not create or extend a Banker/Player betting pattern.
+                if (result == 'B' || result == 'P') a[count++] = result;
+            }
+            return new string(a, 0, count);
         }
 
         public static string SeqCharToResult(char lastDigit)

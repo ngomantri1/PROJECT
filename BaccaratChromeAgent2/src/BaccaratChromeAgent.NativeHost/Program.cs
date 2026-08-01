@@ -13,7 +13,7 @@ using var output = Console.OpenStandardOutput();
 using var nativeWriteLock = new SemaphoreSlim(1, 1);
 var lastChromeSessionId = "";
 EngineResponse? lastGameResponse = null;
-const string ExpectedExtensionVersion = "0.1.5";
+const string ExpectedExtensionVersion = "0.1.6";
 var extensionRuntimeReady = 0;
 HostLog.Write("[HOST][START] Native Messaging connected");
 

@@ -1,6 +1,8 @@
 // Read-only bridge for the selected legacy snapshot in this frame.
 const frameKey = `${location.origin}${location.pathname}`;
 let legacySnapshot = null;
+const recoveryProbeRequests = new Map();
+const RECOVERY_PROBE_TIMEOUT_MS = 1800;
 
 function isShown(element) {
   try {
@@ -205,10 +207,26 @@ window.addEventListener("message", (event) => {
 
 window.addEventListener("message", (event) => {
   if (event.source !== window || event.data?.source !== "bca-legacy-recovery-result") return;
+  const commandId = String(event.data?.commandId ?? "");
+  const pendingProbe = recoveryProbeRequests.get(commandId);
+  if (pendingProbe) {
+    recoveryProbeRequests.delete(commandId);
+    clearTimeout(pendingProbe.timeout);
+    const context = event.data?.result ?? null;
+    pendingProbe.sendResponse({
+      ok: Boolean(context?.ok ?? context?.kind),
+      context,
+      href: location.href,
+      framePath: frameKey,
+      source: "main-world-detect",
+      observedAtUtc: new Date().toISOString()
+    });
+    return;
+  }
   chrome.runtime.sendMessage({
     type: "legacy_recovery_result",
     payload: {
-      commandId: String(event.data?.commandId ?? ""),
+      commandId,
       command: String(event.data?.command ?? ""),
       result: event.data?.result ?? null,
       href: location.href,
@@ -231,15 +249,31 @@ window.addEventListener("message", (event) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "probe_recovery_context") {
-    const context = readFrameRecoveryContext();
-    sendResponse({
-      ok: Boolean(context),
-      context,
-      href: location.href,
-      framePath: frameKey,
-      observedAtUtc: new Date().toISOString()
-    });
-    return false;
+    // Use the exact MAIN-world API used by recovery detect. The isolated
+    // world cannot reliably observe provider frame visibility, which caused
+    // false PROVIDER_ENTRY misses while the same controller reported
+    // GAME_TABLE to execute_legacy_recovery.
+    const commandId = `probe-${crypto.randomUUID()}`;
+    const timeout = setTimeout(() => {
+      const pendingProbe = recoveryProbeRequests.get(commandId);
+      if (!pendingProbe) return;
+      recoveryProbeRequests.delete(commandId);
+      pendingProbe.sendResponse({
+        ok: false,
+        context: { kind: "NO_RESPONSE", reason: "main-world-detect-timeout" },
+        href: location.href,
+        framePath: frameKey,
+        source: "main-world-detect",
+        observedAtUtc: new Date().toISOString()
+      });
+    }, RECOVERY_PROBE_TIMEOUT_MS);
+    recoveryProbeRequests.set(commandId, { sendResponse, timeout });
+    window.postMessage({
+      source: "bca-content-bridge",
+      type: "execute_legacy_recovery",
+      payload: { commandId, command: "detect", request: {} }
+    }, "*");
+    return true;
   }
   if (message.type === "start_legacy_authority") {
     // postMessage crosses Chrome's ISOLATED -> MAIN world boundary reliably.
