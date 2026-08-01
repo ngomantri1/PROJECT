@@ -23,6 +23,8 @@ using System.Reflection;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using Microsoft.Web.WebView2.Wpf;  // <-- cái này để có CoreWebView2Creation
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -2029,6 +2031,47 @@ try{
 
         private bool _frameHookedAlways;
 
+        private const double ControlPanelPreferredWidthDip = 460;
+        private const double ControlPanelMinimumWidthDip = 420;
+        private const int DesktopChromeGapPx = 8;
+        private ChromeWindowBounds? _chromeWindowBounds;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativeRect
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private struct MonitorInfo
+        {
+            public int Size;
+            public NativeRect Monitor;
+            public NativeRect Work;
+            public int Flags;
+        }
+
+        private const uint MonitorDefaultToNearest = 2;
+        private const uint SetWindowPosNoZOrder = 0x0004;
+        private const uint SetWindowPosNoActivate = 0x0010;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo monitorInfo);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hwnd);
+
         private bool _inputEventsHooked;
         private CancellationTokenSource? _leaseHbCts;
 
@@ -2057,13 +2100,55 @@ try{
             InitializeComponent();
             _strategyTabs.CollectionChanged += StrategyTabs_CollectionChanged;
             this.ShowInTaskbar = true;                       // có icon riêng
-            this.WindowStartupLocation = WindowStartupLocation.CenterScreen; // tuỳ, cho đẹp
+            this.WindowStartupLocation = WindowStartupLocation.Manual;
+            this.SourceInitialized += (_, _) => ApplyInitialDesktopChromeLayout();
             // đảm bảo về Home UI lúc khởi động
             SetModeUi(false);
             BetGrid.ItemsSource = _betPage;
             // gọi async sau khi cửa sổ đã load
             this.Loaded += MainWindow_Loaded;
 
+        }
+
+        private void ApplyInitialDesktopChromeLayout()
+        {
+            try
+            {
+                if (WindowState != WindowState.Normal)
+                    return;
+
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero)
+                    return;
+
+                var monitor = MonitorFromWindow(hwnd, MonitorDefaultToNearest);
+                var monitorInfo = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+                if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref monitorInfo))
+                    return;
+
+                var work = monitorInfo.Work;
+                var workWidth = Math.Max(1, work.Right - work.Left);
+                var workHeight = Math.Max(1, work.Bottom - work.Top);
+                var dpi = GetDpiForWindow(hwnd);
+                var scale = (dpi > 0 ? dpi : 96) / 96d;
+                var minPanelPx = (int)Math.Ceiling(ControlPanelMinimumWidthDip * scale);
+                var preferredPanelPx = (int)Math.Ceiling(ControlPanelPreferredWidthDip * scale);
+                var maxPanelPx = Math.Max(1, workWidth - DesktopChromeGapPx - 1);
+                var panelWidthPx = Math.Min(maxPanelPx, Math.Max(minPanelPx, Math.Min(preferredPanelPx, maxPanelPx)));
+                var panelLeft = work.Right - panelWidthPx;
+                var chromeWidth = Math.Max(1, panelLeft - work.Left - DesktopChromeGapPx);
+
+                // Win32 dùng physical pixel nên panel và Chrome cùng bám chính xác
+                // một work area kể cả khi màn hình đang scale 125%/150%.
+                SetWindowPos(hwnd, IntPtr.Zero, panelLeft, work.Top, panelWidthPx, workHeight,
+                    SetWindowPosNoZOrder | SetWindowPosNoActivate);
+                _chromeWindowBounds = new ChromeWindowBounds(work.Left, work.Top, chromeWidth, workHeight);
+            }
+            catch
+            {
+                // Nếu không đọc được monitor thì launcher giữ hành vi Chrome mặc định.
+                _chromeWindowBounds = null;
+            }
         }
 
         private void StartChromeGameBridge()
@@ -2113,6 +2198,14 @@ try{
             if (envelope.Snapshot is not { } snapshot)
             {
                 Log($"[CHROME-BRIDGE] Display-only message: {envelope.Display?.Status ?? "-"}");
+                var runtimeStatus = envelope.Display?.Status ?? "";
+                if (runtimeStatus.StartsWith("Extension Worker", StringComparison.Ordinal))
+                {
+                    var color = string.Equals(envelope.Display.Connection, "error", StringComparison.OrdinalIgnoreCase)
+                        ? Brushes.Firebrick
+                        : Brushes.ForestGreen;
+                    SetChromeRuntimeState(runtimeStatus, color);
+                }
                 return;
             }
 
@@ -2192,7 +2285,8 @@ try{
             _chromeHandshakeCts = new CancellationTokenSource();
             _chromeGameDataHandshake = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            var launch = ChromeLocalExtensionLauncher.Launch(T(TxtUrl), runtime.Runtime);
+            ApplyInitialDesktopChromeLayout();
+            var launch = ChromeLocalExtensionLauncher.Launch(T(TxtUrl), runtime.Runtime, _chromeWindowBounds);
             if (!launch.Started)
             {
                 _chromeLaunchRequested = false;
@@ -5426,7 +5520,7 @@ try{
                             {
                                 if (progUi.HasValue)
                                 {
-                                    const double progMaxSec = 20;
+                                    const double progMaxSec = 15;
                                     var sec = Math.Max(0, Math.Min(progMaxSec, progUi.Value));
                                     var secInt = (int)Math.Round(sec, MidpointRounding.AwayFromZero);
                                     var ratio = (progMaxSec > 0) ? (sec / progMaxSec) : 0;
@@ -14271,6 +14365,13 @@ try{
             CwSnapshot? clone;
             lock (_snapLock) clone = CloneSnapForTasks(_lastSnap);
             // Keep the original legacy Chrome sequence, including T.
+            // Countdown chỉ được phép kích hoạt cược khi chính game table
+            // (`singleBacTable.jsp`) đã cung cấp nguồn game-dom-countdown.
+            if (clone != null && !string.Equals(
+                    clone.progSource?.Split('|')[0],
+                    "game-dom-countdown",
+                    StringComparison.OrdinalIgnoreCase))
+                clone.prog = null;
             return clone;
         }
 

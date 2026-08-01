@@ -5,8 +5,9 @@ Nền tảng mới chạy với Google Chrome thật. Chrome Extension chỉ qua
 ## Giai đoạn hiện tại
 
 - Đã có `Protocol`, `Engine`, `NativeHost` và Extension Manifest V3.
-- Extension chỉ đọc snapshot DOM tối thiểu và vẽ Canvas trạng thái.
-- Không có chiến lược, không có click, không chặn/sửa network.
+- Extension đọc context iframe, chuyển tiếp legacy tick/bet command, thực thi bridge legacy và vẽ Canvas trạng thái.
+- C# vẫn giữ logic nghiệp vụ và authority; extension không trở thành authority cho sequence/history.
+- Recovery dùng watchdog NativeHost để phân biệt `GAME_HALL` và `GAME_TABLE`.
 
 ## Chạy development
 

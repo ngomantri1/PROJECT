@@ -219,3 +219,7 @@
   - B/P strategy pattern `<mau_qua_khu>`: `1..20`
   - I/N strategy pattern `<mau_qua_khu>`: `1..20`
 - Tooltip/error text was synchronized with validator limits to avoid UI-state mismatch.
+
+## Recovery boundary (2026-08-01)
+- This project uses the WebView2 bridge and does not contain the NativeHost pull-probe flow from `D:\PROJECT\BaccaratChromeAgent2`.
+- Recovery-related source here is limited to popup transit guards and `HasRecentGameSignal(...)`; automatic re-entry after persistent loss of the game iframe remains open work.

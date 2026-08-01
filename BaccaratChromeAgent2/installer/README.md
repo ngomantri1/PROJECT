@@ -1,6 +1,6 @@
 # Đóng gói Baccarat Chrome Agent
 
-`BaccaratChromeAgent-Setup.exe` cài Desktop, Native Host và tự tạo Registry Native Messaging ở phạm vi người dùng hiện tại (HKCU). Người dùng không phải sửa Registry hoặc tạo JSON thủ công.
+`BaccaratChromeAgent-Setup.exe` cài Desktop, Native Host, Chrome for Testing và extension runtime versioned; nó cũng tự tạo Registry Native Messaging ở phạm vi người dùng hiện tại (HKCU).
 
 ## Điều kiện trước khi phát hành
 
@@ -14,12 +14,12 @@ Không đưa file `.pem` ký extension vào source code, installer hoặc gói g
 ## Build installer
 
 ```powershell
-cd D:\PROJECT\BaccaratChromeAgent\installer
-.\build-installer.ps1 `
-  -ExtensionId "ID_32_KY_TU_a_den_p" `
-  -ExtensionUrl "https://chromewebstore.google.com/detail/..."
+cd D:\PROJECT\BaccaratChromeAgent2
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\installer\build-installer.ps1 `
+  -InnoSetupCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
 File cài tạo ở `D:\PROJECT\BaccaratChromeAgent\artifacts\installer`.
 
-Chrome extension vẫn cần được cài một lần cho từng Chrome profile. Installer mở trang Unlisted sau khi cài xong; từ đó Chrome tự quản lý và tự cập nhật extension.
+Runtime hiện tại dùng extension ID ổn định từ `manifest.key`; Desktop khởi chạy Chrome với thư mục `extension\v<version>`. Khi thay đổi Service Worker, phải tăng `manifest.json` version để Chrome đăng ký runtime mới.

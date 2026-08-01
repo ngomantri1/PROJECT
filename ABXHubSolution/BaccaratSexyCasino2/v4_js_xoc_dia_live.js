@@ -14364,6 +14364,16 @@
                     var route = JSON.parse(await window.__cw_goBaccaratHall());
                     if (!route || !route.ok)
                         return JSON.stringify({ ok: false, reason: 'hall-route-failed', route: route || null });
+                    // goHall chỉ yêu cầu điều hướng. Không click bàn cho đến khi controller
+                    // thực sự báo GAME_HALL, tránh click vào iframe cũ/chưa sẵn sàng.
+                    state = null;
+                    for (var hallAttempt = 1; hallAttempt <= 20; hallAttempt++) {
+                        await new Promise(function (resolve) { setTimeout(resolve, 300); });
+                        try { state = JSON.parse(window.__cw_detectBaccaratContext()); } catch (_) { state = null; }
+                        if (state && state.kind === 'GAME_HALL') break;
+                    }
+                    if (!state || state.kind !== 'GAME_HALL')
+                        return JSON.stringify({ ok: false, reason: 'game-hall-not-confirmed-after-route' });
                 }
                 for (var attempt = 1; attempt <= 20; attempt++) {
                     var openedRaw = await window.__cw_openBaccaratTableByIdentity(request || {});
@@ -14387,7 +14397,9 @@
                         var state = JSON.parse(window.__cw_detectBaccaratContext());
                         var lastTick = Number(window.__abx_last_authority_snapshot_at || 0) || 0;
                         var staleMs = lastTick > 0 ? Date.now() - lastTick : 999999;
-                        if ((state.kind === 'DISCONNECTED' || state.kind === 'GAME_HALL') && staleMs >= 3000) {
+                        // GAME_TABLE tick là authority. Sau 3s không còn tick và controller
+                        // đã rời bàn, C# sẽ khôi phục theo GAME_HALL -> load_table.
+                        if ((state.kind === 'DISCONNECTED' || state.kind === 'GAME_HALL' || state.kind === 'PROVIDER_ENTRY') && staleMs >= 3000) {
                             var lastPost = Number(window.__cw_baccarat_recovery_post_at || 0) || 0;
                             if (Date.now() - lastPost < 3000) return;
                             window.__cw_baccarat_recovery_post_at = Date.now();

@@ -3,10 +3,12 @@
 // In Chrome we preserve that exact JSON string and expose it to the isolated
 // content bridge; no tick field is parsed, filtered, or reconstructed here.
 (() => {
-  const publish = (rawTick) => {
+  const publish = (rawMessage) => {
     try {
-      const raw = typeof rawTick === "string" ? rawTick : JSON.stringify(rawTick);
-      window.postMessage({ source: "bca-webview-compat", type: "legacy_raw_tick", rawTick: raw }, "*");
+      const raw = typeof rawMessage === "string" ? rawMessage : JSON.stringify(rawMessage);
+      // Giữ nguyên payload safePost của legacy JS. Tick/scout và recovery đều
+      // dùng cùng transport; content bridge sẽ chỉ route các loại đã biết.
+      window.postMessage({ source: "bca-webview-compat", type: "legacy_raw_message", rawMessage: raw }, "*");
     } catch (_) {}
   };
 

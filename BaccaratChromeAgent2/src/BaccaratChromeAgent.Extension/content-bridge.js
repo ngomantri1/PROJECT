@@ -2,6 +2,91 @@
 const frameKey = `${location.origin}${location.pathname}`;
 let legacySnapshot = null;
 
+function isShown(element) {
+  try {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return rect.width > 100 && rect.height > 80 &&
+      style.display !== "none" && style.visibility !== "hidden";
+  } catch (_) { return false; }
+}
+
+function findProviderFrame(id, pageNames) {
+  try {
+    const names = Array.isArray(pageNames) ? pageNames : [pageNames];
+    const matchesProviderPage = (frame) => {
+      const src = String(frame?.getAttribute("src") || frame?.src || "").toLowerCase();
+      return names.some((pageName) => src.includes(String(pageName).toLowerCase()));
+    };
+    const byId = document.getElementById(id);
+    // iframeGame can stay visible while its src has changed to the hall. Its
+    // id alone must never classify that hall as a live Baccarat table.
+    if (byId && matchesProviderPage(byId)) return byId;
+    const frames = document.querySelectorAll("iframe,frame");
+    for (const frame of frames) {
+      if (matchesProviderPage(frame)) return frame;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function sendRecoveryBridgeDiagnostic(event, detail = {}) {
+  chrome.runtime.sendMessage({
+    type: "probe_diagnostic",
+    payload: {
+      event,
+      href: location.href,
+      framePath: frameKey,
+      ...detail,
+      observedAtUtc: new Date().toISOString()
+    }
+  }).catch(() => {});
+}
+
+// Đây là heartbeat độc lập với legacy push. Khi singleBacTable bị treo/ẩn,
+// legacy tick có thể vẫn nhỏ giọt từ frame cũ nên không thể dùng tick để biết
+// game còn sống. Content script chạy trong từng frame và biết chính xác URL
+// frame hiện tại, vì vậy GAME_HALL là điểm điều hướng đáng tin cậy để vào lại bàn.
+function readFrameRecoveryContext() {
+  try {
+    const href = String(location.href || "");
+    const lowHref = href.toLowerCase();
+    // URL của frame con là đủ để log/debug; trạng thái sống/chết chỉ được
+    // service worker chấp nhận từ webMain có iframe controller bên dưới.
+    const gameFrame = findProviderFrame("iframeGame", ["singlebactable.jsp"]);
+    const hallFrame = findProviderFrame("iframeGameHall", ["gamehall.jsp", "gamehallbacktogame.jsp"]);
+    const gameVisible = isShown(gameFrame);
+    const hallVisible = isShown(hallFrame);
+    let kind = "";
+
+    if (/\/player\/singlebactable\.jsp/i.test(lowHref)) kind = "GAME_TABLE";
+    else if (/\/player\/gamehall(?:backtogame)?\.jsp/i.test(lowHref)) kind = "GAME_HALL";
+    else if (gameVisible) kind = "GAME_TABLE";
+    else if (hallVisible) kind = "GAME_HALL";
+    else if (/\/player\/webmain\.jsp/i.test(lowHref) || gameFrame || hallFrame) kind = "PROVIDER_ENTRY";
+    if (!kind) return null;
+
+    return {
+      kind,
+      href,
+      controller: gameFrame || hallFrame ? 1 : 0,
+      isProviderController: gameFrame || hallFrame ? 1 : 0,
+      gameFrameVisible: gameVisible ? 1 : 0,
+      hallFrameVisible: hallVisible ? 1 : 0,
+      gameFrameHref: String(gameFrame?.getAttribute("src") || gameFrame?.src || ""),
+      hallFrameHref: String(hallFrame?.getAttribute("src") || hallFrame?.src || "")
+    };
+  } catch (error) {
+    sendRecoveryBridgeDiagnostic("recovery-frame-context-read-error", {
+      error: String(error?.message ?? error)
+    });
+    return null;
+  }
+}
+
+sendRecoveryBridgeDiagnostic("recovery-frame-context-bridge-boot");
+
 function sendRawLegacyTick(rawTick) {
   if (typeof rawTick !== "string" || !rawTick) return;
   try {
@@ -42,6 +127,17 @@ function receiveLegacyRaw(raw) {
     const value = JSON.parse(raw);
     if (value?.abx === "tick") sendRawLegacyTick(raw);
     else if (value?.abx === "frame_scout") sendLegacyScout(raw);
+    else if (value?.abx === "table_recovery_needed") {
+      chrome.runtime.sendMessage({
+        type: "legacy_recovery_needed",
+        payload: {
+          recovery: value,
+          href: location.href,
+          framePath: frameKey,
+          observedAtUtc: new Date().toISOString()
+        }
+      }).catch(() => {});
+    }
   } catch (_) {}
 }
 
@@ -76,8 +172,8 @@ function sendSnapshot() {
 }
 
 window.addEventListener("message", (event) => {
-  if (event.data?.source === "bca-webview-compat" && event.data.type === "legacy_raw_tick") {
-    receiveLegacyRaw(event.data.rawTick);
+  if (event.data?.source === "bca-webview-compat" && event.data.type === "legacy_raw_message") {
+    receiveLegacyRaw(event.data.rawMessage);
     return;
   }
 
@@ -107,7 +203,44 @@ window.addEventListener("message", (event) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message) => {
+window.addEventListener("message", (event) => {
+  if (event.source !== window || event.data?.source !== "bca-legacy-recovery-result") return;
+  chrome.runtime.sendMessage({
+    type: "legacy_recovery_result",
+    payload: {
+      commandId: String(event.data?.commandId ?? ""),
+      command: String(event.data?.command ?? ""),
+      result: event.data?.result ?? null,
+      href: location.href,
+      observedAtUtc: new Date().toISOString()
+    }
+  }).catch(() => {});
+});
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window || event.data?.source !== "bca-legacy-top-context") return;
+  chrome.runtime.sendMessage({
+    type: "legacy_top_context",
+    payload: {
+      context: event.data?.context ?? {},
+      href: location.href,
+      observedAtUtc: String(event.data?.observedAtUtc ?? new Date().toISOString())
+    }
+  }).catch(() => {});
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === "probe_recovery_context") {
+    const context = readFrameRecoveryContext();
+    sendResponse({
+      ok: Boolean(context),
+      context,
+      href: location.href,
+      framePath: frameKey,
+      observedAtUtc: new Date().toISOString()
+    });
+    return false;
+  }
   if (message.type === "start_legacy_authority") {
     // postMessage crosses Chrome's ISOLATED -> MAIN world boundary reliably.
     window.postMessage({
@@ -121,6 +254,16 @@ chrome.runtime.onMessage.addListener((message) => {
     window.postMessage({
       source: "bca-content-bridge",
       type: "execute_legacy_bet",
+      payload: message.payload ?? {}
+    }, "*");
+    return;
+  }
+  if (message.type === "execute_legacy_recovery") {
+    // legacy-push-start.js owns the recovery API in MAIN world. Native
+    // Messaging reaches this isolated script first, so explicitly bridge it.
+    window.postMessage({
+      source: "bca-content-bridge",
+      type: "execute_legacy_recovery",
       payload: message.payload ?? {}
     }, "*");
     return;

@@ -15672,17 +15672,13 @@ try{
                                 _nonGameViewSinceUtc = DateTime.MinValue;
                                 return;
                             }
-                            if (_nonGameViewSinceUtc == DateTime.MinValue)
-                            {
-                                _nonGameViewSinceUtc = DateTime.UtcNow;
-                                Log($"[WV2][NON-GAME-VIEW-BEGIN] state={preflightState} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
-                                return;
-                            }
-                            var nonGameAge = DateTime.UtcNow - _nonGameViewSinceUtc;
-                            if (nonGameAge < TimeSpan.FromSeconds(3))
+                            if (age < TimeSpan.FromSeconds(3))
                                 return;
 
-                            Log($"[WV2][HEALTH-NON-GAME-VIEW] viewAgeSec={nonGameAge.TotalSeconds:0.0} | tickAgeSec={age.TotalSeconds:0.0} | state={preflightState} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
+                            // Recovery chỉ bắt đầu sau 3s không có GAME_TABLE tick; trước khi
+                            // click bàn, RestoreBookmarkedTableAsync luôn xác nhận GAME_HALL.
+                            _nonGameViewSinceUtc = DateTime.UtcNow;
+                            Log($"[WV2][HEALTH-NON-GAME-VIEW] tickAgeSec={age.TotalSeconds:0.0} | state={preflightState} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
                             StopTasksForRendererRecovery("health-non-game-view");
                             if (Interlocked.Exchange(ref _webRecoveryBusy, 1) != 0)
                             {

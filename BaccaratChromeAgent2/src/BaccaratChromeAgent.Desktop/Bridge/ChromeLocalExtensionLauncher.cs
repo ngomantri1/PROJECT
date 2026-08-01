@@ -5,6 +5,12 @@ using System.Linq;
 
 namespace BaccaratSexyCasino2;
 
+/// <summary>Physical-pixel bounds shared by the Desktop panel and Chrome.</summary>
+internal readonly record struct ChromeWindowBounds(int X, int Y, int Width, int Height)
+{
+    internal bool IsUsable => Width > 0 && Height > 0;
+}
+
 internal sealed record ChromeLaunchResult(bool Started, string ErrorCode, string Message, string? ChromePath = null)
 {
     public static ChromeLaunchResult Failure(string errorCode, string message) => new(false, errorCode, message);
@@ -18,7 +24,7 @@ internal sealed record ChromeLaunchResult(bool Started, string ErrorCode, string
 /// </summary>
 internal static class ChromeLocalExtensionLauncher
 {
-    public static ChromeLaunchResult Launch(string url, ExtensionRuntimeInfo runtime)
+    public static ChromeLaunchResult Launch(string url, ExtensionRuntimeInfo runtime, ChromeWindowBounds? bounds = null)
     {
         var chromePath = FindToolBrowserExecutable();
         if (chromePath is null)
@@ -46,6 +52,12 @@ internal static class ChromeLocalExtensionLauncher
                 "--no-default-browser-check",
                 "--new-window"
             };
+
+            if (bounds is { IsUsable: true } windowBounds)
+            {
+                arguments.Add($"--window-position={windowBounds.X},{windowBounds.Y}");
+                arguments.Add($"--window-size={windowBounds.Width},{windowBounds.Height}");
+            }
 
             if (Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var target) &&
                 (target.Scheme == Uri.UriSchemeHttp || target.Scheme == Uri.UriSchemeHttps))

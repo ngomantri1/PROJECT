@@ -13,6 +13,8 @@ using var output = Console.OpenStandardOutput();
 using var nativeWriteLock = new SemaphoreSlim(1, 1);
 var lastChromeSessionId = "";
 EngineResponse? lastGameResponse = null;
+const string ExpectedExtensionVersion = "0.1.5";
+var extensionRuntimeReady = 0;
 HostLog.Write("[HOST][START] Native Messaging connected");
 
 async Task WriteNativeAsync(object value)
@@ -24,6 +26,38 @@ async Task WriteNativeAsync(object value)
     }
     finally { nativeWriteLock.Release(); }
 }
+
+using var watchdogShutdown = new CancellationTokenSource();
+var watchdogTask = Task.Run(async () =>
+{
+    long sequence = 0;
+    using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+    try
+    {
+        while (await timer.WaitForNextTickAsync(watchdogShutdown.Token))
+        {
+            await WriteNativeAsync(new BridgeMessage(
+                "watchdog_pulse",
+                "",
+                JsonSerializer.SerializeToElement(new
+                {
+                    sequence = ++sequence,
+                    observedAtUtc = DateTimeOffset.UtcNow
+                }, json)));
+
+            if (sequence == 5 && Volatile.Read(ref extensionRuntimeReady) == 0)
+            {
+                const string status = "Extension Worker chua xac nhan runtime; hay dong toan bo Chrome Tool va mo lai.";
+                HostLog.Write("[EXT][RUNTIME][MISSING] expected=" + ExpectedExtensionVersion);
+                await desktopPipe.PublishAsync(new DisplayState(
+                    "error", status, "", null, null, null, DateTimeOffset.UtcNow));
+            }
+        }
+    }
+    catch (OperationCanceledException) when (watchdogShutdown.IsCancellationRequested)
+    {
+    }
+});
 
 desktopPipe.CommandReceived += async command =>
 {
@@ -58,9 +92,26 @@ desktopPipe.CommandReceived += async command =>
         }, json)));
 };
 
-static EngineResponse ObserveDiagnostic(JsonElement payload)
+EngineResponse ObserveDiagnostic(JsonElement payload)
 {
     HostLog.Write($"[EXT][DIAG] {payload.GetRawText()}");
+    if (payload.TryGetProperty("event", out var eventValue) &&
+        string.Equals(eventValue.GetString(), "runtime-ready", StringComparison.Ordinal))
+    {
+        var version = payload.TryGetProperty("extensionVersion", out var versionValue)
+            ? versionValue.GetString()
+            : null;
+        if (string.Equals(version, ExpectedExtensionVersion, StringComparison.Ordinal))
+        {
+            Interlocked.Exchange(ref extensionRuntimeReady, 1);
+            return new EngineResponse(new DisplayState(
+                "connected", $"Extension Worker v{version} da san sang", "", null, null, null, DateTimeOffset.UtcNow));
+        }
+
+        HostLog.Write($"[EXT][RUNTIME][MISMATCH] expected={ExpectedExtensionVersion} actual={version ?? "-"}");
+        return new EngineResponse(new DisplayState(
+            "error", $"Extension Worker sai version (can {ExpectedExtensionVersion}, dang la {version ?? "khong ro"})", "", null, null, null, DateTimeOffset.UtcNow));
+    }
     return new EngineResponse(new DisplayState("connected", "Dang quan sat", "", null, null, null, DateTimeOffset.UtcNow));
 }
 
@@ -125,6 +176,10 @@ while (await NativeMessaging.ReadAsync(input, CancellationToken.None) is { } raw
         await WriteNativeAsync(error);
     }
 }
+
+watchdogShutdown.Cancel();
+try { await watchdogTask; }
+catch (OperationCanceledException) { }
 
 internal static class LegacyTickReader
 {

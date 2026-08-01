@@ -219,3 +219,9 @@
 - Ambiguous multi-match settle where more than one pending row passes one winner gate.
 - DOM bootstrap while wrapper/lobby still mixes board data.
 - Late `roadInfo` packet after new observed round.
+
+## Current State (2026-08-01)
+- This project remains the legacy WPF/WebView2 implementation. The NativeHost pull-probe/watchdog flow in `D:\PROJECT\BaccaratChromeAgent2` is not present here.
+- `singleBacTable.jsp` remains the live game source; `gamehall.jsp` is lobby/wrapper context only.
+- Open work is strict reconciliation of JS bet execution with C# pending/history and automatic re-entry after a provider context drop.
+- See `CURRENT_STATE.md`, `TODO.md` and `BUGS.md` for the maintained handoff.
