@@ -11,47 +11,12 @@
     var NS = '__cw_allin_one_v9_textmap_compat_TKFIX_xTail_STD_v2';
     var CW_ROOT_ID = '__cw_root_allin';
     var CW_FALLBACK_PANEL_ID = '__cw_wait_panel';
-    var CW_PANEL_VISIBLE_KEY = 'abx.canvasWatch.visible';
-    var CW_PANEL_VISIBLE_DEFAULT_KEY = 'abx.canvasWatch.visible.default';
-    var CW_PANEL_VISIBLE_DEFAULT = false; // false = hidden by default; set true to show Canvas Watch by default.
-    try { window.__abx_canvas_watch_default = CW_PANEL_VISIBLE_DEFAULT ? 1 : 0; } catch (_) {}
-    function __cw_flagToBool(v, fallback) {
-        try {
-            if (typeof v === 'boolean') return v;
-            if (typeof v === 'number') return v !== 0;
-            var s = String(v == null ? '' : v).toLowerCase().trim();
-            if (!s) return !!fallback;
-            if (s === '1' || s === 'true' || s === 'show' || s === 'visible' || s === 'on') return true;
-            if (s === '0' || s === 'false' || s === 'hide' || s === 'hidden' || s === 'off') return false;
-        } catch (_) {}
-        return !!fallback;
-    }
-    function __cw_readStoredCanvasWatchVisible() {
-        try {
-            if (!window.localStorage)
-                return null;
-            var currentDefault = CW_PANEL_VISIBLE_DEFAULT ? '1' : '0';
-            var storedDefault = window.localStorage.getItem(CW_PANEL_VISIBLE_DEFAULT_KEY);
-            if (storedDefault !== currentDefault) {
-                window.localStorage.setItem(CW_PANEL_VISIBLE_DEFAULT_KEY, currentDefault);
-                window.localStorage.removeItem(CW_PANEL_VISIBLE_KEY);
-                return null;
-            }
-            var stored = window.localStorage.getItem(CW_PANEL_VISIBLE_KEY);
-            if (stored !== null && typeof stored !== 'undefined')
-                return stored;
-        } catch (_) {}
-        return null;
-    }
+    // Đổi true/false tại đây để bật/tắt Canvas Watch.
+    // Đây là nguồn cấu hình duy nhất: localStorage, message hoặc bridge không được ghi đè.
+    var SHOW_CANVAS_WATCH = false;
+    try { window.__abx_canvas_watch_default = SHOW_CANVAS_WATCH ? 1 : 0; } catch (_) {}
     function __cw_isCanvasWatchVisible() {
-        try {
-            if (typeof window.__abx_canvas_watch_visible !== 'undefined')
-                return __cw_flagToBool(window.__abx_canvas_watch_visible, CW_PANEL_VISIBLE_DEFAULT);
-        } catch (_) {}
-        var stored = __cw_readStoredCanvasWatchVisible();
-        if (stored !== null && typeof stored !== 'undefined')
-            return __cw_flagToBool(stored, CW_PANEL_VISIBLE_DEFAULT);
-        return !!CW_PANEL_VISIBLE_DEFAULT;
+        return !!SHOW_CANVAS_WATCH;
     }
     function __cw_forceCanvasWatchRoot(rootEl, visible) {
         try {
@@ -87,32 +52,52 @@
             return false;
         }
     }
-    function __cw_setCanvasWatchVisible(show) {
-        var visible = !!show;
-        try { window.__abx_canvas_watch_visible = visible ? 1 : 0; } catch (_) {}
+    function __cw_enforceCanvasWatchConfig() {
+        if (SHOW_CANVAS_WATCH) return;
         try {
-            if (window.localStorage) {
-                window.localStorage.setItem(CW_PANEL_VISIBLE_DEFAULT_KEY, CW_PANEL_VISIBLE_DEFAULT ? '1' : '0');
-                window.localStorage.setItem(CW_PANEL_VISIBLE_KEY, visible ? '1' : '0');
+            var roots = document.querySelectorAll ? document.querySelectorAll('#' + CW_ROOT_ID) : [];
+            for (var i = 0; i < roots.length; i++) {
+                var root = roots[i];
+                if (root.getAttribute('data-abx-hidden-by-debug-flag') !== '1' ||
+                    root.style.getPropertyValue('display') !== 'none' ||
+                    root.style.getPropertyPriority('display') !== 'important')
+                    __cw_forceCanvasWatchRoot(root, false);
             }
         } catch (_) {}
+    }
+    function __cw_installCanvasWatchConfigLock() {
+        try {
+            if (window.__cw_canvas_watch_config_observer)
+                window.__cw_canvas_watch_config_observer.disconnect();
+        } catch (_) {}
+        try {
+            var observer = new MutationObserver(function () {
+                __cw_enforceCanvasWatchConfig();
+            });
+            // Inject tại DocumentCreated có thể chưa có documentElement. Quan sát
+            // trực tiếp document để lock vẫn hoạt động khi iframe vừa được tạo.
+            observer.observe(document, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                attributeFilter: ['style', 'class', 'data-abx-debug-visible', 'data-abx-hidden-by-debug-flag']
+            });
+            window.__cw_canvas_watch_config_observer = observer;
+        } catch (_) {}
+        __cw_enforceCanvasWatchConfig();
+    }
+    function __cw_setCanvasWatchVisible() {
+        var visible = !!SHOW_CANVAS_WATCH;
         __cw_applyCanvasWatchVisibilityNow();
-        try {
-            if (visible && typeof window.__cw_startPanelDebugTimers === 'function') window.__cw_startPanelDebugTimers();
-            if (!visible && typeof window.__cw_stopPanelDebugTimers === 'function') window.__cw_stopPanelDebugTimers();
-        } catch (_) {}
-        try {
-            if (window.top && window.top !== window)
-                window.top.postMessage({ __cw_cmd: 'canvas_watch_visible', visible: visible ? 1 : 0 }, '*');
-        } catch (_) {}
         return visible ? 'Canvas Watch visible' : 'Canvas Watch hidden';
     }
     try {
         window.__abx_set_canvas_watch_visible = __cw_setCanvasWatchVisible;
         window.__abx_show_canvas_watch = function () { return __cw_setCanvasWatchVisible(true); };
         window.__abx_hide_canvas_watch = function () { return __cw_setCanvasWatchVisible(false); };
-        window.__abx_toggle_canvas_watch = function () { return __cw_setCanvasWatchVisible(!__cw_isCanvasWatchVisible()); };
+        window.__abx_toggle_canvas_watch = function () { return __cw_setCanvasWatchVisible(); };
     } catch (_) {}
+    __cw_installCanvasWatchConfigLock();
     function __cw_hrefLowerOf(w) {
         try {
             return String((w.location && w.location.href) || '').toLowerCase();
@@ -244,9 +229,6 @@
                     if (d && d.__cw_cmd === 'clear_autostart') {
                         window.__cw_autostart = 0;
                         window.__cw_autostart_href = '';
-                    }
-                    if (d && d.__cw_cmd === 'canvas_watch_visible') {
-                        __cw_setCanvasWatchVisible(!!d.visible);
                     }
                 } catch (_) {}
             }
@@ -9424,7 +9406,7 @@
     document.body.appendChild(root);
     var _panelOwnerTimer = null;
     function __cw_panelDebugAllowed() {
-        try { return __cw_isCanvasWatchVisible() || window.__cw_panel_autostart === 1 || window.__cw_panel_autostart === true; }
+        try { return __cw_isCanvasWatchVisible(); }
         catch (_) { return false; }
     }
     function __cw_startPanelDebugTimers() {
@@ -13736,7 +13718,7 @@
             setStateUI();
         } catch (_) {}
     }
-    if (window.__cw_panel_autostart === 1 || window.__cw_panel_autostart === true)
+    if (SHOW_CANVAS_WATCH)
         start();
 
     function teardown() {
