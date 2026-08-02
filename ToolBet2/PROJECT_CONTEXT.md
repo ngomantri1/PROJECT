@@ -6,13 +6,18 @@ ToolBet v2 là công cụ desktop dạng script dành cho người vận hành B
 
 Chức năng chính:
 
-- Chọn web và tài khoản bằng panel được inject vào một tab Chrome.
+- Bắt đầu bằng Tool Login, sau đó mới hiện Game Login và chọn site/tài khoản trong
+  panel được inject vào một tab Chrome.
 - Hỗ trợ shell `vipbet389`, `222b` và `dly8829` qua site adapter.
 - Tự nhận diện trạng thái web/sảnh/phòng/loading và khôi phục session, tab, iframe hoặc stream lỗi.
 - Thu thập lịch sử từ WebSocket, HTTP response, DOM và canvas/bead plate; reconcile nhiều nguồn.
 - Phân tích hai nhóm mẫu Baccarat đang hoạt động: xen kẽ và chuỗi cùng màu.
 - Quản lý chuỗi stake theo nhóm, giới hạn lời/lỗ và chế độ Nuôi Hòa.
-- Đặt cược bằng thao tác UI Playwright, theo dõi pending bet và resolve khi có kết quả.
+- Đặt cược bằng thao tác UI Playwright, theo dõi một pending chính (có thể gồm
+  nhiều phân bổ tab/cửa) và resolve khi có kết quả.
+- Workspace HTML/CSS/JavaScript có tab `simulation`/`live`, lưu cấu hình và
+  runtime theo tab trong SQLite. Nhiều tab live có thể gom stake Player và
+  Banker trong một ván.
 - Lưu bàn, ván, nhóm cược, cược và event vào SQLite; cung cấp báo cáo/backtest/đề xuất cấu hình.
 
 ## Technology Stack
@@ -33,13 +38,17 @@ Dependencies được khai báo trong `requirements.txt`: Playwright, PyYAML, SQ
 1. `ToolBet.bat` bảo đảm Python 64-bit, tạo `.venv`, cài dependency, mở Chrome CDP/profile riêng và dừng instance `main.py` cũ.
 2. `main.py:main()` tạo `HistoryWatcher` và chạy `HistoryWatcher.run()`.
 3. `HistoryWatcher` load config, khởi tạo SQLite, store, browser manager, overlay, betting session và auto bettor.
-4. Tool kết nối Chrome, luôn hiển thị login panel, lưu site/tài khoản đã chọn, rồi resolve đúng tab của site.
+4. Tool kết nối Chrome, luôn yêu cầu Tool Login trước. Sau session Tool hợp lệ,
+   Game Login lưu site/tài khoản đã chọn rồi resolve đúng tab của site.
 5. Site adapter kiểm tra/đăng nhập và mở AE SEXY theo kiểu iframe hoặc provider tab.
 6. Tool phát hiện bàn đang mở; bàn runtime được ưu tiên hơn `config.game.table_name`, còn config là lựa chọn khi đi từ sảnh.
 7. `AeSexyCollector` gắn hook WebSocket/HTTP và polling DOM; lịch sử đáng tin được reconcile rồi chuyển vào `TableState`.
 8. Khi lịch sử tăng, kết quả được lưu DB, pending bet được resolve, mẫu được phân tích và tín hiệu hợp lệ được arm.
-9. Khi cửa cược mở, `AutoBettor` xác minh UI/round/limit, đặt chip nếu Auto bật, ghi bet và chờ kết quả.
-10. `GameOverlay` hiển thị lịch sử, tín hiệu, P&L, progression và cho phép lưu cấu hình trong lúc chạy.
+9. Khi cửa cược mở, `AutoBettor` xác minh UI/round/limit. Các tab live được
+   gom stake theo Player/Banker, có thể click cả hai cửa trong cùng ván, ghi một
+   bet tổng hợp và chờ kết quả.
+10. `GameOverlay` hiển thị workspace v2 với lịch sử, tín hiệu, P&L, trạng thái
+   tab và cấu hình SQLite trong lúc chạy.
 11. Watch loop giám sát tab/iframe/UI/stream/session và phục hồi mà không cắt ngang thao tác đặt cược.
 
 ## Important Components
@@ -53,7 +62,11 @@ Dependencies được khai báo trong `requirements.txt`: Playwright, PyYAML, SQ
 - `src/pattern_analyzer.py` — catalog và luật nhận diện mẫu đang dùng.
 - `src/betting_session.py`, `src/progression.py`, `src/tie_nurture_engine.py` — state cược, P&L, progression và Nuôi Hòa.
 - `src/database.py`, `src/db_store.py` — schema, migration, dedup và persistence.
-- `src/overlay.py`, `src/login_panel.py` — UI inject và callback bridge.
+- `src/overlay.py`, `src/ui_runtime.py`, `src/ui/bridge.js` — UI inject,
+  snapshot/command bridge và workspace v2.
+- `src/tool_auth.py`, `src/tool_login_panel.py` — Tool Login/session gate.
+- `src/strategy_lifecycle.py`, `src/strategy_tab_store.py`,
+  `src/money_state_store.py` — live/simulation tab và persistence theo tab.
 - `src/sites/` — metadata/selector/flow riêng từng web.
 - `src/backtest.py`, `src/bet_analytics.py`, `src/bet_replay.py`, `src/pattern_discovery.py`, `src/config_optimizer.py` — phân tích offline và báo cáo.
 
@@ -84,7 +97,9 @@ Dependencies được khai báo trong `requirements.txt`: Playwright, PyYAML, SQ
 - Ba casino shell trong `src/sites/`; endpoint/DOM của chúng có thể thay đổi ngoài project.
 - AE SEXY thông qua provider tab/iframe, WebSocket, HTTP responses, DOM và canvas.
 - Local filesystem: `config.yaml`, `credentials.yaml`, SQLite và Chrome profile.
-- Không thấy cloud service hoặc server backend riêng.
+- Runtime customer không cần web backend để theo dõi/cược. Khi bật license sản
+  xuất, `src/license_client.py` gọi authority riêng triển khai bằng
+  `src/license_server.py`; private key và database authority không thuộc máy khách.
 
 ## Important Paths
 
@@ -94,7 +109,7 @@ Dependencies được khai báo trong `requirements.txt`: Playwright, PyYAML, SQ
 - `src/progression.py` và `src/pattern_analyzer.py` — bắt đầu đọc nghiệp vụ.
 - `src/database.py` và `src/db_store.py` — persistence.
 - `src/sites/` và `src/auth_flows.py` — tích hợp từng web/login/OCR.
-- `src/overlay.py` — UI và callback bridge.
+- `src/ui_runtime.py`, `src/ui/bridge.js`, `src/overlay.py` — UI runtime,
+  partial update và adapter legacy.
 - `config.example.yaml` — cấu hình mẫu; không dùng `credentials.yaml` làm tài liệu.
 - `HUONG_DAN_CAI_DAT.md` và `ToolBet.bat` — cài đặt/chạy trên Windows.
-

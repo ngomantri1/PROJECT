@@ -91,6 +91,16 @@ if not exist ".venv\.toolbet_ready" (
         echo       Cai them ddddocr cho captcha 222b...
         "%PIP%" install ddddocr
     )
+    "%PY%" -c "import cryptography" >nul 2>&1
+    if errorlevel 1 (
+        echo       Cai them cryptography cho signed license...
+        "%PIP%" install "cryptography>=43.0"
+        if errorlevel 1 (
+            echo [LOI] Khong cai duoc cryptography — khong the xac minh license.
+            pause
+            exit /b 1
+        )
+    )
 )
 
 REM --- Config / credentials ---
@@ -130,9 +140,8 @@ if errorlevel 1 (
     )
     echo [3/4] Mo Chrome CDP — profile: data\cdp_profile
     if not exist "%PROFILE%" mkdir "%PROFILE%"
-    start "" "%CHROME_EXE%" --remote-debugging-port=%CDP_PORT% --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check "about:blank"
-    echo       Cho Chrome khoi dong 5 giay ...
-    timeout /t 5 /nobreak >nul
+    start "" "%CHROME_EXE%" --remote-debugging-port=%CDP_PORT% --user-data-dir="%PROFILE%" --start-maximized --no-first-run --no-default-browser-check "about:blank"
+    echo       Chrome dang khoi dong; ToolBet se tu cho cong CDP san sang ...
 ) else (
     echo [3/4] Chrome CDP da chay tren port %CDP_PORT%.
 )

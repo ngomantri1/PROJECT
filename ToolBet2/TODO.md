@@ -1,32 +1,61 @@
 # TODO
 
-## High Priority
+## Phase 0 live-readiness checkpoint
 
-Không có TODO mức cao được xác nhận trong source hoặc lịch sử Git khả dụng.
+- [x] Create and verify an online backup of the active SQLite database without
+  stopping the running ToolBet session.
+- [x] Build an internal preservation snapshot and verify that it excludes
+  runtime credentials, config, database, Chrome profile and license cache.
+- [x] Activate the source-runtime `data/KILL_SWITCH`; keep it in place until
+  stale pending reconciliation and fail-closed preflight work are complete.
+- [ ] Reconcile bet `id=27` only from a trusted round-39 result or through an
+  explicit domain recovery workflow. Current evidence stops at shoe 24963,
+  round 38, so the unresolved stake-0 record and open group 7 were preserved.
+- [x] Stage repository hygiene: add the project `.gitignore` and remove
+  previously committed `config.yaml`, `credentials.yaml` and
+  `data/cdp_profile/` content from the Git index with `git rm --cached`. Local
+  runtime files remain present. A later commit must preserve these staged
+  removals.
 
-## In Progress
+## Required before an operational live pilot
 
-Không xác định được task đang làm dở. Project chưa được Git theo dõi nên không có diff/commit theo path để làm bằng chứng.
+1. Run controlled browser sessions with `auto_bet=false`, then stake 0, to
+   observe AE SEXY collection, recovery and the live-tab decision path without
+   chip clicks.
+2. Validate a small-stake pilot only after the operator enables a production
+   license authority, public key and customer-build signing configuration as
+   described in `LICENSE_DEPLOYMENT.md` and `PILOT_RUNBOOK.md`.
+3. Exercise real browser recovery around an aggregate multi-live pending bet,
+   including a Player+Banker round. Current evidence is unit/fixture coverage,
+   not a casino end-to-end run.
+4. Measure CPU/RAM for a pilot-duration session and compare it with
+   `RESOURCE_BASELINE.md`.
+5. Complete the fail-closed preflight and pending-recovery work. A live pilot
+   must remain blocked while any unresolved/uncertain bet exists.
 
-## Pending
+## Test and observability gaps
 
-Không tìm thấy marker `TODO`, `FIXME`, `HACK` hoặc `NotImplemented` có ý nghĩa trong `main.py`, `src/` và `scripts/`.
+- Add browser/integration fixtures for AE SEXY chip placement and for
+  WS/HTTP reconciliation without connecting to a real casino.
+- Add an integration case for partial aggregate placement (one of Player or
+  Banker succeeds) and recovery/restart while the aggregate pending bet is
+  awaiting its result.
+- If operator-facing per-tab live-bet reporting is required, add a queryable
+  allocation model. At present the aggregate `BetRecord` is durable and the
+  allocation detail is emitted as events; individual MoneyManager state is
+  persisted separately.
 
-## Refactor / Technical Debt
+## Maintenance
 
-Không ghi nhận refactor bắt buộc nào. Các khối `pass` đã kiểm tra là base class hoặc nhánh bỏ qua exception/fallback, không đủ bằng chứng để gọi là code chưa hoàn thiện.
+- Resolve or suppress the Python 3.13 `<prefix>` startup warning after verifying
+  the interpreter/venv configuration; it is non-blocking for the current 154
+  passing tests.
+- Keep `credentials.yaml`, `config.yaml`, `data/toolbet.db` and
+  `data/cdp_profile/` out of version control and release artifacts.
 
-## Needs Testing
+## Completed work intentionally not kept as TODO
 
-- Chưa có test suite. Các flow browser/live casino, recovery, click chip và end-to-end persistence chưa có bằng chứng kiểm thử tự động trong project.
-- Kiểm tra tĩnh ngày 2026-08-02: 54 tệp Python parse thành công và 48 module `src` import thành công.
-
-## Suggested Improvements
-
-Các mục dưới đây là đề xuất từ khảo sát, không phải yêu cầu đã được xác nhận:
-
-- Thêm test đơn vị cho `pattern_analyzer`, `progression`, `betting_session`, chip planner và `tie_nurture_engine`.
-- Thêm test integration dùng fixture payload cho WS/HTTP reconciliation, không kết nối casino thật.
-- Thiết lập `.gitignore`/secret scanning trước khi track project.
-- Xác lập một lệnh kiểm tra chuẩn (ví dụ lint + test + import smoke test).
-
+- UI runtime v2/workspace persistence, Tool Login gate, 8 MoneyManagers,
+  license authority/client, phase-G strategies, packaging support, direct
+  simulation/live tabs and concurrent Player/Banker aggregate placement are
+  implemented in source and covered by the current test suite.

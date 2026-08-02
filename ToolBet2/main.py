@@ -11,6 +11,9 @@ from typing import Any
 from src.auth import is_logged_in, login_vipbet389
 from src.credentials import load_credentials, save_credentials
 from src.browser import BrowserManager
+from src.kill_switch import live_bet_allowed
+from src.release_support import configure_runtime_logging
+from src.release_cli import handle_release_command
 
 
 def _is_target_closed_exc(exc: BaseException) -> bool:
@@ -30,6 +33,10 @@ from src.config import config_path_resolved, load_config, update_site_url
 from src.database import RoundRecord, init_db
 from src.db_store import GameDataStore
 from src.login_panel import prompt_login_panel
+from src.license_client import HttpLicenseBackend, LicenseService
+from src.tool_auth import ToolAuthService
+from src.tool_login_panel import prompt_tool_login_panel
+from src.ui_contracts import UiCommand, UiCommandType
 from src.ae_sexy import (
     PHASE_LABEL,
     PHASE_LOBBY,
@@ -81,7 +88,15 @@ from src.stakes_config import format_stakes, parse_stakes_text, save_stakes_to_c
 from src.betting_config import format_limit, parse_limit_text, save_betting_to_config, save_limits_to_config
 from src.betting_session import BettingSession
 from src.progression import PROGRESSION_MODES
-from src.auto_bettor import AutoBettor
+from src.auto_bettor import AutoBettor, BET_TRIGGER_SOURCES
+from src.strategy_tabs import (
+    normalize_strategy_tabs,
+    strategy_tabs_to_overlay,
+)
+from src.strategy_tab_store import StrategyTabStore
+from src.strategy_lifecycle import StrategyLifecycleService, TabLifecycleMode
+from src.capital_managers import create_money_manager
+from src.money_state_store import MoneyStateStore
 from src.bet_analytics import (
     MIN_CONFIDENCE_SAMPLES,
     pattern_win_rates_by_id,
@@ -137,12 +152,50 @@ class HistoryWatcher:
         Path(self.config.database.path).parent.mkdir(parents=True, exist_ok=True)
         self.session_factory = init_db(self.config.database.path)
         self.store = GameDataStore(self.session_factory, self.config.game.provider)
+        self.strategy_tab_store = StrategyTabStore(self.session_factory)
+        self.strategy_lifecycle = StrategyLifecycleService(self.session_factory)
+        self.money_state_store = MoneyStateStore(self.session_factory)
+        self._active_money_tab_id = ""
+        self.config.strategy_tabs = self.strategy_tab_store.load_or_import(
+            self.config.strategy_tabs
+        )
         self.state = TableState()
         self.browser_mgr = BrowserManager(cdp_url=self.config.site.cdp_url)
         self.collector: TrafficCollector | None = None
         self.ae_collector: AeSexyCollector | None = None
         self.page: Page | None = None
+        license_service = None
+        if self.config.license.enabled:
+            public_key_path = Path(self.config.license.public_key_path)
+            if not public_key_path.exists():
+                raise RuntimeError(
+                    f"Thiếu license public key: {public_key_path}"
+                )
+            license_service = LicenseService(
+                HttpLicenseBackend(
+                    self.config.license.api_url,
+                    timeout_seconds=self.config.license.timeout_seconds,
+                ),
+                public_key_pem=public_key_path.read_bytes(),
+                cache_path=self.config.license.cache_path,
+                grace_minutes=self.config.license.grace_minutes,
+                refresh_before_minutes=(
+                    self.config.license.refresh_before_minutes
+                ),
+            )
+        self.tool_auth = ToolAuthService(
+            store_path=self.config.tool_auth.account_store_path,
+            bootstrap_username=self.config.tool_auth.bootstrap_username,
+            bootstrap_password=self.config.tool_auth.bootstrap_password,
+            session_timeout_minutes=self.config.tool_auth.session_timeout_minutes,
+            enabled=self.config.tool_auth.enabled,
+            license_service=license_service,
+        )
         self.overlay = GameOverlay()
+        self.overlay.configure_ui_runtime(
+            runtime_v2_enabled=self.config.ui.runtime_v2_enabled,
+            legacy_overlay_enabled=self.config.ui.legacy_overlay_enabled,
+        )
         self.overlay.set_stakes(self.config.betting.stakes)
         self.overlay.set_betting_ui(
             auto_bet=self.config.betting.auto_bet,
@@ -168,6 +221,12 @@ class HistoryWatcher:
         self.overlay.set_suggest_handler(self._handle_suggest_config)
         self.overlay.set_daily_handler(self._handle_daily_analysis)
         self.overlay.set_stats_scope_handler(self._handle_stats_scope)
+        # The first workspace install happens before the first collector
+        # refresh. Supply the complete UI payload now so saved strategy and
+        # money-manager ids can be rendered immediately.
+        self.overlay.set_strategy_tabs(self._overlay_strategy_tabs_payload())
+        self.overlay.set_strategy_tabs_handler(self._handle_save_strategy_tabs)
+        self.overlay.set_ui_command_handler(self._handle_ui_command)
         self.betting_session = BettingSession(
             self.config.betting.stakes,
             stop_loss=self.config.betting.stop_loss,
@@ -179,6 +238,32 @@ class HistoryWatcher:
         )
         self.betting_session.set_profit_for_limits(lambda: self._get_pnl_overlay()["today"].profit)
         self.betting_session.configure(auto_bet=self.config.betting.auto_bet)
+        self._live_money_managers: dict[str, Any] = {}
+        persisted_live_tabs = self.strategy_lifecycle.tabs_in_mode(
+            TabLifecycleMode.LIVE
+        )
+        if persisted_live_tabs:
+            for persisted_live_tab in persisted_live_tabs:
+                manager = self._create_money_manager_for_tab(
+                    persisted_live_tab
+                )
+                self.money_state_store.restore(
+                    persisted_live_tab.id,
+                    manager,
+                )
+                self._live_money_managers[persisted_live_tab.id] = manager
+            # Restart never resumes real execution without a new confirmation.
+            self.config.betting.auto_bet = False
+            self.betting_session.configure(auto_bet=False)
+            save_betting_to_config(
+                config_path=self._config_path, auto_bet=False
+            )
+            self.overlay.set_betting_ui(
+                auto_bet=False,
+                stop_loss=0,
+                take_profit=0,
+                progression_mode="multi_live",
+            )
         self.auto_bettor = AutoBettor(self.betting_session, self.store)
         self.auto_bettor.configure_tie_nurture(self.config.betting.tie_nurture)
         self.auto_bettor.set_disabled_patterns(disabled_pattern_ids(self._pattern_enabled))
@@ -186,6 +271,19 @@ class HistoryWatcher:
         self.auto_bettor.set_ui_failed_handler(self._on_bet_ui_failed)
         self.auto_bettor.set_healthy_handler(self.note_ui_healthy)
         self.auto_bettor.set_bet_resolved_handler(self._on_bet_resolved_refresh_overlay)
+        self.auto_bettor.set_strategy_tab_shadow_evaluator(
+            self._evaluate_strategy_tab_shadow
+        )
+        self.auto_bettor.set_strategy_tab_live_evaluator(
+            self._evaluate_strategy_tab_live
+        )
+        self.auto_bettor.set_multi_live_result_handler(
+            self._resolve_multi_live_allocations
+        )
+        self.auto_bettor.set_runtime_unsafe_handler(self._auto_demote_live)
+        self.auto_bettor.set_license_checker(
+            self._live_bet_allowed
+        )
         self._full_log_done = False
         self._last_history_key: tuple = ()
         self._active_table_id: str = ""
@@ -216,6 +314,233 @@ class HistoryWatcher:
         self._pending_history_table: str = ""
         self._pnl_cache: dict[str, Any] | None = None
         self._pnl_cache_at: float = 0.0
+        self._license_refresh_at: float = 0.0
+
+    def _live_bet_allowed(self) -> bool:
+        return live_bet_allowed(self.tool_auth.can("live_bet"))
+
+    def _require_tool_session(self) -> None:
+        """Single gate for every screen/action that can lead to a Game session."""
+
+        self.tool_auth.require_session()
+
+    async def logout_tool(self) -> None:
+        """End the Tool session. A new run must pass Tool Login before Game Login."""
+
+        self._auto_demote_live("Tool đã đăng xuất")
+        self.tool_auth.logout()
+        logger.info("Đã đăng xuất Tool; dừng phiên Game hiện tại.")
+        if self.page and not self.page.is_closed():
+            await self.overlay.remove(self.page)
+        await self.browser_mgr.stop()
+
+    async def change_game_account(self, page: Page):
+        """Reopen only Game login; it never changes the current Tool session."""
+
+        self._require_tool_session()
+        creds = load_credentials(site=self.config.site.url)
+        return await prompt_login_panel(
+            page,
+            site_url=self.config.site.url,
+            username=creds.username,
+            password=creds.password,
+        )
+
+    async def _handle_ui_command(self, command: UiCommand) -> dict:
+        if command.type == UiCommandType.TOOL_LOGOUT:
+            # Return the bridge response before closing the CDP context.
+            asyncio.get_running_loop().create_task(self.logout_tool())
+            return {"ok": True, "data": {"screen": "tool_login"}}
+        if command.type == UiCommandType.GAME_LOGIN:
+            try:
+                self._require_tool_session()
+            except PermissionError as exc:
+                return {"ok": False, "error": str(exc)}
+            return {"ok": True, "data": {"screen": "game_login"}}
+        if command.type == UiCommandType.SET_TAB_MODE:
+            tab_id = str(command.payload.get("tab_id") or "")
+            live = bool(command.payload.get("live"))
+            try:
+                if self.betting_session.state.pending or self.auto_bettor.is_busy:
+                    raise ValueError(
+                        "Đang có cược/pipeline chưa hoàn tất"
+                    )
+                status = self.strategy_lifecycle.set_live(
+                    tab_id,
+                    live=live,
+                )
+                self.config.strategy_tabs = (
+                    self.strategy_tab_store.load_or_import(
+                        self.config.strategy_tabs
+                    )
+                )
+                if live:
+                    tab = next(
+                        (
+                            item
+                            for item in self.config.strategy_tabs.tabs
+                            if item.id == tab_id
+                        ),
+                        None,
+                    )
+                    if tab is None:
+                        raise ValueError("Không tìm thấy tab vừa bật Live")
+                    manager = self._create_money_manager_for_tab(tab)
+                    self.money_state_store.restore(tab.id, manager)
+                    self._live_money_managers[tab.id] = manager
+                else:
+                    manager = self._live_money_managers.pop(tab_id, None)
+                    if manager is not None:
+                        self.money_state_store.save(tab_id, manager)
+                    if not self.strategy_lifecycle.tabs_in_mode(
+                        TabLifecycleMode.LIVE
+                    ):
+                        self._handle_toggle_auto_bet(False)
+                return {
+                    "ok": True,
+                    "data": {
+                        "tab_id": tab_id,
+                        "auto_bet": self.betting_session.state.auto_bet,
+                        **status,
+                    },
+                }
+            except ValueError as exc:
+                return {"ok": False, "error": str(exc)}
+        if command.type == UiCommandType.SET_RUN_STATE:
+            running = bool(command.payload.get("running"))
+            try:
+                if running:
+                    self._require_tool_session()
+                    if not self._live_bet_allowed():
+                        raise ValueError(
+                            "License không cho phép chạy cược thật"
+                        )
+                    live_tabs = self.strategy_lifecycle.tabs_in_mode(
+                        TabLifecycleMode.LIVE
+                    )
+                    if not live_tabs:
+                        raise ValueError(
+                            "Chưa có tab nào chọn Chạy thật"
+                        )
+                    if (
+                        self.betting_session.state.pending
+                        or self.auto_bettor.is_busy
+                    ):
+                        raise ValueError(
+                            "Đang có cược/pipeline chưa hoàn tất"
+                        )
+                response = self._handle_toggle_auto_bet(running)
+                return {
+                    "ok": True,
+                    "data": {
+                        "running": bool(response.get("auto_bet")),
+                        "auto_bet": bool(response.get("auto_bet")),
+                        "live_tabs": len(
+                            self.strategy_lifecycle.tabs_in_mode(
+                                TabLifecycleMode.LIVE
+                            )
+                        ),
+                    },
+                }
+            except (PermissionError, ValueError) as exc:
+                return {"ok": False, "error": str(exc)}
+        if command.type == UiCommandType.START_SHADOW:
+            tab_id = str(command.payload.get("tab_id") or "")
+            try:
+                status = self.strategy_lifecycle.start_shadow(tab_id)
+                self.config.strategy_tabs = self.strategy_tab_store.load_or_import(
+                    self.config.strategy_tabs
+                )
+                return {"ok": True, "data": {"tab_id": tab_id, **status}}
+            except ValueError as exc:
+                return {"ok": False, "error": str(exc)}
+        if command.type == UiCommandType.PROMOTE_LIVE:
+            tab_id = str(command.payload.get("tab_id") or "")
+            confirmation = str(command.payload.get("confirmation") or "")
+            try:
+                self._require_tool_session()
+                if self.betting_session.state.pending or self.auto_bettor.is_busy:
+                    raise ValueError("Đang có cược/pipeline chưa hoàn tất")
+                # Promotion only establishes authority. It must never silently
+                # inherit an already-enabled real betting switch.
+                if self.betting_session.state.auto_bet:
+                    self._handle_toggle_auto_bet(False)
+                status = self.strategy_lifecycle.promote_live(
+                    tab_id, confirmation=confirmation
+                )
+                tab = self.strategy_lifecycle.tab_in_mode(TabLifecycleMode.LIVE)
+                if tab is None:
+                    raise ValueError("Không tìm thấy tab live sau promote")
+                manager = self._create_money_manager_for_tab(tab)
+                self.money_state_store.restore(tab.id, manager)
+                self.betting_session.activate_money_manager(manager)
+                self._active_money_tab_id = tab.id
+                self.money_state_store.save(tab.id, manager)
+                self.config.betting.stakes = list(tab.stakes)
+                self.config.betting.stop_loss = tab.stop_loss
+                self.config.betting.take_profit = tab.take_profit
+                self.config.betting.progression_mode = tab.progression_mode
+                self.overlay.set_stakes(tab.stakes)
+                self.config.strategy_tabs = self.strategy_tab_store.load_or_import(
+                    self.config.strategy_tabs
+                )
+                logger.warning(
+                    "[TAB_LIVE] PROMOTE | tab=%s | auto_bet=false | stake=%s",
+                    tab.id,
+                    tab.stakes[0],
+                )
+                return {
+                    "ok": True,
+                    "data": {
+                        "tab_id": tab_id,
+                        "auto_bet": False,
+                        **status,
+                    },
+                }
+            except (PermissionError, ValueError) as exc:
+                return {"ok": False, "error": str(exc)}
+        if command.type == UiCommandType.ENABLE_LIVE_BET:
+            try:
+                self._require_tool_session()
+                tab = self.strategy_lifecycle.tab_in_mode(TabLifecycleMode.LIVE)
+                if tab is None:
+                    raise ValueError("Chưa có tab live")
+                confirmation = str(command.payload.get("confirmation") or "")
+                if confirmation.strip() != f"BET {tab.name}":
+                    raise ValueError(f'Xác nhận phải là "BET {tab.name}"')
+                if self.betting_session.state.pending or self.auto_bettor.is_busy:
+                    raise ValueError("Đang có cược/pipeline chưa hoàn tất")
+                response = self._handle_toggle_auto_bet(True)
+                logger.warning(
+                    "[TAB_LIVE] AUTO_BET_ON | tab=%s | stake=%s",
+                    tab.id,
+                    self.betting_session.current_stake,
+                )
+                return {
+                    "ok": True,
+                    "data": {
+                        "tab_id": tab.id,
+                        "auto_bet": bool(response.get("auto_bet")),
+                        "stake": self.betting_session.current_stake,
+                    },
+                }
+            except (PermissionError, ValueError) as exc:
+                return {"ok": False, "error": str(exc)}
+        if command.type in (
+            UiCommandType.DEMOTE_LIVE,
+            UiCommandType.DISABLE_LIVE_BET,
+        ):
+            tab_id = str(command.payload.get("tab_id") or "")
+            reason = str(command.payload.get("reason") or "Demote thủ công")
+            self._handle_toggle_auto_bet(False)
+            status = self.strategy_lifecycle.demote(tab_id, reason=reason)
+            self._persist_active_money_manager()
+            self._deactivate_money_manager_if_safe()
+            self.config.strategy_tabs = self.strategy_tab_store.load_or_import(
+                self.config.strategy_tabs
+            )
+            return {"ok": True, "data": {"tab_id": tab_id, **status}}
+        return {"ok": False, "error": "Lệnh UI chưa được hỗ trợ"}
 
     def _pnl_as_dict(self, summary) -> dict:
         return {
@@ -272,12 +597,59 @@ class HistoryWatcher:
     def invalidate_pattern_win_rates(self) -> None:
         self.invalidate_live_stats()
 
+    @staticmethod
+    def _create_money_manager_for_tab(tab):
+        return create_money_manager(
+            tab.money_manager_id,
+            tab.stakes,
+            stake_chains=tab.stake_chains,
+            stop_loss=tab.stop_loss,
+            take_profit=tab.take_profit,
+        )
+
+    def _sync_live_money_managers(self) -> None:
+        live_tabs = self.strategy_lifecycle.tabs_in_mode(
+            TabLifecycleMode.LIVE
+        )
+        live_ids = {tab.id for tab in live_tabs}
+        for tab_id in list(self._live_money_managers):
+            if tab_id not in live_ids:
+                manager = self._live_money_managers.pop(tab_id)
+                self.money_state_store.save(tab_id, manager)
+        for tab in live_tabs:
+            manager = self._live_money_managers.get(tab.id)
+            if manager is not None and manager.manager_id == tab.money_manager_id:
+                continue
+            manager = self._create_money_manager_for_tab(tab)
+            self.money_state_store.restore(tab.id, manager)
+            self._live_money_managers[tab.id] = manager
+
+    def _persist_active_money_manager(self) -> None:
+        manager = self.betting_session.active_money_manager
+        if manager is None:
+            return
+        tab_id = self._active_money_tab_id
+        if not tab_id:
+            tab = self.strategy_lifecycle.tab_in_mode(TabLifecycleMode.LIVE)
+            tab_id = tab.id if tab is not None else ""
+        if not tab_id:
+            return
+        self.money_state_store.save(tab_id, manager)
+
+    def _deactivate_money_manager_if_safe(self) -> None:
+        manager = self.betting_session.active_money_manager
+        if manager is None or self.betting_session.state.pending is not None:
+            return
+        self.betting_session.deactivate_money_manager()
+        self._active_money_tab_id = ""
+
     def _on_bet_resolved_refresh_overlay(self) -> None:
         """
         Ket qua cuoc duoc resolve bat dong bo trong AutoBettor sau khi _analyze_patterns
         cua on_history_update da render xong, nen can force refresh overlay ngay.
         """
         self.invalidate_live_stats()
+        self._persist_active_money_manager()
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self._analyze_patterns(full=True))
@@ -695,6 +1067,7 @@ class HistoryWatcher:
     def _on_bet_ui_failed(self, shell: dict | None = None, stream: dict | None = None) -> None:
         """Tang dem nghi render/stream loi — khoi phuc sau nhieu lan xac nhan."""
         if (shell or {}).get("lobbyKick") or (stream or {}).get("lobbyKick"):
+            self._auto_demote_live("Bị đẩy khỏi bàn")
             logger.warning("[PHIEN] MAT_BAN | bi day ra sanh — can vao lai ban")
             self._recover_urgent = True
             if self.ae_collector:
@@ -713,6 +1086,7 @@ class HistoryWatcher:
                 _STREAM_ZOMBIE_THRESHOLD,
             )
             if self._stream_zombie_streak >= _STREAM_ZOMBIE_THRESHOLD:
+                self._auto_demote_live("Game stream/UI không an toàn")
                 self._recover_urgent = True
             return
         if not shell or not shell.get("renderBroken"):
@@ -789,7 +1163,216 @@ class HistoryWatcher:
         data = self.betting_session.overlay_status()
         data["tie_nurture"] = tie_nurture_to_overlay(self.config.betting.tie_nurture)
         data["tie_nurture_live"] = self.auto_bettor.tie.status()
+        data["decision_shadow"] = self.auto_bettor.decision_shadow_status()
         return data
+
+    def _overlay_strategy_tabs_payload(self) -> dict:
+        payload = strategy_tabs_to_overlay(
+            self.config.strategy_tabs,
+            list(self.state.history or []),
+            skip_tie=self.config.game.skip_tie,
+            disabled_patterns=disabled_pattern_ids(self._pattern_enabled),
+            pattern_lengths=self._pattern_lengths,
+        )
+        table_name = self._effective_table_name()
+        self.strategy_tab_store.record_overlay(payload, table_name=table_name)
+        histories = self.strategy_tab_store.history_for_tabs(
+            [str(tab.get("id") or "") for tab in payload.get("tabs", [])]
+        )
+        money_configs = self.strategy_tab_store.money_configs_for_tabs(
+            [str(tab.get("id") or "") for tab in payload.get("tabs", [])]
+        )
+        lifecycle = self.strategy_lifecycle.status()
+        for tab in payload.get("tabs", []):
+            tab_id = str(tab.get("id") or "")
+            tab["history"] = histories.get(tab_id, [])
+            tab["money_configs"] = money_configs.get(tab_id, {})
+            tab["lifecycle"] = lifecycle.get(
+                tab_id,
+                {
+                    "mode": "simulation",
+                    "shadow_evaluations": 0,
+                    "shadow_matches": 0,
+                    "shadow_mismatches": 0,
+                    "shadow_errors": 0,
+                    "qualifies": False,
+                    "demote_reason": "",
+                },
+            )
+            tab["mode"] = tab["lifecycle"]["mode"]
+        return payload
+
+    def _evaluate_strategy_tab_shadow(
+        self,
+        *,
+        history: list[BetSide],
+        table_name: str,
+        skip_tie: bool,
+        source: str,
+        shuffling: bool,
+        legacy,
+    ) -> None:
+        tab = self.strategy_lifecycle.tab_in_mode(
+            TabLifecycleMode.SHADOW,
+            TabLifecycleMode.LIVE_CANDIDATE,
+        )
+        if tab is None:
+            return
+        try:
+            result = self.strategy_lifecycle.evaluate(
+                tab=tab,
+                history=history,
+                table_name=table_name,
+                source=source,
+                skip_tie=skip_tie,
+                progression=self.betting_session.progression,
+                auto_bet=self.betting_session.state.auto_bet,
+                license_allowed=self._live_bet_allowed(),
+                pending_main=self.betting_session.state.pending is not None,
+                pending_tie=self.auto_bettor.tie.has_pending,
+                round_already_placed=False,
+                shuffling=shuffling,
+                source_allowed=not source or source in BET_TRIGGER_SOURCES,
+                disabled_patterns=disabled_pattern_ids(self._pattern_enabled),
+                pattern_lengths=self._pattern_lengths,
+                daily_profit=self.betting_session.effective_profit,
+                limit_hit=self.betting_session.state.limit_hit,
+            )
+            legacy_signal = legacy.signal
+            same_presence = result.strategy.wants_bet == bool(
+                legacy_signal and legacy_signal.bet_side
+            )
+            same_side = (
+                not result.strategy.wants_bet
+                or not legacy_signal
+                or result.strategy.side == legacy_signal.bet_side
+            )
+            same_stake = result.stake == legacy.stake
+            shadow_wants_arm = (
+                result.strategy.wants_bet and result.risk.allowed
+            )
+            same_arm = shadow_wants_arm == legacy.wants_arm
+            self.strategy_lifecycle.record_shadow(
+                tab.id,
+                matched=bool(
+                    same_presence and same_side and same_stake and same_arm
+                ),
+            )
+        except Exception:
+            self.strategy_lifecycle.record_shadow(tab.id, error=True)
+            raise
+
+    def _evaluate_strategy_tab_live(
+        self,
+        *,
+        history: list[BetSide],
+        table_name: str,
+        skip_tie: bool,
+        source: str,
+        shuffling: bool,
+    ):
+        tabs = self.strategy_lifecycle.tabs_in_mode(TabLifecycleMode.LIVE)
+        if not tabs:
+            return []
+        source_allowed = not source or source in {
+            "gp-winner",
+            "road-info-round",
+            "marker-roads",
+        }
+        decisions = []
+        for tab in tabs:
+            manager = self._live_money_managers.get(tab.id)
+            if manager is None or manager.manager_id != tab.money_manager_id:
+                manager = self._create_money_manager_for_tab(tab)
+                self.money_state_store.restore(tab.id, manager)
+                self._live_money_managers[tab.id] = manager
+            decisions.append(
+                self.strategy_lifecycle.evaluate(
+                    tab=tab,
+                    history=history,
+                    table_name=table_name,
+                    source=source,
+                    skip_tie=skip_tie,
+                    progression=self.betting_session.progression,
+                    money_quote=manager.quote(),
+                    auto_bet=self.betting_session.state.auto_bet,
+                    license_allowed=self._live_bet_allowed(),
+                    pending_main=(
+                        self.betting_session.state.pending is not None
+                    ),
+                    pending_tie=self.auto_bettor.tie.has_pending,
+                    round_already_placed=False,
+                    shuffling=shuffling,
+                    source_allowed=source_allowed,
+                    disabled_patterns=disabled_pattern_ids(
+                        self._pattern_enabled
+                    ),
+                    pattern_lengths=self._pattern_lengths,
+                    daily_profit=self.betting_session.effective_profit,
+                    limit_hit=self.betting_session.state.limit_hit,
+                )
+            )
+        return decisions
+
+    def _resolve_multi_live_allocations(
+        self,
+        allocations: list[dict],
+        result: BetSide,
+    ) -> list[dict]:
+        resolved: list[dict] = []
+        for allocation in allocations:
+            tab_id = str(allocation.get("tab_id") or "")
+            manager = self._live_money_managers.get(tab_id)
+            if manager is None:
+                continue
+            side = BetSide(str(allocation.get("side") or ""))
+            update = manager.apply_result(side, result)
+            self.money_state_store.save(tab_id, manager)
+            resolved.append(
+                {
+                    **allocation,
+                    "outcome": update.outcome.value,
+                    "profit": float(update.profit),
+                    "next_stake": int(update.next_quote.stake),
+                    "next_level": int(update.next_quote.level_index),
+                }
+            )
+        return resolved
+
+    def _auto_demote_live(self, reason: str) -> None:
+        for tab_id, manager in self._live_money_managers.items():
+            self.money_state_store.save(tab_id, manager)
+        changed = self.strategy_lifecycle.demote_live(reason=reason)
+        if not changed:
+            return
+        self._live_money_managers.clear()
+        self._handle_toggle_auto_bet(False)
+        self._deactivate_money_manager_if_safe()
+        logger.error(
+            "[TAB_LIVE] AUTO_DEMOTE | tabs=%s | reason=%s",
+            ",".join(changed),
+            reason,
+        )
+
+    def _handle_save_strategy_tabs(self, payload: dict) -> dict:
+        """Save tab settings; each tab independently selects simulation/live."""
+        cfg = normalize_strategy_tabs(payload)
+        saved = self.strategy_tab_store.save_config(cfg)
+        self.config.strategy_tabs = saved
+        self._sync_live_money_managers()
+        if not self.strategy_lifecycle.tabs_in_mode(TabLifecycleMode.LIVE):
+            self._handle_toggle_auto_bet(False)
+        if (
+            self.betting_session.active_money_manager is not None
+            and self.strategy_lifecycle.tab_in_mode(TabLifecycleMode.LIVE) is None
+        ):
+            self._handle_toggle_auto_bet(False)
+            self._persist_active_money_manager()
+            self._deactivate_money_manager_if_safe()
+        data = self._overlay_strategy_tabs_payload()
+        self.overlay.set_strategy_tabs(data)
+        logger.info("Da luu %s tab chien luoc mo phong", len(saved.tabs))
+        return {"ok": True, "strategy_tabs": data}
 
     def _handle_tie_nurture(self, action: str, payload: dict) -> dict:
         from src.betting_config import save_tie_nurture_to_config
@@ -1977,6 +2560,7 @@ class HistoryWatcher:
         return page
 
     async def _watch_forever(self, ctx, page: Page, target_name: str):
+        self._require_tool_session()
         self._ctx = ctx
         find_game_page(ctx)
         # Bat buoc dung tab AE SEXY (khong gan panel len live.html shell)
@@ -2023,6 +2607,33 @@ class HistoryWatcher:
             while True:
                 # Khi can click ban — sleep ngan, uu tien xu ly truoc moi viec khac
                 await asyncio.sleep(0.4 if self._recover_urgent else 3)
+                if (
+                    self.tool_auth.license_enabled
+                    and time.monotonic() >= self._license_refresh_at
+                ):
+                    self._license_refresh_at = time.monotonic() + 60
+                    await asyncio.to_thread(
+                        self.tool_auth.refresh_license, force=True
+                    )
+                if not self.tool_auth.is_authenticated():
+                    self._auto_demote_live(
+                        "Tool session/license hết hạn hoặc bị thu hồi"
+                    )
+                    self._handle_toggle_auto_bet(False)
+                    if (
+                        self.betting_session.state.pending is not None
+                        or self.auto_bettor.is_busy
+                    ):
+                        logger.warning(
+                            "License không hợp lệ — chặn cược mới, "
+                            "chờ resolve cược pending trước khi đăng xuất"
+                        )
+                        continue
+                    logger.warning(
+                        "Tool session/license hết hạn — dừng sau khi đã hết pending"
+                    )
+                    await self.logout_tool()
+                    return
                 if self._recovering:
                     continue
                 try:
@@ -2515,9 +3126,8 @@ class HistoryWatcher:
 
     async def run(self):
         ctx = await self.browser_mgr.start()
-        preferred = self.config.game.table_name.strip()
 
-        # Lay tab bat ky de hien panel truoc khi vao web/sanh
+        # Lay tab bat ky de hien Tool Login truoc khi duoc phep vao web/sanh.
         panel_page = None
         for p in ctx.pages:
             if not p.is_closed():
@@ -2525,6 +3135,20 @@ class HistoryWatcher:
                 break
         if panel_page is None:
             panel_page = await ctx.new_page()
+
+        if self.tool_auth.license_enabled and self.tool_auth.is_authenticated():
+            logger.info(
+                "Đã khôi phục Tool session từ signed lease (%s)",
+                self.tool_auth.license_status().get("status"),
+            )
+        elif self.tool_auth.enabled or self.tool_auth.license_enabled:
+            await prompt_tool_login_panel(panel_page, self.tool_auth)
+        else:
+            # Config chi dung cho development; van tao session de gate co mot duong duy nhat.
+            self.tool_auth.authenticate("", "")
+        self._require_tool_session()
+
+        preferred = self.config.game.table_name.strip()
 
         phase_probe = await detect_ae_sexy_phase(panel_page, preferred)
         already_in_game = phase_probe in (PHASE_ROOM, PHASE_LOBBY, PHASE_LOADING)
@@ -2534,14 +3158,9 @@ class HistoryWatcher:
                 phase_probe,
             )
 
-        # Luon hien panel chon web + TK/MK (khong bo qua khi da trong ban)
+        # Chi hien Game Login sau khi Tool session da hop le.
         creds = load_credentials(site=self.config.site.url)
-        form = await prompt_login_panel(
-            panel_page,
-            site_url=self.config.site.url,
-            username=creds.username,
-            password=creds.password,
-        )
+        form = await self.change_game_account(panel_page)
         save_credentials(form.username, form.password, site=form.site_id)
         self.config = update_site_url(form.site_url)
         self.browser_mgr.cdp_url = self.config.site.cdp_url
@@ -3085,11 +3704,16 @@ class HistoryWatcher:
         if self.page:
             steps_label, steps_warn = self._stake_steps_overlay_meta()
             pnl = self._get_pnl_overlay()
+            overlay_table = self._effective_table_name()
             await self.overlay.update(
                 self.page,
                 self.state.history,
-                table_name=self.state.table_name,
-                table_id=str(self.state.table_id),
+                table_name=overlay_table,
+                table_id=str(
+                    self.state.table_id
+                    or self._active_table_id
+                    or overlay_table
+                ),
                 skip_tie=self.config.game.skip_tie,
                 stakes=self.config.betting.stakes,
                 betting=self._overlay_betting_payload(),
@@ -3102,6 +3726,8 @@ class HistoryWatcher:
                 stake_steps_warn=steps_warn,
                 pnl_today=self._pnl_as_dict(pnl["today"]),
                 pnl_7days=self._pnl_as_dict(pnl["7days"]),
+                strategy_tabs=self._overlay_strategy_tabs_payload(),
+                license_status=self.tool_auth.license_status(),
             )
 
     async def _print_summary(self):
@@ -3124,6 +3750,10 @@ class HistoryWatcher:
 
 
 def main():
+    maintenance_result = handle_release_command(sys.argv[1:])
+    if maintenance_result is not None:
+        raise SystemExit(maintenance_result)
+    configure_runtime_logging()
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     asyncio.run(HistoryWatcher().run())

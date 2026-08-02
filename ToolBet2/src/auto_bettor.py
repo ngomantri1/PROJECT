@@ -8,13 +8,25 @@ from datetime import datetime
 
 from playwright.async_api import Page
 
-from src.ae_sexy_betting import probe_betting_phase, wait_and_place_bet
+from src.ae_sexy_betting import (
+    probe_betting_phase,
+    read_account_balance,
+    wait_and_place_bet,
+)
 from src.betting_session import BettingSession, PendingBet
 from src.config import TieNurtureConfig
+from src.decision_pipeline import (
+    LegacyArmSnapshot,
+    LegacyPatternStrategy,
+    ShadowDecisionPipeline,
+    ShadowDecisionStats,
+)
 from src.db_store import GameDataStore
 from src.models import BetSide, SIDE_LABEL
 from src.pattern_analyzer import get_active_signal
+from src.risk_decision import ExecutionMode, RiskContext, RiskManager
 from src.round_trace import cuoc_bo_qua, cuoc_dat, cuoc_thu
+from src.strategy_decision import StrategyContext
 from src.tie_nurture_engine import PATTERN_ID as TIE_PATTERN_ID
 from src.tie_nurture_engine import PATTERN_NAME as TIE_PATTERN_NAME
 from src.tie_nurture_engine import TieNurtureEngine
@@ -49,11 +61,20 @@ class AutoBettor:
         self._betting_active = 0
         self._clicking_bet = 0
         self._armed_bet: dict | None = None
+        self._multi_live_pending: dict | None = None
         self._bet_open_poll_task: asyncio.Task | None = None
         self._placing_key: tuple | None = None
         self._placed_round_keys: set[tuple] = set()
         self._disabled_patterns: frozenset[str] = frozenset()
         self._pattern_lengths: dict[str, int] = {}
+        self._decision_shadow_enabled = True
+        self._decision_shadow_stats = ShadowDecisionStats()
+        self._last_shadow_event_key: tuple | None = None
+        self._strategy_tab_shadow_evaluator = None
+        self._strategy_tab_live_evaluator = None
+        self._multi_live_result_handler = None
+        self._runtime_unsafe_handler = None
+        self._license_checker = None
 
     def configure_tie_nurture(
         self, cfg: TieNurtureConfig, *, history: list[BetSide] | None = None
@@ -139,6 +160,165 @@ class AutoBettor:
         from src.pattern_analyzer import normalize_pattern_lengths
 
         self._pattern_lengths = normalize_pattern_lengths(lengths)
+
+    def set_decision_shadow_enabled(self, enabled: bool) -> None:
+        self._decision_shadow_enabled = bool(enabled)
+
+    def set_strategy_tab_shadow_evaluator(self, evaluator) -> None:
+        self._strategy_tab_shadow_evaluator = evaluator
+
+    def set_strategy_tab_live_evaluator(self, evaluator) -> None:
+        self._strategy_tab_live_evaluator = evaluator
+
+    def set_multi_live_result_handler(self, handler) -> None:
+        self._multi_live_result_handler = handler
+
+    def set_runtime_unsafe_handler(self, handler) -> None:
+        self._runtime_unsafe_handler = handler
+
+    def set_license_checker(self, checker) -> None:
+        self._license_checker = checker
+
+    def decision_shadow_status(self) -> dict:
+        data = self._decision_shadow_stats.to_dict()
+        data["enabled"] = self._decision_shadow_enabled
+        return data
+
+    def _run_decision_shadow(
+        self,
+        history: list[BetSide],
+        *,
+        table_name: str,
+        skip_tie: bool,
+        source: str,
+        shuffling: bool,
+    ) -> None:
+        """Diagnostic only. Never returns a value used by the legacy arm path."""
+
+        if not self._decision_shadow_enabled:
+            return
+
+        try:
+            legacy_signal = get_active_signal(
+                history,
+                skip_tie=skip_tie,
+                disabled_patterns=self._disabled_patterns,
+                pattern_lengths=self._pattern_lengths,
+            )
+            source_allowed = not source or source in BET_TRIGGER_SOURCES
+            legacy = LegacyArmSnapshot(
+                can_place_bet=self.session.can_place_bet(),
+                signal=legacy_signal,
+                stake=int(self.session.current_stake),
+                blocked_by_shuffle=shuffling,
+                pending_main=self.session.state.pending is not None,
+                pending_tie=self.tie.has_pending,
+                source_allowed=source_allowed,
+            )
+            strategy = LegacyPatternStrategy(
+                skip_tie=skip_tie,
+                disabled_patterns=self._disabled_patterns,
+                pattern_lengths=self._pattern_lengths,
+            )
+            pipeline = ShadowDecisionPipeline(strategy)
+            report = pipeline.evaluate(
+                context=StrategyContext(
+                    history=tuple(history),
+                    table_name=table_name,
+                    source=source,
+                ),
+                progression=self.session.progression,
+                legacy=legacy,
+                auto_bet=self.session.state.auto_bet,
+                daily_profit=self.session.effective_profit,
+                stop_loss=self.session.state.stop_loss,
+                take_profit=self.session.state.take_profit,
+                limit_hit=self.session.state.limit_hit,
+            )
+            self._decision_shadow_stats.record(report, table_name=table_name)
+            if self._strategy_tab_shadow_evaluator:
+                try:
+                    self._strategy_tab_shadow_evaluator(
+                        history=list(history),
+                        table_name=table_name,
+                        skip_tie=skip_tie,
+                        source=source,
+                        shuffling=shuffling,
+                        legacy=legacy,
+                    )
+                except Exception:
+                    logger.exception("[TAB_SHADOW] Không đánh giá được strategy tab")
+            if (
+                self._decision_shadow_stats.evaluations == 1
+                or self._decision_shadow_stats.evaluations % 25 == 0
+            ):
+                logger.info(
+                    "[SHADOW] STATUS | total=%d | match=%d | mismatch=%d | error=%d",
+                    self._decision_shadow_stats.evaluations,
+                    self._decision_shadow_stats.matches,
+                    self._decision_shadow_stats.mismatches,
+                    self._decision_shadow_stats.errors,
+                )
+            if report.matched:
+                logger.debug(
+                    "[SHADOW] MATCH | ban=%s | van=%d | signal=%s | stake=%d | risk=%s",
+                    table_name or "?",
+                    len(history),
+                    report.strategy.signal_id or "-",
+                    report.money.stake,
+                    report.risk.code.value,
+                )
+                return
+
+            event_key = (
+                table_name,
+                len(history),
+                source,
+                report.mismatches,
+                (
+                    report.legacy.signal.pattern_id
+                    if report.legacy.signal
+                    else ""
+                ),
+                report.strategy.signal_id,
+                report.legacy.stake,
+                report.money.stake,
+            )
+            if event_key == self._last_shadow_event_key:
+                return
+            self._last_shadow_event_key = event_key
+            payload = report.to_event_payload(
+                table_name=table_name,
+                source=source,
+            )
+            logger.warning(
+                "[SHADOW] MISMATCH | ban=%s | van=%d | lech=%s | old=%s/%s/%d | new=%s/%s/%d | risk=%s",
+                table_name or "?",
+                len(history),
+                ",".join(report.mismatches),
+                payload["legacy"]["signal_id"] or "-",
+                payload["legacy"]["side"] or "-",
+                payload["legacy"]["stake"],
+                payload["shadow"]["strategy"]["signal_id"] or "-",
+                payload["shadow"]["strategy"]["side"] or "-",
+                payload["shadow"]["money"]["stake"],
+                payload["shadow"]["risk"]["code"],
+            )
+            try:
+                self.store.save_event("decision_shadow_mismatch", payload)
+            except Exception as exc:
+                logger.warning("[SHADOW] Khong luu duoc mismatch event: %s", exc)
+        except Exception as exc:
+            self._decision_shadow_stats.record_error(
+                table_name=table_name,
+                history_size=len(history),
+            )
+            logger.exception(
+                "[SHADOW] ERROR | ban=%s | van=%d | %s",
+                table_name or "?",
+                len(history),
+                exc,
+            )
 
     def clear_armed_if_pattern(self, pattern_id: str, reason: str = "") -> None:
         armed = self._armed_bet
@@ -319,6 +499,7 @@ class AutoBettor:
             armed = self._armed_bet
             want_tie = bool(armed.get("tie")) or self.tie.wants_bet()
             has_pattern = bool(armed.get("signal")) and armed.get("kind") != "tie"
+            live_authorities = list(armed.get("live_authorities") or [])
 
             placed_main = False
             placed_tie = False
@@ -333,14 +514,23 @@ class AutoBettor:
                     len(history),
                     " (+Hoa sau)" if want_tie else "",
                 )
-                placed_main = await self._try_place_bet(
-                    page,
-                    history,
-                    table_name=table_name,
-                    skip_tie=armed.get("skip_tie", skip_tie),
-                    source="cuoc-mo",
-                    bet_timeout_sec=_BET_PLACE_TIMEOUT_SEC,
-                )
+                if live_authorities:
+                    placed_main = await self._try_place_multi_live(
+                        page,
+                        history,
+                        table_name=table_name,
+                        source="cuoc-mo-multi-live",
+                        bet_timeout_sec=_BET_PLACE_TIMEOUT_SEC,
+                    )
+                else:
+                    placed_main = await self._try_place_bet(
+                        page,
+                        history,
+                        table_name=table_name,
+                        skip_tie=armed.get("skip_tie", skip_tie),
+                        source="cuoc-mo",
+                        bet_timeout_sec=_BET_PLACE_TIMEOUT_SEC,
+                    )
             elif want_tie:
                 logger.info(
                     "[PHIEN] CUOC_MO_DAT | ban=%s | hoa (khong co mau) | Nuoi Hoa | van #%d",
@@ -385,13 +575,29 @@ class AutoBettor:
         """Sau ket qua van — vu khi tin hieu, cho CUOC_MO de dat.
         Mode pattern danh truoc; Nuoi Hoa la cuoc them sau khi mode xong (cung cua).
         """
+        shuffling = False
         if self._shuffle_checker:
             try:
-                if self._shuffle_checker(table_name):
-                    cuoc_bo_qua(reason="dang xao bai", table=table_name, source=source, tool_len=len(history))
-                    return
+                shuffling = bool(self._shuffle_checker(table_name))
             except Exception as exc:
                 logger.debug("shuffle_checker: %s", exc)
+
+        self._run_decision_shadow(
+            history,
+            table_name=table_name,
+            skip_tie=skip_tie,
+            source=source,
+            shuffling=shuffling,
+        )
+
+        if shuffling:
+            cuoc_bo_qua(
+                reason="dang xao bai",
+                table=table_name,
+                source=source,
+                tool_len=len(history),
+            )
+            return
 
         # Chi chan khi con pending cua van TRUOC (chua resolve)
         if self.session.state.pending or self.tie.has_pending:
@@ -405,7 +611,44 @@ class AutoBettor:
 
         want_tie = self.tie.wants_bet()
         signal = None
-        if self.session.can_place_bet():
+        live_authority = None
+        live_authorities = []
+        if self._strategy_tab_live_evaluator:
+            try:
+                evaluated = self._strategy_tab_live_evaluator(
+                    history=list(history),
+                    table_name=table_name,
+                    skip_tie=skip_tie,
+                    source=source,
+                    shuffling=shuffling,
+                )
+                if isinstance(evaluated, (list, tuple)):
+                    live_authorities = list(evaluated)
+                elif evaluated is not None:
+                    live_authorities = [evaluated]
+            except Exception as exc:
+                logger.exception("[TAB_LIVE] Lỗi authority; tự demote: %s", exc)
+                if self._runtime_unsafe_handler:
+                    self._runtime_unsafe_handler("Lỗi đánh giá live strategy")
+
+        if live_authorities:
+            # Live tabs are evaluated independently. They share one aggregate
+            # round transaction so recovery/dedup still sees one pending bet.
+            want_tie = False
+            live_authorities = [
+                authority
+                for authority in live_authorities
+                if authority.may_participate
+            ]
+            live_authority = (
+                live_authorities[0] if live_authorities else None
+            )
+            signal = live_authority.as_pattern() if live_authority else None
+            if signal is None:
+                self._armed_bet = None
+                logger.info("[TAB_LIVE] Không tab Live nào có lệnh hợp lệ")
+                return
+        elif self.session.can_place_bet():
             signal = get_active_signal(
                 history,
                 skip_tie=skip_tie,
@@ -441,6 +684,11 @@ class AutoBettor:
             and self._armed_bet.get("table_name") == table_name
             and bool(self._armed_bet.get("signal")) == bool(signal)
             and bool(self._armed_bet.get("tie")) == want_tie
+            and tuple(
+                item.tab_id
+                for item in self._armed_bet.get("live_authorities", [])
+            )
+            == tuple(item.tab_id for item in live_authorities)
         ):
             logger.debug("[PHIEN] VU_KHI_CUOC — da arm cho van #%d", armed_at)
             self._schedule_bet_on_open_poll(page, table_name)
@@ -460,6 +708,8 @@ class AutoBettor:
             "skip_tie": skip_tie,
             "source": source,
             "signal": signal,
+            "live_authority": live_authority,
+            "live_authorities": live_authorities,
             "tie": want_tie,
             "armed_at_len": armed_at,
             "stake": int(self.tie.cfg.stake) if want_tie else 0,
@@ -518,6 +768,11 @@ class AutoBettor:
         try:
             while time.monotonic() < deadline:
                 if page.is_closed():
+                    if (
+                        (self._armed_bet or {}).get("live_authority") is not None
+                        and self._runtime_unsafe_handler
+                    ):
+                        self._runtime_unsafe_handler("Browser/page đã đóng")
                     return
                 armed = self._armed_bet
                 if not armed or armed.get("table_name") != table_name:
@@ -535,6 +790,13 @@ class AutoBettor:
                     try:
                         ui_ok, ui_reason = await self._ui_alive_checker(page)
                         if not ui_ok:
+                            if (
+                                armed.get("live_authority") is not None
+                                and self._runtime_unsafe_handler
+                            ):
+                                self._runtime_unsafe_handler(
+                                    f"UI không an toàn: {ui_reason}"
+                                )
                             logger.warning(
                                 "[PHIEN] BO_QUA_DAT | UI hong: %s — cho khoi phuc",
                                 ui_reason,
@@ -558,6 +820,67 @@ class AutoBettor:
             self.session.clear_pending()
             return
 
+        multi = self._multi_live_pending
+        if multi and multi.get("round_id") == pending.round_id:
+            allocations = list(multi.get("allocations") or [])
+            resolved_allocations = []
+            if self._multi_live_result_handler:
+                resolved_allocations = list(
+                    self._multi_live_result_handler(allocations, result) or []
+                )
+            if not resolved_allocations:
+                for allocation in allocations:
+                    side = BetSide(allocation["side"])
+                    stake = float(allocation["stake"])
+                    if result == BetSide.TIE:
+                        outcome, profit = "push", 0.0
+                    elif result == side:
+                        outcome = "win"
+                        profit = (
+                            stake * 0.95
+                            if side == BetSide.BANKER
+                            else stake
+                        )
+                    else:
+                        outcome, profit = "loss", -stake
+                    resolved_allocations.append(
+                        {
+                            **allocation,
+                            "outcome": outcome,
+                            "profit": profit,
+                        }
+                    )
+            total_profit = sum(
+                float(item.get("profit") or 0)
+                for item in resolved_allocations
+            )
+            resolved = self.session.resolve_aggregate_pending(total_profit)
+            if resolved is None:
+                return
+            outcome, profit = resolved
+            self.store.resolve_bet(
+                pending.bet_id,
+                outcome=outcome,
+                profit=profit,
+                session_profit_after=self.session.state.session_profit,
+            )
+            self.store.save_event(
+                "multi_live_resolved",
+                {
+                    "bet_id": pending.bet_id,
+                    "table": table_name,
+                    "result": result.value,
+                    "outcome": outcome,
+                    "profit": profit,
+                    "allocations": resolved_allocations,
+                },
+                round_id=pending.round_id,
+            )
+            self._multi_live_pending = None
+            if self._bet_resolved_handler:
+                self._bet_resolved_handler()
+            return
+
         resolved = self.session.resolve_pending(result)
         if not resolved:
             return
@@ -574,9 +897,9 @@ class AutoBettor:
         group_id = self.session.state.current_group_id
         if group_id:
             loss_count = (
-                self.session.progression.state.last_closed_loss_count
+                self.session.group_loss_count
                 if self.session.state.last_group_closed
-                else self.session.progression.loss_count
+                else self.session.group_loss_count
             )
             self.store.touch_bet_group(
                 group_id,
@@ -913,6 +1236,258 @@ class AutoBettor:
             self._healthy_handler()
         return True
 
+    async def _try_place_multi_live(
+        self,
+        page: Page,
+        history: list[BetSide],
+        *,
+        table_name: str,
+        source: str,
+        bet_timeout_sec: int,
+    ) -> bool:
+        authorities = list(
+            (self._armed_bet or {}).get("live_authorities") or []
+        )
+        allocations: list[dict] = []
+        for authority in authorities:
+            if (
+                not authority.may_participate
+                or authority.strategy.side not in (
+                    BetSide.PLAYER,
+                    BetSide.BANKER,
+                )
+            ):
+                continue
+            allocations.append(
+                {
+                    "tab_id": authority.tab_id,
+                    "tab_name": authority.tab_name,
+                    "side": authority.strategy.side.value,
+                    "stake": int(authority.stake),
+                    "stake_index": 0,
+                    "signal_id": authority.strategy.signal_id,
+                    "reason": authority.strategy.reason,
+                }
+            )
+        if not allocations:
+            return False
+
+        fresh = self._current_history()
+        if fresh:
+            history = fresh
+        armed_at = int(
+            (self._armed_bet or {}).get("armed_at_len") or len(history)
+        )
+        if len(history) > armed_at:
+            return False
+        target_index = len(history)
+        bet_meta = {}
+        if self._round_meta_provider:
+            bet_meta = self._round_meta_provider(
+                table_name,
+                target_index,
+            ) or {}
+        game_shoe = int(bet_meta.get("game_shoe") or 0)
+        game_round = int(bet_meta.get("game_round") or 0)
+        if not game_shoe or not game_round:
+            cuoc_bo_qua(
+                reason="chưa có gameShoe/gameRound",
+                table=table_name,
+                source=source,
+                tool_len=len(history),
+            )
+            return False
+
+        round_key = (
+            table_name,
+            game_shoe,
+            game_round,
+            target_index,
+            "multi_live",
+        )
+        if (
+            round_key in self._placed_round_keys
+            or self._placing_key
+            or self.session.state.pending
+        ):
+            return False
+
+        physical_total = sum(
+            item["stake"] for item in allocations if item["stake"] > 0
+        )
+        if physical_total > 0:
+            phase = await probe_betting_phase(page)
+            ui_healthy = bool(
+                phase.get("chipsVisible")
+                and phase.get("zoneVisible")
+                and not phase.get("closed")
+            )
+            cd_text = str(phase.get("cdText") or "").strip()
+            countdown = int(cd_text) if cd_text.isdigit() else None
+            if self._ui_alive_checker:
+                try:
+                    alive, _reason = await self._ui_alive_checker(page)
+                    ui_healthy = ui_healthy and bool(alive)
+                except Exception:
+                    ui_healthy = False
+            license_allowed = bool(
+                self._license_checker()
+                if self._license_checker
+                else True
+            )
+            shuffling = bool(
+                self._shuffle_checker(table_name)
+                if self._shuffle_checker
+                else False
+            )
+            if (
+                not self.session.state.auto_bet
+                or not license_allowed
+                or not ui_healthy
+                or shuffling
+                or (countdown is not None and countdown < 3)
+                or (
+                    source
+                    and source != "cuoc-mo-multi-live"
+                    and source not in BET_TRIGGER_SOURCES
+                )
+            ):
+                cuoc_bo_qua(
+                    reason="risk tổng hợp không an toàn",
+                    table=table_name,
+                    source=source,
+                    tool_len=len(history),
+                )
+                return False
+            balance = await read_account_balance(page)
+            if balance is None or float(balance) < physical_total:
+                cuoc_bo_qua(
+                    reason="số dư không đủ cho tổng các tab Live",
+                    table=table_name,
+                    source=source,
+                    tool_len=len(history),
+                    detail=f"cần={physical_total} số_dư={balance}",
+                )
+                return False
+
+        round_ref = self.store.reserve_round(
+            table_name,
+            target_index,
+            game_shoe=game_shoe,
+            game_round=game_round,
+        )
+        pending = PendingBet(
+            bet_id=0,
+            round_id=round_ref.round_id,
+            side=BetSide(allocations[0]["side"]),
+            stake=sum(item["stake"] for item in allocations),
+            stake_index=0,
+            pattern_id="multi_live",
+            pattern_name="Nhiều tab Live",
+            reason=f"{len(allocations)} phân bổ tab",
+            target_round_index=target_index,
+            placed_at=datetime.now(),
+        )
+        self._placing_key = round_key
+        if not self.session.try_reserve_pending(pending):
+            self._placing_key = None
+            return False
+
+        side_totals = {
+            side: sum(
+                item["stake"]
+                for item in allocations
+                if item["side"] == side.value and item["stake"] > 0
+            )
+            for side in (BetSide.PLAYER, BetSide.BANKER)
+        }
+        placed_sides: set[BetSide] = set()
+        self._betting_active += 1
+        try:
+            for side in (BetSide.PLAYER, BetSide.BANKER):
+                amount = side_totals[side]
+                if amount <= 0:
+                    continue
+                placed = await wait_and_place_bet(
+                    page,
+                    side,
+                    amount,
+                    timeout_sec=bet_timeout_sec,
+                    click_scope=self._click_scope,
+                )
+                if placed:
+                    placed_sides.add(side)
+                else:
+                    logger.warning(
+                        "[MULTI_LIVE] Không đặt được %s %s",
+                        side.value,
+                        amount,
+                    )
+        finally:
+            self._betting_active = max(0, self._betting_active - 1)
+
+        kept = [
+            item
+            for item in allocations
+            if item["stake"] == 0
+            or BetSide(item["side"]) in placed_sides
+        ]
+        if not kept:
+            self.session.clear_pending()
+            self._placing_key = None
+            return False
+
+        distinct_sides = {item["side"] for item in kept}
+        aggregate_side = (
+            next(iter(distinct_sides))
+            if len(distinct_sides) == 1
+            else "multi"
+        )
+        bet = self.store.save_bet(
+            round_id=round_ref.round_id,
+            table_name=table_name,
+            side=aggregate_side,
+            stake=sum(item["stake"] for item in kept),
+            stake_index=0,
+            pattern_id="multi_live",
+            pattern_name="Nhiều tab Live",
+            reason=f"{len(kept)} phân bổ tab",
+            target_round_index=target_index,
+            session_date=round_ref.session_date,
+            session_no=round_ref.session_no,
+            game_shoe=round_ref.game_shoe,
+            game_round=round_ref.game_round,
+            status="placed",
+        )
+        if not bet:
+            self.session.clear_pending()
+            self._placing_key = None
+            return False
+        self.session.attach_bet_id(bet.id)
+        self._multi_live_pending = {
+            "round_id": round_ref.round_id,
+            "bet_id": bet.id,
+            "allocations": kept,
+        }
+        self._placed_round_keys.add(round_key)
+        self._placing_key = None
+        self.session.state.last_bet_summary = (
+            f"Đã đặt {len(kept)} tab Live: "
+            f"Tay con {side_totals[BetSide.PLAYER]}, "
+            f"Nhà cái {side_totals[BetSide.BANKER]}"
+        )
+        self.store.save_event(
+            "multi_live_placed",
+            {
+                "table": table_name,
+                "allocations": kept,
+                "player_total": side_totals[BetSide.PLAYER],
+                "banker_total": side_totals[BetSide.BANKER],
+            },
+            round_id=round_ref.round_id,
+        )
+        return True
+
     async def _try_place_bet(
         self,
         page: Page,
@@ -950,7 +1525,7 @@ class AutoBettor:
             return False
 
         stake = self.session.current_stake
-        stake_index = self.session.progression.index
+        stake_index = self.session.current_stake_index
         target_index = len(history)
         bet_meta = {}
         if self._round_meta_provider:
@@ -991,6 +1566,85 @@ class AutoBettor:
                 tool_len=len(history),
             )
             return False
+
+        authority = (
+            self._armed_bet.get("live_authority") if self._armed_bet else None
+        )
+        if authority is not None:
+            phase_before = await probe_betting_phase(page)
+            ui_healthy = bool(
+                phase_before.get("chipsVisible")
+                and phase_before.get("zoneVisible")
+                and not phase_before.get("closed")
+            )
+            countdown = None
+            cd_text = str(phase_before.get("cdText") or "").strip()
+            if cd_text.isdigit():
+                countdown = int(cd_text)
+            if self._ui_alive_checker:
+                try:
+                    alive, _reason = await self._ui_alive_checker(page)
+                    ui_healthy = ui_healthy and bool(alive)
+                except Exception:
+                    ui_healthy = False
+            license_allowed = True
+            if self._license_checker:
+                try:
+                    license_allowed = bool(self._license_checker())
+                except Exception:
+                    license_allowed = False
+            balance = await read_account_balance(page)
+            original_source = str(
+                (self._armed_bet or {}).get("source") or ""
+            )
+            shuffling = False
+            if self._shuffle_checker:
+                try:
+                    shuffling = bool(self._shuffle_checker(table_name))
+                except Exception:
+                    shuffling = True
+            final_risk = RiskManager().evaluate(
+                RiskContext(
+                    strategy=authority.strategy,
+                    money=self.session.money_quote(),
+                    auto_bet=self.session.state.auto_bet,
+                    license_allowed=license_allowed,
+                    daily_profit=self.session.effective_profit,
+                    stop_loss=self.session.state.stop_loss,
+                    take_profit=self.session.state.take_profit,
+                    limit_hit=self.session.state.limit_hit,
+                    pending_main=self.session.state.pending is not None,
+                    pending_tie=self.tie.has_pending,
+                    round_already_placed=round_key in self._placed_round_keys,
+                    shuffling=shuffling,
+                    source_allowed=(
+                        not original_source
+                        or original_source in BET_TRIGGER_SOURCES
+                    ),
+                    ui_healthy=ui_healthy,
+                    countdown=countdown,
+                    balance=balance,
+                    require_balance=True,
+                )
+            )
+            if (
+                not final_risk.allowed
+                or final_risk.execution_mode != ExecutionMode.REAL
+            ):
+                cuoc_bo_qua(
+                    reason=f"risk final: {final_risk.code.value}",
+                    table=table_name,
+                    source=source,
+                    pattern=signal.pattern_name,
+                    tool_len=len(history),
+                    detail=final_risk.reason,
+                )
+                if (
+                    final_risk.code.value in ("license_blocked", "ui_unhealthy")
+                    and self._runtime_unsafe_handler
+                ):
+                    self._runtime_unsafe_handler(final_risk.reason)
+                return False
 
         round_ref = self.store.reserve_round(
             table_name,
@@ -1114,7 +1768,7 @@ class AutoBettor:
                 table_name=table_name,
                 group_take_profit=self.session.state.group_take_profit,
                 group_stop_loss=self.session.state.group_stop_loss,
-                stakes=list(self.session.progression.stakes),
+                stakes=self.session.active_stakes,
             )
             self.session.state.current_group_id = group.id
             self.session.state.current_group_seq = group.seq_no
@@ -1175,6 +1829,9 @@ class AutoBettor:
 
     def on_toggle(self, enabled: bool) -> None:
         self.session.configure(auto_bet=enabled)
+        if not enabled:
+            self._clear_armed_bet("AutoBettor đã tắt")
+            self._stop_bet_open_poll()
         self.store.save_event("auto_bet_toggle", {"enabled": enabled})
         logger.info("Auto cuoc: %s", "BAT" if enabled else "TAT")
 

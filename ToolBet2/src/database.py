@@ -164,9 +164,162 @@ class EventRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
+class StrategyTabRecord(Base):
+    __tablename__ = "strategy_tabs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(String(64))
+    enabled: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    selected: Mapped[int] = mapped_column(Integer, default=0)
+    strategy_id: Mapped[str] = mapped_column(String(64))
+    stakes_json: Mapped[str] = mapped_column(Text)
+    progression_mode: Mapped[str] = mapped_column(String(64))
+    money_manager_id: Mapped[str] = mapped_column(
+        String(64), default="IncreaseWhenLose"
+    )
+    stake_chains_json: Mapped[str] = mapped_column(Text, default="[]")
+    stop_loss: Mapped[float] = mapped_column(Float, default=0.0)
+    take_profit: Mapped[float] = mapped_column(Float, default=0.0)
+    mode: Mapped[str] = mapped_column(String(24), default="simulation", index=True)
+    shadow_evaluations: Mapped[int] = mapped_column(Integer, default=0)
+    shadow_matches: Mapped[int] = mapped_column(Integer, default=0)
+    shadow_mismatches: Mapped[int] = mapped_column(Integer, default=0)
+    shadow_errors: Mapped[int] = mapped_column(Integer, default=0)
+    demote_reason: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class StrategyTabRuntimeRecord(Base):
+    __tablename__ = "strategy_tab_runtime"
+
+    tab_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("strategy_tabs.id"), primary_key=True
+    )
+    table_name: Mapped[str] = mapped_column(String(128), default="")
+    history_size: Mapped[int] = mapped_column(Integer, default=0)
+    status_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class StrategyTabHistoryRecord(Base):
+    __tablename__ = "strategy_tab_history"
+    __table_args__ = (
+        UniqueConstraint(
+            "tab_id", "table_name", "history_size", name="uq_strategy_tab_history_point"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tab_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("strategy_tabs.id"), index=True
+    )
+    table_name: Mapped[str] = mapped_column(String(128), default="", index=True)
+    history_size: Mapped[int] = mapped_column(Integer, default=0)
+    signals: Mapped[int] = mapped_column(Integer, default=0)
+    virtual_bets: Mapped[int] = mapped_column(Integer, default=0)
+    wins: Mapped[int] = mapped_column(Integer, default=0)
+    losses: Mapped[int] = mapped_column(Integer, default=0)
+    pushes: Mapped[int] = mapped_column(Integer, default=0)
+    pnl: Mapped[float] = mapped_column(Float, default=0.0)
+    current_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class StrategyMoneyStateRecord(Base):
+    __tablename__ = "strategy_money_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "tab_id", "manager_id", name="uq_strategy_money_state_tab_manager"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tab_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("strategy_tabs.id"), index=True
+    )
+    manager_id: Mapped[str] = mapped_column(String(64), index=True)
+    config_fingerprint: Mapped[str] = mapped_column(String(64))
+    state_json: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class StrategyMoneyConfigRecord(Base):
+    __tablename__ = "strategy_money_configs"
+    __table_args__ = (
+        UniqueConstraint(
+            "tab_id", "manager_id", name="uq_strategy_money_config_tab_manager"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tab_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("strategy_tabs.id"), index=True
+    )
+    manager_id: Mapped[str] = mapped_column(String(64), index=True)
+    stakes_json: Mapped[str] = mapped_column(Text)
+    stake_chains_json: Mapped[str] = mapped_column(Text, default="[]")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 def _migrate_schema(engine) -> None:
     """Them cot moi cho DB cu (SQLite ALTER TABLE)."""
     insp = inspect(engine)
+    if "strategy_tabs" in insp.get_table_names():
+        tab_cols = {c["name"] for c in insp.get_columns("strategy_tabs")}
+        tab_alters: list[str] = []
+        for col, ddl in (
+            (
+                "mode",
+                "ALTER TABLE strategy_tabs ADD COLUMN mode VARCHAR(24) "
+                "DEFAULT 'simulation'",
+            ),
+            (
+                "shadow_evaluations",
+                "ALTER TABLE strategy_tabs ADD COLUMN shadow_evaluations INTEGER DEFAULT 0",
+            ),
+            (
+                "shadow_matches",
+                "ALTER TABLE strategy_tabs ADD COLUMN shadow_matches INTEGER DEFAULT 0",
+            ),
+            (
+                "shadow_mismatches",
+                "ALTER TABLE strategy_tabs ADD COLUMN shadow_mismatches INTEGER DEFAULT 0",
+            ),
+            (
+                "shadow_errors",
+                "ALTER TABLE strategy_tabs ADD COLUMN shadow_errors INTEGER DEFAULT 0",
+            ),
+            (
+                "demote_reason",
+                "ALTER TABLE strategy_tabs ADD COLUMN demote_reason VARCHAR(255) DEFAULT ''",
+            ),
+            (
+                "money_manager_id",
+                "ALTER TABLE strategy_tabs ADD COLUMN money_manager_id VARCHAR(64) "
+                "DEFAULT 'IncreaseWhenLose'",
+            ),
+            (
+                "stake_chains_json",
+                "ALTER TABLE strategy_tabs ADD COLUMN stake_chains_json TEXT DEFAULT '[]'",
+            ),
+        ):
+            if col not in tab_cols:
+                tab_alters.append(ddl)
+        if tab_alters:
+            with engine.begin() as conn:
+                for stmt in tab_alters:
+                    conn.execute(text(stmt))
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_strategy_tabs_mode "
+                    "ON strategy_tabs (mode)"
+                )
+            )
+
     if "rounds" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("rounds")}
         alters: list[str] = []

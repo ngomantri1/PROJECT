@@ -1,0 +1,16 @@
+#toolbet-ui-v2 {
+  --tbv2-bg: #eef2f6;
+  --tbv2-surface: #ffffff;
+  --tbv2-border: #dfe5ec;
+  --tbv2-text: #172033;
+  --tbv2-muted: #718096;
+  --tbv2-primary: #1478f2;
+  --tbv2-primary-soft: #eaf3ff;
+  --tbv2-success: #159a5b;
+  --tbv2-warning: #e58c13;
+  --tbv2-danger: #df3f4f;
+  --tbv2-radius: 13px;
+  color-scheme: light;
+  color: var(--tbv2-text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}

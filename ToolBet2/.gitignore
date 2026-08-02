@@ -1,0 +1,27 @@
+# Local customer/runtime configuration
+config.yaml
+credentials.yaml
+.env
+
+# Python runtime and caches
+.venv/
+__pycache__/
+*.py[cod]
+
+# ToolBet runtime data
+data/toolbet.db
+data/toolbet.db-*
+data/cdp_profile/
+data/license_session.bin
+data/license_public.pem
+server_data/
+
+# Generated resource baselines
+reports/resource-baseline-*.csv
+reports/resource-baseline-*.json
+reports/shadow-smoke-*.log
+
+# Build and packaging artifacts
+build/
+dist/
+artifacts/

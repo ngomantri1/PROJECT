@@ -37,6 +37,42 @@ BET_ZONE_ALL_PROBE: tuple[str, ...] = (
 )
 _MIN_ZONE_PX = 20
 
+
+async def read_account_balance(page: Page) -> float | None:
+    """Read the casino header balance without guessing from unrelated numbers."""
+
+    script = """
+    () => {
+      const text = document.body?.innerText || '';
+      const match = text.match(/(?:Số\\s*dư|So\\s*du|Balance)\\s*[:：]?\\s*([0-9][0-9.,]*)/i);
+      return match ? match[1] : '';
+    }
+    """
+    for frame in [page.main_frame, *[item for item in page.frames if item != page.main_frame]]:
+        try:
+            raw = str(await frame.evaluate(script) or "").strip()
+        except Exception:
+            continue
+        if not raw:
+            continue
+        normalized = raw.replace(" ", "")
+        if "," in normalized and "." in normalized:
+            normalized = normalized.replace(",", "")
+        elif normalized.count(",") == 1:
+            tail = normalized.rsplit(",", 1)[1]
+            normalized = (
+                normalized.replace(",", ".")
+                if len(tail) <= 2
+                else normalized.replace(",", "")
+            )
+        try:
+            value = float(normalized)
+        except ValueError:
+            continue
+        if value >= 0:
+            return value
+    return None
+
 DEFAULT_CHIP_VALUES = [10, 50, 100, 500, 1000, 5000]
 TABLE_CHIP_VALUES: dict[int, list[int]] = {
     5: [10, 20, 50, 100, 200],

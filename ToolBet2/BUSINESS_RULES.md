@@ -26,7 +26,9 @@ Source: `src/pattern_analyzer.py:analyze_patterns()`, `get_active_signal()`.
 - Chỉ các source `gp-winner`, `road-info-round`, `marker-roads` được phép trigger arm cược chính.
 - Tín hiệu được arm sau kết quả rồi chờ đúng cửa cược kế tiếp. Nếu history đã tăng quá length lúc arm thì hủy để tránh cược trễ.
 - Không đặt khi Auto tắt, limit đã hit, có pending, đang shuffle, UI không sống hoặc round đã được đặt.
-- Một ván chỉ có tối đa một record cược theo `round_id`.
+- Một ván chỉ có tối đa một record cược chính theo `round_id`. Khi nhiều tab
+  live cùng quyết định, record này là aggregate; các phân bổ tab/cửa được giữ
+  trong pending/event và state MoneyManager riêng.
 
 Source: `src/auto_bettor.py:BET_TRIGGER_SOURCES`, `on_history_grew()`, `_arm_bet_signal()`, `src/betting_session.py:can_place_bet()`, `src/database.py:BetRecord`.
 
@@ -37,6 +39,9 @@ Source: `src/auto_bettor.py:BET_TRIGGER_SOURCES`, `on_history_grew()`, `_arm_bet
 - `stakes` không được rỗng hoặc chứa số âm.
 - Stake `0` là cược ảo/theo dõi: không click chip, nhưng kết quả vẫn cập nhật loss count, P&L nhóm và progression.
 - Stake thật chỉ được đặt khi có thể tạo tổng chính xác từ chip của bàn.
+- Nhiều tab live có thể chọn cùng một cửa hoặc hai cửa Player/Banker. Stake thật
+  được cộng theo từng cửa; tổng tiền thật phải không vượt số dư trước khi click.
+  Player và Banker được click tuần tự trong cùng cửa cược.
 - Logic AE SEXY xử lý quirk chip 10: click 10 đầu tiên có thể được bàn ghi 20, ngoại trừ trường hợp stake đúng 10; planner có các nhánh riêng để tránh đặt sai tổng.
 - Cửa cược phải có zone/chips hợp lệ; countdown số nhỏ hơn 3 giây bị coi là quá muộn.
 
@@ -80,7 +85,9 @@ Source: `src/progression.py:win_profit()`, `src/tie_nurture_engine.py:resolve_pe
 
 - Main bet status: khởi tạo `placed`, resolve thành `resolved`; DB còn cho phép status khác do recovery code cập nhật.
 - Bet group: `open`, `take_profit`, `stop_loss` hoặc `abandoned`.
-- Chỉ một `BettingSession.pending` tồn tại. Nuôi Hòa có pending độc lập để có thể đặt thêm Hòa sau cược mẫu trong cùng cửa.
+- Chỉ một `BettingSession.pending` chính tồn tại; nó có thể đại diện cho một
+  allocation thường hoặc aggregate nhiều tab live. Nuôi Hòa có pending độc lập
+  để có thể đặt thêm Hòa sau cược mẫu trong cùng cửa.
 - Bàn runtime phát hiện từ room/WS được dùng trong session; `config.game.table_name` không được ép đè khi người dùng đã ở bàn khác.
 - Khi shoe đổi, reserved rounds của bàn được xóa.
 
@@ -124,4 +131,3 @@ Source: `src/config.py`, `src/sites/__init__.py:resolve_site()`, `src/credential
 - `target_round_index`: index history mà bet nhắm tới.
 - `pattern_id`: ID ổn định (`mau_1_1`, `mau_bet_2`, `tie_nurture`); `rule_name`/`pattern_name` là nhãn hiển thị.
 - `group_pnl_after`, `session_profit_after`: snapshot sau khi resolve.
-

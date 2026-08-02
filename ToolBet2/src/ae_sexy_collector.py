@@ -6,6 +6,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 from playwright.async_api import BrowserContext, Page
 
@@ -86,6 +87,20 @@ HistoryIntent = str  # "bootstrap" | "increment" | "reconcile"
 
 def _stats_total(stats: dict[str, int] | None) -> int:
     return stats_total(stats)
+
+
+def _redact_ws_url(url: str) -> str:
+    """Keep only non-sensitive WS endpoint identity for logs."""
+
+    try:
+        parsed = urlsplit(url or "")
+        if not parsed.scheme or not parsed.hostname:
+            return "<redacted-ws>"
+        port = f":{parsed.port}" if parsed.port else ""
+        path = (parsed.path or "").split(";", 1)[0]
+        return f"{parsed.scheme}://{parsed.hostname}{port}{path}"
+    except (TypeError, ValueError):
+        return "<redacted-ws>"
 
 
 class AeSexyCollector:
@@ -218,13 +233,17 @@ class AeSexyCollector:
     def _note_ws_open(self, url: str) -> None:
         self._game_ws_open += 1
         self._ws_disconnected_at = None
-        logger.info("Game WS ket noi (%d): %s", self._game_ws_open, url[:90])
+        logger.info(
+            "Game WS ket noi (%d): %s",
+            self._game_ws_open,
+            _redact_ws_url(url),
+        )
 
     def _note_ws_close(self, url: str) -> None:
         self._game_ws_open = max(0, self._game_ws_open - 1)
         if self._game_ws_open == 0:
             self._ws_disconnected_at = time.monotonic()
-            logger.warning("Game WS ngat het (%s)", url[:90])
+            logger.warning("Game WS ngat het (%s)", _redact_ws_url(url))
 
     def _note_ws_frame(self) -> None:
         self._ws_last_frame_at = time.monotonic()

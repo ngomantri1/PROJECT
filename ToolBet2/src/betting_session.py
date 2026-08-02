@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 
+from src.capital_managers import ReferenceMoneyManager
 from src.models import BetSide, SIDE_LABEL
+from src.money_manager import MoneyQuote, ProgressionMoneyManager
 from src.progression import (
     GroupStakeProgression,
     PROGRESSION_MODE_LOSS_UP_WIN_RESET,
@@ -80,6 +82,45 @@ class BettingSession:
             loss_watch_recover=loss_watch_recover,
         )
         self._profit_for_limits: Callable[[], float] | None = None
+        self._capital_manager: ReferenceMoneyManager | None = None
+
+    @property
+    def active_money_manager(self) -> ReferenceMoneyManager | None:
+        return self._capital_manager
+
+    def activate_money_manager(self, manager: ReferenceMoneyManager) -> None:
+        if self.state.pending is not None:
+            raise RuntimeError("cannot change money manager while a bet is pending")
+        self._capital_manager = manager
+        self.state.stop_loss = manager.stop_loss
+        self.state.take_profit = manager.take_profit
+        self.state.limit_hit = manager.limit_hit
+
+    def deactivate_money_manager(self) -> None:
+        if self.state.pending is not None:
+            raise RuntimeError("cannot change money manager while a bet is pending")
+        self._capital_manager = None
+
+    def money_quote(self) -> MoneyQuote:
+        if self._capital_manager is not None:
+            return self._capital_manager.quote()
+        return ProgressionMoneyManager.from_progression(self.progression).quote()
+
+    @property
+    def active_stakes(self) -> list[int]:
+        if self._capital_manager is not None:
+            return list(self._capital_manager.stakes)
+        return list(self.progression.stakes)
+
+    @property
+    def current_stake_index(self) -> int:
+        return int(self.money_quote().level_index)
+
+    @property
+    def group_loss_count(self) -> int:
+        if self._capital_manager is not None:
+            return int(self._capital_manager.snapshot().losses)
+        return int(self.progression.loss_count)
 
     def set_profit_for_limits(self, provider: Callable[[], float] | None) -> None:
         self._profit_for_limits = provider
@@ -88,6 +129,12 @@ class BettingSession:
         if self._profit_for_limits is not None:
             return float(self._profit_for_limits())
         return self.state.session_profit
+
+    @property
+    def effective_profit(self) -> float:
+        """Authoritative P&L used by risk/limit checks."""
+
+        return self._effective_profit()
 
     def set_stakes(self, stakes: list[int]) -> None:
         gtp = self.state.group_take_profit
@@ -136,7 +183,7 @@ class BettingSession:
 
     @property
     def current_stake(self) -> int:
-        return self.progression.current_stake
+        return int(self.money_quote().stake)
 
     def can_place_bet(self) -> bool:
         return self.state.auto_bet and not self.state.limit_hit and self.state.pending is None
@@ -163,6 +210,29 @@ class BettingSession:
         self.state.total_bets += 1
         return True
 
+    def resolve_aggregate_pending(
+        self,
+        total_profit: float,
+    ) -> tuple[str, float] | None:
+        """Resolve one round transaction containing multiple tab allocations."""
+
+        if self.state.pending is None:
+            return None
+        self.state.pending = None
+        profit = float(total_profit)
+        self.state.session_profit += profit
+        if profit > 0:
+            outcome = "win"
+            self.state.wins += 1
+        elif profit < 0:
+            outcome = "loss"
+            self.state.losses += 1
+        else:
+            outcome = "push"
+            self.state.pushes += 1
+        self.apply_limit_if_hit()
+        return outcome, profit
+
     def attach_bet_id(self, bet_id: int) -> None:
         if self.state.pending:
             self.state.pending.bet_id = bet_id
@@ -178,6 +248,41 @@ class BettingSession:
         pending = self.state.pending
         if not pending:
             return None
+
+        if self._capital_manager is not None:
+            update = self._capital_manager.apply_result(pending.side, result)
+            outcome = update.outcome.value
+            profit = update.profit
+            self.state.session_profit += profit
+            if outcome == "win":
+                self.state.wins += 1
+            elif outcome == "loss":
+                self.state.losses += 1
+            else:
+                self.state.pushes += 1
+            self.state.limit_hit = (
+                self._capital_manager.limit_hit
+                or self.check_limits()
+                or ""
+            )
+            if self.state.limit_hit:
+                self.state.auto_bet = False
+            self.state.last_group_closed = bool(self.state.limit_hit)
+            self.state.last_group_close_reason = self.state.limit_hit
+            self.state.last_group_close_pnl = (
+                self._capital_manager.snapshot().session_pnl
+                if self.state.limit_hit
+                else 0.0
+            )
+            label = SIDE_LABEL.get(pending.side, pending.side.value)
+            res_label = SIDE_LABEL.get(result, result.value)
+            self.state.last_bet_summary = (
+                f"{label} {pending.stake} — {outcome.upper()} ({res_label}) "
+                f"P&L ván: {profit:+.0f} | "
+                f"Money: {self._capital_manager.manager_id}"
+            )
+            self.state.pending = None
+            return outcome, profit
 
         close_count_before = self.progression.state.groups_closed
         outcome, _next_stake, profit = self.progression.apply_result(pending.side, result)
@@ -219,6 +324,8 @@ class BettingSession:
 
     def group_pnl_after_resolve(self) -> float:
         """PnL nhom sau van vua resolve (neu vua dong = PnL cuoi nhom)."""
+        if self._capital_manager is not None:
+            return float(self._capital_manager.snapshot().session_pnl)
         if self.state.last_group_closed:
             return self.state.last_group_close_pnl
         return self.progression.group_pnl
@@ -229,6 +336,54 @@ class BettingSession:
 
     def overlay_status(self) -> dict:
         s = self.state
+        if self._capital_manager is not None:
+            manager = self._capital_manager
+            quote = manager.quote()
+            snapshot = manager.snapshot()
+            limit_text = ""
+            if s.limit_hit == "take_profit":
+                limit_text = "Đã đạt mức LÃI — tự tắt cược"
+            elif s.limit_hit == "stop_loss":
+                limit_text = "Đã đạt mức LỖ — tự tắt cược"
+            return {
+                "auto_bet": s.auto_bet,
+                "stop_loss": s.stop_loss,
+                "take_profit": s.take_profit,
+                "group_take_profit": 0,
+                "group_stop_loss": 0,
+                "progression_mode": manager.manager_id,
+                "money_manager_id": manager.manager_id,
+                "loss_watch_recover": False,
+                "group_pnl": snapshot.session_pnl,
+                "group_loss_count": snapshot.losses,
+                "group_results": [],
+                "group_wins": snapshot.wins,
+                "group_losses": snapshot.losses,
+                "group_pushes": snapshot.pushes,
+                "groups_closed": int(bool(snapshot.limit_hit)),
+                "current_group_id": s.current_group_id,
+                "current_group_seq": s.current_group_seq,
+                "session_profit": s.session_profit,
+                "current_stake": quote.stake,
+                "stake_index": quote.level_index,
+                "stake_step": quote.level_index + 1,
+                "stake_total_steps": quote.total_levels,
+                "next_stake": quote.stake,
+                "next_stake_step": quote.level_index + 1,
+                "next_stake_on_win": quote.stake,
+                "next_stake_step_on_win": quote.level_index + 1,
+                "stakes": list(manager.stakes),
+                "stake_chains": [list(chain) for chain in manager.stake_chains],
+                "chain_index": snapshot.chain_index,
+                "limit_hit": s.limit_hit,
+                "limit_text": limit_text,
+                "last_bet": s.last_bet_summary,
+                "pending": bool(s.pending),
+                "total_bets": s.total_bets,
+                "wins": s.wins,
+                "losses": s.losses,
+                "pushes": s.pushes,
+            }
         p = self.progression
         stakes = list(p.stakes)
         idx = int(p.index)

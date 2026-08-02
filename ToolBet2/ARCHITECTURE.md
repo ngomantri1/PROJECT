@@ -7,6 +7,7 @@ ToolBet là một process Python đơn, chạy event loop `asyncio` và điều 
 ```text
 ToolBet.bat
   -> main.py / HistoryWatcher
+     -> ToolAuthService -> Tool Login -> Game Login
      -> BrowserManager -> Chrome CDP
      -> SiteAdapter -> shell casino -> AE SEXY iframe/provider tab
      -> AeSexyCollector -> WS / HTTP / DOM / canvas
@@ -16,13 +17,14 @@ ToolBet.bat
      -> GameOverlay -> DOM trong tab game
 ```
 
-`HistoryWatcher` là composition root và coordinator. Collector, bettor, overlay và store không tự sở hữu toàn bộ lifecycle ứng dụng; chúng được nối bằng callback trong constructor/run.
+`HistoryWatcher` là composition root và coordinator. Collector, bettor, overlay và store không tự sở hữu toàn bộ lifecycle ứng dụng; chúng được nối bằng callback trong constructor/run. Khi chạy từ `ToolBet.bat`, `BrowserManager` chờ/retry CDP trước khi fallback browser để giữ profile Chrome và session Game ổn định.
 
 ## Project Structure
 
 - `main.py` — khởi tạo dependency, startup/login/navigation, watch/recovery loop và callback dữ liệu.
 - `src/sites/` — adapter boundary cho từng shell casino; registry giữ active site và binding page-to-site.
 - `src/auth.py`, `src/auth_flows.py`, `src/login_panel.py`, `src/credentials.py` — chọn site, đăng nhập, OCR captcha và credential store.
+- `src/tool_auth.py`, `src/tool_login_panel.py` — xác thực tài khoản Tool và session gate trước Game Login; không dùng lại hoặc ghi vào credential Game.
 - `src/browser.py` — CDP connection, chọn tab, reconnect và browser lifecycle.
 - `src/ae_sexy*.py` — provider-specific navigation, state classification, collection, parsing, OCR/canvas và betting UI.
 - `src/collector.py`, `src/parser.py`, `src/ongames.py`, `src/table_focus.py` — collector/parser legacy cho provider không phải `ae_sexy`.
@@ -30,7 +32,11 @@ ToolBet.bat
 - `src/pattern_analyzer.py`, `src/rules/` — phân tích tín hiệu. Runtime chính gọi trực tiếp `pattern_analyzer`; rules engine là nhánh tổng quát/legacy.
 - `src/betting_session.py`, `src/progression.py`, `src/auto_bettor.py`, `src/tie_nurture_engine.py` — domain state và orchestration cược.
 - `src/database.py`, `src/db_store.py` — ORM, migration và repository-like store.
-- `src/overlay.py` — HTML/CSS/JS cùng bridge callback Python.
+- `src/overlay.py` — legacy overlay và adapter nối payload hiện tại sang UI runtime.
+- `src/ui_contracts.py`, `src/ui_runtime.py`, `src/ui_assets.py`, `src/ui/` —
+  contract snapshot/command, lifecycle inject/phục hồi và asset theme/component/bridge
+  của UI v2.
+- `src/strategy_tabs.py` — cấu hình tab và replay mô phỏng độc lập trên lịch sử đã có.
 - `src/bet_analytics.py`, `src/backtest.py`, `src/bet_replay.py`, `src/pattern_discovery.py`, `src/config_optimizer.py` — read/report/optimization trên DB.
 - `scripts/` — query DB, mở CDP và dừng process cũ.
 
@@ -82,7 +88,12 @@ Lobby roadmap chỉ cập nhật table metadata; code chủ động không lưu 
 
 ### Startup/authentication
 
-`HistoryWatcher.run()` luôn hiển thị login panel, kể cả khi đã ở trong game. Lựa chọn panel cập nhật active site và `config.site.url`. Nếu chưa ở AE SEXY, adapter kiểm tra login; có credential thì OCR/login tối đa hai lần, thất bại thì dừng session. Nếu browser đã ở lobby/room hợp lệ, bước login shell được bỏ qua.
+`HistoryWatcher.run()` luôn hiện Tool Login trước, kể cả khi browser đang ở game. Chỉ sau
+session Tool hợp lệ mới hiện Game Login; lựa chọn Game Login cập nhật active site và
+`config.site.url`. Nếu chưa ở AE SEXY, adapter kiểm tra login; có credential thì
+OCR/login tối đa hai lần, thất bại thì dừng session. Nếu browser đã ở lobby/room hợp lệ,
+bước login shell được bỏ qua. Tool session hết hạn/logout sẽ dừng phiên Game thay vì tự
+đi vào recovery/login Game.
 
 ### Page/table selection
 
@@ -94,7 +105,48 @@ Lobby roadmap chỉ cập nhật table metadata; code chủ động không lưu 
 
 ### Overlay
 
-`GameOverlay.install()` inject panel vào page phù hợp và expose callback Python. `update()` đẩy payload lịch sử, mẫu, P&L, progression, limits và tie mode. Navigation/reload làm DOM mất nên watch loop cài lại. Overlay click passthrough được dùng khi cần thao tác game phía dưới.
+`GameOverlay.install()` inject panel vào page phù hợp và expose callback Python.
+`update()` đẩy payload lịch sử, mẫu, P&L, progression, limits và tie mode. UI v2 nhận
+`UiSnapshot`, giữ snapshot gần nhất phía Python và tự inject lại asset/DOM sau khi bị
+xóa hoặc reload. Hai runtime được điều khiển bởi `ui.runtime_v2_enabled` và
+`ui.legacy_overlay_enabled`; từ giai đoạn C mặc định hiển thị runtime v2, còn legacy
+được giữ làm rollback. Overlay click passthrough
+được dùng khi cần thao tác game phía dưới.
+
+Workspace runtime v2 dựng toàn bộ card/tab/form/trạng thái/thống kê/lịch sử bằng
+`src/ui/bridge.js` cùng theme/component CSS. JavaScript chỉ gửi cấu hình hoặc
+lệnh chạy có kiểu qua bridge; nó không tạo pending bet và không gọi AutoBettor
+hoặc click chip. Khi cấu trúc workspace không đổi, bridge chỉ patch các vùng
+runtime để giữ input, focus, scroll và vị trí kéo thả.
+
+`StrategyTabStore` là lớp persistence của workspace. SQLite lưu:
+
+- `strategy_tabs`: cấu hình, thứ tự và tab đang chọn.
+- `strategy_tab_runtime`: snapshot runtime mới nhất riêng theo tab.
+- `strategy_tab_history`: chuỗi snapshot thống kê theo tab/bàn/ván.
+
+Khi SQLite chưa có tab, cấu hình YAML hiện hữu được import một lần. Sau đó SQLite
+là nguồn authoritative để đóng/mở Tool không làm mất tab.
+
+### Strategy tab lifecycle
+
+`StrategyLifecycleService` có đường điều khiển hiện hành gồm hai chế độ theo tab:
+`simulation` và `live`.
+Người dùng tích “Chỉ mô phỏng/test” để tab không đặt tiền; bỏ tích và lưu cấu hình
+để tab tham gia chạy thật. Không còn Shadow, live candidate, ngưỡng đánh giá hoặc
+Promote. Nhiều tab được live đồng thời.
+
+Nút “Bắt đầu chạy thật” bật AutoBettor chung. Mỗi tab live tạo `StrategyDecision`
+và dùng MoneyManager riêng. Các stake cùng cửa được cộng lại; nếu các tab chọn cả
+Player và Banker thì AutoBettor đặt cả hai cửa trong cùng cửa cược. Toàn bộ phân bổ
+được giữ trong một pending tổng hợp để chống duplicate/recovery, rồi resolve và lưu
+state MoneyManager riêng theo từng tab.
+
+Risk được đánh giá lúc arm và ngay trước click. Gate cuối yêu cầu Tool session hợp
+lệ, không pending/duplicate/shuffle, nguồn hợp lệ, UI khỏe, countdown đủ, đọc được
+số dư và số dư đủ cho tổng stake. Stake 0 là virtual nên không click nhưng vẫn
+tham gia resolve/progression. Browser/page/UI/license
+không an toàn sẽ tự demote live và lưu `auto_bet: false`.
 
 ### Threading/concurrency
 
@@ -142,7 +194,9 @@ Lobby roadmap chỉ cập nhật table metadata; code chủ động không lưu 
 
 `src/database.py`
 
-- ORM: `HallRecord`, `TableRecord`, `RoundRecord`, `BetGroupRecord`, `BetRecord`, `EventRecord`.
+- ORM: `HallRecord`, `TableRecord`, `RoundRecord`, `BetGroupRecord`, `BetRecord`,
+  `EventRecord`, `StrategyTabRecord`, `StrategyTabRuntimeRecord`,
+  `StrategyTabHistoryRecord`.
 - `_migrate_schema()` — nâng cấp SQLite cũ.
 
 `src/db_store.py`
@@ -161,3 +215,38 @@ Lobby roadmap chỉ cập nhật table metadata; code chủ động không lưu 
 - Recovery và data polling không được click hoặc reload đồng thời với bet execution.
 - Browser/live casino là hệ thống ngoài không ổn định; timeout/retry/fallback hiện có là một phần kiến trúc, không phải code thừa.
 
+## Decision Pipeline (đang chuyển đổi)
+
+Domain boundary mới nằm trong:
+
+- `src/strategy_decision.py` — input bất biến, strategy protocol và tín hiệu.
+- `src/money_manager.py` — quote/update/snapshot quản lý vốn; adapter progression cũ.
+- `src/capital_managers.py` — 8 MoneyManager tham chiếu, gồm MultiChain và Victor2.
+- `src/money_state_store.py` — snapshot restart theo tab + manager trong SQLite.
+- `src/license_contracts.py` — signed lease/capability/status bất biến.
+- `src/license_client.py` — HTTP client, verify public key, refresh và grace.
+- `src/license_server.py` — authority SQLite; chỉ triển khai trên server riêng.
+- `src/risk_decision.py` — gate thuần, mã lý do và real/virtual execution mode.
+
+Dependency dự kiến:
+
+```text
+Collector -> StrategyDecision -> MoneyQuote -> RiskDecision -> AutoBettor
+                                         \-> overlay/log/analytics
+```
+
+Các module domain không sở hữu Playwright, DB hoặc lifecycle. Tại thời điểm
+2026-08-02 vẫn giữ `ShadowDecisionPipeline` để so sánh/diagnostic với đường cũ,
+nhưng workspace không dùng Shadow/candidate/Promote để kích hoạt tab. Với từng
+tab `live`, StrategyDecision và MoneyManager riêng cấp side/stake cho
+RiskDecision; `AutoBettor` vẫn là thành phần duy nhất arm, click và persist.
+Nhiều authority live được gom thành một pending tổng hợp theo ván; phân bổ
+Player/Banker được click tuần tự trong cùng cửa cược và state manager được
+resolve riêng. Tab `simulation` không có authority. Chi tiết contract tại
+`DECISION_CONTRACTS.md`.
+
+License có hai trust boundary. Customer ToolBet chỉ giữ Ed25519 public key và
+cache DPAPI gắn device. Authority server giữ private key, password hash,
+entitlement, activation, token hash và audit. Capability `workspace` bảo vệ
+luồng Tool Login → Game Login; capability `live_bet` được kiểm tra lại trong
+RiskDecision cuối. Private key/server database không thuộc gói customer.

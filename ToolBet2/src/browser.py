@@ -15,7 +15,8 @@ from playwright.async_api import Browser, BrowserContext, Page, Playwright, asyn
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_DEFAULT_PROFILE = _PROJECT_ROOT / "data" / "cdp_profile"
+_RUNTIME_ROOT = Path(os.environ.get("TOOLBET_HOME", "") or _PROJECT_ROOT)
+_DEFAULT_PROFILE = _RUNTIME_ROOT / "data" / "cdp_profile"
 
 
 def normalize_cdp_url(cdp_url: str | None) -> str:
@@ -38,15 +39,32 @@ def _cdp_host_port(cdp_url: str) -> tuple[str, int]:
     return host, port
 
 
-def cdp_port_open(cdp_url: str, timeout: float = 0.8) -> bool:
+def cdp_port_open(cdp_url: str, timeout: float = 0.2) -> bool:
     host, port = _cdp_host_port(cdp_url)
-    for try_host in (host, "127.0.0.1", "localhost"):
-        try:
-            with socket.create_connection((try_host, port), timeout=timeout):
-                return True
-        except OSError:
-            continue
-    return False
+    # normalize_cdp_url already resolves localhost to 127.0.0.1. Probing the
+    # same loopback endpoint three times made a stopped Chrome cost several
+    # seconds on Windows before each recovery/startup decision.
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+async def wait_for_cdp_port(
+    cdp_url: str,
+    *,
+    wait_sec: float = 15.0,
+    interval_sec: float = 0.5,
+) -> bool:
+    """Wait for a Chrome process launched by ToolBet.bat to expose CDP."""
+
+    deadline = time.monotonic() + max(0.0, wait_sec)
+    while time.monotonic() < deadline:
+        if cdp_port_open(cdp_url):
+            return True
+        await asyncio.sleep(max(0.05, interval_sec))
+    return cdp_port_open(cdp_url)
 
 
 def find_chrome_exe() -> str | None:
@@ -78,6 +96,7 @@ def launch_chrome_cdp(cdp_url: str, profile_dir: Path | None = None) -> bool:
         chrome,
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile}",
+        "--start-maximized",
         "--no-first-run",
         "--no-default-browser-check",
         "about:blank",
@@ -140,34 +159,75 @@ class BrowserManager:
         except Exception:
             return False
         try:
-            # Truy cap pages de bat context da dong
+            # Truy cap pages de bat context da dong.
             _ = ctx.pages
             return True
         except Exception:
             return False
+
+    async def _maximize_cdp_window(self) -> None:
+        """Maximize an already-running CDP Chrome window on Windows."""
+
+        if os.name != "nt" or self._context is None:
+            return
+        page = next(
+            (item for item in self._context.pages if not item.is_closed()), None
+        )
+        if page is None:
+            return
+        session = None
+        try:
+            session = await self._context.new_cdp_session(page)
+            window = await session.send("Browser.getWindowForTarget")
+            window_id = window.get("windowId")
+            if window_id:
+                await session.send(
+                    "Browser.setWindowBounds",
+                    {"windowId": window_id, "bounds": {"windowState": "maximized"}},
+                )
+                logger.info("Da toi da hoa cua so Chrome CDP")
+        except Exception as exc:
+            logger.debug("Khong toi da hoa duoc cua so Chrome CDP: %s", exc)
+        finally:
+            if session is not None:
+                try:
+                    await session.detach()
+                except Exception:
+                    pass
 
     async def start(self) -> BrowserContext:
         self._playwright = await async_playwright().start()
 
         if self.cdp_url:
             self.cdp_url = normalize_cdp_url(self.cdp_url)
+            # The packaged launcher delegates Chrome startup to this manager.
+            # Launch first, then wait for readiness. Waiting for a port before
+            # launching Chrome made a cold start spend ~20 seconds doing nothing.
+            if not cdp_port_open(self.cdp_url):
+                logger.info("Chrome CDP chưa mở — khởi động ngay...")
+                await self.ensure_chrome_cdp(wait_sec=12.0)
             urls = [self.cdp_url]
             if "127.0.0.1" in self.cdp_url:
                 urls.append(self.cdp_url.replace("127.0.0.1", "localhost"))
             last_err: Exception | None = None
-            for url in urls:
-                try:
-                    self._browser = await self._playwright.chromium.connect_over_cdp(url)
-                    if self._browser.contexts:
-                        self._context = self._browser.contexts[0]
-                    else:
-                        self._context = await self._browser.new_context()
-                    self._owns_browser = False
-                    self.cdp_url = url
-                    logger.info("Đã kết nối Chrome qua CDP: %s", url)
-                    return self._context
-                except Exception as e:
-                    last_err = e
+            for attempt in range(1, 9):
+                for url in urls:
+                    try:
+                        self._browser = await self._playwright.chromium.connect_over_cdp(url)
+                        if self._browser.contexts:
+                            self._context = self._browser.contexts[0]
+                        else:
+                            self._context = await self._browser.new_context()
+                        self._owns_browser = False
+                        self.cdp_url = url
+                        await self._maximize_cdp_window()
+                        logger.info("Đã kết nối Chrome qua CDP: %s", url)
+                        return self._context
+                    except Exception as e:
+                        last_err = e
+                if attempt < 8:
+                    logger.debug("CDP chưa nhận kết nối (lần %d/8): %s", attempt, last_err)
+                    await asyncio.sleep(0.75)
             logger.warning(
                 "Không kết nối được CDP (%s), mở browser mới: %s",
                 self.cdp_url,
@@ -249,6 +309,7 @@ class BrowserManager:
                     else:
                         self._context = await self._browser.new_context()
                     self._owns_browser = False
+                    await self._maximize_cdp_window()
                     logger.info(
                         "Da ket noi lai Chrome CDP (lan %d): %s",
                         attempt,

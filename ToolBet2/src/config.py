@@ -6,6 +6,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
+from src.strategy_tabs import StrategyTabsConfig
+
 
 class SiteConfig(BaseModel):
     url: str = "https://vipbet389.com/"
@@ -83,16 +85,48 @@ class LoggingConfig(BaseModel):
     level: str = "INFO"
 
 
+class UiConfig(BaseModel):
+    # Giai doan C: workspace HTML la mac dinh; legacy van co the bat lai de rollback.
+    runtime_v2_enabled: bool = True
+    legacy_overlay_enabled: bool = False
+
+
+class ToolAuthConfig(BaseModel):
+    """Local development identity; licensing replaces this in the release phase."""
+
+    enabled: bool = True
+    account_store_path: str = "data/tool_accounts.json"
+    bootstrap_username: str = "toolbet"
+    bootstrap_password: str = "toolbet"
+    session_timeout_minutes: int = Field(default=480, ge=1, le=1440)
+
+
+class LicenseConfig(BaseModel):
+    """Remote signed-license client. Private signing keys never belong here."""
+
+    enabled: bool = False
+    api_url: str = "http://127.0.0.1:8765"
+    public_key_path: str = "data/license_public.pem"
+    cache_path: str = "data/license_session.bin"
+    timeout_seconds: float = Field(default=8.0, ge=1.0, le=60.0)
+    grace_minutes: int = Field(default=60, ge=0, le=1440)
+    refresh_before_minutes: int = Field(default=5, ge=1, le=60)
+
+
 class AppConfig(BaseModel):
     site: SiteConfig = Field(default_factory=SiteConfig)
     account: AccountConfig = Field(default_factory=AccountConfig)
     game: GameConfig = Field(default_factory=GameConfig)
     betting: BettingConfig = Field(default_factory=BettingConfig)
+    strategy_tabs: StrategyTabsConfig = Field(default_factory=StrategyTabsConfig)
     patterns: dict[str, bool] = Field(default_factory=dict)
     pattern_lengths: dict[str, int] = Field(default_factory=dict)
     rules: list[dict[str, Any]] = Field(default_factory=list)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    ui: UiConfig = Field(default_factory=UiConfig)
+    tool_auth: ToolAuthConfig = Field(default_factory=ToolAuthConfig)
+    license: LicenseConfig = Field(default_factory=LicenseConfig)
 
 
 def load_config(path: str | Path = "config.yaml") -> AppConfig:

@@ -1,4 +1,17 @@
-# ToolBet v2 — Hướng dẫn cài đặt (máy đích)
+# ToolBet v2 — Hướng dẫn cài đặt
+
+## Bản release dành cho khách hàng
+
+1. Giải nén toàn bộ ZIP release vào một thư mục mới.
+2. Double-click `ToolBet.bat`.
+3. Launcher kiểm tra SHA-256 manifest trước khi chạy.
+4. Dữ liệu được lưu tại `%LOCALAPPDATA%\ToolBet2`, không nằm trong thư mục cài.
+5. Máy khách cần Windows 10/11 64-bit và Google Chrome; không cần tự cài Python.
+
+Nâng cấp bằng cách giải nén release mới sang thư mục mới. Không xóa
+`%LOCALAPPDATA%\ToolBet2`. Rollback bằng launcher của release cũ.
+
+Các mục bên dưới áp dụng cho bản source/development.
 
 Copy nguyên thư mục `ToolBet2` sang máy cần chạy. Không cần copy `.venv`, `data/toolbet.db`, hay `config.yaml` từ máy dev (trừ khi muốn giữ cấu hình cũ).
 
@@ -91,8 +104,6 @@ chrome.exe --remote-debugging-port=9222 --user-data-dir="...\ToolBet2\data\cdp_p
 
 ## Chuẩn bị bản deploy
 
-Project hiện không có bước build hoặc `build.bat`. Để triển khai sang máy khác:
-
-1. Copy thư mục source `ToolBet2`.
-2. Không cần copy `.venv`, `data/cdp_profile`, `data/toolbet.db`, `config.yaml` hoặc `credentials.yaml` trừ khi chủ động muốn giữ dữ liệu/cấu hình cũ.
-3. Trên máy đích, chạy `ToolBet.bat`; script sẽ tạo môi trường và các file cấu hình cần thiết.
+Không copy source cho khách hàng. Tạo release bằng
+`scripts\build_release.ps1`; quy trình và pilot gate nằm trong
+`PILOT_RUNBOOK.md`.

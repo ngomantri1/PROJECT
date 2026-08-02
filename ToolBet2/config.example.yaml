@@ -48,3 +48,27 @@ database:
 
 logging:
   level: "INFO"
+
+# Workspace HTML giai doan C; co the bat legacy_overlay_enabled de rollback.
+ui:
+  runtime_v2_enabled: true
+  legacy_overlay_enabled: false
+
+# Tai khoan Tool local cho giai doan B. Doi bootstrap_password truoc khi pilot.
+tool_auth:
+  enabled: true
+  account_store_path: "data/tool_accounts.json"
+  bootstrap_username: "toolbet"
+  bootstrap_password: "toolbet"
+  session_timeout_minutes: 480
+
+# License thương mại. Private key chỉ nằm trên license server.
+# Khi bật, Tool Login xác thực qua API và mọi cược thật cần capability live_bet.
+license:
+  enabled: false
+  api_url: "http://127.0.0.1:8765"
+  public_key_path: "data/license_public.pem"
+  cache_path: "data/license_session.bin"
+  timeout_seconds: 8
+  grace_minutes: 60
+  refresh_before_minutes: 5
