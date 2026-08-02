@@ -134,6 +134,14 @@
 - [x] Remove the manual workspace save button. Persist each valid tab edit to
   SQLite automatically after a short debounce while preserving incomplete
   name/stake input locally until it is valid.
+- [x] Rehydrate SQLite-owned workspace settings only when the panel is
+  installed again; do not poll SQLite during ordinary UI refreshes. Hide the
+  start-real action for the selected simulation tab while preserving stop.
+- [x] Give every tab × MoneyManager pair an independent durable stake chain;
+  seed missing manager records on save/reload with zero-stake defaults and
+  preserve all existing configurations.
+- [x] Recognise the v2 workspace in the health presence check so a live panel
+  is not repeatedly reinstalled and its header does not flicker.
 
 ## Completed work intentionally not kept as TODO
 

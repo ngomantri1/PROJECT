@@ -12,6 +12,7 @@ from src.database import (
     StrategyTabRecord,
     StrategyTabRuntimeRecord,
 )
+from src.capital_managers import MONEY_MANAGER_OPTIONS
 from src.strategy_tabs import StrategyTabsConfig, normalize_strategy_tabs
 
 
@@ -36,6 +37,13 @@ class StrategyTabStore:
                 session.close()
                 self.save_config(config)
                 return config
+            seeded = False
+            for row in rows:
+                seeded = self._seed_missing_money_configs(
+                    session, row.id, datetime.now()
+                ) or seeded
+            if seeded:
+                session.commit()
             selected = next((row.id for row in rows if row.selected), rows[0].id)
             return normalize_strategy_tabs(
                 {
@@ -113,10 +121,37 @@ class StrategyTabStore:
                 money_config.stakes_json = json.dumps(tab.stakes)
                 money_config.stake_chains_json = json.dumps(tab.stake_chains)
                 money_config.updated_at = now
+                self._seed_missing_money_configs(session, tab.id, now)
             session.commit()
             return config
         finally:
             session.close()
+
+    @staticmethod
+    def _seed_missing_money_configs(session, tab_id: str, now: datetime) -> bool:
+        """Give every MoneyManager an independent, safe initial stake chain."""
+        existing = {
+            row.manager_id
+            for row in session.query(StrategyMoneyConfigRecord.manager_id)
+            .filter(StrategyMoneyConfigRecord.tab_id == tab_id)
+            .all()
+        }
+        seeded = False
+        for option in MONEY_MANAGER_OPTIONS:
+            manager_id = option["id"]
+            if manager_id in existing:
+                continue
+            session.add(
+                StrategyMoneyConfigRecord(
+                    tab_id=tab_id,
+                    manager_id=manager_id,
+                    stakes_json="[0]",
+                    stake_chains_json="[[0]]" if manager_id == "MultiChain" else "[]",
+                    updated_at=now,
+                )
+            )
+            seeded = True
+        return seeded
 
     def money_configs_for_tabs(
         self, tab_ids: list[str]

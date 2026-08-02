@@ -122,6 +122,7 @@ runtime để giữ input, focus, scroll và vị trí kéo thả.
 `StrategyTabStore` là lớp persistence của workspace. SQLite lưu:
 
 - `strategy_tabs`: cấu hình, thứ tự và tab đang chọn.
+- `strategy_money_configs`: chuỗi stake độc lập theo cặp tab × MoneyManager.
 - `strategy_tab_runtime`: snapshot runtime mới nhất riêng theo tab.
 - `strategy_tab_history`: chuỗi snapshot thống kê theo tab/bàn/ván.
 
@@ -131,6 +132,19 @@ là nguồn authoritative để đóng/mở Tool không làm mất tab.
 Bridge debounce 500 ms cho mỗi form edit hợp lệ và gọi handler SQLite hiện có;
 không có nút lưu thủ công. Draft có tên hoặc stake rỗng/không hợp lệ chỉ ở UI và
 không thay thế cấu hình đã persist.
+
+Mỗi tab seed đủ tám `strategy_money_configs` khi save/reload; record thiếu dùng
+`[0]`, riêng `MultiChain` dùng `[[0]]`. Lưu một manager chỉ chạm record `(tab_id, manager_id)`
+đó, nên đổi manager trên UI sẽ nạp lại chuỗi tiền riêng đã lưu.
+
+`HistoryWatcher` rehydrate `StrategyTabStore` ngay trước `overlay.install()`;
+đây là boundary cài lại panel sau vào bàn/recovery/reload, không phải một poll
+trong luồng snapshot. Trạng thái tab live được đối chiếu tại đây; trạng thái
+`auto_bet` thuộc phiên hiện hành và nút dừng luôn còn hiển thị khi nó đang bật.
+
+`GameOverlay._panels_present()` ưu tiên `BrowserUiRuntime.present()` khi v2 bật;
+chỉ fallback sang legacy DOM khi legacy overlay được bật. Điều này phân biệt panel
+thực sự mất với panel v2 đang còn tồn tại, tránh install/rehydrate lặp.
 
 ### Strategy tab lifecycle
 

@@ -146,3 +146,12 @@
   SQLite remains authoritative when active rows exist; the database is not
   rewritten by this reload.
 - Regression coverage: `test_fresh_yaml_config_does_not_replace_saved_sqlite_tabs`.
+
+### LOCAL · DISABLED badge and Tool Logout flickered
+
+- Cause: health checking only recognised legacy overlay DOM. With the legacy
+  overlay disabled, it treated the v2 workspace as missing and repeatedly
+  reinstalled the whole panel.
+- Fix: `GameOverlay._panels_present()` recognises a present `BrowserUiRuntime`
+  first; legacy DOM is checked only when the legacy overlay is enabled.
+- Regression coverage: `test_runtime_workspace_is_reported_present_without_legacy_panels`.

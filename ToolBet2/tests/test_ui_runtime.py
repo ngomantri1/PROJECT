@@ -189,7 +189,6 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             len(MONEY_MANAGER_OPTIONS),
             await self.page.locator("#tbv2-progression option").count(),
         )
-
         await self.page.locator("#toolbet-ui-v2").evaluate("(node) => node.remove()")
         self.assertTrue(await runtime.update(self.page, overlay._build_ui_snapshot()))
         self.assertEqual(
@@ -200,6 +199,25 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             len(MONEY_MANAGER_OPTIONS),
             await self.page.locator("#tbv2-progression option").count(),
         )
+
+    async def test_runtime_workspace_is_reported_present_without_legacy_panels(self):
+        overlay = GameOverlay()
+        overlay.configure_ui_runtime(
+            runtime_v2_enabled=True, legacy_overlay_enabled=False
+        )
+        overlay.set_strategy_tabs(
+            {
+                "selected_tab_id": "tab-1",
+                "strategies": list(SIMULATION_STRATEGIES),
+                "money_managers": list(MONEY_MANAGER_OPTIONS),
+                "tabs": [{"id": "tab-1", "name": "Chiến lược 1"}],
+            }
+        )
+        self.assertTrue(
+            await overlay._ui_runtime.install(self.page, overlay._build_ui_snapshot())
+        )
+
+        self.assertTrue(await overlay._panels_present(self.page))
 
     async def test_realtime_update_preserves_unsaved_form_scroll_and_focus(self):
         tab = {
@@ -739,6 +757,39 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             0,
             await self.page.get_by_role("button", name="Lưu cấu hình").count(),
         )
+
+    async def test_start_real_action_follows_selected_simulation_checkbox(self):
+        tab = {
+            "id": "tab-1",
+            "name": "Chiến lược 1",
+            "enabled": True,
+            "strategy_id": "follow_last",
+            "stakes": [0, 100],
+            "money_manager_id": "IncreaseWhenLose",
+            "stake_chains": [],
+            "mode": "simulation",
+            "status": {},
+        }
+        snapshot = UiSnapshot(
+            revision=1,
+            state={
+                "auto_bet": False,
+                "strategy_tabs": {
+                    "selected_tab_id": "tab-1",
+                    "strategies": list(SIMULATION_STRATEGIES),
+                    "money_managers": list(MONEY_MANAGER_OPTIONS),
+                    "tabs": [tab],
+                },
+            },
+            tabs=[tab],
+        )
+        runtime = BrowserUiRuntime(enabled=True)
+        self.assertTrue(await runtime.install(self.page, snapshot))
+
+        toggle = self.page.locator("#tbv2-run-toggle")
+        self.assertTrue(await toggle.is_hidden())
+        await self.page.locator("#tbv2-simulation-only").uncheck()
+        self.assertTrue(await toggle.is_visible())
 
     async def test_workspace_lifecycle_action_uses_typed_command_bridge(self):
         received = []

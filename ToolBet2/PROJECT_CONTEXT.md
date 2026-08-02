@@ -137,3 +137,17 @@ không được để YAML mặc định ghi đè workspace đã lưu.
 Workspace không có nút lưu thủ công. `src/ui/bridge.js` debounce 500 ms rồi
 gửi mỗi thay đổi tab hợp lệ về `StrategyTabStore`; input tên tab hoặc chuỗi
 stake đang rỗng/không hợp lệ không được ghi đè bản SQLite đã lưu.
+
+Nạp ngược SQLite vào workspace chỉ xảy ra ngay trước khi overlay được cài lại
+(vào lại bàn/recovery/reload/DOM mất), không xảy ra ở các snapshot runtime
+thường xuyên. Checkbox “Chỉ mô phỏng/test” điều khiển hiển thị nút bắt đầu
+chạy thật của tab đang chọn; nút dừng không được ẩn khi `auto_bet` đang bật.
+
+`strategy_money_configs` is keyed by `(tab_id, manager_id)`. Every tab must
+have an independent chain for all eight MoneyManagers. Missing records seed on
+save/reload to `[0]` (`MultiChain` to `[[0]]`); never copy or overwrite another manager's
+saved chain when switching the selected manager.
+
+Health checks must treat a present `BrowserUiRuntime` as a present overlay. Do
+not use the legacy DOM check alone when the legacy overlay is disabled: doing
+so reinstalls the workspace repeatedly and causes visible header flicker.

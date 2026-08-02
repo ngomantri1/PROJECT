@@ -3,10 +3,14 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from sqlalchemy import inspect
 
-from src.database import init_db
+from main import HistoryWatcher
+from src.capital_managers import MONEY_MANAGER_OPTIONS
+from src.database import StrategyMoneyConfigRecord, init_db
 from src.strategy_tab_store import StrategyTabStore
 from src.strategy_tabs import SimulationTabConfig, StrategyTabsConfig
 
@@ -79,6 +83,37 @@ class StrategyTabStoreTests(unittest.TestCase):
             "IncreaseWhenWin", after_site_update.tabs[0].money_manager_id
         )
         self.assertEqual([25, 50, 100], after_site_update.tabs[0].stakes)
+
+    def test_workspace_rehydrates_sqlite_only_when_overlay_is_installed(self):
+        saved = StrategyTabsConfig(
+            selected_tab_id="saved",
+            tabs=[
+                SimulationTabConfig(
+                    id="saved",
+                    name="Đã lưu SQLite",
+                    stakes=[10, 20, 40],
+                )
+            ],
+        )
+        self.store.save_config(saved)
+        watcher = HistoryWatcher.__new__(HistoryWatcher)
+        watcher.config = SimpleNamespace(strategy_tabs=StrategyTabsConfig())
+        watcher.strategy_tab_store = self.store
+        watcher.strategy_lifecycle = Mock()
+        watcher.strategy_lifecycle.tabs_in_mode.return_value = []
+        watcher.betting_session = SimpleNamespace(
+            state=SimpleNamespace(auto_bet=False)
+        )
+        watcher._sync_live_money_managers = Mock()
+        watcher._overlay_strategy_tabs_payload = Mock(return_value={"tabs": []})
+        watcher.overlay = Mock()
+
+        watcher._reload_workspace_for_overlay()
+
+        self.assertEqual("saved", watcher.config.strategy_tabs.selected_tab_id)
+        self.assertEqual([10, 20, 40], watcher.config.strategy_tabs.tabs[0].stakes)
+        watcher._sync_live_money_managers.assert_called_once_with()
+        watcher.overlay.set_strategy_tabs.assert_called_once_with({"tabs": []})
 
     def test_each_tab_has_independent_runtime_and_history(self):
         config = StrategyTabsConfig(
@@ -168,3 +203,67 @@ class StrategyTabStoreTests(unittest.TestCase):
             [[30, 60], [100, 200]],
             configs["one"]["MultiChain"]["stake_chains"],
         )
+
+    def test_each_money_manager_keeps_its_own_stake_chain(self):
+        config = StrategyTabsConfig(
+            selected_tab_id="one",
+            tabs=[
+                SimulationTabConfig(
+                    id="one",
+                    money_manager_id="IncreaseWhenLose",
+                    stakes=[1],
+                )
+            ],
+        )
+        self.store.save_config(config)
+        config.tabs[0].money_manager_id = "IncreaseWhenWin"
+        config.tabs[0].stakes = [2]
+        self.store.save_config(config)
+        config.tabs[0].money_manager_id = "Victor2"
+        config.tabs[0].stakes = [3]
+        self.store.save_config(config)
+
+        money_configs = self.store.money_configs_for_tabs(["one"])["one"]
+
+        self.assertEqual(
+            {option["id"] for option in MONEY_MANAGER_OPTIONS},
+            set(money_configs),
+        )
+        self.assertEqual([1], money_configs["IncreaseWhenLose"]["stakes"])
+        self.assertEqual([2], money_configs["IncreaseWhenWin"]["stakes"])
+        self.assertEqual([3], money_configs["Victor2"]["stakes"])
+        self.assertEqual([0], money_configs["ReverseFibo"]["stakes"])
+        self.assertEqual([[0]], money_configs["MultiChain"]["stake_chains"])
+
+    def test_load_seeds_missing_money_managers_for_legacy_workspace(self):
+        self.store.save_config(
+            StrategyTabsConfig(
+                selected_tab_id="one",
+                tabs=[
+                    SimulationTabConfig(
+                        id="one",
+                        money_manager_id="IncreaseWhenLose",
+                        stakes=[1],
+                    )
+                ],
+            )
+        )
+        session = self.session_factory()
+        try:
+            session.query(StrategyMoneyConfigRecord).filter(
+                StrategyMoneyConfigRecord.tab_id == "one",
+                StrategyMoneyConfigRecord.manager_id != "IncreaseWhenLose",
+            ).delete(synchronize_session=False)
+            session.commit()
+        finally:
+            session.close()
+
+        self.store.load_or_import(StrategyTabsConfig())
+        money_configs = self.store.money_configs_for_tabs(["one"])["one"]
+
+        self.assertEqual(
+            {option["id"] for option in MONEY_MANAGER_OPTIONS},
+            set(money_configs),
+        )
+        self.assertEqual([1], money_configs["IncreaseWhenLose"]["stakes"])
+        self.assertEqual([0], money_configs["ReverseFibo"]["stakes"])

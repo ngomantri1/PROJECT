@@ -246,3 +246,31 @@
   invalid/empty stake chains remain in the form and cannot replace saved data.
 - `tests.test_ui_runtime` passes 19 tests; it verifies the button is absent and
   a normal form edit is saved automatically without runtime-only fields.
+
+## Workspace rehydrate on re-entry — 2026-08-03
+
+- Strategy tabs are reloaded from SQLite once immediately before each workspace
+  overlay installation (entering a table again, recovery, reload or lost DOM).
+  Normal overlay updates do not query SQLite for configuration.
+- The start-real action is hidden while the selected tab has “Chỉ mô phỏng/test”
+  checked and reappears immediately when it is unchecked. A running session
+  always retains its visible stop action. SQLite's live-tab state is reconciled
+  at rehydrate; `auto_bet` remains the current session state and is disabled if
+  no live tab remains.
+
+## Independent MoneyManager stake chains — 2026-08-03
+
+- Each strategy tab now seeds one SQLite `strategy_money_configs` record for
+  every one of the eight MoneyManagers when saved or first reloaded. Missing
+  managers start with `[0]`
+  (`MultiChain` with `[[0]]`); existing manager-specific chains are preserved.
+- Changing a manager's chain only updates that tab/manager record. Selecting a
+  different manager reloads its own saved chain rather than copying the active
+  manager's chain.
+
+## Workspace header stability — 2026-08-03
+
+- Fixed the v2 workspace presence check: it now recognises `BrowserUiRuntime`
+  before checking legacy DOM. The health loop no longer repeatedly reinstalls a
+  live v2 panel, so the LOCAL · DISABLED badge and Tool Logout control remain
+  stable and SQLite rehydrate occurs only after the workspace is truly gone.

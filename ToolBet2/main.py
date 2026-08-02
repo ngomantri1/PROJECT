@@ -1236,6 +1236,25 @@ class HistoryWatcher:
             tab["mode"] = tab["lifecycle"]["mode"]
         return payload
 
+    def _reload_workspace_for_overlay(self) -> None:
+        """Rehydrate SQLite-owned tabs only when the workspace is installed."""
+        self.config.strategy_tabs = self.strategy_tab_store.load_or_import(
+            self.config.strategy_tabs
+        )
+        self._sync_live_money_managers()
+        if (
+            self.betting_session.state.auto_bet
+            and not self.strategy_lifecycle.tabs_in_mode(TabLifecycleMode.LIVE)
+        ):
+            self._handle_toggle_auto_bet(False)
+        self.overlay.set_strategy_tabs(self._overlay_strategy_tabs_payload())
+
+    async def _install_workspace_overlay(self, page: Page) -> bool:
+        self._reload_workspace_for_overlay()
+        return await self.overlay.install(
+            page, stakes=self.config.betting.stakes
+        )
+
     def _evaluate_strategy_tab_shadow(
         self,
         *,
@@ -1991,7 +2010,7 @@ class HistoryWatcher:
                 )
                 self.ae_collector.set_table_ready(ready)
                 await self._reload_table_history(page, wanted)
-                await self.overlay.install(page, stakes=self.config.betting.stakes)
+                await self._install_workspace_overlay(page)
                 await self._analyze_patterns(full=True)
                 self.ae_collector.start_background(page)
                 self._last_game_phase = PHASE_ROOM
@@ -2024,7 +2043,7 @@ class HistoryWatcher:
                     self.ae_collector.set_table_ready(ready)
                 if ready:
                     await self._reload_table_history(page, wanted)
-                await self.overlay.install(page, stakes=self.config.betting.stakes)
+                await self._install_workspace_overlay(page)
                 await self._analyze_patterns(full=True)
                 if self.ae_collector:
                     self.ae_collector.start_background(page)
@@ -2049,7 +2068,7 @@ class HistoryWatcher:
                     ctx, page, target_name, feed_len=len(self.state.history)
                 )
                 if await is_ae_sexy_in_room(page, wanted or target_name):
-                    await self.overlay.install(page, stakes=self.config.betting.stakes)
+                    await self._install_workspace_overlay(page)
                     await self._analyze_patterns(full=True)
                     if self.ae_collector:
                         self.ae_collector.start_background(page)
@@ -2137,7 +2156,7 @@ class HistoryWatcher:
                         wanted or target_name,
                     )
 
-            await self.overlay.install(page, stakes=self.config.betting.stakes)
+            await self._install_workspace_overlay(page)
             await self._analyze_patterns(full=True)
 
             if self.ae_collector:
@@ -2170,7 +2189,7 @@ class HistoryWatcher:
                     if self.ae_collector:
                         await self.ae_collector.reattach(ctx, page)
                         self.ae_collector.start_background(page)
-                    await self.overlay.install(page, stakes=self.config.betting.stakes)
+                    await self._install_workspace_overlay(page)
                     logger.info(
                         "Da mo lai trinh duyet — se tiep tuc vao ban o vong sau"
                     )
@@ -2289,7 +2308,7 @@ class HistoryWatcher:
 
         if not await self._overlay_present(page):
             try:
-                await self.overlay.install(page, stakes=self.config.betting.stakes)
+                await self._install_workspace_overlay(page)
             except Exception:
                 pass
             return False
@@ -2598,7 +2617,7 @@ class HistoryWatcher:
         except Exception:
             u = ""
         if await page_should_host_overlay(page):
-            ok = await self.overlay.install(page, stakes=self.config.betting.stakes)
+            ok = await self._install_workspace_overlay(page)
             if ok:
                 logger.info("Da gan overlay tren: %s", u[:80])
             else:

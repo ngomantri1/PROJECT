@@ -497,6 +497,10 @@
       };
       message.textContent = "Đang chờ lưu tự động vào SQLite.";
       scheduleAutoSave();
+      const runToggle = root.querySelector("#tbv2-run-toggle");
+      if (runToggle && !autoBet) {
+        runToggle.hidden = simulationCheckbox.checked;
+      }
     };
     configCard.querySelectorAll("input, select").forEach(control => {
       control.addEventListener("input", rememberDraft);
@@ -522,7 +526,11 @@
       autoBet ? "Dừng chạy thật" : "Bắt đầu chạy thật"
     );
     toggle.type = "button";
+    toggle.id = "tbv2-run-toggle";
     toggle.disabled = !autoBet && liveTabs === 0;
+    // Only hide the start action for a simulation tab. A visible stop action
+    // remains mandatory while a real-running session is active.
+    toggle.hidden = !autoBet && simulationCheckbox.checked;
     toggle.addEventListener("click", () => lifecycleCommand(
       "set_run_state",
       { running: !autoBet },

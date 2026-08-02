@@ -785,6 +785,10 @@ class GameOverlay:
         return ok
 
     async def _panels_present(self, page: Page) -> bool:
+        if self._ui_runtime.enabled and await self._ui_runtime.present(page):
+            return True
+        if not self._legacy_overlay_enabled:
+            return False
         try:
             return bool(await page.evaluate(PANELS_DOM_CHECK))
         except Exception:
