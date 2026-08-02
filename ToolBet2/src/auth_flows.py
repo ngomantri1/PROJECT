@@ -347,7 +347,7 @@ async def login_flow_vipbet(
     for attempt in range(1, max_retries + 1):
         try:
             if await is_logged_in_vipbet(page):
-                logger.info("Dang nhap vipbet thanh cong: %s", username)
+                logger.info("Dang nhap vipbet thanh cong")
                 return True
             if not await vipbet_login_form_visible(page):
                 logger.error("Khong thay form dang nhap vipbet")
@@ -375,7 +375,7 @@ async def login_flow_vipbet(
             await page.wait_for_timeout(3500)
 
             if await is_logged_in_vipbet(page):
-                logger.info("Dang nhap vipbet thanh cong: %s", username)
+                logger.info("Dang nhap vipbet thanh cong")
                 return True
             logger.warning(
                 "Dang nhap vipbet that bai lan %d (sai captcha/MK?)",
@@ -665,7 +665,7 @@ async def login_flow_222b(
             await page.wait_for_timeout(3500)
 
             if await is_logged_in_222b(page):
-                logger.info("Dang nhap 222b thanh cong: %s", username)
+                logger.info("Dang nhap 222b thanh cong")
                 return True
             logger.warning("Dang nhap 222b that bai lan %d", attempt)
             await _refresh_captcha_222b(page)
@@ -1252,7 +1252,7 @@ async def login_flow_dly8829(
 
             await page.wait_for_timeout(3500)
             if await is_logged_in_dly8829(page):
-                logger.info("Dang nhap dly8829 thanh cong: %s", username)
+                logger.info("Dang nhap dly8829 thanh cong")
                 return True
 
             toast = await _dly8829_login_toast(page)

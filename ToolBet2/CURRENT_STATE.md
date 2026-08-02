@@ -1,5 +1,114 @@
 # Current Project State
 
+## Phase 5 finite small-stake canary — 2026-08-03
+
+- Real execution now requires a local `SMALL_STAKE_PILOT.json` lease in
+  addition to the existing kill-switch, license, UI, balance and round gates.
+  The lease binds one exact live `tab_id`, SQLite path, expiry, aggregate
+  per-round stake cap, maximum real-bet count, stop-loss and baseline bet id.
+- `AutoBettor` checks the lease and authoritative SQLite state before creating
+  an intent and again immediately before each physical click. Missing, expired
+  or changed lease/tab/stake/pending state auto-demotes live execution. Tie
+  nurture is deliberately excluded from the first canary.
+- If the final check rejects an intent before any click, it is closed as
+  `cancelled` with zero P&L. A rejection after a partial multi-side click keeps
+  the durable recovery lock and requires reconciliation.
+- Added source/packaged `small-stake-pilot arm|status|finish|close`; `arm` uses
+  the same production-license and SQLite preflight and creates the lease
+  atomically. `finish` is read-only and requires at least one resolved real bet
+  within all lease limits; `close` revokes by recoverably renaming the lease.
+- Full suite passes **181 tests**. The real `arm` command remains correctly
+  blocked by bet `id=27`, no live tab/stake envelope, disabled production
+  license and the active kill switch. No real lease was created, no browser was
+  started and no casino click or production-DB mutation occurred.
+- Internal snapshot `ToolBet2-0.8.0-phase5-internal-win-x64.zip` passed packaged
+  self-check, manifest verification, runtime-secret audit and packaged
+  status/finish against an isolated fake SQLite/lease. SHA-256:
+  `dbd104faf8c11992a45ace5a76b35db9e62c8a77250f894d4f8982cfa20794cd`.
+
+## Phase 4 stake-zero evidence gate — 2026-08-02
+
+- Added durable `bets.execution_mode` (`virtual`/`real`). Existing stake-zero
+  rows are backfilled to `virtual`; every new single, Tie and multi-live intent
+  records its mode before execution.
+- Added source and packaged `stake-zero-audit start|finish`. `start` records the
+  authoritative bet baseline only after the existing stake-zero preflight
+  passes. `finish` reads the DB without mutation and requires every new bet to
+  be virtual, stake 0 and resolved, and every allocation to be stake 0 with
+  `placement_status=virtual`.
+- Regression tests prove both the lowest click executor and the waiting path
+  return for stake 0 without invoking chip/zone click execution.
+- Removed Game/Tool usernames from login-success/runtime configuration logs and
+  extended runtime/support-bundle redaction for username fields and historical
+  login-success messages.
+- Full suite passes **176 tests**. The real `stake_zero` start remains correctly
+  blocked by bet `id=27`, zero live tabs and no authoritative live stake chain;
+  no browser pilot was started and no runtime data was changed.
+- Internal snapshot `ToolBet2-0.8.0-phase4-internal-win-x64.zip` passed packaged
+  self-check, manifest verification, runtime-secret audit and packaged
+  stake-zero start/finish against an isolated fixture. SHA-256:
+  `a9c3cafb14cff906979edf011085b327d569f97beabde986e7d8d26eb977c117`.
+- The production SQLite file was inspected read-only after the build. Bet 27 is
+  still unchanged and the new additive column has not yet been applied there;
+  migration will run only when the application is deliberately started.
+
+## Phase 3 trusted pending reconciliation — 2026-08-02
+
+- Added offline `scripts/reconcile_pending.py`: listing is read-only; resolve
+  requires the active kill switch, exact bet/round identity, trusted-result
+  evidence and a fixed operator acknowledgement.
+- Resolve creates and verifies an online SQLite backup before mutation, then
+  updates the bet, allocation/group summaries and `pending_reconciled` audit
+  event in one `BEGIN IMMEDIATE` transaction.
+- Only confirmed `placed` bets can be result-reconciled. `placing`, `uncertain`,
+  missing aggregate journals or allocations not `placed`/`virtual` are rejected.
+- Bet `id=27` remains unchanged because no trusted round-39 evidence was
+  supplied. It continues to block pilot progression.
+- Internal snapshot `ToolBet2-0.8.0-phase3-internal-win-x64.zip` passed the
+  168-test build, packaged self-check, manifest verification, packaged
+  reconciliation-list fixture and runtime-secret audit. SHA-256:
+  `9b66198adde387d529f890a68314e3dd5654d992d4a298d29f97a5331abafc32`.
+  It remains an internal artifact; the kill switch was not removed.
+
+## Phase 2 durable placement journal and restart gate — 2026-08-02
+
+- Bet intent is persisted as `placing` before physical click. Multi-live plans
+  are stored in `bet_allocations` before the first side and updated per side.
+- Partial placement or post-click SQLite failure retains pending, disables auto
+  betting and blocks new bets instead of clearing memory.
+- Startup reconstructs one main and one independent Tie pending. Every
+  restart-recovered pending requires trusted reconciliation and is never
+  automatically matched to an unrelated later result.
+- Crash/partial/restart/write-failure coverage and the full suite pass:
+  **168 tests**. No casino session or physical chip click was used.
+
+## Phase 1 fail-closed pilot preflight — 2026-08-02
+
+- Pilot preflight now resolves `database.path` relative to the selected config
+  file unless `--database` explicitly overrides it. Source and packaged CLI use
+  the same read-only `inspect_pilot_runtime()` contract.
+- `stake_zero` and `small_stake` no longer trust `betting.stakes` in YAML. They
+  require exactly one live tab with `auto_bet=false`, read that tab's selected
+  MoneyManager configuration from `strategy_money_configs` (falling back to
+  the tab row only when no manager-specific row exists), include MultiChain
+  chains and include Victor2's possible doubled quote.
+- Every bet with `outcome IS NULL`, malformed/missing SQLite schema, an invalid
+  manager or an unreadable/empty live stake envelope blocks the transition.
+- `small_stake` additionally verifies an HTTPS production license URL, public
+  key, device-bound signed cache, signature, refresh token, expiry/offline
+  grace and `live_bet` capability without refreshing or mutating the token.
+- Windows maintenance CLI output is forced to UTF-8 so fail-closed Vietnamese
+  messages do not crash under a CP1252 console.
+- `scripts/run_tests.ps1` passes **157 tests**. The real Phase 0 database remains
+  correctly blocked by bet `id=27`, no live tab, missing production license and
+  the active kill switch.
+- Internal snapshot `ToolBet2-0.8.0-phase1-20260802-internal-win-x64.zip` passed
+  packaged self-check, manifest verification, secret/runtime-file audit and the
+  packaged fail-closed preflight. SHA-256:
+  `2aeae722110c8cc604fa18230347bb03b423d6d93fd1750a861f65e69c8fa811`.
+  It remains an internal, license-disabled artifact rather than a customer
+  money-stake build.
+
 ## Phase 0 live-readiness checkpoint — 2026-08-02
 
 - Phase 0 did not enable `auto_bet` or intentionally stop/reload the live
@@ -35,7 +144,7 @@
 
 ## Verified status — 2026-08-02
 
-- `scripts/run_tests.ps1` passes: **154 tests** in ~30 seconds. The active
+- `scripts/run_tests.ps1` passes: **157 tests** in ~30 seconds. The active
   Python 3.13 environment prints `Could not find platform independent libraries
   <prefix>`, but the test run completes successfully.
 - ToolBet keeps the existing Python/asyncio/Playwright/CDP engine for Chrome,

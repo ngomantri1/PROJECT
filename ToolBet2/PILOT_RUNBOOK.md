@@ -42,11 +42,19 @@ Mỗi cổng phải chạy tối thiểu đủ ca reload, mất CDP, đổi bàn
 
 1. `simulation`: `auto_bet=false`; kiểm tra UI, replay và thống kê.
 2. `shadow`: tùy chọn so sánh đường legacy, không phải điều kiện chuyển tab live.
-3. `stake_zero`: mọi mức tiền bằng 0; xác nhận không click chip và vẫn resolve
-   trạng thái riêng cho các tab.
-4. `small_stake`: license thật; xác nhận một hoặc nhiều tab live, kể cả khi
-   Player và Banker cùng được phân bổ, chỉ với tổng stake trong ngưỡng pilot.
+3. `stake_zero`: đúng một tab live, `auto_bet=false` lúc chạy preflight và mọi
+   mức tiền authoritative của MoneyManager bằng 0; sau khi PASS mới xác nhận
+   không click chip và vẫn resolve trạng thái tab.
+4. `small_stake`: giai đoạn pilot đầu chỉ dùng đúng một tab live và
+   `auto_bet=false` lúc chạy preflight. License production phải có URL HTTPS,
+   public key và signed cache hợp lệ với capability `live_bet`; mọi mức tiền có
+   thể quote phải nằm trong ngưỡng pilot.
 5. Nhóm khách giới hạn: chỉ sau khi các cổng có liên quan có biên bản PASS.
+
+Preflight đọc `database.path` từ file config và dùng SQLite làm nguồn
+authoritative cho tab/MoneyManager. Nó kiểm tra `strategy_money_configs`,
+MultiChain, khả năng Victor2 nhân đôi và chặn mọi bet chưa có outcome. Giá trị
+`betting.stakes` trong YAML không thể làm giảm trần stake của tab live.
 
 Kiểm tra:
 
@@ -63,6 +71,89 @@ Trong bản đóng gói dùng:
 ToolBet2\ToolBet2.exe --pilot-preflight shadow
 ToolBet2\ToolBet2.exe --pilot-preflight small_stake --ack-small-stake
 ```
+
+### Lease canary tiền nhỏ
+
+Sau khi đã xử lý mọi blocker, backup DB và chỉ vừa gỡ kill switch cho ca được
+duyệt, arm một lease hữu hạn. Ví dụ dưới đây giới hạn tổng stake mỗi ván 100,
+tối đa 3 bet, lỗ tối đa 300 và hết hạn sau 30 phút:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\small_stake_pilot.py arm `
+  --config config.yaml --max-stake 100 --max-bets 3 `
+  --max-loss 300 --duration-minutes 30 `
+  --ack "I ACCEPT FINITE SMALL STAKE PILOT"
+```
+
+Lease gắn đúng một `tab_id` và SQLite. Runtime kiểm tra lại trước từng physical
+click; thay tab, tăng envelope stake, có pending khác, hết thời gian/số bet,
+chạm stop-loss, mất lease, bật kill switch hoặc Nuôi Hòa đều chặn. Không sửa
+file JSON bằng tay.
+
+Kết thúc ca: tắt Auto, chờ mọi pending được resolve, lấy báo cáo rồi đóng lease
+và bật lại kill switch:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\small_stake_pilot.py finish --config config.yaml
+.\.venv\Scripts\python.exe scripts\small_stake_pilot.py close --config config.yaml
+.\STOP-LIVE-BET.bat
+```
+
+Bản đóng gói dùng `ToolBet2.exe --small-stake-pilot arm|status|finish|close`
+với cùng các flag. `finish` chỉ PASS khi có ít nhất một bet tiền thật mới, toàn
+bộ đã resolve và ca không vượt bất kỳ giới hạn lease nào.
+
+### Bằng chứng ca stake-zero
+
+Sau khi preflight `stake_zero` PASS, lấy baseline trước khi bật ca:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\stake_zero_audit.py start --config config.yaml
+```
+
+Ghi lại `baseline_bet_id`. Sau khi kết thúc ca, tắt Auto và chờ hết pending rồi
+chạy:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\stake_zero_audit.py finish `
+  --config config.yaml --after-bet-id 123 `
+  --output reports\stake-zero-evidence.json
+```
+
+`finish` chỉ PASS khi có ít nhất một bet mới, tất cả đều đã resolve với stake 0
+và `execution_mode=virtual`, đồng thời mọi allocation đều stake 0/virtual. Bản
+đóng gói dùng `ToolBet2.exe --stake-zero-audit start|finish`. Báo cáo DB không
+thay thế kiểm tra UI/collector/reload của operator trong ca browser.
+
+Giữ kill switch trong toàn bộ quá trình chuẩn bị. Chỉ chạy
+`ALLOW-LIVE-BET.bat` sau khi mọi lỗi preflight khác đã được xử lý, DB đã backup
+và operator chuẩn bị bắt đầu đúng ca pilot đã duyệt. Nếu preflight báo pending,
+không xóa/sửa DB thủ công để ép PASS.
+
+### Đối chiếu pending sau restart
+
+Giữ kill switch và dừng ToolBet trước khi đối chiếu. Trước hết chỉ liệt kê:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\reconcile_pending.py list --config config.yaml
+```
+
+Chỉ khi có kết quả từ nguồn WS/HTTP hoặc hồ sơ vận hành đáng tin cậy, chạy
+resolve với đúng `bet-id`, nguyên văn `round-id`, mô tả evidence và câu ack:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\reconcile_pending.py resolve `
+  --config config.yaml --bet-id 27 `
+  --round-id "ae_sexy:C03:24963:39" --result player `
+  --evidence "trusted source reference" `
+  --ack "I VERIFIED TRUSTED ROUND RESULT"
+```
+
+Ví dụ trên chỉ minh họa cú pháp; không dùng `player` cho bet 27 nếu chưa có bằng
+chứng. Command tự tạo backup đã `quick_check`, từ chối `placing`/`uncertain` và
+ghi audit event. Khởi động lại ToolBet sau đối chiếu để xóa pending trong memory.
+Bản đóng gói dùng cùng contract qua `ToolBet2.exe --reconcile-pending list`
+hoặc `--reconcile-pending resolve` với các flag tương tự.
 
 ## 4. Kill switch và license revoke
 

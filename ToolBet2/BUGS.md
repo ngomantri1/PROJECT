@@ -2,24 +2,24 @@
 
 ## Open bugs
 
+### Operational small-stake canary is still blocked
+
+- Runtime guard and evidence tooling are complete, but the real environment
+  still has bet `id=27`, no live tab/readable stake envelope, no enabled
+  production license and an active kill switch.
+- This is an intentional fail-closed blocker, not permission to edit SQLite or
+  remove the kill switch. No canary lease exists on the real data directory.
+
 ### Stale placed bet cannot be safely reconciled after restart
 
 - Confirmed state: bet `id=27` is still `placed` with no outcome. It targets
   Baccarat C03, shoe 24963, round 39 and has stake 0; group 7 is still open.
 - Available trusted history ends at round 38 and no matching resolve event
-  exists. The current startup path does not reconstruct this pending bet into
-  `BettingSession`.
-- Phase 0 preserved the record and created a verified backup. Do not delete it
-  or invent an outcome. A domain recovery/reconciliation workflow is required
-  before a live pilot.
-
-### Pilot preflight does not validate authoritative per-tab stakes
-
-- `src/release_support.py:pilot_preflight()` checks `betting.stakes` from YAML,
-  while live-tab MoneyManager configuration is authoritative in SQLite.
-- A small-stake preflight can therefore pass even when a live tab can quote a
-  stake above the pilot cap. This must be fixed and regression-tested before
-  the `small_stake` gate is trusted.
+  exists. Startup now reconstructs this pending and locks automatic execution,
+  preventing an unrelated later result from resolving it.
+- Phase 3 provides a backup-first audited reconciliation command, but it still
+  requires trusted round-39 evidence. Bet `id=27` remains unchanged; do not
+  delete it or invent an outcome before a live pilot.
 
 ### Runtime-sensitive files remain tracked by Git
 
@@ -31,15 +31,56 @@
 - The internal Phase 0 release artifact was audited clean. Repository cleanup
   remains a separate required hygiene change and must preserve the local files.
 
-### Runtime log exposes the Game username
-
-- The current `logs/toolbet.log` records the selected/login Game username.
-  Passwords were not observed in this check, but logging a username still
-  violates the project rule against credential identifiers in operational logs.
-- Redact the username at the logging call sites and add a regression test before
-  exporting diagnostics or running a customer pilot.
-
 ## Fixed in the current work
+
+### Preflight stake cap could drift before a physical click
+
+- A finite lease now binds the exact SQLite/live tab and limits time, aggregate
+  stake, bet count and loss. Runtime reloads lease and DB state before each
+  physical click; missing/changed state blocks and demotes live execution.
+- Tie nurture is disabled for the first canary. Pre-click rejected intents are
+  closed as `cancelled`; partial physical placement still uses the durable
+  uncertainty/reconciliation path.
+- Regression coverage: `tests/test_small_stake_guard.py` and
+  `tests/test_bet_journal.py`.
+
+### Runtime log exposed Game and Tool usernames
+
+- Login-success and saved-Game-account messages no longer include usernames.
+- Runtime logging and diagnostics redact `username`/`user` fields plus the old
+  login-success message form, with regression coverage in
+  `tests/test_release_support.py`.
+- Existing pre-fix raw log files may still contain identifiers and must remain
+  treated as sensitive; diagnostics export redacts them but does not rewrite
+  the original logs.
+
+### Stake-zero pilot had no durable proof of virtual execution
+
+- Every bet now snapshots `execution_mode`; the start/finish audit verifies all
+  new bets and allocations were virtual, zero-stake and resolved.
+- Tests prove stake 0 does not call the click executor. The real pilot remains
+  blocked by the preserved stale pending and missing live-tab configuration.
+
+### Bet intent was persisted only after an irreversible chip click
+
+- Fix: persist `placing` before click, journal multi-live allocations and keep
+  an `uncertain` pending on partial placement or post-click SQLite failure.
+- Restart restores durable pending and requires explicit trusted
+  reconciliation before new automatic bets.
+- Regression coverage: `tests/test_bet_journal.py` and
+  `tests/test_pending_reconciliation.py`.
+
+### Pilot preflight trusted YAML instead of per-tab SQLite stakes
+
+- Fix: source and packaged preflight now read the selected live tab and
+  MoneyManager config from SQLite, including MultiChain chains and Victor2's
+  possible doubled quote. Missing/malformed runtime state fails closed.
+- The small-stake gate also verifies the device-bound signed `live_bet` cache,
+  HTTPS production URL, public key and validity window without mutating the
+  token.
+- Regression coverage: `tests/test_release_support.py` proves a YAML-small /
+  SQLite-large mismatch is blocked, Victor2 doubling is included and a valid
+  signed live capability is accepted.
 
 ### Workspace state was overwritten by routine UI refresh
 
@@ -83,6 +124,6 @@
 - Multi-live Player+Banker placement and aggregate-pending recovery have unit
   coverage, but have not been proven by a real-casino end-to-end session.
 - Python 3.13 prints `Could not find platform independent libraries <prefix>`;
-  it did not prevent the current 154-test run.
+  it did not prevent the current 176-test run.
 - Database migrations are additive but production SQLite data should be backed up
   before a release upgrade.

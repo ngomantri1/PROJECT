@@ -19,6 +19,14 @@ Chức năng chính:
   runtime theo tab trong SQLite. Nhiều tab live có thể gom stake Player và
   Banker trong một ván.
 - Lưu bàn, ván, nhóm cược, cược và event vào SQLite; cung cấp báo cáo/backtest/đề xuất cấu hình.
+- Bet intent và allocation multi-live được journal trước click. Pending còn lại
+  sau restart luôn fail-closed và chỉ được kết thúc qua workflow đối chiếu có
+  backup, exact identity, trusted evidence và audit event.
+- Stake-zero pilot dùng `bets.execution_mode=virtual` và start/finish audit để
+  chứng minh cửa sổ bet không chứa stake thật hoặc allocation click thật.
+- Pilot tiền nhỏ dùng lease local hữu hạn gắn đúng SQLite/tab, kiểm tra lại
+  trước physical click và có báo cáo finish read-only; lease không thay thế
+  license production, kill switch hay đối chiếu pending.
 
 ## Technology Stack
 
@@ -62,6 +70,12 @@ Dependencies được khai báo trong `requirements.txt`: Playwright, PyYAML, SQ
 - `src/pattern_analyzer.py` — catalog và luật nhận diện mẫu đang dùng.
 - `src/betting_session.py`, `src/progression.py`, `src/tie_nurture_engine.py` — state cược, P&L, progression và Nuôi Hòa.
 - `src/database.py`, `src/db_store.py` — schema, migration, dedup và persistence.
+- `src/pending_reconciliation.py`, `scripts/reconcile_pending.py` — đối chiếu
+  pending offline có evidence; không xác minh placement mơ hồ thay operator.
+- `src/stake_zero_audit.py`, `scripts/stake_zero_audit.py` — bằng chứng read-only
+  cho ca pilot stake-zero sau khi preflight PASS.
+- `src/small_stake_guard.py`, `src/small_stake_cli.py`,
+  `scripts/small_stake_pilot.py` — lease, runtime guard và evidence ca tiền nhỏ.
 - `src/overlay.py`, `src/ui_runtime.py`, `src/ui/bridge.js` — UI inject,
   snapshot/command bridge và workspace v2.
 - `src/tool_auth.py`, `src/tool_login_panel.py` — Tool Login/session gate.

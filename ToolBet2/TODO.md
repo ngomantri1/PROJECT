@@ -1,5 +1,69 @@
 # TODO
 
+## Phase 5 finite small-stake canary
+
+- [x] Add an atomic local lease bound to one live tab and SQLite, with expiry,
+  aggregate stake cap, maximum bet count, stop-loss and baseline.
+- [x] Recheck lease, tab binding, authoritative stake envelope and journal
+  immediately before every real click without blocking the asyncio loop.
+- [x] Exclude Tie nurture from the first canary and preserve durable recovery
+  if a multi-side placement becomes partial.
+- [x] Add source/packaged arm/status/finish/close commands and regression tests.
+- [ ] Obtain trusted evidence and reconcile bet `id=27`; configure exactly one
+  approved live tab and a production signed `live_bet` license.
+- [ ] With the operator present, backup DB, clear the kill switch only for the
+  approved window, run `arm`, complete at most the approved bets, turn Auto off,
+  run `finish`, then `close` and re-enable the kill switch.
+
+## Phase 4 stake-zero evidence gate
+
+- [x] Persist `execution_mode` for every bet and backfill historical stake-zero
+  rows as virtual through the additive migration.
+- [x] Add source/packaged start-finish audit for a stake-zero bet window.
+- [x] Prove stake zero never invokes the chip-click executor in focused tests.
+- [x] Remove Game/Tool usernames from runtime logs and redact historical login
+  identifiers from diagnostics.
+- [ ] Reconcile bet `id=27` from trusted evidence, then configure exactly one
+  live tab whose authoritative MoneyManager envelope is entirely zero.
+- [ ] Only after the real preflight passes, run the controlled browser ca and
+  produce a PASS finish report; this operational step was not forced.
+
+## Phase 3 trusted pending reconciliation
+
+- [x] Add read-only inspection and explicit resolve gated by kill switch, exact
+  identity, evidence and fixed acknowledgement.
+- [x] Create and verify a SQLite backup before reconciliation mutation.
+- [x] Resolve confirmed Player/Banker or fully confirmed aggregate bets in one
+  transaction with an audit event; reject ambiguous placement.
+- [ ] Supply trusted shoe 24963 / round 39 evidence before reconciling bet
+  `id=27`; never guess this result.
+- [ ] Specify a separate historical Tie-nurture workflow if needed because the
+  applicable payout was not snapshotted in old `bets` rows.
+
+## Phase 2 durable pending journal
+
+- [x] Persist intent before click and per-allocation multi-live placement state.
+- [x] Keep pending and fail closed on partial placement or post-click DB error.
+- [x] Restore durable main/Tie pending on restart and require trusted
+  reconciliation before automatic execution can resume.
+- [x] Run focused recovery tests and the full 168-test suite.
+
+## Phase 1 fail-closed preflight
+
+- [x] Resolve the authoritative SQLite path from the selected config file.
+- [x] Validate the selected per-tab MoneyManager stakes/chains from SQLite,
+  including MultiChain and Victor2 doubled quotes; do not use YAML stakes as a
+  live pilot authority.
+- [x] Require exactly one live tab, `auto_bet=false`, no unresolved bet and a
+  readable live stake envelope for `stake_zero`/`small_stake` transitions.
+- [x] Verify the device-bound signed `live_bet` license cache and HTTPS
+  production configuration without mutating the cached refresh token.
+- [x] Add focused regressions and run the full 157-test suite.
+- [x] Build and verify the Phase 1 internal snapshot, including packaged
+  preflight and secret/runtime-file audit.
+- [x] Implement durable pending recovery and trusted reconciliation. The kill
+  switch remains active because bet `id=27` still lacks evidence.
+
 ## Phase 0 live-readiness checkpoint
 
 - [x] Create and verify an online backup of the active SQLite database without
@@ -22,33 +86,30 @@
 1. Run controlled browser sessions with `auto_bet=false`, then stake 0, to
    observe AE SEXY collection, recovery and the live-tab decision path without
    chip clicks.
-2. Validate a small-stake pilot only after the operator enables a production
-   license authority, public key and customer-build signing configuration as
-   described in `LICENSE_DEPLOYMENT.md` and `PILOT_RUNBOOK.md`.
+2. Run the finite small-stake canary only after the operator enables a
+   production license authority, public key and customer-build signing
+   configuration and the `small-stake-pilot arm` gate passes.
 3. Exercise real browser recovery around an aggregate multi-live pending bet,
    including a Player+Banker round. Current evidence is unit/fixture coverage,
    not a casino end-to-end run.
 4. Measure CPU/RAM for a pilot-duration session and compare it with
    `RESOURCE_BASELINE.md`.
-5. Complete the fail-closed preflight and pending-recovery work. A live pilot
-   must remain blocked while any unresolved/uncertain bet exists.
+5. Reconcile every pending from trusted evidence. Recovery is implemented, and
+   pilot remains blocked while any unresolved/uncertain bet exists.
 
 ## Test and observability gaps
 
 - Add browser/integration fixtures for AE SEXY chip placement and for
   WS/HTTP reconciliation without connecting to a real casino.
-- Add an integration case for partial aggregate placement (one of Player or
-  Banker succeeds) and recovery/restart while the aggregate pending bet is
-  awaiting its result.
-- If operator-facing per-tab live-bet reporting is required, add a queryable
-  allocation model. At present the aggregate `BetRecord` is durable and the
-  allocation detail is emitted as events; individual MoneyManager state is
-  persisted separately.
+- Add a browser-level integration case for partial aggregate placement and
+  recovery; durable SQLite coverage now exists.
+- If richer operator reporting is required, expose the queryable
+  `bet_allocations` journal in the workspace.
 
 ## Maintenance
 
 - Resolve or suppress the Python 3.13 `<prefix>` startup warning after verifying
-  the interpreter/venv configuration; it is non-blocking for the current 154
+  the interpreter/venv configuration; it is non-blocking for the current 176
   passing tests.
 - Keep `credentials.yaml`, `config.yaml`, `data/toolbet.db` and
   `data/cdp_profile/` out of version control and release artifacts.

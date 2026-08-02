@@ -36,6 +36,9 @@ Source: `src/auto_bettor.py:BET_TRIGGER_SOURCES`, `on_history_grew()`, `_arm_bet
 
 ### Stake và chip
 
+- Mỗi bet phải snapshot `execution_mode`. Stake 0 dùng `virtual`; chỉ stake
+  dương mới dùng `real`. Một ca pilot stake-zero chỉ PASS khi mọi bet mới đã
+  resolve, có stake 0/mode virtual và mọi allocation đều stake 0/virtual.
 - `stakes` không được rỗng hoặc chứa số âm.
 - Stake `0` là cược ảo/theo dõi: không click chip, nhưng kết quả vẫn cập nhật loss count, P&L nhóm và progression.
 - Stake thật chỉ được đặt khi có thể tạo tổng chính xác từ chip của bàn.
@@ -83,8 +86,21 @@ Source: `src/progression.py:win_profit()`, `src/tie_nurture_engine.py:resolve_pe
 
 ## State / Status Rules
 
-- Main bet status: khởi tạo `placed`, resolve thành `resolved`; DB còn cho phép status khác do recovery code cập nhật.
+- Main bet phải được ghi `placing` trước physical click, sau đó mới chuyển
+  `placed`; click không xác nhận được phải giữ `uncertain`. Multi-live phải có
+  allocation journal durable trước click đầu tiên.
+- Pending phục hồi sau restart không tự ghép với một kết quả mới. Nó khóa cược
+  mới cho tới khi được đối chiếu bằng đúng bet/round, evidence nguồn tin cậy và
+  operator acknowledgement. Chỉ `placed` (và mọi allocation `placed`/`virtual`)
+  mới được result-reconcile; `placing`/`uncertain` không được suy diễn.
 - Bet group: `open`, `take_profit`, `stop_loss` hoặc `abandoned`.
+- Cược tiền thật chỉ được click khi có lease canary local hợp lệ gắn đúng một
+  tab live và SQLite hiện tại. Lease giới hạn thời gian, tổng stake một ván, số
+  bet và mức lỗ; mọi thay đổi sau preflight phải fail-closed. Nuôi Hòa không
+  được phép trong canary tiền nhỏ đầu tiên.
+- Intent bị guard chặn trước mọi click có `status=cancelled`,
+  `outcome=cancelled`, P&L 0 và không tính vào hạn mức bet canary. Nếu đã có ít
+  nhất một click thì không được cancel; phải giữ pending/uncertain để đối chiếu.
 - Chỉ một `BettingSession.pending` chính tồn tại; nó có thể đại diện cho một
   allocation thường hoặc aggregate nhiều tab live. Nuôi Hòa có pending độc lập
   để có thể đặt thêm Hòa sau cược mẫu trong cùng cửa.

@@ -107,5 +107,5 @@ async def prompt_tool_login_panel(page: Page, auth: ToolAuthService) -> ToolSess
     await page.evaluate(
         "() => document.getElementById('toolbet-tool-login-panel')?.remove()"
     )
-    logger.info("Đăng nhập Tool thành công: %s", session.username)
+    logger.info("Đăng nhập Tool thành công")
     return session

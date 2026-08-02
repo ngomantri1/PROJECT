@@ -245,6 +245,28 @@ Player/Banker được click tuần tự trong cùng cửa cược và state man
 resolve riêng. Tab `simulation` không có authority. Chi tiết contract tại
 `DECISION_CONTRACTS.md`.
 
+Ranh giới irreversible click dùng SQLite journal: `bets` được tạo với status
+`placing` trước click; aggregate có thêm `bet_allocations` theo tab/cửa và cập
+nhật trạng thái sau từng cửa. Lỗi sau click giữ pending và khóa `AutoBettor`.
+Startup phục hồi durable pending nhưng không tự resolve sau khi process đã mất
+continuity. `src/pending_reconciliation.py` là domain service offline kết thúc
+pending từ evidence operator; CLI backup-first tại
+`scripts/reconcile_pending.py` ghi audit event trong cùng transaction.
+
+Pilot stake-zero có evidence boundary riêng. `bets.execution_mode` được ghi
+cùng intent; `src/stake_zero_audit.py` chỉ đọc một cửa sổ bet sau baseline và
+kiểm tra bet/allocation đều virtual, zero-stake, resolved. Source CLI nằm tại
+`scripts/stake_zero_audit.py`; packaged CLI dùng `--stake-zero-audit` qua
+`src/release_cli.py`. Audit không cấp authority đặt cược và không sửa SQLite.
+
+Pilot tiền nhỏ có thêm irreversible-action boundary tại
+`src/small_stake_guard.py`. CLI chỉ tạo lease sau khi preflight production
+PASS; lease atomic gắn `database_path + tab_id + baseline` và các giới hạn hữu
+hạn. `HistoryWatcher` chuyển kiểm tra file/SQLite sang `asyncio.to_thread`, còn
+`AutoBettor` gọi guard trước intent và ngay trước executor cho single/multi/Tie.
+`src/small_stake_cli.py` dùng chung cho source script và executable đóng gói.
+Lease không thay license hoặc kill switch; tất cả các gate phải đồng thời PASS.
+
 License có hai trust boundary. Customer ToolBet chỉ giữ Ed25519 public key và
 cache DPAPI gắn device. Authority server giữ private key, password hash,
 entitlement, activation, token hash và audit. Capability `workspace` bảo vệ

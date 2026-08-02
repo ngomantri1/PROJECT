@@ -14,6 +14,7 @@ from src.browser import BrowserManager
 from src.kill_switch import live_bet_allowed
 from src.release_support import configure_runtime_logging
 from src.release_cli import handle_release_command
+from src.small_stake_guard import SmallStakePilotGuard, default_lease_path
 
 
 def _is_target_closed_exc(exc: BaseException) -> bool:
@@ -152,6 +153,10 @@ class HistoryWatcher:
         Path(self.config.database.path).parent.mkdir(parents=True, exist_ok=True)
         self.session_factory = init_db(self.config.database.path)
         self.store = GameDataStore(self.session_factory, self.config.game.provider)
+        self.small_stake_guard = SmallStakePilotGuard(
+            self.config.database.path,
+            default_lease_path(self.config.database.path),
+        )
         self.strategy_tab_store = StrategyTabStore(self.session_factory)
         self.strategy_lifecycle = StrategyLifecycleService(self.session_factory)
         self.money_state_store = MoneyStateStore(self.session_factory)
@@ -266,6 +271,26 @@ class HistoryWatcher:
             )
         self.auto_bettor = AutoBettor(self.betting_session, self.store)
         self.auto_bettor.configure_tie_nurture(self.config.betting.tie_nurture)
+        recovery_block = self.auto_bettor.restore_durable_pending()
+        if (
+            recovery_block
+            or self.betting_session.state.pending is not None
+            or self.auto_bettor.tie.has_pending
+        ):
+            self.config.betting.auto_bet = False
+            self.betting_session.configure(auto_bet=False)
+            save_betting_to_config(
+                config_path=self._config_path, auto_bet=False
+            )
+            self.overlay.set_betting_ui(
+                auto_bet=False,
+                stop_loss=self.config.betting.stop_loss,
+                take_profit=self.config.betting.take_profit,
+                group_take_profit=self.config.betting.group_take_profit,
+                group_stop_loss=self.config.betting.group_stop_loss,
+                progression_mode=self.config.betting.progression_mode,
+                loss_watch_recover=self.config.betting.loss_watch_recover,
+            )
         self.auto_bettor.set_disabled_patterns(disabled_pattern_ids(self._pattern_enabled))
         self.auto_bettor.set_pattern_lengths(self._pattern_lengths)
         self.auto_bettor.set_ui_failed_handler(self._on_bet_ui_failed)
@@ -284,6 +309,7 @@ class HistoryWatcher:
         self.auto_bettor.set_license_checker(
             self._live_bet_allowed
         )
+        self.auto_bettor.set_real_bet_guard(self._check_small_stake_guard)
         self._full_log_done = False
         self._last_history_key: tuple = ()
         self._active_table_id: str = ""
@@ -1126,11 +1152,11 @@ class HistoryWatcher:
             return {"ok": False, "error": str(exc)}
 
     def _handle_toggle_auto_bet(self, enabled: bool) -> dict:
-        self.auto_bettor.on_toggle(enabled)
-        self.config.betting.auto_bet = enabled
-        save_betting_to_config(config_path=self._config_path, auto_bet=enabled)
+        actual = self.auto_bettor.on_toggle(enabled)
+        self.config.betting.auto_bet = actual
+        save_betting_to_config(config_path=self._config_path, auto_bet=actual)
         self.overlay.set_betting_ui(
-            auto_bet=enabled,
+            auto_bet=actual,
             stop_loss=self.config.betting.stop_loss,
             take_profit=self.config.betting.take_profit,
             group_take_profit=self.config.betting.group_take_profit,
@@ -1138,7 +1164,15 @@ class HistoryWatcher:
             progression_mode=self.config.betting.progression_mode,
             loss_watch_recover=self.config.betting.loss_watch_recover,
         )
-        return {"ok": True, "auto_bet": self.betting_session.state.auto_bet}
+        return {
+            "ok": actual == enabled,
+            "auto_bet": self.betting_session.state.auto_bet,
+            "error": (
+                self.auto_bettor.durable_block_reason
+                if enabled and not actual
+                else ""
+            ),
+        }
 
     def _handle_toggle_watch_recover(self, enabled: bool) -> dict:
         enabled = bool(enabled)
@@ -1353,6 +1387,23 @@ class HistoryWatcher:
             ",".join(changed),
             reason,
         )
+
+    async def _check_small_stake_guard(
+        self,
+        *,
+        stake: int,
+        tab_ids: list[str],
+        bet_kind: str,
+        current_bet_id: int | None,
+    ) -> tuple[bool, str]:
+        decision = await asyncio.to_thread(
+            self.small_stake_guard.evaluate,
+            stake=stake,
+            tab_ids=tab_ids,
+            bet_kind=bet_kind,
+            current_bet_id=current_bet_id,
+        )
+        return decision.allowed, decision.reason
 
     def _handle_save_strategy_tabs(self, payload: dict) -> dict:
         """Save tab settings; each tab independently selects simulation/live."""
@@ -3169,11 +3220,10 @@ class HistoryWatcher:
         active = set_active_site(form.site_id or form.site_url)
         creds = load_credentials(site=form.site_id)
         logger.info(
-            "Da luu thong tin: site=%s (%s) web=%s user=%s",
+            "Da luu thong tin Game: site=%s (%s) web=%s",
             active.info.id,
             active.info.shell_mode,
             self.config.site.url,
-            creds.username,
         )
 
         logger.info("Dang tim tab web/game...")

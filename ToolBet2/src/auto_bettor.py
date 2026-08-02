@@ -75,6 +75,121 @@ class AutoBettor:
         self._multi_live_result_handler = None
         self._runtime_unsafe_handler = None
         self._license_checker = None
+        self._real_bet_guard = None
+        self._durable_block_reason = ""
+
+    @property
+    def durable_block_reason(self) -> str:
+        return self._durable_block_reason
+
+    def _block_durable_execution(self, reason: str) -> None:
+        self._durable_block_reason = reason
+        self.session.configure(auto_bet=False)
+        logger.error("[RECOVERY] Khoa cuoc moi: %s", reason)
+
+    def _update_bet_status(self, bet_id: int, status: str) -> None:
+        updater = getattr(self.store, "update_bet_status", None)
+        if updater is not None:
+            updater(bet_id, status)
+
+    def restore_durable_pending(self) -> str:
+        """Restore confirmed pending bets; fail closed for ambiguous journals."""
+
+        loader = getattr(self.store, "load_unresolved_bets", None)
+        if loader is None:
+            return ""
+        unresolved = list(loader())
+        main_bets = [b for b in unresolved if b.pattern_id != TIE_PATTERN_ID]
+        tie_bets = [b for b in unresolved if b.pattern_id == TIE_PATTERN_ID]
+        if len(main_bets) > 1 or len(tie_bets) > 1:
+            self._block_durable_execution(
+                "DB co nhieu pending cung mot mode; can doi chieu thu cong"
+            )
+            return self._durable_block_reason
+
+        allocation_loader = getattr(self.store, "load_bet_allocations", None)
+        for bet in unresolved:
+            allocations = (
+                list(allocation_loader(bet.id))
+                if allocation_loader is not None and bet.pattern_id == "multi_live"
+                else []
+            )
+            ambiguous = bet.status in {"placing", "uncertain"}
+            ambiguous = ambiguous or any(
+                item.get("placement_status")
+                in {"planned", "placing", "uncertain"}
+                for item in allocations
+            )
+            if ambiguous:
+                self._block_durable_execution(
+                    f"bet #{bet.id} dang o trang thai {bet.status}; "
+                    "khong tu suy dien da dat hay chua"
+                )
+
+            if bet.pattern_id == TIE_PATTERN_ID:
+                self.tie.begin_pending(
+                    round_id=bet.round_id,
+                    stake=float(bet.stake),
+                    target_round_index=int(bet.target_round_index or 0),
+                    table_name=str(bet.table_name or ""),
+                    bet_id=bet.id,
+                )
+            else:
+                side_value = str(bet.side or "")
+                if side_value not in {BetSide.PLAYER.value, BetSide.BANKER.value}:
+                    side_value = str(
+                        next(
+                            (
+                                item.get("side")
+                                for item in allocations
+                                if item.get("side")
+                                in {BetSide.PLAYER.value, BetSide.BANKER.value}
+                            ),
+                            BetSide.PLAYER.value,
+                        )
+                    )
+                self.session.set_pending(
+                    PendingBet(
+                        bet_id=bet.id,
+                        round_id=bet.round_id,
+                        side=BetSide(side_value),
+                        stake=int(bet.stake),
+                        stake_index=int(bet.stake_index or 0),
+                        pattern_id=str(bet.pattern_id or ""),
+                        pattern_name=str(bet.rule_name or ""),
+                        reason=str(bet.reason or ""),
+                        target_round_index=int(bet.target_round_index or 0),
+                        placed_at=bet.placed_at or bet.created_at or datetime.now(),
+                    )
+                )
+                if bet.pattern_id == "multi_live":
+                    self._multi_live_pending = {
+                        "round_id": bet.round_id,
+                        "bet_id": bet.id,
+                        "allocations": allocations,
+                    }
+
+            if bet.table_name and bet.game_shoe and bet.game_round:
+                kind = "tie" if bet.pattern_id == TIE_PATTERN_ID else (
+                    "multi_live" if bet.pattern_id == "multi_live" else "pattern"
+                )
+                self._placed_round_keys.add(
+                    (
+                        bet.table_name,
+                        int(bet.game_shoe),
+                        int(bet.game_round),
+                        int(bet.target_round_index or 0),
+                        kind,
+                    )
+                )
+        if unresolved:
+            if not self._durable_block_reason:
+                self._block_durable_execution(
+                    "pending duoc khoi phuc sau restart; can doi chieu ket qua "
+                    "tin cay truoc khi tiep tuc"
+                )
+            logger.warning("[RECOVERY] Da nap lai %d pending tu DB", len(unresolved))
+        return self._durable_block_reason
 
     def configure_tie_nurture(
         self, cfg: TieNurtureConfig, *, history: list[BetSide] | None = None
@@ -178,6 +293,33 @@ class AutoBettor:
 
     def set_license_checker(self, checker) -> None:
         self._license_checker = checker
+
+    def set_real_bet_guard(self, checker) -> None:
+        """Async checker(stake, tab_ids, bet_kind, current_bet_id) -> (ok, reason)."""
+        self._real_bet_guard = checker
+
+    async def _real_bet_guard_allowed(
+        self,
+        *,
+        stake: int,
+        tab_ids: list[str],
+        bet_kind: str,
+        current_bet_id: int | None = None,
+    ) -> tuple[bool, str]:
+        if stake <= 0 or self._real_bet_guard is None:
+            return True, ""
+        try:
+            allowed, reason = await self._real_bet_guard(
+                stake=stake,
+                tab_ids=tab_ids,
+                bet_kind=bet_kind,
+                current_bet_id=current_bet_id,
+            )
+        except Exception as exc:
+            allowed, reason = False, f"guard canary lỗi: {type(exc).__name__}"
+        if not allowed and self._runtime_unsafe_handler:
+            self._runtime_unsafe_handler(reason)
+        return bool(allowed), str(reason)
 
     def decision_shadow_status(self) -> dict:
         data = self._decision_shadow_stats.to_dict()
@@ -815,6 +957,13 @@ class AutoBettor:
         pending = self.session.state.pending
         if not pending:
             return
+        if self._durable_block_reason:
+            logger.error(
+                "[RECOVERY] Khong resolve bet #%s tu dong: %s",
+                pending.bet_id,
+                self._durable_block_reason,
+            )
+            return
         if pending.bet_id <= 0:
             logger.warning("Bo qua resolve pending tam — chua co bet_id")
             self.session.clear_pending()
@@ -858,6 +1007,11 @@ class AutoBettor:
             if resolved is None:
                 return
             outcome, profit = resolved
+            allocation_resolver = getattr(
+                self.store, "resolve_bet_allocations", None
+            )
+            if allocation_resolver is not None:
+                allocation_resolver(pending.bet_id, resolved_allocations)
             self.store.resolve_bet(
                 pending.bet_id,
                 outcome=outcome,
@@ -977,6 +1131,13 @@ class AutoBettor:
         pending = self.tie.pending
         if not pending:
             return False
+        if self._durable_block_reason:
+            logger.error(
+                "[RECOVERY] Khong resolve bet Hoa #%s tu dong: %s",
+                pending.bet_id,
+                self._durable_block_reason,
+            )
+            return True
         if pending.bet_id <= 0:
             logger.warning("[HOA] Bo qua resolve pending tam — chua co bet_id")
             self.tie.clear_pending()
@@ -1035,6 +1196,8 @@ class AutoBettor:
         allow_after_main: bool = False,
     ) -> bool:
         """Dat them Hoa sau cuoc mode (cung cua). Cho phep session.pending mode neu allow_after_main."""
+        if self._durable_block_reason:
+            return False
         if not self.tie.wants_bet() and not (
             self._armed_bet and self._armed_bet.get("tie")
         ):
@@ -1104,6 +1267,20 @@ class AutoBettor:
             )
             return False
 
+        guard_ok, guard_reason = await self._real_bet_guard_allowed(
+            stake=stake, tab_ids=[], bet_kind="tie"
+        )
+        if not guard_ok:
+            cuoc_bo_qua(
+                reason="canary tiền nhỏ chặn Nuôi Hòa",
+                table=table_name,
+                source=source,
+                pattern=TIE_PATTERN_NAME,
+                tool_len=len(history),
+                detail=guard_reason,
+            )
+            return False
+
         # Tach key voi cuoc mode cung van — tranh chan nham "da dat"
         round_key = (table_name, game_shoe, game_round, target_index, "tie")
         if round_key in self._placed_round_keys:
@@ -1146,6 +1323,50 @@ class AutoBettor:
             bet_id=0,
         )
 
+        try:
+            bet = self.store.save_bet(
+                round_id=round_id,
+                table_name=table_name,
+                side=BetSide.TIE.value,
+                stake=stake,
+                stake_index=0,
+                pattern_id=TIE_PATTERN_ID,
+                pattern_name=TIE_PATTERN_NAME,
+                reason=f"gap={self.tie.gap} bets_in={self.tie.bets_in_cycle} after_main={allow_after_main}",
+                target_round_index=target_index,
+                session_date=round_ref.session_date,
+                session_no=round_ref.session_no,
+                game_shoe=round_ref.game_shoe,
+                game_round=round_ref.game_round,
+                status="placing",
+                execution_mode="real",
+                group_id=None,
+            )
+        except Exception as exc:
+            self.tie.clear_pending()
+            self._placing_key = None
+            logger.error("[HOA] Khong ghi duoc intent truoc click: %s", exc)
+            return False
+        if not bet:
+            self.tie.clear_pending()
+            self._placing_key = None
+            return False
+        self.tie.attach_bet_id(bet.id)
+
+        guard_ok, guard_reason = await self._real_bet_guard_allowed(
+            stake=stake,
+            tab_ids=[],
+            bet_kind="tie",
+            current_bet_id=bet.id,
+        )
+        if not guard_ok:
+            try:
+                self.store.cancel_bet_before_click(bet.id, guard_reason)
+            finally:
+                self.tie.clear_pending()
+                self._placing_key = None
+            return False
+
         self._betting_active += 1
         placed = False
         try:
@@ -1170,8 +1391,20 @@ class AutoBettor:
             )
 
         if not placed:
-            self.tie.clear_pending()
             self._placing_key = None
+            try:
+                self._update_bet_status(bet.id, "uncertain")
+            except Exception as exc:
+                logger.error(
+                    "[HOA] Khong ghi duoc uncertain cho bet #%s: %s",
+                    bet.id,
+                    exc,
+                )
+            finally:
+                self._block_durable_execution(
+                    f"bet Hoa #{bet.id} khong xac nhan duoc sau khi bat dau click"
+                )
+            self._placed_round_keys.add(round_key)
             logger.info(
                 "[HOA] Khong dat duoc cuoc Hoa — bo qua van | cd=%s chips=%s zone=%s",
                 phase.get("cdText", ""),
@@ -1207,6 +1440,7 @@ class AutoBettor:
             game_shoe=round_ref.game_shoe,
             game_round=round_ref.game_round,
             status="placed",
+            execution_mode="real",
             group_id=None,
         )
         if not bet:
@@ -1216,6 +1450,15 @@ class AutoBettor:
             return False
 
         self.tie.attach_bet_id(bet.id)
+        try:
+            self._update_bet_status(bet.id, "placed")
+        except Exception as exc:
+            self._placing_key = None
+            self._placed_round_keys.add(round_key)
+            self._block_durable_execution(
+                f"bet Hoa #{bet.id} da click nhung khong ghi duoc placed: {exc}"
+            )
+            return True
         self._placed_round_keys.add(round_key)
         self._placing_key = None
         summary = f"Da dat hoa {stake} — Nuoi Hoa"
@@ -1245,6 +1488,8 @@ class AutoBettor:
         source: str,
         bet_timeout_sec: int,
     ) -> bool:
+        if self._durable_block_reason:
+            return False
         authorities = list(
             (self._armed_bet or {}).get("live_authorities") or []
         )
@@ -1316,6 +1561,20 @@ class AutoBettor:
             item["stake"] for item in allocations if item["stake"] > 0
         )
         if physical_total > 0:
+            guard_ok, guard_reason = await self._real_bet_guard_allowed(
+                stake=physical_total,
+                tab_ids=[str(item["tab_id"]) for item in allocations],
+                bet_kind="main",
+            )
+            if not guard_ok:
+                cuoc_bo_qua(
+                    reason="canary tiền nhỏ chặn tổng phân bổ",
+                    table=table_name,
+                    source=source,
+                    tool_len=len(history),
+                    detail=guard_reason,
+                )
+                return False
             phase = await probe_betting_phase(page)
             ui_healthy = bool(
                 phase.get("chipsVisible")
@@ -1401,13 +1660,82 @@ class AutoBettor:
             )
             for side in (BetSide.PLAYER, BetSide.BANKER)
         }
+        planned_sides = {item["side"] for item in allocations}
+        planned_side = (
+            next(iter(planned_sides)) if len(planned_sides) == 1 else "multi"
+        )
+        try:
+            bet = self.store.save_bet(
+                round_id=round_ref.round_id,
+                table_name=table_name,
+                side=planned_side,
+                stake=sum(item["stake"] for item in allocations),
+                stake_index=0,
+                pattern_id="multi_live",
+                pattern_name="Nhieu tab Live",
+                reason=f"{len(allocations)} phan bo tab",
+                target_round_index=target_index,
+                session_date=round_ref.session_date,
+                session_no=round_ref.session_no,
+                game_shoe=round_ref.game_shoe,
+                game_round=round_ref.game_round,
+                status="placing",
+                execution_mode=("real" if physical_total > 0 else "virtual"),
+            )
+            if not bet:
+                raise RuntimeError("save_bet returned no intent")
+            allocation_saver = getattr(
+                self.store, "save_bet_allocations", None
+            )
+            if allocation_saver is not None:
+                allocation_saver(bet.id, allocations)
+        except Exception as exc:
+            self.session.clear_pending()
+            self._placing_key = None
+            logger.error("[MULTI_LIVE] Khong ghi duoc intent truoc click: %s", exc)
+            return False
+        self.session.attach_bet_id(bet.id)
+        self._multi_live_pending = {
+            "round_id": round_ref.round_id,
+            "bet_id": bet.id,
+            "allocations": allocations,
+        }
         placed_sides: set[BetSide] = set()
+        uncertain_sides: set[BetSide] = set()
         self._betting_active += 1
         try:
             for side in (BetSide.PLAYER, BetSide.BANKER):
                 amount = side_totals[side]
                 if amount <= 0:
                     continue
+                guard_ok, guard_reason = await self._real_bet_guard_allowed(
+                    stake=physical_total,
+                    tab_ids=[str(item["tab_id"]) for item in allocations],
+                    bet_kind="main",
+                    current_bet_id=bet.id,
+                )
+                if not guard_ok:
+                    if not placed_sides:
+                        self.store.cancel_bet_before_click(bet.id, guard_reason)
+                        self.session.clear_pending()
+                        self._multi_live_pending = None
+                        self._placing_key = None
+                        return False
+                    self._block_durable_execution(
+                        f"bet #{bet.id} bị guard chặn sau một phần allocation"
+                    )
+                    break
+                allocation_updater = getattr(
+                    self.store, "update_bet_allocation_status", None
+                )
+                if allocation_updater is not None:
+                    try:
+                        allocation_updater(bet.id, side.value, "placing")
+                    except Exception as exc:
+                        self._block_durable_execution(
+                            f"bet #{bet.id} khong ghi duoc allocation placing: {exc}"
+                        )
+                        break
                 placed = await wait_and_place_bet(
                     page,
                     side,
@@ -1418,11 +1746,26 @@ class AutoBettor:
                 if placed:
                     placed_sides.add(side)
                 else:
+                    uncertain_sides.add(side)
                     logger.warning(
                         "[MULTI_LIVE] Không đặt được %s %s",
                         side.value,
                         amount,
                     )
+                if allocation_updater is not None:
+                    try:
+                        allocation_updater(
+                            bet.id,
+                            side.value,
+                            "placed" if placed else "uncertain",
+                        )
+                    except Exception as exc:
+                        self._block_durable_execution(
+                            f"bet #{bet.id} da click nhung khong ghi duoc allocation: {exc}"
+                        )
+                        break
+                if not placed:
+                    break
         finally:
             self._betting_active = max(0, self._betting_active - 1)
 
@@ -1431,6 +1774,7 @@ class AutoBettor:
             for item in allocations
             if item["stake"] == 0
             or BetSide(item["side"]) in placed_sides
+            or BetSide(item["side"]) in uncertain_sides
         ]
         if not kept:
             self.session.clear_pending()
@@ -1443,7 +1787,8 @@ class AutoBettor:
             if len(distinct_sides) == 1
             else "multi"
         )
-        bet = self.store.save_bet(
+        try:
+            bet = self.store.save_bet(
             round_id=round_ref.round_id,
             table_name=table_name,
             side=aggregate_side,
@@ -1458,12 +1803,35 @@ class AutoBettor:
             game_shoe=round_ref.game_shoe,
             game_round=round_ref.game_round,
             status="placed",
+            execution_mode=("real" if physical_total > 0 else "virtual"),
         )
+        except Exception as exc:
+            self._placing_key = None
+            self._placed_round_keys.add(round_key)
+            self._block_durable_execution(
+                f"bet aggregate da click nhung DB finalize that bai: {exc}"
+            )
+            return bool(placed_sides or uncertain_sides)
         if not bet:
             self.session.clear_pending()
             self._placing_key = None
             return False
         self.session.attach_bet_id(bet.id)
+        if uncertain_sides or self._durable_block_reason:
+            try:
+                self._update_bet_status(bet.id, "uncertain")
+            except Exception as exc:
+                logger.error(
+                    "[MULTI_LIVE] Khong ghi duoc uncertain cho bet #%s: %s",
+                    bet.id,
+                    exc,
+                )
+            self._block_durable_execution(
+                self._durable_block_reason
+                or f"bet #{bet.id} co allocation khong xac nhan duoc"
+            )
+        else:
+            self._update_bet_status(bet.id, "placed")
         self._multi_live_pending = {
             "round_id": round_ref.round_id,
             "bet_id": bet.id,
@@ -1498,6 +1866,8 @@ class AutoBettor:
         source: str = "",
         bet_timeout_sec: int = 30,
     ) -> bool:
+        if self._durable_block_reason:
+            return False
         signal = self._armed_bet.get("signal") if self._armed_bet else None
         if not signal:
             signal = get_active_signal(
@@ -1570,6 +1940,22 @@ class AutoBettor:
         authority = (
             self._armed_bet.get("live_authority") if self._armed_bet else None
         )
+        if stake > 0:
+            guard_ok, guard_reason = await self._real_bet_guard_allowed(
+                stake=stake,
+                tab_ids=([str(authority.tab_id)] if authority is not None else []),
+                bet_kind="main",
+            )
+            if not guard_ok:
+                cuoc_bo_qua(
+                    reason="canary tiền nhỏ chặn cược",
+                    table=table_name,
+                    source=source,
+                    pattern=signal.pattern_name,
+                    tool_len=len(history),
+                    detail=guard_reason,
+                )
+                return False
         if authority is not None:
             phase_before = await probe_betting_phase(page)
             ui_healthy = bool(
@@ -1688,6 +2074,60 @@ class AutoBettor:
             )
             return False
 
+        if self.session.state.current_group_id is None:
+            group = self.store.open_bet_group(
+                session_date=round_ref.session_date,
+                table_name=table_name,
+                group_take_profit=self.session.state.group_take_profit,
+                group_stop_loss=self.session.state.group_stop_loss,
+                stakes=self.session.active_stakes,
+            )
+            self.session.state.current_group_id = group.id
+            self.session.state.current_group_seq = group.seq_no
+        try:
+            bet = self.store.save_bet(
+                round_id=round_id,
+                table_name=table_name,
+                side=signal.bet_side.value,
+                stake=stake,
+                stake_index=stake_index,
+                pattern_id=signal.pattern_id,
+                pattern_name=signal.pattern_name,
+                reason=signal.reason,
+                target_round_index=target_index,
+                session_date=round_ref.session_date,
+                session_no=round_ref.session_no,
+                game_shoe=round_ref.game_shoe,
+                game_round=round_ref.game_round,
+                status="placing",
+                execution_mode=("virtual" if stake <= 0 else "real"),
+                group_id=self.session.state.current_group_id,
+            )
+        except Exception as exc:
+            self.session.clear_pending()
+            self._placing_key = None
+            logger.error("Khong ghi duoc bet intent truoc click: %s", exc)
+            return False
+        if not bet:
+            self.session.clear_pending()
+            self._placing_key = None
+            return False
+        self.session.attach_bet_id(bet.id)
+
+        guard_ok, guard_reason = await self._real_bet_guard_allowed(
+            stake=stake,
+            tab_ids=([str(authority.tab_id)] if authority is not None else []),
+            bet_kind="main",
+            current_bet_id=bet.id,
+        )
+        if not guard_ok:
+            try:
+                self.store.cancel_bet_before_click(bet.id, guard_reason)
+            finally:
+                self.session.clear_pending()
+                self._placing_key = None
+            return False
+
         self._betting_active += 1
         placed = False
         try:
@@ -1712,8 +2152,24 @@ class AutoBettor:
             )
 
         if not placed:
-            self.session.clear_pending()
             self._placing_key = None
+            if stake > 0:
+                try:
+                    self._update_bet_status(bet.id, "uncertain")
+                except Exception as exc:
+                    logger.error(
+                        "Khong ghi duoc uncertain cho bet #%s: %s",
+                        bet.id,
+                        exc,
+                    )
+                finally:
+                    self._block_durable_execution(
+                        f"bet #{bet.id} khong xac nhan duoc sau khi bat dau click"
+                    )
+                self._placed_round_keys.add(round_key)
+            else:
+                self._update_bet_status(bet.id, "cancelled")
+                self.session.clear_pending()
             # Bi day ra sanh trong luc cho cua → bao UI fail de watch loop vao lai ban
             try:
                 from src.ae_sexy import is_ae_sexy_lobby
@@ -1773,7 +2229,8 @@ class AutoBettor:
             self.session.state.current_group_id = group.id
             self.session.state.current_group_seq = group.seq_no
 
-        bet = self.store.save_bet(
+        try:
+            bet = self.store.save_bet(
             round_id=round_id,
             table_name=table_name,
             side=signal.bet_side.value,
@@ -1788,8 +2245,16 @@ class AutoBettor:
             game_shoe=round_ref.game_shoe,
             game_round=round_ref.game_round,
             status="placed",
+            execution_mode=("virtual" if stake <= 0 else "real"),
             group_id=self.session.state.current_group_id,
         )
+        except Exception as exc:
+            self._placing_key = None
+            self._placed_round_keys.add(round_key)
+            self._block_durable_execution(
+                f"bet #{reserved.bet_id} da click nhung DB finalize that bai: {exc}"
+            )
+            return True
         if not bet:
             self.session.clear_pending()
             self._placing_key = None
@@ -1797,6 +2262,15 @@ class AutoBettor:
             return False
 
         self.session.attach_bet_id(bet.id)
+        try:
+            self._update_bet_status(bet.id, "placed")
+        except Exception as exc:
+            self._placing_key = None
+            self._placed_round_keys.add(round_key)
+            self._block_durable_execution(
+                f"bet #{bet.id} da click nhung khong ghi duoc placed: {exc}"
+            )
+            return True
         self._placed_round_keys.add(round_key)
         self._placing_key = None
         label = SIDE_LABEL.get(signal.bet_side, signal.bet_side.value)
@@ -1827,13 +2301,21 @@ class AutoBettor:
             self._healthy_handler()
         return True
 
-    def on_toggle(self, enabled: bool) -> None:
+    def on_toggle(self, enabled: bool) -> bool:
+        if enabled and self._durable_block_reason:
+            self.session.configure(auto_bet=False)
+            self.store.save_event(
+                "auto_bet_blocked",
+                {"reason": self._durable_block_reason},
+            )
+            return False
         self.session.configure(auto_bet=enabled)
         if not enabled:
             self._clear_armed_bet("AutoBettor đã tắt")
             self._stop_bet_open_poll()
         self.store.save_event("auto_bet_toggle", {"enabled": enabled})
         logger.info("Auto cuoc: %s", "BAT" if enabled else "TAT")
+        return self.session.state.auto_bet
 
     def on_limits_saved(self, stop_loss: float, take_profit: float) -> None:
         self.session.configure(stop_loss=stop_loss, take_profit=take_profit)

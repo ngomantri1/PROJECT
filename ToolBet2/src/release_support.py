@@ -11,27 +11,48 @@ import re
 import sqlite3
 import sys
 import zipfile
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 import yaml
 
 _SECRET_KEYS = {
     "password", "passwd", "token", "refresh_token", "access_token", "cookie",
-    "authorization", "secret", "api_key", "bootstrap_password",
+    "authorization", "secret", "api_key", "bootstrap_password", "username",
 }
 _INLINE_SECRET = re.compile(
-    r"(?i)\b(password|passwd|token|refresh[_-]?token|authorization|cookie|secret|api[_-]?key)"
+    r"(?i)\b(password|passwd|token|refresh[_-]?token|authorization|cookie|secret|api[_-]?key|username|user)"
     r"(\s*[=:]\s*)([^\s,;]+)"
 )
 _URL_CREDENTIAL = re.compile(r"(?i)(https?://)([^/@:\s]+):([^/@\s]+)@")
+_LOGIN_IDENTIFIER = re.compile(
+    r"(?i)((?:dang nhap|đăng nhập)[^\r\n:]{0,80}(?:thanh cong|thành công)\s*:\s*)"
+    r"([^\s,;]+)"
+)
+
+
+def configure_console_utf8() -> None:
+    """Keep maintenance CLI output readable on Windows code-page consoles."""
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
 
 
 def redact_text(value: str) -> str:
     text = _URL_CREDENTIAL.sub(r"\1***:***@", str(value))
-    return _INLINE_SECRET.sub(lambda match: f"{match.group(1)}{match.group(2)}***", text)
+    text = _INLINE_SECRET.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}***", text
+    )
+    return _LOGIN_IDENTIFIER.sub(lambda match: f"{match.group(1)}***", text)
 
 
 def redact_mapping(value: Any) -> Any:
@@ -182,32 +203,259 @@ def export_diagnostics(
     return output
 
 
+@dataclass(frozen=True, slots=True)
+class PilotRuntimeState:
+    database_exists: bool
+    pending_bets: int = 0
+    live_tabs: int = 0
+    authoritative_stakes: tuple[int, ...] = ()
+    live_tab_ids: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+
+    @property
+    def maximum_stake(self) -> int:
+        return max(self.authoritative_stakes, default=0)
+
+
+def _stake_list(raw: str | None, *, label: str) -> list[int]:
+    try:
+        values = json.loads(raw or "[]")
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{label} không phải JSON hợp lệ") from exc
+    if not isinstance(values, list):
+        raise ValueError(f"{label} phải là danh sách")
+    try:
+        stakes = [int(value) for value in values]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} chứa mức tiền không hợp lệ") from exc
+    if any(value < 0 for value in stakes):
+        raise ValueError(f"{label} chứa mức tiền âm")
+    return stakes
+
+
+def _stake_chains(raw: str | None, *, label: str) -> list[list[int]]:
+    try:
+        values = json.loads(raw or "[]")
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{label} không phải JSON hợp lệ") from exc
+    if not isinstance(values, list):
+        raise ValueError(f"{label} phải là danh sách chuỗi tiền")
+    chains: list[list[int]] = []
+    for index, value in enumerate(values, start=1):
+        if not isinstance(value, list):
+            raise ValueError(f"{label} chuỗi {index} không phải danh sách")
+        chains.append(_stake_list(json.dumps(value), label=f"{label} chuỗi {index}"))
+    return chains
+
+
+def inspect_pilot_runtime(database_path: str | Path) -> PilotRuntimeState:
+    """Read the authoritative live-tab stake envelope without mutating SQLite."""
+
+    database = Path(database_path).resolve()
+    if not database.is_file():
+        return PilotRuntimeState(
+            database_exists=False,
+            errors=(f"Không tìm thấy SQLite: {database}",),
+        )
+    try:
+        connection = sqlite3.connect(
+            f"file:{database.as_posix()}?mode=ro", uri=True
+        )
+        connection.row_factory = sqlite3.Row
+        try:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            required = {"bets", "strategy_tabs", "strategy_money_configs"}
+            missing = sorted(required - tables)
+            if missing:
+                return PilotRuntimeState(
+                    database_exists=True,
+                    errors=(
+                        "SQLite thiếu bảng preflight: " + ", ".join(missing),
+                    ),
+                )
+            pending = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM bets WHERE outcome IS NULL"
+                ).fetchone()[0]
+            )
+            rows = connection.execute(
+                "SELECT t.id, t.money_manager_id, t.stakes_json AS tab_stakes, "
+                "t.stake_chains_json AS tab_chains, "
+                "c.stakes_json AS manager_stakes, "
+                "c.stake_chains_json AS manager_chains "
+                "FROM strategy_tabs AS t "
+                "LEFT JOIN strategy_money_configs AS c "
+                "ON c.tab_id=t.id AND c.manager_id=t.money_manager_id "
+                "WHERE t.active=1 AND t.mode='live' ORDER BY t.ordinal"
+            ).fetchall()
+            errors: list[str] = []
+            authoritative: list[int] = []
+            from src.capital_managers import MONEY_MANAGER_IDS
+
+            for row in rows:
+                tab_id = str(row["id"] or "")
+                manager_id = str(row["money_manager_id"] or "")
+                label = f"tab {tab_id[:8] or '?'} / {manager_id or '?'}"
+                if manager_id not in MONEY_MANAGER_IDS:
+                    errors.append(f"{label}: MoneyManager không hợp lệ")
+                    continue
+                try:
+                    stakes = _stake_list(
+                        row["manager_stakes"]
+                        if row["manager_stakes"] is not None
+                        else row["tab_stakes"],
+                        label=f"{label} stakes",
+                    )
+                    chains = _stake_chains(
+                        row["manager_chains"]
+                        if row["manager_chains"] is not None
+                        else row["tab_chains"],
+                        label=f"{label} stake_chains",
+                    )
+                    possible = (
+                        [stake for chain in chains for stake in chain]
+                        if manager_id == "MultiChain" and chains
+                        else stakes
+                    )
+                    if not possible:
+                        raise ValueError(f"{label}: chuỗi tiền trống")
+                    authoritative.extend(possible)
+                    if manager_id == "Victor2":
+                        authoritative.extend(stake * 2 for stake in possible)
+                except ValueError as exc:
+                    errors.append(str(exc))
+            return PilotRuntimeState(
+                database_exists=True,
+                pending_bets=pending,
+                live_tabs=len(rows),
+                authoritative_stakes=tuple(authoritative),
+                live_tab_ids=tuple(str(row["id"]) for row in rows),
+                errors=tuple(errors),
+            )
+        finally:
+            connection.close()
+    except sqlite3.Error as exc:
+        return PilotRuntimeState(
+            database_exists=True,
+            errors=(f"Không đọc được SQLite preflight: {type(exc).__name__}",),
+        )
+
+
+def inspect_license_readiness(
+    config: dict[str, Any],
+    *,
+    config_dir: str | Path = ".",
+    now: datetime | None = None,
+    device_id: str | None = None,
+    allow_plaintext_cache_for_tests: bool = False,
+) -> tuple[str, ...]:
+    """Verify the cached signed live_bet lease without refresh or mutation."""
+
+    license_cfg = config.get("license") or {}
+    errors: list[str] = []
+    if not license_cfg.get("enabled"):
+        return ("Pilot tiền thật yêu cầu license.enabled=true",)
+    api_url = str(license_cfg.get("api_url") or "").strip()
+    parsed = urlparse(api_url)
+    if parsed.scheme.lower() != "https" or not parsed.netloc:
+        errors.append("Pilot tiền thật yêu cầu license.api_url HTTPS production")
+    base = Path(config_dir).resolve()
+
+    def resolve(value: Any, default: str) -> Path:
+        path = Path(str(value or default))
+        return path if path.is_absolute() else base / path
+
+    public_key = resolve(
+        license_cfg.get("public_key_path"), "data/license_public.pem"
+    )
+    cache = resolve(license_cfg.get("cache_path"), "data/license_session.bin")
+    if not public_key.is_file():
+        errors.append("Không tìm thấy license public key production")
+    if not cache.is_file():
+        errors.append("Chưa có signed license cache trên thiết bị")
+    if errors:
+        return tuple(errors)
+    try:
+        from src.device_identity import device_fingerprint
+        from src.license_contracts import SignedLease, verify_signed_lease
+        from src.secure_token_store import SecureTokenStore
+
+        expected_device = device_id or device_fingerprint()
+        payload = SecureTokenStore(
+            cache,
+            allow_plaintext_for_tests=allow_plaintext_cache_for_tests,
+        ).load()
+        if not isinstance(payload, dict):
+            return ("Không đọc được signed license cache",)
+        if str(payload.get("device_id") or "") != expected_device:
+            return ("Signed license cache không thuộc thiết bị này",)
+        if not str(payload.get("refresh_token") or ""):
+            return ("Signed license cache thiếu refresh token",)
+        signed = SignedLease.from_dict(payload.get("lease") or {})
+        lease = verify_signed_lease(signed, public_key.read_bytes())
+        if lease.device_id != expected_device:
+            return ("Signed license lease không thuộc thiết bị này",)
+        if "live_bet" not in lease.capabilities:
+            return ("License không có capability live_bet",)
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        grace_minutes = max(0, int(license_cfg.get("grace_minutes") or 0))
+        grace_until = min(
+            lease.refresh_until,
+            lease.expires_at + timedelta(minutes=grace_minutes),
+        )
+        if current.astimezone(timezone.utc) > grace_until:
+            return ("License/live_bet hoặc offline grace đã hết hạn",)
+    except Exception as exc:
+        return (f"Signed license cache không hợp lệ: {type(exc).__name__}",)
+    return ()
+
+
 def pilot_preflight(
     config: dict[str, Any],
     *,
     stage: str,
-    pending_bets: int = 0,
-    live_tabs: int = 0,
+    runtime: PilotRuntimeState | None = None,
     maximum_small_stake: int = 100,
     kill_switch_active: bool = False,
+    license_errors: Iterable[str] = (),
 ) -> list[str]:
     errors: list[str] = []
     betting = config.get("betting") or {}
-    license_cfg = config.get("license") or {}
-    stakes = [int(value) for value in (betting.get("stakes") or [])]
     auto_bet = bool(betting.get("auto_bet"))
+    state = runtime or PilotRuntimeState(database_exists=False)
+    errors.extend(str(error) for error in state.errors)
+    stakes = list(state.authoritative_stakes)
+    pending_bets = state.pending_bets
+    live_tabs = state.live_tabs
     if pending_bets:
         errors.append("Có cược pending; không được đổi giai đoạn pilot")
     if live_tabs > 1:
         errors.append("Có nhiều hơn một tab live")
     if stage in {"simulation", "shadow"} and auto_bet:
         errors.append("Simulation/shadow yêu cầu auto_bet=false")
-    if stage == "stake_zero" and any(stakes):
-        errors.append("Pilot stake 0 yêu cầu toàn bộ chuỗi tiền bằng 0")
+    if stage in {"stake_zero", "small_stake"}:
+        if not state.database_exists:
+            errors.append("Pilot yêu cầu SQLite authoritative")
+        if live_tabs != 1:
+            errors.append("Pilot yêu cầu đúng một tab live")
+        if auto_bet:
+            errors.append("Preflight chuyển giai đoạn yêu cầu auto_bet=false")
+        if not stakes:
+            errors.append("Không đọc được chuỗi tiền authoritative của tab live")
+    if stage == "stake_zero" and stakes and any(stakes):
+        errors.append("Pilot stake 0 yêu cầu toàn bộ chuỗi tiền live bằng 0")
     if stage == "small_stake":
-        if not license_cfg.get("enabled"):
-            errors.append("Pilot tiền thật yêu cầu license.enabled=true")
-        if not stakes or max(stakes) > maximum_small_stake:
+        errors.extend(str(error) for error in license_errors)
+        if stakes and not any(stake > 0 for stake in stakes):
+            errors.append("Pilot tiền thật yêu cầu ít nhất một stake dương")
+        if stakes and max(stakes) > maximum_small_stake:
             errors.append(f"Stake vượt ngưỡng pilot {maximum_small_stake}")
         if kill_switch_active:
             errors.append("Kill switch đang bật")

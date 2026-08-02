@@ -8,6 +8,7 @@ from src.ae_sexy_reader import AeSexyTableInfo
 from src.ae_sexy_ws import primary_table_id
 from sqlalchemy import func, select
 from src.database import (
+    BetAllocationRecord,
     BetGroupRecord,
     BetRecord,
     EventRecord,
@@ -503,6 +504,7 @@ class GameDataStore:
         reason: str,
         target_round_index: int,
         status: str = "placed",
+        execution_mode: str = "real",
         session_date: str | None = None,
         session_no: int | None = None,
         game_shoe: int | None = None,
@@ -533,6 +535,7 @@ class GameDataStore:
                 hall_name=self.hall_name,
                 table_name=table_name,
                 pattern_id=pattern_id,
+                execution_mode=execution_mode,
                 session_date=session_date,
                 session_no=session_no,
                 game_shoe=game_shoe,
@@ -593,6 +596,158 @@ class GameDataStore:
             session.commit()
         finally:
             session.close()
+
+    def cancel_bet_before_click(self, bet_id: int, reason: str) -> None:
+        """Close an intent that a final guard rejected before any physical click."""
+        session = self.session_factory()
+        try:
+            bet = session.get(BetRecord, bet_id)
+            if not bet or bet.status != "placing":
+                raise ValueError("Chỉ được cancel intent đang placing trước click")
+            bet.status = "cancelled"
+            bet.outcome = "cancelled"
+            bet.profit = 0.0
+            bet.resolved_at = datetime.now()
+            bet.reason = f"{bet.reason} | canary_block={reason}".strip(" |")
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def save_bet_allocations(
+        self, bet_id: int, allocations: list[dict[str, Any]]
+    ) -> list[BetAllocationRecord]:
+        """Persist the complete aggregate plan before any irreversible click."""
+
+        now = datetime.now()
+        session = self.session_factory()
+        try:
+            existing = {
+                row.tab_id: row
+                for row in session.scalars(
+                    select(BetAllocationRecord).where(
+                        BetAllocationRecord.bet_id == bet_id
+                    )
+                )
+            }
+            rows: list[BetAllocationRecord] = []
+            for item in allocations:
+                tab_id = str(item.get("tab_id") or "")
+                if not tab_id:
+                    raise ValueError("bet allocation requires tab_id")
+                row = existing.get(tab_id)
+                if row is None:
+                    row = BetAllocationRecord(bet_id=bet_id, tab_id=tab_id)
+                    session.add(row)
+                row.tab_name = str(item.get("tab_name") or "")
+                row.side = str(item.get("side") or "")
+                row.stake = float(item.get("stake") or 0)
+                row.stake_index = int(item.get("stake_index") or 0)
+                row.signal_id = str(item.get("signal_id") or "")
+                row.reason = str(item.get("reason") or "")
+                row.placement_status = str(
+                    item.get("placement_status")
+                    or ("virtual" if row.stake <= 0 else "planned")
+                )
+                row.updated_at = now
+                rows.append(row)
+            session.commit()
+            for row in rows:
+                session.refresh(row)
+            return rows
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def update_bet_allocation_status(
+        self, bet_id: int, side: str, status: str
+    ) -> None:
+        session = self.session_factory()
+        try:
+            rows = session.scalars(
+                select(BetAllocationRecord).where(
+                    BetAllocationRecord.bet_id == bet_id,
+                    BetAllocationRecord.side == side,
+                    BetAllocationRecord.stake > 0,
+                )
+            )
+            now = datetime.now()
+            for row in rows:
+                row.placement_status = status
+                row.updated_at = now
+            session.commit()
+        finally:
+            session.close()
+
+    def resolve_bet_allocations(
+        self, bet_id: int, allocations: list[dict[str, Any]]
+    ) -> None:
+        session = self.session_factory()
+        try:
+            rows = {
+                row.tab_id: row
+                for row in session.scalars(
+                    select(BetAllocationRecord).where(
+                        BetAllocationRecord.bet_id == bet_id
+                    )
+                )
+            }
+            now = datetime.now()
+            for item in allocations:
+                row = rows.get(str(item.get("tab_id") or ""))
+                if row is None:
+                    continue
+                row.outcome = str(item.get("outcome") or "") or None
+                profit = item.get("profit")
+                row.profit = float(profit) if profit is not None else None
+                row.updated_at = now
+            session.commit()
+        finally:
+            session.close()
+
+    def load_unresolved_bets(self) -> list[BetRecord]:
+        session = self.session_factory()
+        try:
+            return list(
+                session.scalars(
+                    select(BetRecord)
+                    .where(BetRecord.outcome.is_(None))
+                    .order_by(BetRecord.created_at, BetRecord.id)
+                )
+            )
+        finally:
+            session.close()
+
+    def load_bet_allocations(self, bet_id: int) -> list[dict[str, Any]]:
+        session = self.session_factory()
+        try:
+            rows = session.scalars(
+                select(BetAllocationRecord)
+                .where(BetAllocationRecord.bet_id == bet_id)
+                .order_by(BetAllocationRecord.id)
+            )
+            return [
+                {
+                    "tab_id": row.tab_id,
+                    "tab_name": row.tab_name,
+                    "side": row.side,
+                    "stake": row.stake,
+                    "stake_index": row.stake_index,
+                    "signal_id": row.signal_id,
+                    "reason": row.reason or "",
+                    "placement_status": row.placement_status,
+                    "outcome": row.outcome,
+                    "profit": row.profit,
+                }
+                for row in rows
+            ]
+        finally:
+            session.close()
+
     def save_event(
         self,
         event_type: str,

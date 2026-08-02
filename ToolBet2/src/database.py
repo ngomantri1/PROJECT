@@ -141,6 +141,7 @@ class BetRecord(Base):
     hall_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     table_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     pattern_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    execution_mode: Mapped[str] = mapped_column(String(16), default="real")
     status: Mapped[str] = mapped_column(String(16), default="placed")
     placed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -152,6 +153,32 @@ class BetRecord(Base):
     )
     group_pnl_after: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class BetAllocationRecord(Base):
+    """Durable per-tab placement journal for one aggregate live bet."""
+
+    __tablename__ = "bet_allocations"
+    __table_args__ = (
+        UniqueConstraint("bet_id", "tab_id", name="uq_bet_allocation_tab"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bet_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("bets.id"), index=True
+    )
+    tab_id: Mapped[str] = mapped_column(String(64))
+    tab_name: Mapped[str] = mapped_column(String(64), default="")
+    side: Mapped[str] = mapped_column(String(16))
+    stake: Mapped[float] = mapped_column(Float)
+    stake_index: Mapped[int] = mapped_column(Integer, default=0)
+    signal_id: Mapped[str] = mapped_column(String(64), default="")
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    placement_status: Mapped[str] = mapped_column(String(16), default="planned")
+    outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
 class EventRecord(Base):
@@ -368,6 +395,10 @@ def _migrate_schema(engine) -> None:
         ("hall_id", "ALTER TABLE bets ADD COLUMN hall_id VARCHAR(32)"),
         ("table_name", "ALTER TABLE bets ADD COLUMN table_name VARCHAR(128)"),
         ("pattern_id", "ALTER TABLE bets ADD COLUMN pattern_id VARCHAR(64)"),
+        (
+            "execution_mode",
+            "ALTER TABLE bets ADD COLUMN execution_mode VARCHAR(16) DEFAULT 'real'",
+        ),
         ("status", "ALTER TABLE bets ADD COLUMN status VARCHAR(16) DEFAULT 'placed'"),
         ("placed_at", "ALTER TABLE bets ADD COLUMN placed_at DATETIME"),
         ("session_profit_after", "ALTER TABLE bets ADD COLUMN session_profit_after FLOAT"),
@@ -389,6 +420,12 @@ def _migrate_schema(engine) -> None:
                 conn.execute(text(stmt))
 
     with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE bets SET execution_mode = 'virtual' "
+                "WHERE stake <= 0 AND (execution_mode IS NULL OR execution_mode = 'real')"
+            )
+        )
         conn.execute(
             text(
                 "UPDATE bets SET hall_name = (SELECT name FROM halls WHERE halls.id = bets.hall_id) "
