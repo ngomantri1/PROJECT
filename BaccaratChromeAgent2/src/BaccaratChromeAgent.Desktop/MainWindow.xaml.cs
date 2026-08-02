@@ -17087,7 +17087,7 @@ try{
             foreach (var tab in runningTabs)
             {
                 Log($"[Loop][AUTO-STOP] tab={tab.Name} | run={tab.RunId}");
-                StopTask(tab);
+                StopTask(tab, "auto-stop:" + reason);
             }
             BaccaratSexyCasino2.Tasks.TaskUtil.ClearBetCooldown();
             SetPlayButtonState(_activeTab?.IsRunning == true);
@@ -18090,9 +18090,10 @@ try{
             await task.RunAsync(ctx, ct);
         }
 
-        private void StopTask(StrategyTabState tab)
+        private void StopTask(StrategyTabState tab, string reason = "unspecified")
         {
             if (tab == null) return;
+            Log($"[TASK][STATE] tab={tab.Name} | run={tab.RunId} | running={(tab.IsRunning ? 1 : 0)}->0 | reason={reason}");
             try { tab.TaskCts?.Cancel(); } catch { }
             tab.TaskCts = null;
             tab.ActiveTask = null;
@@ -18102,13 +18103,13 @@ try{
 
         private void StopActiveTask()
         {
-            if (_activeTab != null) StopTask(_activeTab);
+            if (_activeTab != null) StopTask(_activeTab, "stop-active");
         }
 
         private void StopAllTasks()
         {
             foreach (var tab in _strategyTabs.Where(t => t.IsRunning).ToList())
-                StopTask(tab);
+                StopTask(tab, "stop-all");
         }
 
         private void StopAllTasksAndRelease()
@@ -18330,6 +18331,10 @@ try{
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
                         _cooldown = false;
+                        var endReason = t.IsFaulted
+                            ? "task-faulted"
+                            : (t.IsCanceled ? "task-canceled" : "task-completed");
+                        Log($"[TASK][STATE] tab={tabRef.Name} | run={runIdRef} | running={(tabRef.IsRunning ? 1 : 0)}->0 | reason={endReason}");
                         tabRef.TaskCts = null;
                         tabRef.ActiveTask = null;
                         tabRef.RunningTask = null;
@@ -18397,7 +18402,7 @@ try{
                 var activeTab = _activeTab;
                 if (activeTab == null) return;
 
-                StopTask(activeTab);
+                StopTask(activeTab, "user-stop");
                 _ = Web?.ExecuteScriptAsync($"window.__cw_startPush && window.__cw_startPush({_cwPushMs});");
 
                 if (!IsAnyTabRunning())

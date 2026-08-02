@@ -35,6 +35,59 @@
     return context;
   }
 
+  function openProviderFromWrapper() {
+    try {
+      const href = String(location.href || "");
+      if (/\/player\//i.test(href))
+        return { ok: false, reason: "not-wrapper" };
+      const nodes = Array.from(document.querySelectorAll(
+        "a[href],button,[role=button],[onclick],[data-game-code],[data-gamecode],[data-code],li,div"
+      ));
+      let best = null;
+      let bestScore = 0;
+      for (const node of nodes) {
+        const text = String(node.innerText || node.textContent || "").replace(/\s+/g, " ").trim();
+        const signal = [
+          node.getAttribute?.("href"),
+          node.getAttribute?.("onclick"),
+          node.getAttribute?.("data-game-code"),
+          node.getAttribute?.("data-gamecode"),
+          node.getAttribute?.("data-code")
+        ].filter(Boolean).join(" ");
+        let score = 0;
+        if (/AWC_S/i.test(signal)) score += 300;
+        if (/SEXY/i.test(signal) && /BACCARAT|CASINO/i.test(signal + " " + text)) score += 180;
+        if (/^(TRUYỀN THỐNG|TRUYEN THONG|TRADITIONAL)$/i.test(text)) score += 90;
+        if (/BACCARAT|SEXY CASINO/i.test(text)) score += 70;
+        if (text.length > 80) score -= 80;
+        try {
+          const rect = node.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          if (rect.width < 4 || rect.height < 4 || style.display === "none" || style.visibility === "hidden")
+            score = 0;
+        } catch (_) { score = 0; }
+        if (score > bestScore) {
+          best = node;
+          bestScore = score;
+        }
+      }
+      if (!best || bestScore < 70)
+        return { ok: false, reason: "provider-control-not-found" };
+      const target = best.closest?.("a[href],button,[role=button],[onclick]") ||
+        best.querySelector?.("a[href],button,[role=button],[onclick]") || best;
+      target.scrollIntoView?.({ block: "center", inline: "center" });
+      target.click();
+      return {
+        ok: true,
+        reason: "provider-control-clicked",
+        score: bestScore,
+        text: String(target.innerText || target.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80)
+      };
+    } catch (error) {
+      return { ok: false, reason: "provider-control-click-error", error: String(error?.message ?? error) };
+    }
+  }
+
   // Watchdog này chạy ở controller/top frame, không phải iframe game authority.
   // Vì vậy khi singleBacTable bị unload và chỉ còn gamehall, Extension vẫn nhận
   // được context để service worker khởi động luồng vào lại bàn.
@@ -144,6 +197,8 @@
           raw = await window.__cw_goBaccaratHall();
         else if (command === "load_table" && typeof window.__cw_loadBaccaratTable === "function")
           raw = await window.__cw_loadBaccaratTable(request);
+        else if (command === "open_provider")
+          raw = JSON.stringify(openProviderFromWrapper());
         if (raw) {
           try { result = JSON.parse(String(raw)); }
           catch (_) { result = { ok: String(raw).indexOf("err:") !== 0, reason: String(raw) }; }

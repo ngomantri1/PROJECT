@@ -46,6 +46,21 @@ function sendRecoveryBridgeDiagnostic(event, detail = {}) {
   }).catch(() => {});
 }
 
+function readSessionExpiredReason() {
+  try {
+    const href = String(location.href || "");
+    const bodyClass = String(document.body?.className || "");
+    const bodyText = String(document.body?.innerText || document.body?.textContent || "").slice(0, 1200);
+    if (/[?&]status=1059(?:&|$)/i.test(href)) return "provider-status-1059";
+    if (/session(?:%20|\s)+is(?:%20|\s)+expired|please(?:%20|\s)+relogin/i.test(href) ||
+        /session\s+is\s+expired|please\s+relogin/i.test(bodyText))
+      return "provider-session-expired";
+    if (/\bmaintenance\b/i.test(bodyClass) && /\blogout\b/i.test(bodyClass))
+      return "maintenance-logout";
+  } catch (_) {}
+  return "";
+}
+
 // Đây là heartbeat độc lập với legacy push. Khi singleBacTable bị treo/ẩn,
 // legacy tick có thể vẫn nhỏ giọt từ frame cũ nên không thể dùng tick để biết
 // game còn sống. Content script chạy trong từng frame và biết chính xác URL
@@ -61,8 +76,10 @@ function readFrameRecoveryContext() {
     const gameVisible = isShown(gameFrame);
     const hallVisible = isShown(hallFrame);
     let kind = "";
+    const sessionExpiredReason = readSessionExpiredReason();
 
-    if (/\/player\/singlebactable\.jsp/i.test(lowHref)) kind = "GAME_TABLE";
+    if (sessionExpiredReason) kind = "SESSION_EXPIRED";
+    else if (/\/player\/singlebactable\.jsp/i.test(lowHref)) kind = "GAME_TABLE";
     else if (/\/player\/gamehall(?:backtogame)?\.jsp/i.test(lowHref)) kind = "GAME_HALL";
     else if (gameVisible) kind = "GAME_TABLE";
     else if (hallVisible) kind = "GAME_HALL";
@@ -71,6 +88,7 @@ function readFrameRecoveryContext() {
 
     return {
       kind,
+      reason: sessionExpiredReason,
       href,
       controller: gameFrame || hallFrame ? 1 : 0,
       isProviderController: gameFrame || hallFrame ? 1 : 0,
@@ -88,6 +106,20 @@ function readFrameRecoveryContext() {
 }
 
 sendRecoveryBridgeDiagnostic("recovery-frame-context-bridge-boot");
+const bootSessionExpiredReason = readSessionExpiredReason();
+if (bootSessionExpiredReason) {
+  sendRecoveryBridgeDiagnostic("recovery-session-expired-detected", {
+    reason: bootSessionExpiredReason
+  });
+  chrome.runtime.sendMessage({
+    type: "recovery_session_expired",
+    payload: {
+      href: location.href,
+      reason: bootSessionExpiredReason,
+      observedAtUtc: new Date().toISOString()
+    }
+  }).catch(() => {});
+}
 
 function sendRawLegacyTick(rawTick) {
   if (typeof rawTick !== "string" || !rawTick) return;

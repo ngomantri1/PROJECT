@@ -1,0 +1,50 @@
+# ToolBet v2 — copy thanh config.yaml
+
+site:
+  # Chi cac web trong src/sites (vipbet389, 222b) — chon tren panel login
+  url: "https://vipbet389.com/"
+  cdp_url: "http://localhost:9222"
+
+game:
+  table_name: "Baccarat C01"
+  provider: "ae_sexy"
+  table_id: null
+  skip_tie: true
+
+betting:
+  # Muc 0 = van theo doi (khong dat chip), van tinh thang/thua trong nhom
+  stakes: [0, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 220, 240, 260, 280, 300]
+  default_side: "player"
+  auto_bet: false
+  stop_loss: 500.0
+  take_profit: 5000.0
+  group_take_profit: 80.0
+  group_stop_loss: 200.0
+  # loss_up_win_reset | win_up_loss_reset | both_up | win_up_loss_hold
+  progression_mode: loss_up_win_reset
+  # Mode1: thua ve 0 cho thang; thang o 0 moi nhay gỡ theo loss_count
+  loss_watch_recover: false
+  tie_nurture:
+    enabled: false
+    preset: thu_can_bang
+    gap_min: 18
+    gap_max: 25
+    max_bets: 3
+    stake: 100
+    payout: 8.0
+    session_stop_loss: 3000.0
+
+patterns:
+  mau_1_1: true
+  mau_bet_2: true
+
+# So van dieu kien (2 | 3 | 4) — 1-1 = xen ke N van; BetxN = N van cung mau
+pattern_lengths:
+  mau_1_1: 2
+  mau_bet_2: 2
+
+database:
+  path: "data/toolbet.db"
+
+logging:
+  level: "INFO"

@@ -12,6 +12,7 @@ const legacyAuthorities = new Map();
 // packet network hiện tại nên có thể reset; bookmark mới là bàn cần quay lại.
 const recoveryBookmarks = new Map();
 const recoveryEntryUrls = new Map();
+const recoveryWrapperUrls = new Map();
 const recoveryFlows = new Map();
 const recoveryControllers = new Map();
 const recoveryProviderContexts = new Map();
@@ -32,10 +33,11 @@ const RECOVERY_COMMAND_TIMEOUT_MS = 5000;
 const RECOVERY_ENTRY_NAVIGATION_WAIT_MS = 3000;
 const RECOVERY_RELOAD_SETTLE_MS = 1000;
 const RECOVERY_RELOAD_WAIT_MS = 15000;
-const RECOVERY_RELOAD_COOLDOWN_MS = 30000;
+const RECOVERY_RELOAD_COOLDOWN_MS = 10000;
 const RECOVERY_BOOKMARK_STORAGE_PREFIX = "bca-recovery-bookmark:";
 const RECOVERY_GAME_CONTEXT_STORAGE_PREFIX = "bca-game-table-context:";
 const RECOVERY_ENTRY_URL_STORAGE_PREFIX = "bca-recovery-entry-url:";
+const RECOVERY_WRAPPER_URL_STORAGE_PREFIX = "bca-recovery-wrapper-url:";
 
 function sendRecoveryWatchLog(tabId, event, detail = {}, minIntervalMs = 3000) {
   const now = Date.now();
@@ -71,6 +73,39 @@ function rememberRecoveryEntry(tabId, href) {
   if (recoveryEntryUrls.get(tabId) === entryUrl) return;
   recoveryEntryUrls.set(tabId, entryUrl);
   saveRecoverySessionValue(recoveryStorageKey(RECOVERY_ENTRY_URL_STORAGE_PREFIX, tabId), entryUrl);
+}
+
+function isRecoveryWrapperUrl(href) {
+  try {
+    const url = new URL(String(href ?? ""));
+    if (!/^https?:$/i.test(url.protocol)) return false;
+    const lowPath = String(url.pathname ?? "").toLowerCase();
+    if (/\/player\//i.test(lowPath) || /\/error(?:\/|$)/i.test(lowPath)) return false;
+    return /\/home\/thirdg\.html$/i.test(lowPath) ||
+      /(^|\.)new\.wencheng\.cc$/i.test(String(url.hostname ?? ""));
+  } catch (_) { return false; }
+}
+
+function rememberRecoveryWrapper(tabId, href) {
+  const wrapperUrl = String(href ?? "");
+  if (!isRecoveryWrapperUrl(wrapperUrl)) return;
+  if (recoveryWrapperUrls.get(tabId) === wrapperUrl) return;
+  recoveryWrapperUrls.set(tabId, wrapperUrl);
+  saveRecoverySessionValue(recoveryStorageKey(RECOVERY_WRAPPER_URL_STORAGE_PREFIX, tabId), wrapperUrl);
+  sendRecoveryWatchLog(tabId, "recovery-wrapper-remembered", {
+    href: safeUrl(wrapperUrl)
+  }, 10000);
+}
+
+async function getRecoveryWrapper(tabId) {
+  let wrapperUrl = recoveryWrapperUrls.get(tabId) ?? "";
+  if (!wrapperUrl) {
+    wrapperUrl = String(await loadRecoverySessionValue(
+      recoveryStorageKey(RECOVERY_WRAPPER_URL_STORAGE_PREFIX, tabId)
+    ) ?? "");
+    if (wrapperUrl) recoveryWrapperUrls.set(tabId, wrapperUrl);
+  }
+  return isRecoveryWrapperUrl(wrapperUrl) ? wrapperUrl : "";
 }
 
 function armRecoveryFromGameTick(tabId) {
@@ -303,6 +338,8 @@ function bookmarkMatchesTick(bookmark, tick) {
 
 async function findLiveRecoveryController(tabId) {
   const frames = await chrome.webNavigation.getAllFrames({ tabId });
+  const topFrame = (frames ?? []).find((frame) => Number(frame?.frameId ?? -1) === 0);
+  if (topFrame?.url) rememberRecoveryWrapper(tabId, topFrame.url);
   const candidates = (frames ?? []).filter((frame) =>
     /\/player\/webMain\.jsp/i.test(String(frame?.url ?? "")));
   if (!candidates.length) return null;
@@ -320,43 +357,15 @@ async function findLiveRecoveryController(tabId) {
 }
 
 async function recoverMissingController(flow, command) {
-  let entryUrl = recoveryEntryUrls.get(flow.tabId) ?? null;
-  if (!entryUrl) {
-    entryUrl = await loadRecoverySessionValue(
-      recoveryStorageKey(RECOVERY_ENTRY_URL_STORAGE_PREFIX, flow.tabId)
-    );
-    if (entryUrl) recoveryEntryUrls.set(flow.tabId, entryUrl);
-  }
-  if (!/\/player\/webMain\.jsp/i.test(String(entryUrl ?? ""))) {
-    failRecovery(flow, "live-webmain-controller-not-found-no-entry-url");
+  // Không điều hướng webMain.jsp thành top-level: URL này mang jsessionid của
+  // provider và sẽ mắc kẹt ở maintenance.logout khi session đã hết hạn.
+  if (Number(flow.reloadAttempts ?? 0) < 1) {
+    await reloadRecoveryTab(flow, `missing-controller:${command}`);
     return;
   }
-  flow.entryNavigationAttempts = Number(flow.entryNavigationAttempts ?? 0) + 1;
-  if (flow.entryNavigationAttempts > RECOVERY_MAX_ATTEMPTS) {
-    failRecovery(flow, "entry-navigation-attempt-limit");
+  if (retryControllerAfterReload(flow, "missing-controller-after-wrapper-refresh"))
     return;
-  }
-  flow.state = "entry-navigation";
-  try {
-    await chrome.tabs.update(flow.tabId, { url: entryUrl });
-    sendDiagnostic(flow.tabId, "recovery-entry-navigation", {
-      command,
-      attempt: flow.entryNavigationAttempts,
-      entryHref: safeUrl(entryUrl),
-      request: flow.request
-    });
-    setTimeout(() => {
-      if (recoveryFlows.get(flow.tabId) !== flow || flow.state !== "entry-navigation") return;
-      failRecovery(flow, "entry-navigation-recheck");
-    }, RECOVERY_ENTRY_NAVIGATION_WAIT_MS);
-  } catch (error) {
-    sendDiagnostic(flow.tabId, "recovery-entry-navigation-failed", {
-      command,
-      error: String(error?.message ?? error),
-      entryHref: safeUrl(entryUrl)
-    });
-    failRecovery(flow, "entry-navigation-failed");
-  }
+  failRecovery(flow, "live-webmain-controller-not-found-after-wrapper-refresh");
 }
 
 function clearRecoveryReloadTimeout(flow) {
@@ -438,7 +447,29 @@ async function reloadRecoveryTab(flow, reason) {
     resumeRecoveryAfterReload(flow, "reload-timeout");
   }, RECOVERY_RELOAD_WAIT_MS);
   try {
-    await chrome.tabs.reload(flow.tabId, { bypassCache: false });
+    const wrapperUrl = await getRecoveryWrapper(flow.tabId);
+    const tab = await chrome.tabs.get(flow.tabId);
+    const currentUrl = String(tab?.url ?? "");
+    if (wrapperUrl) {
+      sendDiagnostic(flow.tabId, "recovery-wrapper-refresh-start", {
+        reason,
+        mode: currentUrl === wrapperUrl ? "reload-wrapper" : "navigate-wrapper",
+        wrapperHref: safeUrl(wrapperUrl),
+        currentHref: safeUrl(currentUrl),
+        request: flow.request
+      });
+      if (currentUrl === wrapperUrl)
+        await chrome.tabs.reload(flow.tabId, { bypassCache: false });
+      else
+        await chrome.tabs.update(flow.tabId, { url: wrapperUrl });
+    } else {
+      sendDiagnostic(flow.tabId, "recovery-wrapper-missing-fallback-reload", {
+        reason,
+        currentHref: safeUrl(currentUrl),
+        request: flow.request
+      });
+      await chrome.tabs.reload(flow.tabId, { bypassCache: false });
+    }
   } catch (error) {
     sendDiagnostic(flow.tabId, "recovery-reload-failed", {
       reason,
@@ -461,6 +492,35 @@ async function sendRecoveryCommand(flow, command) {
     recoveryCheckLockedUntil.set(flow.tabId, Date.now() + RECOVERY_CHECK_LOCK_MS);
     sendDiagnostic(flow.tabId, "recovery-check-lock", { command, lockedMs: RECOVERY_CHECK_LOCK_MS });
   }
+  if (command === "open_provider") {
+    flow.controllerFrameId = 0;
+    try {
+      await chrome.tabs.sendMessage(flow.tabId, {
+        type: "execute_legacy_recovery",
+        payload: { commandId, command, request: flow.request }
+      }, { frameId: 0 });
+      sendDiagnostic(flow.tabId, "recovery-wrapper-command", {
+        command,
+        commandId,
+        frameId: 0,
+        request: flow.request
+      });
+      flow.commandTimeout = setTimeout(() => {
+        if (recoveryFlows.get(flow.tabId) !== flow || flow.commandId !== commandId) return;
+        if (!retryControllerAfterReload(flow, "open-provider-timeout"))
+          failRecovery(flow, "open-provider-timeout");
+      }, RECOVERY_COMMAND_TIMEOUT_MS);
+    } catch (error) {
+      sendDiagnostic(flow.tabId, "recovery-wrapper-command-failed", {
+        command,
+        error: String(error?.message ?? error),
+        request: flow.request
+      });
+      if (!retryControllerAfterReload(flow, "open-provider-delivery-failed"))
+        failRecovery(flow, "open-provider-delivery-failed");
+    }
+    return;
+  }
   // Controller là webMain.jsp (có thể là iframe sâu), không nhất thiết frame 0.
   let controller = null;
   try {
@@ -473,6 +533,14 @@ async function sendRecoveryCommand(flow, command) {
   }
   if (!controller || recoveryFlows.get(flow.tabId) !== flow) {
     if (Number(flow.reloadAttempts ?? 0) > 0) {
+      // Lần 1 có thể chỉ mở nhóm "Truyền Thống"; lần 2 mới thấy card AWC/Sexy.
+      if (Number(flow.wrapperProviderAttempts ?? 0) < 2 &&
+          Date.now() < Number(flow.reloadReadyDeadline ?? 0)) {
+        flow.wrapperProviderAttempts = Number(flow.wrapperProviderAttempts ?? 0) + 1;
+        flow.state = "open-provider";
+        sendRecoveryCommand(flow, "open_provider");
+        return;
+      }
       if (retryControllerAfterReload(flow, "controller-not-ready"))
         return;
       failRecovery(flow, "controller-not-ready-after-reload");
@@ -628,12 +696,33 @@ function handleRecoveryResult(tabId, payload) {
     hallFrameVisible: result?.hallFrameVisible ? 1 : 0,
     request: flow.request
   });
+  if (command === "open_provider") {
+    sendDiagnostic(tabId, "recovery-wrapper-command-result", {
+      ok: result?.ok ? 1 : 0,
+      reason: String(result?.reason ?? ""),
+      request: flow.request
+    });
+    if (retryControllerAfterReload(flow, result?.ok ? "provider-opened" : "provider-open-missed"))
+      return;
+    failRecovery(flow, `open-provider:${String(result?.reason ?? "failed")}`);
+    return;
+  }
   if (!result?.ok) {
     failRecovery(flow, `${command}:${String(result?.reason ?? "failed")}`);
     return;
   }
   if (command === "detect") {
     const kind = String(result?.kind ?? "").toUpperCase();
+    if (kind === "SESSION_EXPIRED") {
+      if (Number(flow.reloadAttempts ?? 0) < 1) {
+        void reloadRecoveryTab(flow, "detect-session-expired");
+        return;
+      }
+      if (retryControllerAfterReload(flow, "session-expired-after-wrapper-refresh"))
+        return;
+      failRecovery(flow, "session-expired-after-wrapper-refresh");
+      return;
+    }
     if (kind === "RETURN_TO_GAME" || result?.returnToGame === 1 || result?.returnToGame === true) {
       flow.state = "resume-game";
       sendRecoveryCommand(flow, "resume_game");
@@ -990,6 +1079,7 @@ chrome.debugger.onDetach.addListener((source) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url) rememberRecoveryWrapper(tabId, changeInfo.url);
   if (changeInfo.status === "loading") {
     // Không xóa recoveryBookmarks: chính navigation/disconnect là lúc cần nhớ
     // bàn cũ để quay lại. Bookmark chỉ được thay bởi tick authority mới.
@@ -1011,6 +1101,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   legacyAuthorities.delete(tabId);
   recoveryBookmarks.delete(tabId);
   recoveryEntryUrls.delete(tabId);
+  recoveryWrapperUrls.delete(tabId);
   recoveryFlows.delete(tabId);
   recoveryControllers.delete(tabId);
   recoveryProviderContexts.delete(tabId);
@@ -1024,6 +1115,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   clearRecoverySessionValue(recoveryStorageKey(RECOVERY_BOOKMARK_STORAGE_PREFIX, tabId));
   clearRecoverySessionValue(recoveryStorageKey(RECOVERY_GAME_CONTEXT_STORAGE_PREFIX, tabId));
   clearRecoverySessionValue(recoveryStorageKey(RECOVERY_ENTRY_URL_STORAGE_PREFIX, tabId));
+  clearRecoverySessionValue(recoveryStorageKey(RECOVERY_WRAPPER_URL_STORAGE_PREFIX, tabId));
 });
 
 chrome.runtime.onMessage.addListener((message, sender) => {
@@ -1043,6 +1135,22 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     sendRecoveryWatchLog(tabId, "legacy-recovery-request-ignored-pull-watchdog", {
       reason: String(message.payload?.recovery?.reason ?? "unknown")
     });
+    return;
+  }
+  if (message.type === "recovery_session_expired") {
+    const tabId = sender.tab?.id;
+    if (tabId === undefined) return;
+    sendDiagnostic(tabId, "recovery-session-expired-signal", {
+      href: safeUrl(message.payload?.href),
+      reason: String(message.payload?.reason ?? "session-expired"),
+      frameId: Number(sender.frameId ?? -1)
+    });
+    void startRecovery(
+      tabId,
+      recoveryBookmarks.get(tabId) ?? {},
+      "session-expired-immediate",
+      Number(sender.frameId ?? -1)
+    );
     return;
   }
   if (message.type === "legacy_recovery_result") {

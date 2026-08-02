@@ -14343,6 +14343,8 @@
         window.__cw_detectBaccaratContext = function () {
             try {
                 var href = String(location.href || ''), lowHref = href.toLowerCase();
+                var bodyClass = String(document.body && document.body.className || '');
+                var bodyText = String(document.body && (document.body.innerText || document.body.textContent) || '').slice(0, 1200);
                 var cards = domScanBaccaratCards(true) || [];
                 var hallFrame = document.querySelector('#iframeGameHall,iframe[src*="gamehall.jsp" i]');
                 var gameFrame = document.querySelector('#iframeGame,iframe[src*="singleBacTable.jsp" i]');
@@ -14371,7 +14373,12 @@
                 var hallHref = frameHref(hallFrame), gameHref = frameHref(gameFrame);
                 var isController = !!(hallFrame || gameFrame);
                 var kind = 'PROVIDER_ENTRY';
-                if (offline || reconnecting) kind = 'DISCONNECTED';
+                var sessionExpired = /[?&]status=1059(?:&|$)/i.test(href) ||
+                    /session(?:%20|\s)+is(?:%20|\s)+expired|please(?:%20|\s)+relogin/i.test(href) ||
+                    /session\s+is\s+expired|please\s+relogin/i.test(bodyText) ||
+                    (/\bmaintenance\b/i.test(bodyClass) && /\blogout\b/i.test(bodyClass));
+                if (sessionExpired) kind = 'SESSION_EXPIRED';
+                else if (offline || reconnecting) kind = 'DISCONNECTED';
                 else if (gameVisible) kind = 'GAME_TABLE';
                 else if (hallVisible || cards.length > 1 || lowHref.indexOf('/player/gamehall.jsp') >= 0) kind = 'GAME_HALL';
                 else if (lowHref.indexOf('/player/singlebactable.jsp') >= 0 || __cw_hasCocos()) kind = 'GAME_TABLE';
@@ -14552,7 +14559,7 @@
                         var staleMs = lastTick > 0 ? Date.now() - lastTick : 999999;
                         // GAME_TABLE tick là authority. Sau 3s không còn tick và controller
                         // đã rời bàn, C# sẽ khôi phục theo GAME_HALL -> load_table.
-                        if ((state.kind === 'DISCONNECTED' || state.kind === 'GAME_HALL' || state.kind === 'PROVIDER_ENTRY') && staleMs >= 3000) {
+                        if ((state.kind === 'SESSION_EXPIRED' || state.kind === 'DISCONNECTED' || state.kind === 'GAME_HALL' || state.kind === 'PROVIDER_ENTRY') && staleMs >= 3000) {
                             var lastPost = Number(window.__cw_baccarat_recovery_post_at || 0) || 0;
                             if (Date.now() - lastPost < 3000) return;
                             window.__cw_baccarat_recovery_post_at = Date.now();
