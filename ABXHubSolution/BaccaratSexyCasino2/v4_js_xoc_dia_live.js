@@ -5832,10 +5832,60 @@
     var _domBoardDeltaQueue = [];
     var _domLastDeltaEnqueueSig = '';
     var _domLastDeltaEnqueueAt = 0;
+    var _domBoardJumpCandidateRaw = '';
+    var _domBoardJumpCandidatePrev = '';
+    var _domBoardJumpCandidateSeen = 0;
+    var _domBoardJumpCandidateFirstAt = 0;
+    var _domBoardJumpCandidateLastAt = 0;
     var _domLastAdvanceAt = 0;
     var _domLastAdvanceVersion = 0;
     var _domLastAdvanceEvent = '';
     var _domLastAdvanceSeqLen = 0;
+    function brResetBoardJumpCandidate(reasonTag) {
+        if (_domBoardJumpCandidateRaw) {
+            cwDbg('SEQFLOW', 'board-jump-candidate-reset', {
+                reason: String(reasonTag || ''),
+                raw: _domBoardJumpCandidateRaw,
+                prev: _domBoardJumpCandidatePrev,
+                seen: Number(_domBoardJumpCandidateSeen || 0),
+                ageMs: _domBoardJumpCandidateFirstAt ? (Date.now() - _domBoardJumpCandidateFirstAt) : 0,
+                seqVersion: Number(_domSeqVersion || 0)
+            }, 0, 'board-jump-candidate-reset|' + String(reasonTag || '') + '|' + Number(_domSeqVersion || 0));
+        }
+        _domBoardJumpCandidateRaw = '';
+        _domBoardJumpCandidatePrev = '';
+        _domBoardJumpCandidateSeen = 0;
+        _domBoardJumpCandidateFirstAt = 0;
+        _domBoardJumpCandidateLastAt = 0;
+    }
+    function brObserveBoardJumpCandidate(rawNow, prevCommitted) {
+        var rawClean = brSanitizeSeq(rawNow);
+        var prevClean = brSanitizeSeq(prevCommitted);
+        var nowMs = Date.now();
+        var sameCandidate = (
+            rawClean &&
+            rawClean === _domBoardJumpCandidateRaw &&
+            prevClean === _domBoardJumpCandidatePrev &&
+            _domBoardJumpCandidateLastAt > 0 &&
+            (nowMs - _domBoardJumpCandidateLastAt) <= 2500
+        );
+        if (sameCandidate) {
+            _domBoardJumpCandidateSeen = Number(_domBoardJumpCandidateSeen || 0) + 1;
+        } else {
+            _domBoardJumpCandidateRaw = rawClean;
+            _domBoardJumpCandidatePrev = prevClean;
+            _domBoardJumpCandidateSeen = rawClean ? 1 : 0;
+            _domBoardJumpCandidateFirstAt = rawClean ? nowMs : 0;
+        }
+        _domBoardJumpCandidateLastAt = rawClean ? nowMs : 0;
+        return {
+            raw: rawClean,
+            prev: prevClean,
+            seen: Number(_domBoardJumpCandidateSeen || 0),
+            ageMs: _domBoardJumpCandidateFirstAt ? (nowMs - _domBoardJumpCandidateFirstAt) : 0,
+            tail: rawClean ? rawClean.charAt(rawClean.length - 1) : ''
+        };
+    }
     function brResetBoardDeltaQueue(reasonTag) {
         if (_domBoardDeltaQueue.length) {
             cwDbg('SEQFLOW', 'delta-queue-reset', {
@@ -5922,6 +5972,7 @@
         _domResetSeedTargetRaw = '';
         _domResetSeedConsumedRaw = '';
         brResetActiveSeedTailTracker();
+        brResetBoardJumpCandidate('seed-reset');
         brResetBoardDeltaQueue('seed-reset');
     }
     function brArmShoeResetByNoBoard(reason) {
@@ -6495,6 +6546,7 @@
         var clean = brSanitizeSeq(delta);
         if (!clean)
             return false;
+        brResetBoardJumpCandidate('append-managed');
         var beforeSeq = String(_domBeadSeqManaged || '');
         var beforeState = {
             managed: beforeSeq,
@@ -6541,16 +6593,30 @@
         brPublishSeqState();
         return true;
     }
-    function brBuildSeqSnapshotContract(seqEvent) {
+    function brBuildSeqSnapshotContract(seqEvent, seqValue, seqVersionValue) {
         var evt = String(seqEvent || '');
         var append = brSanitizeSeq(_domSeqAppend || '');
         var mode = 'hold';
+        var isFullRebase = /table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init|count-guard-rebase/i.test(evt);
         if (/^append|dom-baccarat-extend|append-delta-queue|append-reconcile-bead/i.test(evt)) {
             mode = append ? 'append' : 'hold';
-        } else if (/table-switch-reset|table-switch-bead-authority|table-switch-tiny-board-bootstrap|short-board-bootstrap-authority|hydrate-init|count-guard-rebase/i.test(evt)) {
+        } else if (isFullRebase) {
             mode = 'full-rebase';
         } else if (/table-switch-wait-bead|shoe-reset-arm|board-empty|no-board|post-reset-hold|reset-seed-wait|no-change|hold/i.test(evt)) {
             mode = 'hold';
+        }
+        // Một lần đọc phụ có thể đổi seqEvent thành no-change trước nhịp push.
+        // Khôi phục chính xác phần chưa push từ version để không nuốt kết quả.
+        var seqNow = brSanitizeSeq(seqValue != null ? seqValue : _domBeadSeqManaged);
+        var verNow = Number(seqVersionValue != null ? seqVersionValue : _domSeqVersion) || 0;
+        var lastPushedVer = brGetLastPushedSeqVersion();
+        var unsentCount = verNow - lastPushedVer;
+        if (!isFullRebase &&
+            lastPushedVer > 0 &&
+            unsentCount > 0 &&
+            unsentCount <= seqNow.length) {
+            mode = 'append';
+            append = seqNow.slice(seqNow.length - unsentCount);
         }
         if (mode !== 'append')
             append = '';
@@ -6698,7 +6764,8 @@
                 brPublishSeqState();
                 return _domBeadSeqManaged;
             }
-            if (raw.length < 2) {
+            var seedBuildSource = String(_cwSnapshotBuildSource || '');
+            if (raw.length < 2 && seedBuildSource !== 'push') {
                 _domSeqEvent = 'short-board-bootstrap-wait-len1';
                 _domSeqAppend = '';
                 _domBeadSeqPrevRaw = '';
@@ -6718,7 +6785,6 @@
                 return _domBeadSeqManaged;
             }
             // Tránh race push/pull: chỉ cho phép seed-step mutate ở luồng push khi push đang chạy.
-            var seedBuildSource = String(_cwSnapshotBuildSource || '');
             if (seedBuildSource !== 'push') {
                 _domSeqEvent = 'reset-seed-wait-push';
                 _domSeqAppend = '';
@@ -7184,6 +7250,7 @@
 
         if (prev.indexOf(raw) === 0) {
             brResetBoardDeltaQueue('raw-shrink-prefix');
+            brResetBoardJumpCandidate('raw-shrink-prefix');
             if (_domShoeResetPending && raw.length <= 2) {
                 brSeqTrace('WARN_RESET_SWALLOWED_BY_PREFIX', raw, prev, beforeState, {
                     warning: 1,
@@ -7247,19 +7314,76 @@
         if (ovJump >= 5) {
             var jumpDelta = raw.slice(ovJump);
             if (jumpDelta.length > 0 && jumpDelta.length <= 2) {
-                cwDbg('SEQFLOW', 'raw-jump-overlap-authority-blocked', {
+                _domBeadSeqPrevRaw = raw;
+                var jumpApplied = brAppendManaged(jumpDelta, 'append-raw-jump-overlap');
+                cwDbg('SEQFLOW', 'raw-jump-overlap-authority-applied', {
                     raw: raw,
                     prev: String(prev || ''),
                     managed: managedNow,
                     overlap: ovJump,
                     delta: jumpDelta,
+                    applied: jumpApplied ? 1 : 0,
                     seqVersion: Number(_domSeqVersion || 0),
                     seqEvent: String(_domSeqEvent || '')
-                }, 0, 'raw-jump-overlap-authority-blocked|' + raw.length + '|' + ovJump + '|' + Number(_domSeqVersion || 0));
+                }, 0, 'raw-jump-overlap-authority-applied|' + raw.length + '|' + ovJump + '|' + Number(_domSeqVersion || 0));
+                if (!jumpApplied) {
+                    _domSeqEvent = 'no-change';
+                    _domSeqAppend = '';
+                    brPublishSeqState();
+                }
+                brSeqTrace('return-board-jump-overlap', raw, prev, beforeState, {
+                    overlap: ovJump,
+                    delta: jumpDelta,
+                    applied: jumpApplied ? 1 : 0
+                }, 0, 'return-board-jump-overlap|' + raw.length + '|' + ovJump);
+                return _domBeadSeqManaged;
             }
         }
         brResetBoardDeltaQueue('board-jump-hold');
-        _domBeadSeqPrevRaw = raw;
+        var jumpCandidate = brObserveBoardJumpCandidate(raw, prev);
+        var jumpRatio = raw.length / Math.max(1, prev.length);
+        var canConfirmJumpTail = (
+            !_domShoeResetPending &&
+            !_domTableSwitchWaitBeadPending &&
+            prev.length >= 10 &&
+            raw.length >= 5 &&
+            jumpRatio >= 0.55 &&
+            raw.length <= (prev.length + 3) &&
+            jumpCandidate.seen >= 2 &&
+            jumpCandidate.ageMs >= 150 &&
+            jumpCandidate.ageMs <= 2500 &&
+            (jumpCandidate.tail === 'B' || jumpCandidate.tail === 'P' || jumpCandidate.tail === 'T')
+        );
+        if (canConfirmJumpTail) {
+            var confirmedJumpTail = jumpCandidate.tail;
+            var confirmedJumpSeen = jumpCandidate.seen;
+            var confirmedJumpAgeMs = jumpCandidate.ageMs;
+            _domBeadSeqPrevRaw = raw;
+            var confirmedJumpApplied = brAppendManaged(confirmedJumpTail, 'append-raw-jump-confirmed');
+            brSeqDiagPost('raw-jump-confirmed-tail', {
+                raw: raw,
+                rawLen: raw.length,
+                prevRaw: String(prev || ''),
+                prevLen: String(prev || '').length,
+                managedBefore: managedNow,
+                managedBeforeLen: managedNow.length,
+                confirmedTail: confirmedJumpTail,
+                seen: confirmedJumpSeen,
+                ageMs: confirmedJumpAgeMs,
+                ratio: jumpRatio,
+                applied: confirmedJumpApplied ? 1 : 0,
+                seqVersion: Number(_domSeqVersion || 0),
+                seqEvent: String(_domSeqEvent || '')
+            }, 0, 'raw-jump-confirmed-tail|' + String(prev || '') + '|' + raw + '|' + Number(_domSeqVersion || 0));
+            brSeqTrace('return-board-jump-confirmed', raw, prev, beforeState, {
+                confirmedTail: confirmedJumpTail,
+                seen: confirmedJumpSeen,
+                ageMs: confirmedJumpAgeMs,
+                ratio: jumpRatio,
+                applied: confirmedJumpApplied ? 1 : 0
+            }, 0, 'return-board-jump-confirmed|' + raw.length + '|' + Number(_domSeqVersion || 0));
+            return _domBeadSeqManaged;
+        }
         _domSeqEvent = 'board-jump-hold';
         _domSeqAppend = '';
         cwDbg('SEQ', 'board-jump-hold-managed', {
@@ -7270,6 +7394,9 @@
             seqVersion: _domSeqVersion,
             overlapPrevRaw: brOverlapSuffixPrefix(String(prev || ''), raw),
             overlapManagedRaw: brOverlapSuffixPrefix(managedNow, raw),
+            candidateSeen: Number(jumpCandidate.seen || 0),
+            candidateAgeMs: Number(jumpCandidate.ageMs || 0),
+            candidateRatio: jumpRatio,
             queueRemain: _domBoardDeltaQueue.length
         }, 1200, 'board-jump-hold|' + managedNow.length + '|' + raw.length + '|' + _domSeqVersion);
         brSeqDiagPost('raw-jump-hold', {
@@ -7281,6 +7408,9 @@
             managedLen: managedNow.length,
             overlapPrevRaw: brOverlapSuffixPrefix(String(prev || ''), raw),
             overlapManagedRaw: brOverlapSuffixPrefix(managedNow, raw),
+            candidateSeen: Number(jumpCandidate.seen || 0),
+            candidateAgeMs: Number(jumpCandidate.ageMs || 0),
+            candidateRatio: jumpRatio,
             queueRemain: Number(_domBoardDeltaQueue.length || 0),
             seqVersion: Number(_domSeqVersion || 0),
             seqEvent: String(_domSeqEvent || ''),
@@ -14943,7 +15073,7 @@
                 }
             } catch (_) {}
             if (!seqMode || !seqAppend) {
-                var seqContract = brBuildSeqSnapshotContract(seqEvent);
+                var seqContract = brBuildSeqSnapshotContract(seqEvent, seq, seqVersion);
                 if (!seqMode)
                     seqMode = String(seqContract.mode || '');
                 if (!seqAppend)
@@ -14998,6 +15128,21 @@
                             advanceAgeMs: advAgeMs
                         }, 0, 'snapshot-rewrite-nochange|' + buildSource + '|' + buildId + '|' + snapSeqVerNow + '|' + advEvt);
                     }
+                }
+            } catch (_) {}
+            try {
+                // seqEvent/seqMode có thể đến từ cache cũ. Contract cuối cùng phải
+                // ưu tiên mọi version chưa được push để phân biệt result tick.
+                var finalSeqContract = brBuildSeqSnapshotContract(seqEvent, seq, seqVersion);
+                if (String(finalSeqContract.mode || '') === 'append' && String(finalSeqContract.append || '')) {
+                    seqMode = 'append';
+                    seqAppend = String(finalSeqContract.append || '');
+                } else if (String(finalSeqContract.mode || '') === 'full-rebase') {
+                    seqMode = 'full-rebase';
+                    seqAppend = '';
+                } else if (!seqMode) {
+                    seqMode = String(finalSeqContract.mode || 'hold');
+                    seqAppend = '';
                 }
             } catch (_) {}
 

@@ -123,12 +123,31 @@ function sendLegacyScout(rawScout) {
   } catch (_) {}
 }
 
+function sendLegacySeqDiagnostic(value) {
+  try {
+    chrome.runtime.sendMessage({
+      type: "probe_diagnostic",
+      payload: {
+        event: "seq-diag",
+        reason: String(value?.reason ?? ""),
+        rev: String(value?.rev ?? ""),
+        session: String(value?.session ?? ""),
+        data: value?.data ?? {},
+        href: location.href,
+        framePath: frameKey,
+        observedAtUtc: new Date().toISOString()
+      }
+    }).catch(() => {});
+  } catch (_) {}
+}
+
 function receiveLegacyRaw(raw) {
   if (typeof raw !== "string" || !raw) return;
   try {
     const value = JSON.parse(raw);
     if (value?.abx === "tick") sendRawLegacyTick(raw);
     else if (value?.abx === "frame_scout") sendLegacyScout(raw);
+    else if (value?.abx === "seq_diag") sendLegacySeqDiagnostic(value);
     else if (value?.abx === "table_recovery_needed") {
       chrome.runtime.sendMessage({
         type: "legacy_recovery_needed",
@@ -193,6 +212,11 @@ window.addEventListener("message", (event) => {
     try {
       sendLegacyScout(JSON.stringify(event.data));
     } catch (_) {}
+    return;
+  }
+
+  if (event.data?.abx === "seq_diag") {
+    sendLegacySeqDiagnostic(event.data);
     return;
   }
 

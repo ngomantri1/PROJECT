@@ -21,6 +21,7 @@ const recoveryCheckLockedUntil = new Map();
 const recoveryWatchLogAt = new Map();
 const recoveryProbeStates = new Map();
 const recoveryProbeInFlight = new Set();
+const lastRecoveryReloadAt = new Map();
 const RECOVERY_RETRY_DELAY_MS = 1200;
 const RECOVERY_GAME_CONTEXT_WAIT_MS = 12000;
 const RECOVERY_MAX_ATTEMPTS = 3;
@@ -29,6 +30,9 @@ const RECOVERY_START_COOLDOWN_MS = 10000;
 const RECOVERY_CHECK_LOCK_MS = 10000;
 const RECOVERY_COMMAND_TIMEOUT_MS = 5000;
 const RECOVERY_ENTRY_NAVIGATION_WAIT_MS = 3000;
+const RECOVERY_RELOAD_SETTLE_MS = 1000;
+const RECOVERY_RELOAD_WAIT_MS = 15000;
+const RECOVERY_RELOAD_COOLDOWN_MS = 30000;
 const RECOVERY_BOOKMARK_STORAGE_PREFIX = "bca-recovery-bookmark:";
 const RECOVERY_GAME_CONTEXT_STORAGE_PREFIX = "bca-game-table-context:";
 const RECOVERY_ENTRY_URL_STORAGE_PREFIX = "bca-recovery-entry-url:";
@@ -355,6 +359,96 @@ async function recoverMissingController(flow, command) {
   }
 }
 
+function clearRecoveryReloadTimeout(flow) {
+  if (!flow?.reloadTimeout) return;
+  clearTimeout(flow.reloadTimeout);
+  flow.reloadTimeout = null;
+}
+
+function resumeRecoveryAfterReload(flow, source) {
+  if (!flow || recoveryFlows.get(flow.tabId) !== flow ||
+      flow.state !== "reload-wait" || flow.reloadResumeStarted) return;
+  flow.reloadResumeStarted = true;
+  clearRecoveryReloadTimeout(flow);
+  sendDiagnostic(flow.tabId, "recovery-reload-ready", {
+    source,
+    request: flow.request
+  });
+  setTimeout(() => {
+    if (recoveryFlows.get(flow.tabId) !== flow) return;
+    flow.state = "detect";
+    sendRecoveryCommand(flow, "detect");
+  }, RECOVERY_RELOAD_SETTLE_MS);
+}
+
+function retryControllerAfterReload(flow, reason) {
+  if (!flow || recoveryFlows.get(flow.tabId) !== flow ||
+      Number(flow.reloadAttempts ?? 0) < 1 ||
+      Date.now() >= Number(flow.reloadReadyDeadline ?? 0)) return false;
+  clearRecoveryCommandTimeout(flow);
+  flow.state = "reload-controller-wait";
+  sendRecoveryWatchLog(flow.tabId, "recovery-reload-controller-wait", {
+    reason,
+    remainingMs: Math.max(0, Number(flow.reloadReadyDeadline ?? 0) - Date.now()),
+    request: flow.request
+  }, 1500);
+  flow.commandTimeout = setTimeout(() => {
+    if (recoveryFlows.get(flow.tabId) !== flow) return;
+    flow.state = "detect";
+    sendRecoveryCommand(flow, "detect");
+  }, 750);
+  return true;
+}
+
+async function reloadRecoveryTab(flow, reason) {
+  if (!flow || recoveryFlows.get(flow.tabId) !== flow) return;
+  clearRecoveryCommandTimeout(flow);
+  clearRecoveryReloadTimeout(flow);
+  const now = Date.now();
+  const lastReloadAt = Number(lastRecoveryReloadAt.get(flow.tabId) ?? 0);
+  if (Number(flow.reloadAttempts ?? 0) >= 1 ||
+      now - lastReloadAt < RECOVERY_RELOAD_COOLDOWN_MS) {
+    sendDiagnostic(flow.tabId, "recovery-reload-skip", {
+      reason,
+      reloadAttempts: Number(flow.reloadAttempts ?? 0),
+      cooldownRemainingMs: Math.max(0, RECOVERY_RELOAD_COOLDOWN_MS - (now - lastReloadAt)),
+      request: flow.request
+    });
+    failRecovery(flow, `reload-unavailable:${reason}`);
+    return;
+  }
+
+  flow.reloadAttempts = Number(flow.reloadAttempts ?? 0) + 1;
+  flow.reloadResumeStarted = false;
+  flow.reloadReadyDeadline = now + RECOVERY_RELOAD_WAIT_MS;
+  flow.state = "reload-wait";
+  lastRecoveryReloadAt.set(flow.tabId, now);
+  recoveryControllers.delete(flow.tabId);
+  recoveryProviderContexts.delete(flow.tabId);
+  activeGameFrames.delete(flow.tabId);
+  legacyAuthorities.delete(flow.tabId);
+  const probeState = recoveryProbeStates.get(flow.tabId);
+  if (probeState) probeState.misses = 0;
+  sendDiagnostic(flow.tabId, "recovery-reload-start", {
+    reason,
+    attempt: flow.reloadAttempts,
+    request: flow.request
+  });
+  flow.reloadTimeout = setTimeout(() => {
+    resumeRecoveryAfterReload(flow, "reload-timeout");
+  }, RECOVERY_RELOAD_WAIT_MS);
+  try {
+    await chrome.tabs.reload(flow.tabId, { bypassCache: false });
+  } catch (error) {
+    sendDiagnostic(flow.tabId, "recovery-reload-failed", {
+      reason,
+      error: String(error?.message ?? error),
+      request: flow.request
+    });
+    failRecovery(flow, "reload-failed");
+  }
+}
+
 async function sendRecoveryCommand(flow, command) {
   if (!flow || recoveryFlows.get(flow.tabId) !== flow) return;
   const commandId = crypto.randomUUID();
@@ -378,6 +472,12 @@ async function sendRecoveryCommand(flow, command) {
     });
   }
   if (!controller || recoveryFlows.get(flow.tabId) !== flow) {
+    if (Number(flow.reloadAttempts ?? 0) > 0) {
+      if (retryControllerAfterReload(flow, "controller-not-ready"))
+        return;
+      failRecovery(flow, "controller-not-ready-after-reload");
+      return;
+    }
     await recoverMissingController(flow, command);
     return;
   }
@@ -397,9 +497,16 @@ async function sendRecoveryCommand(flow, command) {
       payload: { commandId, command, request: flow.request }
     }, { frameId });
   } catch (error) {
+    const errorText = String(error?.message ?? error);
     sendDiagnostic(flow.tabId, "recovery-command-delivery-failed", {
-      command, commandId, frameId, error: String(error?.message ?? error)
+      command, commandId, frameId, error: errorText
     });
+    if (Number(flow.reloadAttempts ?? 0) < 1) {
+      await reloadRecoveryTab(flow, `command-delivery-failed:${errorText}`);
+      return;
+    }
+    if (retryControllerAfterReload(flow, `command-delivery-failed:${errorText}`))
+      return;
     failRecovery(flow, "command-delivery-failed");
     return;
   }
@@ -432,6 +539,7 @@ function clearRecoveryCommandTimeout(flow) {
 function failRecovery(flow, reason) {
   if (!flow || recoveryFlows.get(flow.tabId) !== flow) return;
   clearRecoveryCommandTimeout(flow);
+  clearRecoveryReloadTimeout(flow);
   if (flow.attempt >= RECOVERY_MAX_ATTEMPTS) {
     recoveryFlows.delete(flow.tabId);
     resetRecoveryMisses(flow.tabId, "recovery-failed");
@@ -492,10 +600,14 @@ async function startRecovery(tabId, request, reason, controllerFrameId = null) {
     sendDiagnostic(tabId, "recovery-skip-no-bookmark", { reason });
     return;
   }
-  const flow = { tabId, request: merged, reason, state: "detect", attempt: 1, startedAt: Date.now(), commandId: "", command: "", controllerFrameId };
+  const flow = { tabId, request: merged, reason, state: "detect", attempt: 1, startedAt: Date.now(), commandId: "", command: "", controllerFrameId, reloadAttempts: 0, reloadResumeStarted: false };
   recoveryFlows.set(tabId, flow);
   lastRecoveryStartAt.set(tabId, now);
   sendDiagnostic(tabId, "recovery-start", { reason, request: merged });
+  if (/pull-probe-(no_response|no_webmain)-/i.test(String(reason ?? ""))) {
+    await reloadRecoveryTab(flow, reason);
+    return;
+  }
   sendRecoveryCommand(flow, "detect");
 }
 
@@ -559,6 +671,10 @@ function handleRecoveryResult(tabId, payload) {
     if (kind === "GAME_HALL") {
       flow.state = "load-table";
       sendRecoveryCommand(flow, "load_table");
+      return;
+    }
+    if (Number(flow.reloadAttempts ?? 0) < 1) {
+      void reloadRecoveryTab(flow, `detect-${kind || "unknown"}`);
       return;
     }
     flow.state = "go-hall";
@@ -882,6 +998,11 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     roadPacketCounts.delete(tabId);
     legacyAuthorities.delete(tabId);
   }
+  if (changeInfo.status === "complete") {
+    const flow = recoveryFlows.get(tabId);
+    if (flow?.state === "reload-wait")
+      resumeRecoveryAfterReload(flow, "tab-complete");
+  }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -899,6 +1020,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   recoveryWatchLogAt.delete(tabId);
   recoveryProbeStates.delete(tabId);
   recoveryProbeInFlight.delete(tabId);
+  lastRecoveryReloadAt.delete(tabId);
   clearRecoverySessionValue(recoveryStorageKey(RECOVERY_BOOKMARK_STORAGE_PREFIX, tabId));
   clearRecoverySessionValue(recoveryStorageKey(RECOVERY_GAME_CONTEXT_STORAGE_PREFIX, tabId));
   clearRecoverySessionValue(recoveryStorageKey(RECOVERY_ENTRY_URL_STORAGE_PREFIX, tabId));

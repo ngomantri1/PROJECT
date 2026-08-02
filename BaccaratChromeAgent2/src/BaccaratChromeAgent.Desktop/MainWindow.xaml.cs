@@ -5405,7 +5405,33 @@ try{
                                         }
                                         else
                                         {
-                                            char tail = (seqDisplay.Length > 0) ? seqDisplay[^1] : '\0';
+                                            string settleDisplayForResult = seqDisplay;
+                                            long settleVersionForResult = settleSeqVersion;
+                                            string settleEventForResult = settleSeqEvent;
+                                            long versionGap = _baseSeqVersion > 0 && settleSeqVersion > _baseSeqVersion
+                                                ? settleSeqVersion - _baseSeqVersion
+                                                : 0;
+                                            string appendForRecovery = FilterResultDisplaySeqWindow(snap.seqAppend);
+                                            if (versionGap > 1 &&
+                                                seqDisplay.StartsWith(_baseSeqDisplay, StringComparison.Ordinal))
+                                            {
+                                                string fullDelta = seqDisplay.Substring(_baseSeqDisplay.Length);
+                                                if (appendForRecovery.Length < versionGap)
+                                                    appendForRecovery = fullDelta;
+
+                                                if (appendForRecovery.Length >= versionGap)
+                                                {
+                                                    char firstMissed = appendForRecovery[0];
+                                                    settleDisplayForResult = _baseSeqDisplay + firstMissed;
+                                                    settleVersionForResult = _baseSeqVersion + 1;
+                                                    settleEventForResult = string.IsNullOrWhiteSpace(settleSeqEvent)
+                                                        ? "batch-recovery-first"
+                                                        : settleSeqEvent + "-batch-first";
+                                                    Log($"[SEQ][BATCH-RECOVERY] gap={versionGap} | incomingAppend={appendForRecovery} | incomingVer={settleSeqVersion} | recoverVer={settleVersionForResult} | recoverResult={firstMissed} | baseLen={_baseSeqDisplay.Length} | incomingLen={seqDisplay.Length}");
+                                                }
+                                            }
+
+                                            char tail = (settleDisplayForResult.Length > 0) ? settleDisplayForResult[^1] : '\0';
                                             string? settledResult = tail switch
                                             {
                                                 'T' => "TIE",
@@ -5431,9 +5457,9 @@ try{
                                                             balanceAfter,
                                                             new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                                                             "TIE",
-                                                            seqDisplay,
-                                                            settleSeqVersion,
-                                                            settleSeqEvent,
+                                                            settleDisplayForResult,
+                                                            settleVersionForResult,
+                                                            settleEventForResult,
                                                             "tick-tail-change");
                                                     }
                                                 }
@@ -5469,9 +5495,9 @@ try{
                                                             balanceAfter,
                                                             null,
                                                             null,
-                                                            seqDisplay,
-                                                            settleSeqVersion,
-                                                            settleSeqEvent,
+                                                            settleDisplayForResult,
+                                                            settleVersionForResult,
+                                                            settleEventForResult,
                                                             "tick-tail-change");
                                                     }
                                                 }

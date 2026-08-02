@@ -5149,7 +5149,33 @@ try{
                                         }
                                         else
                                         {
-                                            char tail = (seqDisplay.Length > 0) ? seqDisplay[^1] : '\0';
+                                            string settleDisplayForResult = seqDisplay;
+                                            long settleVersionForResult = settleSeqVersion;
+                                            string settleEventForResult = settleSeqEvent;
+                                            long versionGap = _baseSeqVersion > 0 && settleSeqVersion > _baseSeqVersion
+                                                ? settleSeqVersion - _baseSeqVersion
+                                                : 0;
+                                            string appendForRecovery = FilterResultDisplaySeqWindow(snap.seqAppend);
+                                            if (versionGap > 1 &&
+                                                seqDisplay.StartsWith(_baseSeqDisplay, StringComparison.Ordinal))
+                                            {
+                                                string fullDelta = seqDisplay.Substring(_baseSeqDisplay.Length);
+                                                if (appendForRecovery.Length < versionGap)
+                                                    appendForRecovery = fullDelta;
+
+                                                if (appendForRecovery.Length >= versionGap)
+                                                {
+                                                    char firstMissed = appendForRecovery[0];
+                                                    settleDisplayForResult = _baseSeqDisplay + firstMissed;
+                                                    settleVersionForResult = _baseSeqVersion + 1;
+                                                    settleEventForResult = string.IsNullOrWhiteSpace(settleSeqEvent)
+                                                        ? "batch-recovery-first"
+                                                        : settleSeqEvent + "-batch-first";
+                                                    Log($"[SEQ][BATCH-RECOVERY] gap={versionGap} | incomingAppend={appendForRecovery} | incomingVer={settleSeqVersion} | recoverVer={settleVersionForResult} | recoverResult={firstMissed} | baseLen={_baseSeqDisplay.Length} | incomingLen={seqDisplay.Length}");
+                                                }
+                                            }
+
+                                            char tail = (settleDisplayForResult.Length > 0) ? settleDisplayForResult[^1] : '\0';
                                             string? settledResult = tail switch
                                             {
                                                 'T' => "TIE",
@@ -5175,9 +5201,9 @@ try{
                                                             balanceAfter,
                                                             new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                                                             "TIE",
-                                                            seqDisplay,
-                                                            settleSeqVersion,
-                                                            settleSeqEvent,
+                                                            settleDisplayForResult,
+                                                            settleVersionForResult,
+                                                            settleEventForResult,
                                                             "tick-tail-change");
                                                     }
                                                 }
@@ -5213,9 +5239,9 @@ try{
                                                             balanceAfter,
                                                             null,
                                                             null,
-                                                            seqDisplay,
-                                                            settleSeqVersion,
-                                                            settleSeqEvent,
+                                                            settleDisplayForResult,
+                                                            settleVersionForResult,
+                                                            settleEventForResult,
                                                             "tick-tail-change");
                                                     }
                                                 }
@@ -6860,6 +6886,14 @@ try{
                 Log($"[WV2][SOFT-RELOAD-ERR] owner={owner} | err={Shrink(ex.Message, 220)}");
             }
             return false;
+        }
+
+        private (WebView2? WebView, string Owner) GetActiveRecoveryWebView()
+        {
+            if (_popupWeb?.CoreWebView2 != null &&
+                PopupHost?.Visibility == Visibility.Visible)
+                return (_popupWeb, "popup");
+            return (Web, "main");
         }
 
         private async Task HandleWebProcessFailedAsync(WebView2? failedWeb, string owner, CoreWebView2ProcessFailedEventArgs e)
@@ -15674,9 +15708,13 @@ try{
                             }
                             if (age < TimeSpan.FromSeconds(3))
                                 return;
+                            if (DateTime.UtcNow - _lastWebRecoveryUtc < TimeSpan.FromSeconds(10))
+                                return;
 
                             // Recovery chỉ bắt đầu sau 3s không có GAME_TABLE tick; trước khi
                             // click bàn, RestoreBookmarkedTableAsync luôn xác nhận GAME_HALL.
+                            // Nếu controller không còn xác nhận được bàn/sảnh thì F5 đúng
+                            // WebView đang hiển thị trước, vì game có thể chạy trong popup.
                             _nonGameViewSinceUtc = DateTime.UtcNow;
                             Log($"[WV2][HEALTH-NON-GAME-VIEW] tickAgeSec={age.TotalSeconds:0.0} | state={preflightState} | generation={Volatile.Read(ref _webLifecycleGeneration)}");
                             StopTasksForRendererRecovery("health-non-game-view");
@@ -15687,6 +15725,7 @@ try{
                             }
                             Volatile.Write(ref _webRecoveryRendererCrashed, 0);
                             _webRendererHealthy = false;
+                            _lastWebRecoveryUtc = DateTime.UtcNow;
                             _webRecoveryCts?.Cancel();
                             _webRecoveryCts = new CancellationTokenSource();
                             try
@@ -15695,14 +15734,20 @@ try{
                                 Log("[WV2][RECOVERY-BEGIN] reason=health-non-game-view");
                                 var healthBookmark = CloneTableRecoveryBookmark();
                                 var healthBaseline = _lastFreshGameTickUtc;
-                                var routeFirst = preflightState == "GAME_HALL" ||
-                                                 preflightState == "PROVIDER_ENTRY" ||
-                                                 preflightState == "DISCONNECTED" ||
-                                                 preflightState == "UNKNOWN";
-                                var softOk = routeFirst && healthBookmark != null &&
-                                             await RestoreBookmarkedTableAsync("health-" + preflightState.ToLowerInvariant(), token);
-                                if (!routeFirst)
-                                    softOk = await TrySoftReloadWebViewAsync(Web, "main", "health-non-game-view", token);
+                                var hallReady = preflightState == "GAME_HALL";
+                                var softOk = hallReady && healthBookmark != null &&
+                                             await RestoreBookmarkedTableAsync("health-game_hall", token);
+                                if (!hallReady)
+                                {
+                                    var reloadTarget = GetActiveRecoveryWebView();
+                                    Log($"[WV2][HEALTH-RELOAD-FIRST] owner={reloadTarget.Owner} | state={preflightState}");
+                                    softOk = reloadTarget.WebView != null &&
+                                             await TrySoftReloadWebViewAsync(
+                                                 reloadTarget.WebView,
+                                                 reloadTarget.Owner,
+                                                 "health-" + preflightState.ToLowerInvariant(),
+                                                 token);
+                                }
                                 if (softOk && healthBookmark != null)
                                     softOk = await WaitForRecoveredTableTickAsync(healthBookmark, healthBaseline, TimeSpan.FromSeconds(5), token);
                                 if (!softOk && healthBookmark != null)

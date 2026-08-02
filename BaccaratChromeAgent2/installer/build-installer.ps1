@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$InnoSetupCompiler = "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe"
+    [string]$InnoSetupCompiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
 )
 
 Set-StrictMode -Version Latest
