@@ -44,12 +44,13 @@ Dừng: `Ctrl+C` trong cửa sổ console, hoặc đóng cửa sổ.
 | `patterns.*` | Bật/tắt mẫu `mau_1_1`, `mau_bet_2` |
 | `database.path` | SQLite (mặc định `data/toolbet.db`) |
 
-### `progression_mode` (4 lựa chọn)
+### `progression_mode` (5 lựa chọn)
 
-- `loss_up_win_reset` — tăng khi thua, thắng về mức đầu (chỉ reset index, giữ `loss_count`)
+- `loss_up_win_reset` — thua tăng theo `loss_count`; thắng khi P&L nhóm còn âm thì tăng tiếp, khi không âm thì về mức đầu và reset `loss_count`
 - `win_up_loss_reset` — tăng khi thắng, thua về mức đầu
 - `both_up` — thắng/thua đều tăng mức
 - `win_up_loss_hold` — thắng tăng mức, thua giữ nguyên
+- `profit_lock_loss_up` — thua tăng mức; thắng chỉ về đầu khi P&L nhóm dương, nếu chưa dương thì tăng tiếp
 
 Có thể đổi trên overlay (select + **Lưu**), không bắt buộc sửa YAML tay.
 
@@ -88,6 +89,10 @@ chrome.exe --remote-debugging-port=9222 --user-data-dir="...\ToolBet2\data\cdp_p
 | Overlay không hiện | Đảm bảo đang trong bàn AE SEXY, refresh trang, xem log console |
 | Không đặt chip (stake 0) | Đúng thiết kế mức theo dõi — xem chuỗi `betting.stakes` |
 
-## Build lại bản deploy (máy dev)
+## Chuẩn bị bản deploy
 
-Trên máy nguồn, chạy `build.bat` — output: `deploy\ToolBet2`. Copy cả thư mục đó sang máy đích.
+Project hiện không có bước build hoặc `build.bat`. Để triển khai sang máy khác:
+
+1. Copy thư mục source `ToolBet2`.
+2. Không cần copy `.venv`, `data/cdp_profile`, `data/toolbet.db`, `config.yaml` hoặc `credentials.yaml` trừ khi chủ động muốn giữ dữ liệu/cấu hình cũ.
+3. Trên máy đích, chạy `ToolBet.bat`; script sẽ tạo môi trường và các file cấu hình cần thiết.

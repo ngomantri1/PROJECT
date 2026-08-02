@@ -1,39 +1,67 @@
-Trước khi làm bất kỳ thay đổi nào, hãy đọc và hiểu các tài liệu context của project:
+Trước khi thực hiện công việc, hãy đọc và hiểu các file context của project:
 
-- PROJECT_CONTEXT.md
-- ARCHITECTURE.md
-- BUSINESS_RULES.md
-- CURRENT_STATE.md
-- TODO.md
-- BUGS.md
-- AGENTS.md nếu có
-- và các file tài liệu liên quan được tham chiếu trong những file trên.
+* `AGENTS.md` nếu có
+* `PROJECT_CONTEXT.md`
+* `ARCHITECTURE.md`
+* `BUSINESS_RULES.md`
+* `CURRENT_STATE.md`
+* `TODO.md`
+* `BUGS.md`
+* `README.md`
+* Các tài liệu liên quan được tham chiếu trong các file trên
 
-Sau đó:
+Sau đó kiểm tra source code thực tế để xác định:
 
-1. Hiểu mục tiêu tổng thể của project.
-2. Hiểu kiến trúc và các module chính.
-3. Hiểu các quy tắc nghiệp vụ quan trọng.
-4. Xác định trạng thái hiện tại của project.
-5. Xác định công việc đang làm dở.
-6. Xác định TODO và BUG còn tồn tại.
-7. Xác định các file/class/function có liên quan tới công việc hiện tại.
+* Mục tiêu và kiến trúc project
+* Các module chính
+* Trạng thái hiện tại
+* Công việc gần nhất và việc đang làm dở
+* TODO, bug và rủi ro còn tồn tại
+* Các file, class, function, API và test liên quan đến yêu cầu hiện tại
 
-Không sửa code ngay.
+Không sửa code ngay. Trước tiên hãy tóm tắt ngắn:
 
-Trước tiên hãy trả lời cho tôi một bản tóm tắt ngắn gồm:
+1. Project làm gì
+2. Kiến trúc chính
+3. Công việc gần nhất
+4. Những gì đã hoàn thành
+5. Việc cần làm tiếp theo
+6. Bug còn tồn tại
+7. File/module liên quan
+8. Patch tối thiểu dự kiến thực hiện
 
-- Project này làm gì
-- Kiến trúc chính
-- Công việc gần nhất đang thực hiện
-- Những gì đã hoàn thành
-- Việc cần làm tiếp theo
-- Bug đang còn
-- Các file/module quan trọng liên quan
+Nếu tài liệu mâu thuẫn với source code, hãy kiểm tra source hiện tại, nêu rõ sự khác biệt và không tự ý thay đổi business rule đã được xác nhận.
 
-Nếu tài liệu mâu thuẫn với source code, hãy ưu tiên kiểm tra source code hiện tại và báo cho tôi biết sự khác biệt.
+Khi sửa:
 
-Trong quá trình sửa không được encoding sang dạng mã khác. Tôi đang dùng UTF8 (tiếng việt)
-Hãy giải thích ngắn gọn file nào cần sửa và patch tối thiểu.
+* Chỉ sửa đúng phạm vi cần thiết
+* Ưu tiên patch nhỏ, an toàn, dễ review
+* Không rewrite hoặc sửa file không liên quan
+* Không thay đổi API, database, workflow, permission hoặc kiến trúc nếu không cần
+* Giữ nguyên UTF-8 và tiếng Việt có dấu
+* Không làm thay đổi encoding, BOM hoặc line ending toàn bộ file
+* Kiểm tra `git diff` sau khi sửa
+* Chạy type-check, lint, test và build phù hợp với phạm vi
 
-Công việc hiện tại xem màn hình tạo hợp đồng -> tab Thang & giá trị -> trường Lý do thay đổi so với báo giá đang check thay đổi như nào ?
+Sau mỗi thay đổi quan trọng, phải cập nhật tài liệu liên quan để chat mới có thể tiếp tục chính xác:
+
+* `CURRENT_STATE.md`: trạng thái và công việc mới nhất
+* `TODO.md`: việc đã hoàn thành và việc tiếp theo
+* `BUGS.md`: bug mới, bug đã sửa hoặc rủi ro còn lại
+* `BUSINESS_RULES.md`: rule nghiệp vụ mới đã được xác nhận
+* `ARCHITECTURE.md`: thay đổi kiến trúc, module, API hoặc data flow
+* `PROJECT_CONTEXT.md`: quyết định dài hạn cần các chat sau biết
+
+Không cần cập nhật tất cả tài liệu nếu nội dung không liên quan. Không đánh dấu hoàn thành khi chưa có bằng chứng từ source hoặc test.
+
+Cuối cùng, báo cáo:
+
+* File đã sửa và lý do
+* Nội dung thay đổi
+* Test/build đã chạy và kết quả
+* Tài liệu context đã cập nhật
+* Bug, rủi ro hoặc việc còn lại
+
+Yêu cầu hiện tại:
+
+`<DÁN CÔNG VIỆC CẦN CODEX THỰC HIỆN TẠI ĐÂY>`

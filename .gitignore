@@ -423,3 +423,5 @@ FodyWeavers.xsd
 *.db
 *.gz
 *.sql
+/ToolBet2/data
+/ToolBet2/data
