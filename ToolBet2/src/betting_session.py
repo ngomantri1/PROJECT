@@ -25,6 +25,9 @@ class PendingBet:
     reason: str
     target_round_index: int
     placed_at: datetime
+    table_name: str = ""
+    game_shoe: int = 0
+    game_round: int = 0
 
 
 @dataclass

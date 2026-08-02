@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from src.ae_sexy_reader import AeSexyTableInfo
 from src.ae_sexy_ws import primary_table_id
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from src.database import (
     BetAllocationRecord,
     BetGroupRecord,
@@ -597,6 +597,116 @@ class GameDataStore:
         finally:
             session.close()
 
+    def defer_bet(self, bet_id: int, *, reason: str) -> bool:
+        """Park a confirmed placed bet without assigning it a later result."""
+        session = self.session_factory()
+        try:
+            bet = session.get(BetRecord, bet_id)
+            if not bet or bet.outcome is not None or bet.status != "placed":
+                return False
+            bet.status = "deferred"
+            bet.reason = f"{bet.reason} | deferred={reason}".strip(" |")
+            session.add(EventRecord(
+                round_id=bet.round_id,
+                event_type="bet_deferred",
+                payload=json.dumps({"bet_id": bet.id, "reason": reason}),
+                created_at=datetime.now(),
+            ))
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def resolve_deferred_bet(
+        self,
+        *,
+        table_name: str,
+        game_shoe: int,
+        game_round: int,
+        result: BetSide,
+        source: str,
+    ) -> list[int]:
+        """Resolve only deferred records whose server identity exactly matches."""
+        from src.pending_reconciliation import _refresh_group
+
+        session = self.session_factory()
+        try:
+            bets = list(session.scalars(
+                select(BetRecord).where(
+                    BetRecord.outcome.is_(None),
+                    BetRecord.status == "deferred",
+                    BetRecord.table_name == table_name,
+                    BetRecord.game_shoe == game_shoe,
+                    BetRecord.game_round == game_round,
+                )
+            ))
+            resolved_ids: list[int] = []
+            for bet in bets:
+                if bet.pattern_id == "multi_live":
+                    allocations = list(session.scalars(
+                        select(BetAllocationRecord).where(
+                            BetAllocationRecord.bet_id == bet.id
+                        )
+                    ))
+                    if not allocations or any(
+                        row.placement_status not in {"placed", "virtual"}
+                        for row in allocations
+                    ):
+                        continue
+                    total_profit = 0.0
+                    for row in allocations:
+                        outcome, profit = _bet_outcome(
+                            row.side, float(row.stake), result
+                        )
+                        row.outcome = outcome
+                        row.profit = profit
+                        row.updated_at = datetime.now()
+                        total_profit += profit
+                    outcome = (
+                        "win" if total_profit > 0 else "loss"
+                        if total_profit < 0 else "push"
+                    )
+                    profit = total_profit
+                else:
+                    outcome, profit = _bet_outcome(
+                        bet.side, float(bet.stake), result
+                    )
+                now = datetime.now()
+                bet.outcome = outcome
+                bet.profit = profit
+                bet.status = "resolved"
+                bet.resolved_at = now
+                _refresh_group(session, bet.group_id)
+                session.add(EventRecord(
+                    round_id=bet.round_id,
+                    event_type="deferred_resolved_authoritative",
+                    payload=json.dumps(
+                        {
+                            "bet_id": bet.id,
+                            "table": table_name,
+                            "game_shoe": game_shoe,
+                            "game_round": game_round,
+                            "result": result.value,
+                            "outcome": outcome,
+                            "profit": profit,
+                            "source": source,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    created_at=now,
+                ))
+                resolved_ids.append(bet.id)
+            session.commit()
+            return resolved_ids
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
     def cancel_bet_before_click(self, bet_id: int, reason: str) -> None:
         """Close an intent that a final guard rejected before any physical click."""
         session = self.session_factory()
@@ -715,13 +825,18 @@ class GameDataStore:
             return list(
                 session.scalars(
                     select(BetRecord)
-                    .where(BetRecord.outcome.is_(None))
+                    .where(
+                        BetRecord.outcome.is_(None),
+                        or_(
+                            BetRecord.status.is_(None),
+                            BetRecord.status != "deferred",
+                        ),
+                    )
                     .order_by(BetRecord.created_at, BetRecord.id)
                 )
             )
         finally:
             session.close()
-
     def load_bet_allocations(self, bet_id: int) -> list[dict[str, Any]]:
         session = self.session_factory()
         try:
@@ -839,3 +954,11 @@ class GameDataStore:
             )
             session.add(table)
         return table
+
+
+def _bet_outcome(side: str, stake: float, result: BetSide) -> tuple[str, float]:
+    if result == BetSide.TIE:
+        return "push", 0.0
+    if str(side) == result.value:
+        return "win", stake * 0.95 if result == BetSide.BANKER else stake
+    return "loss", -stake

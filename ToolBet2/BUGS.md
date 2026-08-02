@@ -33,6 +33,15 @@
 
 ## Fixed in the current work
 
+### Pending cũ có thể nhận nhầm kết quả của bàn khác
+
+- Trước đây đường resolve không so sánh table/shoe/round, nên kết quả mới đầu
+  tiên có thể chốt pending của bàn khác. Pending `placed` sau restart cũng có
+  thể bị bỏ ngoài memory.
+- Fix: dùng `deferred` theo bàn; chỉ `gp-winner`/`road-info-round` với exact
+  table/shoe/round mới resolve. `placing`/`uncertain` vẫn fail-closed toàn cục.
+- Regression coverage: `tests/test_bet_journal.py`.
+
 ### Preflight stake cap could drift before a physical click
 
 - A finite lease now binds the exact SQLite/live tab and limits time, aggregate
@@ -127,3 +136,13 @@
   it did not prevent the current 176-test run.
 - Database migrations are additive but production SQLite data should be backed up
   before a release upgrade.
+
+### Workspace configuration could revert after Game Login
+
+- Cause: `HistoryWatcher.run()` assigned the complete config returned by
+  `update_site_url()`. That new config came from YAML and replaced the
+  SQLite-backed strategy workspace that had been loaded at startup.
+- Fix: reload `strategy_tabs` from `StrategyTabStore` after the site update.
+  SQLite remains authoritative when active rows exist; the database is not
+  rewritten by this reload.
+- Regression coverage: `test_fresh_yaml_config_does_not_replace_saved_sqlite_tabs`.

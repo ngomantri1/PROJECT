@@ -3214,6 +3214,12 @@ class HistoryWatcher:
         form = await self.change_game_account(panel_page)
         save_credentials(form.username, form.password, site=form.site_id)
         self.config = update_site_url(form.site_url)
+        # update_site_url() returns a fresh AppConfig read from YAML.  Strategy
+        # tabs, including their money manager and stake chains, are SQLite-owned
+        # after the first import and must not be replaced by YAML defaults here.
+        self.config.strategy_tabs = self.strategy_tab_store.load_or_import(
+            self.config.strategy_tabs
+        )
         self.browser_mgr.cdp_url = self.config.site.cdp_url
         from src.sites import set_active_site
 
@@ -3575,6 +3581,7 @@ class HistoryWatcher:
         self.state.history = list(history)
         table_name = self.state.table_name or self._active_table_id
         stats = None
+        round_meta: dict[int, dict] = {}
         if self.ae_collector and table_name:
             stats = self.ae_collector.get_stats(table_name)
         if table_name and history and self.ae_collector and self.ae_collector.in_room:
@@ -3612,6 +3619,7 @@ class HistoryWatcher:
                     table_name=table,
                     skip_tie=self.config.game.skip_tie,
                     source=source,
+                    round_meta_by_index=round_meta,
                 )
             await self._analyze_patterns(last_result=last_label)
         elif prev_len == 0 and history:

@@ -1,5 +1,17 @@
 # TODO
 
+## Phase 6 table-scoped deferred pending
+
+- [x] Defer confirmed placed pending on restart/table-or-round mismatch instead
+  of consuming an unrelated next result.
+- [x] Require exact table/shoe/round metadata from WS/HTTP sources before an
+  automatic deferred resolution; preserve manual reconciliation.
+- [x] Keep `placing`/`uncertain` global fail-closed and exclude only deferred
+  records from unrelated-table pilot gates.
+- [ ] Run a controlled source-runtime browser session that switches tables and
+  capture evidence that a deferred record is neither mis-resolved nor included
+  in new-table progression.
+
 ## Phase 5 finite small-stake canary
 
 - [x] Add an atomic local lease bound to one live tab and SQLite, with expiry,
@@ -9,8 +21,8 @@
 - [x] Exclude Tie nurture from the first canary and preserve durable recovery
   if a multi-side placement becomes partial.
 - [x] Add source/packaged arm/status/finish/close commands and regression tests.
-- [ ] Obtain trusted evidence and reconcile bet `id=27`; configure exactly one
-  approved live tab and a production signed `live_bet` license.
+- [ ] Obtain trusted evidence and reconcile or defer bet `id=27`; configure
+  exactly one approved live tab and a production signed `live_bet` license.
 - [ ] With the operator present, backup DB, clear the kill switch only for the
   approved window, run `arm`, complete at most the approved bets, turn Auto off,
   run `finish`, then `close` and re-enable the kill switch.
@@ -113,6 +125,15 @@
   passing tests.
 - Keep `credentials.yaml`, `config.yaml`, `data/toolbet.db` and
   `data/cdp_profile/` out of version control and release artifacts.
+
+## Completed — workspace persistence (2026-08-03)
+
+- [x] Keep persisted strategy, MoneyManager and stake-chain settings after
+  Tool Login/Game Login. Reload SQLite-owned `strategy_tabs` after the site URL
+  update; do not overwrite them with fresh YAML defaults.
+- [x] Remove the manual workspace save button. Persist each valid tab edit to
+  SQLite automatically after a short debounce while preserving incomplete
+  name/stake input locally until it is valid.
 
 ## Completed work intentionally not kept as TODO
 

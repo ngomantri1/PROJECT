@@ -181,6 +181,32 @@ class ReleaseSupportTests(unittest.TestCase):
             runtime = inspect_pilot_runtime(database)
             self.assertEqual(120, runtime.maximum_stake)
 
+    def test_deferred_bet_does_not_block_runtime_preflight(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "runtime.db"
+            connection = sqlite3.connect(database)
+            connection.executescript(
+                """
+                CREATE TABLE bets (id INTEGER PRIMARY KEY, outcome TEXT, status TEXT);
+                CREATE TABLE strategy_tabs (
+                    id TEXT PRIMARY KEY, ordinal INTEGER, active INTEGER,
+                    mode TEXT, money_manager_id TEXT, stakes_json TEXT,
+                    stake_chains_json TEXT
+                );
+                CREATE TABLE strategy_money_configs (
+                    id INTEGER PRIMARY KEY, tab_id TEXT, manager_id TEXT,
+                    stakes_json TEXT, stake_chains_json TEXT
+                );
+                INSERT INTO bets VALUES (1, NULL, 'deferred');
+                INSERT INTO strategy_tabs VALUES
+                    ('tab-live', 0, 1, 'live', 'IncreaseWhenLose', '[0]', '[]');
+                """
+            )
+            connection.commit()
+            connection.close()
+            runtime = inspect_pilot_runtime(database)
+            self.assertEqual(0, runtime.pending_bets)
+
     def test_license_readiness_verifies_signed_live_capability(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

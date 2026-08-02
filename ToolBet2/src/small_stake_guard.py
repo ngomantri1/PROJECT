@@ -209,7 +209,9 @@ class SmallStakePilotGuard:
                 )
                 rows = connection.execute(
                     f"SELECT id, outcome, profit FROM bets "
-                    f"WHERE id>? AND status!='cancelled' AND {real_clause} ORDER BY id",
+                    f"WHERE id>? AND COALESCE(status, 'placed') "
+                    f"NOT IN ('cancelled', 'deferred') "
+                    f"AND {real_clause} ORDER BY id",
                     (lease.baseline_bet_id,),
                 ).fetchall()
             finally:
@@ -247,7 +249,9 @@ class SmallStakePilotGuard:
                 )
                 rows = connection.execute(
                     f"SELECT id, stake, outcome, profit, status FROM bets "
-                    f"WHERE id>? AND status!='cancelled' AND {real_clause} ORDER BY id",
+                    f"WHERE id>? AND COALESCE(status, 'placed') "
+                    f"NOT IN ('cancelled', 'deferred') "
+                    f"AND {real_clause} ORDER BY id",
                     (lease.baseline_bet_id,),
                 ).fetchall()
             finally:

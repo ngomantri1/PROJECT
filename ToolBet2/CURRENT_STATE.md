@@ -1,5 +1,22 @@
 # Current Project State
 
+## Phase 6 table-scoped deferred pending — 2026-08-03
+
+- Confirmed `placed` pending is no longer allowed to consume the next result
+  from an unrelated table. On restart, or when a later result belongs to a
+  different/mismatched server round, it is stored as `status=deferred` with an
+  audit event and removed from in-memory betting/progression state.
+- A deferred bet only resolves automatically from authoritative
+  `gp-winner`/`road-info-round` metadata matching the exact table, game shoe
+  and game round. DOM/canvas/lobby history and a merely newer result cannot
+  resolve it. `placing`/`uncertain` remains a global fail-closed recovery lock.
+- Deferred records remain visible to the manual reconciliation workflow but no
+  longer block pilot preflight or an unrelated live table. The stopped real DB
+  was not mutated while implementing this change; bet 27 remains `placed` until
+  a source run performs the explicit deferred transition.
+- Full source suite passes **184 tests**. No release build was made for this
+  source-only change; it will be used by `ToolBet.bat` on the next start.
+
 ## Phase 5 finite small-stake canary — 2026-08-03
 
 - Real execution now requires a local `SMALL_STAKE_PILOT.json` lease in
@@ -21,6 +38,10 @@
   blocked by bet `id=27`, no live tab/stake envelope, disabled production
   license and the active kill switch. No real lease was created, no browser was
   started and no casino click or production-DB mutation occurred.
+- On 2026-08-03 the stopped local runtime configuration was checked and set to
+  `betting.auto_bet=false`; `betting.tie_nurture.enabled` was already `false`.
+  Both stake-zero and small-stake preflight remain blocked by the preserved
+  pending and lack of a live tab/authoritative stake envelope.
 - Internal snapshot `ToolBet2-0.8.0-phase5-internal-win-x64.zip` passed packaged
   self-check, manifest verification, runtime-secret audit and packaged
   status/finish against an isolated fake SQLite/lease. SHA-256:
@@ -205,3 +226,23 @@
   updates.
 - `src/ae_sexy_collector.py`, `src/ae_sexy.py`, `src/ae_sexy_betting.py` —
   provider collection/navigation/execution.
+
+## Workspace persistence fix — 2026-08-03
+
+- Fixed a post-login regression: `update_site_url()` creates a fresh YAML
+  `AppConfig`, which had replaced the SQLite-backed strategy-tab workspace
+  after Game Login. `HistoryWatcher.run()` now reloads only `strategy_tabs`
+  from `StrategyTabStore` immediately afterwards. Existing SQLite records are
+  read only; they are imported from YAML only when no active records exist.
+- Verified with `tests.test_strategy_tab_store` (6 tests) and Python
+  `compileall` for `main.py` and `src`. No build was run and no runtime DB was
+  modified by this source change.
+
+## Workspace auto-save — 2026-08-03
+
+- Removed the manual “Lưu cấu hình” action. Valid edits to a tab's strategy,
+  MoneyManager, stake chain, limits, enabled flag or mode are debounced for
+  500 ms then persisted through the existing SQLite bridge. Empty tab names or
+  invalid/empty stake chains remain in the form and cannot replace saved data.
+- `tests.test_ui_runtime` passes 19 tests; it verifies the button is absent and
+  a normal form edit is saved automatically without runtime-only fields.

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 from sqlalchemy import select
 
 from src.auto_bettor import AutoBettor
-from src.betting_session import BettingSession
+from src.betting_session import BettingSession, PendingBet
 from src.database import BetAllocationRecord, BetRecord, init_db
 from src.db_store import GameDataStore
 from src.models import BetSide
@@ -237,7 +237,7 @@ class BetJournalTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(bettor.durable_block_reason)
         self.assertFalse(session.state.auto_bet)
 
-    def test_restart_restores_confirmed_aggregate_pending(self) -> None:
+    def test_restart_defers_confirmed_aggregate_pending(self) -> None:
         bet = self.store.save_bet(
             round_id="ae_sexy:C01:7:12",
             table_name="Baccarat C01",
@@ -265,10 +265,86 @@ class BetJournalTests(unittest.IsolatedAsyncioTestCase):
         bettor = AutoBettor(session, self.store)
         reason = bettor.restore_durable_pending()
 
-        self.assertIn("restart", reason)
-        self.assertEqual(bet.id, session.state.pending.bet_id)
-        self.assertEqual(2, len(bettor._multi_live_pending["allocations"]))
-        self.assertFalse(session.state.auto_bet)
+        self.assertEqual("", reason)
+        self.assertIsNone(session.state.pending)
+        db = self.session_factory()
+        try:
+            persisted = db.get(BetRecord, bet.id)
+            self.assertEqual("deferred", persisted.status)
+            self.assertIsNone(persisted.outcome)
+        finally:
+            db.close()
+
+    async def test_other_table_defers_without_using_its_result(self) -> None:
+        bet = self.store.save_bet(
+            round_id="ae_sexy:C03:9:4",
+            table_name="Baccarat C03",
+            side="player",
+            stake=100,
+            stake_index=0,
+            pattern_id="mau_1_1",
+            pattern_name="Mau 1-1",
+            reason="test",
+            target_round_index=4,
+            game_shoe=9,
+            game_round=4,
+            status="placed",
+        )
+        session = BettingSession([100])
+        session.set_pending(PendingBet(
+            bet_id=bet.id, round_id=bet.round_id, side=BetSide.PLAYER,
+            stake=100, stake_index=0, pattern_id="mau_1_1",
+            pattern_name="Mau 1-1", reason="test", target_round_index=4,
+            placed_at=bet.placed_at, table_name="Baccarat C03",
+            game_shoe=9, game_round=4,
+        ))
+        bettor = AutoBettor(session, self.store)
+
+        await bettor._resolve_if_needed(
+            BetSide.BANKER, "Baccarat C01", {"game_shoe": 9, "game_round": 4}
+        )
+
+        self.assertIsNone(session.state.pending)
+        db = self.session_factory()
+        try:
+            persisted = db.get(BetRecord, bet.id)
+            self.assertEqual("deferred", persisted.status)
+            self.assertIsNone(persisted.outcome)
+        finally:
+            db.close()
+
+    def test_deferred_resolves_only_exact_authoritative_round(self) -> None:
+        bet = self.store.save_bet(
+            round_id="ae_sexy:C03:9:4",
+            table_name="Baccarat C03",
+            side="player",
+            stake=100,
+            stake_index=0,
+            pattern_id="mau_1_1",
+            pattern_name="Mau 1-1",
+            reason="test",
+            target_round_index=4,
+            game_shoe=9,
+            game_round=4,
+            status="placed",
+        )
+        self.assertTrue(self.store.defer_bet(bet.id, reason="table_changed"))
+        self.assertEqual([], self.store.resolve_deferred_bet(
+            table_name="Baccarat C03", game_shoe=9, game_round=5,
+            result=BetSide.PLAYER, source="gp-winner",
+        ))
+        self.assertEqual([bet.id], self.store.resolve_deferred_bet(
+            table_name="Baccarat C03", game_shoe=9, game_round=4,
+            result=BetSide.PLAYER, source="gp-winner",
+        ))
+        db = self.session_factory()
+        try:
+            persisted = db.get(BetRecord, bet.id)
+            self.assertEqual("resolved", persisted.status)
+            self.assertEqual("win", persisted.outcome)
+            self.assertEqual(100.0, persisted.profit)
+        finally:
+            db.close()
 
     def test_restart_blocks_ambiguous_intent_and_reenable(self) -> None:
         bet = self.store.save_bet(

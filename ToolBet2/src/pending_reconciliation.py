@@ -151,12 +151,13 @@ def reconcile_pending_bet(
             raise ReconciliationError("round_id không khớp; từ chối ghi")
         if bet.outcome is not None:
             raise ReconciliationError(f"Bet #{bet_id} đã có outcome")
-        if bet.status != "placed":
+        if bet.status not in {"placed", "deferred"}:
             raise ReconciliationError(
                 f"Bet #{bet_id} có status={bet.status!r}; "
                 "phải xác minh placement trước khi đối chiếu kết quả"
             )
 
+        previous_status = str(bet.status)
         allocations = list(
             session.scalars(
                 select(BetAllocationRecord)
@@ -221,7 +222,7 @@ def reconcile_pending_bet(
                     "outcome": outcome,
                     "profit": profit,
                     "evidence": evidence[:500],
-                    "previous_status": "placed",
+                    "previous_status": previous_status,
                     "allocations": allocation_payload,
                 },
                 ensure_ascii=False,

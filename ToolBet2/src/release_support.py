@@ -278,11 +278,13 @@ def inspect_pilot_runtime(database_path: str | Path) -> PilotRuntimeState:
                         "SQLite thiếu bảng preflight: " + ", ".join(missing),
                     ),
                 )
-            pending = int(
-                connection.execute(
-                    "SELECT COUNT(*) FROM bets WHERE outcome IS NULL"
-                ).fetchone()[0]
-            )
+            bet_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(bets)")
+            }
+            pending_query = "SELECT COUNT(*) FROM bets WHERE outcome IS NULL"
+            if "status" in bet_columns:
+                pending_query += " AND COALESCE(status, 'placed') != 'deferred'"
+            pending = int(connection.execute(pending_query).fetchone()[0])
             rows = connection.execute(
                 "SELECT t.id, t.money_manager_id, t.stakes_json AS tab_stakes, "
                 "t.stake_chains_json AS tab_chains, "

@@ -20,8 +20,9 @@ Chức năng chính:
   Banker trong một ván.
 - Lưu bàn, ván, nhóm cược, cược và event vào SQLite; cung cấp báo cáo/backtest/đề xuất cấu hình.
 - Bet intent và allocation multi-live được journal trước click. Pending còn lại
-  sau restart luôn fail-closed và chỉ được kết thúc qua workflow đối chiếu có
-  backup, exact identity, trusted evidence và audit event.
+  sau restart ở `placing`/`uncertain` luôn fail-closed. Pending `placed` được
+  deferred theo bàn và chỉ tự resolve từ WS/HTTP exact identity; workflow đối
+  chiếu backup-first vẫn dùng cho evidence operator.
 - Stake-zero pilot dùng `bets.execution_mode=virtual` và start/finish audit để
   chứng minh cửa sổ bet không chứa stake thật hoặc allocation click thật.
 - Pilot tiền nhỏ dùng lease local hữu hạn gắn đúng SQLite/tab, kiểm tra lại
@@ -127,3 +128,12 @@ Dependencies được khai báo trong `requirements.txt`: Playwright, PyYAML, SQ
   partial update và adapter legacy.
 - `config.example.yaml` — cấu hình mẫu; không dùng `credentials.yaml` làm tài liệu.
 - `HUONG_DAN_CAI_DAT.md` và `ToolBet.bat` — cài đặt/chạy trên Windows.
+
+Chiến lược, MoneyManager và chuỗi stake là SQLite-owned sau lần import đầu
+tiên. Bất kỳ thao tác nào tạo lại `AppConfig` từ YAML (ví dụ đổi site sau Game
+Login) phải nạp lại `strategy_tabs` qua `StrategyTabStore.load_or_import()`;
+không được để YAML mặc định ghi đè workspace đã lưu.
+
+Workspace không có nút lưu thủ công. `src/ui/bridge.js` debounce 500 ms rồi
+gửi mỗi thay đổi tab hợp lệ về `StrategyTabStore`; input tên tab hoặc chuỗi
+stake đang rỗng/không hợp lệ không được ghi đè bản SQLite đã lưu.

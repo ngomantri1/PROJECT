@@ -128,12 +128,16 @@ runtime để giữ input, focus, scroll và vị trí kéo thả.
 Khi SQLite chưa có tab, cấu hình YAML hiện hữu được import một lần. Sau đó SQLite
 là nguồn authoritative để đóng/mở Tool không làm mất tab.
 
+Bridge debounce 500 ms cho mỗi form edit hợp lệ và gọi handler SQLite hiện có;
+không có nút lưu thủ công. Draft có tên hoặc stake rỗng/không hợp lệ chỉ ở UI và
+không thay thế cấu hình đã persist.
+
 ### Strategy tab lifecycle
 
 `StrategyLifecycleService` có đường điều khiển hiện hành gồm hai chế độ theo tab:
 `simulation` và `live`.
-Người dùng tích “Chỉ mô phỏng/test” để tab không đặt tiền; bỏ tích và lưu cấu hình
-để tab tham gia chạy thật. Không còn Shadow, live candidate, ngưỡng đánh giá hoặc
+Người dùng tích “Chỉ mô phỏng/test” để tab không đặt tiền; bỏ tích thì cấu hình
+tự lưu để tab tham gia chạy thật. Không còn Shadow, live candidate, ngưỡng đánh giá hoặc
 Promote. Nhiều tab được live đồng thời.
 
 Nút “Bắt đầu chạy thật” bật AutoBettor chung. Mỗi tab live tạo `StrategyDecision`
@@ -247,11 +251,13 @@ resolve riêng. Tab `simulation` không có authority. Chi tiết contract tại
 
 Ranh giới irreversible click dùng SQLite journal: `bets` được tạo với status
 `placing` trước click; aggregate có thêm `bet_allocations` theo tab/cửa và cập
-nhật trạng thái sau từng cửa. Lỗi sau click giữ pending và khóa `AutoBettor`.
-Startup phục hồi durable pending nhưng không tự resolve sau khi process đã mất
-continuity. `src/pending_reconciliation.py` là domain service offline kết thúc
-pending từ evidence operator; CLI backup-first tại
-`scripts/reconcile_pending.py` ghi audit event trong cùng transaction.
+nhật trạng thái sau từng cửa. `placing`/`uncertain` khóa `AutoBettor` sau
+restart. Pending `placed` không được ghép với result kế tiếp: nó chuyển
+`deferred` nếu bàn/round khác và chỉ được resolve từ metadata WS/HTTP exact
+table/shoe/round; deferred không thuộc progression của bàn mới.
+`src/pending_reconciliation.py` vẫn là domain service offline kết thúc pending
+từ evidence operator; CLI backup-first tại `scripts/reconcile_pending.py` ghi
+audit event trong cùng transaction.
 
 Pilot stake-zero có evidence boundary riêng. `bets.execution_mode` được ghi
 cùng intent; `src/stake_zero_audit.py` chỉ đọc một cửa sổ bet sau baseline và
@@ -272,3 +278,8 @@ cache DPAPI gắn device. Authority server giữ private key, password hash,
 entitlement, activation, token hash và audit. Capability `workspace` bảo vệ
 luồng Tool Login → Game Login; capability `live_bet` được kiểm tra lại trong
 RiskDecision cuối. Private key/server database không thuộc gói customer.
+
+`StrategyTabStore` là ownership boundary cho cấu hình tab. YAML chỉ là fallback
+cho lần import khi SQLite chưa có tab active; luồng đổi site/Game Login tạo
+`AppConfig` mới phải rehydrate `strategy_tabs` từ store trước khi publish
+snapshot overlay.

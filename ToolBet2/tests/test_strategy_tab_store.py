@@ -54,6 +54,32 @@ class StrategyTabStoreTests(unittest.TestCase):
         self.assertEqual("IncreaseWhenWin", reloaded.tabs[0].money_manager_id)
         self.assertEqual([10, 100, 110], reloaded.tabs[0].stakes)
 
+    def test_fresh_yaml_config_does_not_replace_saved_sqlite_tabs(self):
+        saved = StrategyTabsConfig(
+            selected_tab_id="saved",
+            tabs=[
+                SimulationTabConfig(
+                    id="saved",
+                    name="Đã lưu SQLite",
+                    strategy_id="smart_prev",
+                    money_manager_id="IncreaseWhenWin",
+                    stakes=[25, 50, 100],
+                )
+            ],
+        )
+        self.store.save_config(saved)
+
+        # update_site_url() constructs a fresh AppConfig from config.yaml.  Its
+        # default strategy tabs must never overwrite the persisted workspace.
+        after_site_update = self.store.load_or_import(StrategyTabsConfig())
+
+        self.assertEqual("saved", after_site_update.selected_tab_id)
+        self.assertEqual("smart_prev", after_site_update.tabs[0].strategy_id)
+        self.assertEqual(
+            "IncreaseWhenWin", after_site_update.tabs[0].money_manager_id
+        )
+        self.assertEqual([25, 50, 100], after_site_update.tabs[0].stakes)
+
     def test_each_tab_has_independent_runtime_and_history(self):
         config = StrategyTabsConfig(
             selected_tab_id="one",

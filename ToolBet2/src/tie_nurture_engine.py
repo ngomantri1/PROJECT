@@ -23,6 +23,8 @@ class TiePending:
     target_round_index: int
     placed_at: datetime
     table_name: str = ""
+    game_shoe: int = 0
+    game_round: int = 0
 
 
 class TieNurtureEngine:
@@ -165,6 +167,8 @@ class TieNurtureEngine:
         target_round_index: int,
         table_name: str = "",
         bet_id: int = 0,
+        game_shoe: int = 0,
+        game_round: int = 0,
     ) -> TiePending:
         pending = TiePending(
             bet_id=bet_id,
@@ -173,6 +177,8 @@ class TieNurtureEngine:
             target_round_index=target_round_index,
             placed_at=datetime.now(),
             table_name=table_name,
+            game_shoe=game_shoe,
+            game_round=game_round,
         )
         self.pending = pending
         self.total_bets += 1

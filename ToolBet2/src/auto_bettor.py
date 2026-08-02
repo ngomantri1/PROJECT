@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 # SSOT marker-roads cap nhat lich su truoc roadInfo WS — phai la trigger hop le
 BET_TRIGGER_SOURCES = frozenset({"gp-winner", "road-info-round", "marker-roads"})
+DEFERRED_RESOLUTION_SOURCES = frozenset({"gp-winner", "road-info-round"})
 _BET_OPEN_POLL_SEC = 0.5
 _BET_OPEN_WATCH_SEC = 55.0
 _BET_PLACE_TIMEOUT_SEC = 45
@@ -99,8 +100,14 @@ class AutoBettor:
         if loader is None:
             return ""
         unresolved = list(loader())
-        main_bets = [b for b in unresolved if b.pattern_id != TIE_PATTERN_ID]
-        tie_bets = [b for b in unresolved if b.pattern_id == TIE_PATTERN_ID]
+        main_bets = [
+            b for b in unresolved
+            if b.pattern_id != TIE_PATTERN_ID and b.status in {"placing", "uncertain"}
+        ]
+        tie_bets = [
+            b for b in unresolved
+            if b.pattern_id == TIE_PATTERN_ID and b.status in {"placing", "uncertain"}
+        ]
         if len(main_bets) > 1 or len(tie_bets) > 1:
             self._block_durable_execution(
                 "DB co nhieu pending cung mot mode; can doi chieu thu cong"
@@ -126,6 +133,13 @@ class AutoBettor:
                     "khong tu suy dien da dat hay chua"
                 )
 
+            if not ambiguous and bet.status == "placed":
+                self.store.defer_bet(
+                    bet.id,
+                    reason="restart_without_exact_authoritative_result",
+                )
+                continue
+
             if bet.pattern_id == TIE_PATTERN_ID:
                 self.tie.begin_pending(
                     round_id=bet.round_id,
@@ -133,6 +147,8 @@ class AutoBettor:
                     target_round_index=int(bet.target_round_index or 0),
                     table_name=str(bet.table_name or ""),
                     bet_id=bet.id,
+                    game_shoe=int(bet.game_shoe or 0),
+                    game_round=int(bet.game_round or 0),
                 )
             else:
                 side_value = str(bet.side or "")
@@ -160,6 +176,9 @@ class AutoBettor:
                         reason=str(bet.reason or ""),
                         target_round_index=int(bet.target_round_index or 0),
                         placed_at=bet.placed_at or bet.created_at or datetime.now(),
+                        table_name=str(bet.table_name or ""),
+                        game_shoe=int(bet.game_shoe or 0),
+                        game_round=int(bet.game_round or 0),
                     )
                 )
                 if bet.pattern_id == "multi_live":
@@ -182,13 +201,13 @@ class AutoBettor:
                         kind,
                     )
                 )
-        if unresolved:
+        if self._durable_block_reason:
             if not self._durable_block_reason:
                 self._block_durable_execution(
                     "pending duoc khoi phuc sau restart; can doi chieu ket qua "
                     "tin cay truoc khi tiep tuc"
                 )
-            logger.warning("[RECOVERY] Da nap lai %d pending tu DB", len(unresolved))
+            logger.warning("[RECOVERY] Da nap lai pending can khoa cuoc")
         return self._durable_block_reason
 
     def configure_tie_nurture(
@@ -320,6 +339,76 @@ class AutoBettor:
         if not allowed and self._runtime_unsafe_handler:
             self._runtime_unsafe_handler(reason)
         return bool(allowed), str(reason)
+
+    @staticmethod
+    def _pending_is_other_or_missed_round(
+        pending: PendingBet, table_name: str, result_meta: dict
+    ) -> bool:
+        if pending.table_name and pending.table_name != table_name:
+            return True
+        expected = (int(pending.game_shoe or 0), int(pending.game_round or 0))
+        actual = (
+            int(result_meta.get("game_shoe") or 0),
+            int(result_meta.get("game_round") or 0),
+        )
+        if all(expected):
+            return not all(actual) or expected != actual
+        return False
+
+    @staticmethod
+    def _tie_pending_is_other_or_missed_round(
+        pending, table_name: str, result_meta: dict
+    ) -> bool:
+        if pending.table_name and pending.table_name != table_name:
+            return True
+        expected = (int(pending.game_shoe or 0), int(pending.game_round or 0))
+        actual = (
+            int(result_meta.get("game_shoe") or 0),
+            int(result_meta.get("game_round") or 0),
+        )
+        if all(expected):
+            return not all(actual) or expected != actual
+        return False
+
+    def _defer_main_pending(self, reason: str) -> None:
+        pending = self.session.state.pending
+        if not pending:
+            return
+        if self.store.defer_bet(pending.bet_id, reason=reason):
+            logger.warning("[PENDING] Defer bet #%d: %s", pending.bet_id, reason)
+        self.session.clear_pending()
+        self._multi_live_pending = None
+        self.session.clear_current_group()
+
+    def _defer_tie_pending(self, reason: str) -> None:
+        pending = self.tie.pending
+        if not pending:
+            return
+        if self.store.defer_bet(pending.bet_id, reason=reason):
+            logger.warning("[PENDING] Defer bet Hoa #%d: %s", pending.bet_id, reason)
+        self.tie.clear_pending()
+
+    async def _resolve_deferred_if_exact(
+        self, result: BetSide, table_name: str, result_meta: dict, source: str
+    ) -> None:
+        if source not in DEFERRED_RESOLUTION_SOURCES:
+            return
+        game_shoe = int(result_meta.get("game_shoe") or 0)
+        game_round = int(result_meta.get("game_round") or 0)
+        if not game_shoe or not game_round:
+            return
+        resolved = self.store.resolve_deferred_bet(
+            table_name=table_name,
+            game_shoe=game_shoe,
+            game_round=game_round,
+            result=result,
+            source=source,
+        )
+        if resolved:
+            logger.info(
+                "[PENDING] Da resolve deferred %s tu %s %s:%s",
+                resolved, source, game_shoe, game_round,
+            )
 
     def decision_shadow_status(self) -> dict:
         data = self._decision_shadow_stats.to_dict()
@@ -570,15 +659,22 @@ class AutoBettor:
         table_name: str,
         skip_tie: bool = True,
         source: str = "",
+        round_meta_by_index: dict[int, dict] | None = None,
     ) -> None:
         async with self._bet_lock:
             if len(history) <= prev_len:
                 return
 
             new_results = history[prev_len:]
-            for result in new_results:
-                await self._resolve_if_needed(result, table_name)
-                tie_resolved = await self._resolve_tie_if_needed(result, table_name)
+            for index, result in enumerate(new_results, start=prev_len):
+                result_meta = dict((round_meta_by_index or {}).get(index, {}))
+                await self._resolve_if_needed(result, table_name, result_meta)
+                tie_resolved = await self._resolve_tie_if_needed(
+                    result, table_name, result_meta
+                )
+                await self._resolve_deferred_if_exact(
+                    result, table_name, result_meta, source
+                )
                 if not tie_resolved:
                     self.tie.observe_result(result)
 
@@ -953,7 +1049,9 @@ class AutoBettor:
         except asyncio.CancelledError:
             return
 
-    async def _resolve_if_needed(self, result: BetSide, table_name: str) -> None:
+    async def _resolve_if_needed(
+        self, result: BetSide, table_name: str, result_meta: dict | None = None
+    ) -> None:
         pending = self.session.state.pending
         if not pending:
             return
@@ -967,6 +1065,11 @@ class AutoBettor:
         if pending.bet_id <= 0:
             logger.warning("Bo qua resolve pending tam — chua co bet_id")
             self.session.clear_pending()
+            return
+        if result_meta is not None and self._pending_is_other_or_missed_round(
+            pending, table_name, result_meta
+        ):
+            self._defer_main_pending("table_or_round_changed")
             return
 
         multi = self._multi_live_pending
@@ -1126,7 +1229,9 @@ class AutoBettor:
                 self.session.state.session_profit,
             )
 
-    async def _resolve_tie_if_needed(self, result: BetSide, table_name: str) -> bool:
+    async def _resolve_tie_if_needed(
+        self, result: BetSide, table_name: str, result_meta: dict | None = None
+    ) -> bool:
         """Resolve cuoc Hoa rieng — khong dung GroupStakeProgression. True neu co pending."""
         pending = self.tie.pending
         if not pending:
@@ -1321,6 +1426,8 @@ class AutoBettor:
             target_round_index=target_index,
             table_name=table_name,
             bet_id=0,
+            game_shoe=game_shoe,
+            game_round=game_round,
         )
 
         try:
@@ -1458,6 +1565,11 @@ class AutoBettor:
             self._block_durable_execution(
                 f"bet Hoa #{bet.id} da click nhung khong ghi duoc placed: {exc}"
             )
+            return True
+        if result_meta is not None and self._tie_pending_is_other_or_missed_round(
+            pending, table_name, result_meta
+        ):
+            self._defer_tie_pending("table_or_round_changed")
             return True
         self._placed_round_keys.add(round_key)
         self._placing_key = None
@@ -1646,6 +1758,9 @@ class AutoBettor:
             reason=f"{len(allocations)} phân bổ tab",
             target_round_index=target_index,
             placed_at=datetime.now(),
+            table_name=table_name,
+            game_shoe=game_shoe,
+            game_round=game_round,
         )
         self._placing_key = round_key
         if not self.session.try_reserve_pending(pending):
@@ -2062,6 +2177,9 @@ class AutoBettor:
             reason=signal.reason,
             target_round_index=target_index,
             placed_at=datetime.now(),
+            table_name=table_name,
+            game_shoe=game_shoe,
+            game_round=game_round,
         )
         if not self.session.try_reserve_pending(reserved):
             self._placing_key = None

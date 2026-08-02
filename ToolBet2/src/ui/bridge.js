@@ -224,7 +224,7 @@
     });
   };
 
-  const saveTabs = async (tabs, selectedId, message, quiet = false, clearDraftId = "") => {
+  const saveTabs = async (tabs, selectedId, message, quiet = false, clearDraftId = "", renderOnSuccess = true) => {
     if (typeof window.toolbetSaveStrategyTabs !== "function") {
       if (message) message.textContent = "Chưa kết nối bridge lưu mô phỏng.";
       return false;
@@ -240,7 +240,9 @@
         delete window.__toolbetUiLocal.drafts[clearDraftId];
       }
       if (message && !quiet) message.textContent = "Đã lưu cấu hình mô phỏng vào SQLite.";
-      render(window.__toolbetUiSnapshot, window.__toolbetUiAssets || {});
+      if (renderOnSuccess) {
+        render(window.__toolbetUiSnapshot, window.__toolbetUiAssets || {});
+      }
       return true;
     } catch (error) {
       if (message) message.textContent = String(error && error.message ? error.message : error);
@@ -402,13 +404,12 @@
       simulationCheckbox,
       el("span", "", "Chỉ mô phỏng/test")
     );
-    const save = el("button", "tbv2-primary", "Lưu cấu hình"); save.type = "button";
     const remove = el("button", "tbv2-danger", "Đóng tab"); remove.type = "button"; remove.disabled = tabs.length <= 1;
-    controls.append(enabled, simulationOnly, save, remove); configCard.append(controls);
+    controls.append(enabled, simulationOnly, remove); configCard.append(controls);
     const message = el(
       "div",
       "tbv2-message",
-      draft ? "Có thay đổi chưa lưu. Bấm “Lưu cấu hình” để ghi vào SQLite." : "Dữ liệu tab được lưu trong SQLite."
+      draft ? "Đang chờ lưu tự động vào SQLite." : "Dữ liệu tab được lưu tự động vào SQLite."
     );
     configCard.append(message);
     const managerSelect = configCard.querySelector("#tbv2-progression");
@@ -425,6 +426,56 @@
         ? "10-20-40; 50-100-200"
         : "10-20-40-80";
     });
+    const autoSave = window.__toolbetUiLocal.autoSave || { timer: null, version: 0 };
+    window.__toolbetUiLocal.autoSave = autoSave;
+    const saveCurrentDraft = async (version) => {
+      if (version !== autoSave.version) return;
+      const currentDraft = window.__toolbetUiLocal.drafts[selected.id];
+      if (!currentDraft) return;
+      const name = currentDraft.name.trim();
+      const chains = currentDraft.stakes_text.split(";").map(part =>
+        part.split(/[,\-\s]+/).map(Number).filter(v => Number.isFinite(v) && v >= 0)
+      ).filter(chain => chain.length);
+      if (!name || !chains.length) {
+        message.textContent = "Tên tab và chuỗi tiền hợp lệ sẽ được lưu tự động.";
+        return;
+      }
+      const managerId = currentDraft.money_manager_id;
+      const changed = {
+        ...selected,
+        name,
+        strategy_id: currentDraft.strategy_id,
+        money_manager_id: managerId,
+        stakes: chains[0].slice(),
+        stake_chains: managerId === "MultiChain" ? chains : [],
+        take_profit: number(currentDraft.take_profit),
+        stop_loss: number(currentDraft.stop_loss),
+        enabled: currentDraft.enabled,
+        mode: currentDraft.mode,
+      };
+      delete changed.status; delete changed.history;
+      const saved = await saveTabs(
+        tabs.map(tab => tab.id === selected.id ? changed : tab),
+        selected.id,
+        null,
+        true,
+        "",
+        false
+      );
+      if (!saved || version !== autoSave.version) return;
+      delete window.__toolbetUiLocal.drafts[selected.id];
+      message.textContent = "Đã lưu tự động vào SQLite.";
+      render(window.__toolbetUiSnapshot, window.__toolbetUiAssets || {});
+    };
+    const scheduleAutoSave = () => {
+      autoSave.version += 1;
+      if (autoSave.timer) window.clearTimeout(autoSave.timer);
+      const version = autoSave.version;
+      autoSave.timer = window.setTimeout(() => {
+        autoSave.timer = null;
+        saveCurrentDraft(version);
+      }, 500);
+    };
     const rememberDraft = () => {
       if (
         renderSessionId
@@ -444,35 +495,12 @@
         enabled: checkbox.checked,
         mode: simulationCheckbox.checked ? "simulation" : "live",
       };
-      message.textContent = "Có thay đổi chưa lưu. Bấm “Lưu cấu hình” để ghi vào SQLite.";
+      message.textContent = "Đang chờ lưu tự động vào SQLite.";
+      scheduleAutoSave();
     };
     configCard.querySelectorAll("input, select").forEach(control => {
       control.addEventListener("input", rememberDraft);
       control.addEventListener("change", rememberDraft);
-    });
-    save.addEventListener("click", () => {
-      const managerId = managerSelect.value;
-      const chains = stakesInput.value.split(";").map(part =>
-        part.split(/[,\-\s]+/).map(Number).filter(v => Number.isFinite(v) && v >= 0)
-      ).filter(chain => chain.length);
-      const stakes = (chains[0] || []).slice();
-      const changed = { ...selected,
-        name: root.querySelector("#tbv2-name").value.trim(), strategy_id: root.querySelector("#tbv2-strategy").value,
-        money_manager_id: managerId, stakes,
-        stake_chains: managerId === "MultiChain" ? chains : [],
-        take_profit: number(root.querySelector("#tbv2-tp").value), stop_loss: number(root.querySelector("#tbv2-sl").value),
-        enabled: root.querySelector("#tbv2-enabled").checked,
-        mode: root.querySelector("#tbv2-simulation-only").checked
-          ? "simulation"
-          : "live" };
-      delete changed.status; delete changed.history;
-      saveTabs(
-        tabs.map(tab => tab.id === selected.id ? changed : tab),
-        selected.id,
-        message,
-        false,
-        selected.id
-      );
     });
     remove.addEventListener("click", () => {
       const remaining = tabs.filter(tab => tab.id !== selected.id);

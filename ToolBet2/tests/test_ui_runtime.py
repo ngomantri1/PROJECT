@@ -276,7 +276,7 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.assertIn(
-            "Có thay đổi chưa lưu",
+            "Đang chờ lưu tự động",
             await self.page.locator(".tbv2-config-card .tbv2-message").inner_text(),
         )
 
@@ -669,7 +669,7 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             await self.page.locator("#tbv2-strategy option:checked").inner_text(),
         )
 
-    async def test_workspace_save_bridge_only_sends_simulation_tab_config(self):
+    async def test_workspace_auto_save_bridge_sends_simulation_tab_config(self):
         received = []
 
         async def save_strategy_tabs(payload):
@@ -723,20 +723,22 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         runtime = BrowserUiRuntime(enabled=True)
         self.assertTrue(await runtime.install(self.page, snapshot))
         await self.page.locator("#tbv2-name").fill("Tab đã lưu")
-        await self.page.locator("#tbv2-simulation-only").uncheck()
-        await self.page.get_by_role(
-            "button", name="Lưu cấu hình"
-        ).click()
-        await self.page.wait_for_function("() => document.querySelector('#tbv2-name')?.value === 'Tab đã lưu'")
+        await self.page.wait_for_function(
+            "() => window.__toolbetUiSnapshot.tabs[0].name === 'Tab đã lưu'"
+        )
 
         self.assertEqual(1, len(received))
         saved_tab = received[0]["tabs"][0]
         self.assertEqual("Tab đã lưu", saved_tab["name"])
         self.assertEqual("IncreaseWhenLose", saved_tab["money_manager_id"])
-        self.assertEqual("live", saved_tab["mode"])
+        self.assertEqual("simulation", saved_tab["mode"])
         self.assertNotIn("status", saved_tab)
         self.assertNotIn("history", saved_tab)
         self.assertNotIn("auto_bet", received[0])
+        self.assertEqual(
+            0,
+            await self.page.get_by_role("button", name="Lưu cấu hình").count(),
+        )
 
     async def test_workspace_lifecycle_action_uses_typed_command_bridge(self):
         received = []

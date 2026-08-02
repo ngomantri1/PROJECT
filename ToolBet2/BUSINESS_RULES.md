@@ -89,10 +89,11 @@ Source: `src/progression.py:win_profit()`, `src/tie_nurture_engine.py:resolve_pe
 - Main bet phải được ghi `placing` trước physical click, sau đó mới chuyển
   `placed`; click không xác nhận được phải giữ `uncertain`. Multi-live phải có
   allocation journal durable trước click đầu tiên.
-- Pending phục hồi sau restart không tự ghép với một kết quả mới. Nó khóa cược
-  mới cho tới khi được đối chiếu bằng đúng bet/round, evidence nguồn tin cậy và
-  operator acknowledgement. Chỉ `placed` (và mọi allocation `placed`/`virtual`)
-  mới được result-reconcile; `placing`/`uncertain` không được suy diễn.
+- Pending `placed` phục hồi sau restart, hoặc gặp kết quả từ bàn/round server
+  khác, chuyển thành `deferred`; nó không áp P&L/progression và không chặn bàn
+  khác. Chỉ WS/HTTP `gp-winner`/`road-info-round` có đúng table + game shoe +
+  game round mới được tự resolve. `placing`/`uncertain` vẫn khóa cược mới cho
+  đến khi đối chiếu thủ công; DOM/canvas/lobby hay “kết quả mới nhất” không đủ.
 - Bet group: `open`, `take_profit`, `stop_loss` hoặc `abandoned`.
 - Cược tiền thật chỉ được click khi có lease canary local hợp lệ gắn đúng một
   tab live và SQLite hiện tại. Lease giới hạn thời gian, tổng stake một ván, số
