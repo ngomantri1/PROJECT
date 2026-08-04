@@ -7,6 +7,7 @@ from typing import Any
 
 from src.models import BetSide
 from src.money_manager import MoneyOutcome, MoneyQuote, MoneyUpdate
+from src.progression import win_profit
 
 
 MONEY_MANAGER_OPTIONS = (
@@ -40,6 +41,7 @@ class CapitalStateSnapshot:
     stop_loss: float
     take_profit: float
     banker_commission: float
+    recovery_pnl: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -55,6 +57,7 @@ class CapitalStateSnapshot:
             tuple(int(value) for value in chain)
             for chain in values.get("stake_chains") or ()
         )
+        values.setdefault("recovery_pnl", 0.0)
         return cls(**values)
 
 
@@ -86,6 +89,7 @@ class ReferenceMoneyManager:
         stop_loss: float = 0.0,
         take_profit: float = 0.0,
         banker_commission: float = 0.05,
+        auto_reset_on_nonnegative_pnl: bool = False,
     ):
         self._manager_id = (
             manager_id if manager_id in MONEY_MANAGER_IDS else "IncreaseWhenLose"
@@ -95,6 +99,7 @@ class ReferenceMoneyManager:
         self.stop_loss = max(0.0, float(stop_loss))
         self.take_profit = max(0.0, float(take_profit))
         self.banker_commission = min(1.0, max(0.0, float(banker_commission)))
+        self.auto_reset_on_nonnegative_pnl = bool(auto_reset_on_nonnegative_pnl)
         self.reset()
 
     @property
@@ -150,6 +155,7 @@ class ReferenceMoneyManager:
                 "chain_count": len(self._chains),
                 "chain_profit": self._chain_profit,
                 "session_pnl": self._session_pnl,
+                "recovery_pnl": self._recovery_pnl,
                 "limit_hit": self._limit_hit,
             },
         )
@@ -162,7 +168,9 @@ class ReferenceMoneyManager:
         if result != bet_side:
             return MoneyOutcome.LOSS, -float(stake)
         if bet_side == BetSide.BANKER:
-            return MoneyOutcome.WIN, float(stake) * (1.0 - self.banker_commission)
+            return MoneyOutcome.WIN, win_profit(
+                stake, bet_side, commission=self.banker_commission
+            )
         return MoneyOutcome.WIN, float(stake)
 
     def apply_result(self, bet_side: BetSide, result: BetSide) -> MoneyUpdate:
@@ -174,6 +182,8 @@ class ReferenceMoneyManager:
             bet_side, result, previous.stake
         )
         self._session_pnl += profit
+        previous_recovery_pnl = self._recovery_pnl
+        self._recovery_pnl += profit
         if outcome == MoneyOutcome.WIN:
             self._wins += 1
             self._advance(True, round_profit=profit)
@@ -182,6 +192,11 @@ class ReferenceMoneyManager:
             self._advance(False, round_profit=profit)
         else:
             self._pushes += 1
+        if (
+            self.auto_reset_on_nonnegative_pnl
+            and previous_recovery_pnl < 0 <= self._recovery_pnl
+        ):
+            self._reset_stake_levels()
         self._apply_limits()
         return MoneyUpdate(
             manager_id=self.manager_id,
@@ -267,6 +282,16 @@ class ReferenceMoneyManager:
         elif self.stop_loss > 0 and self._session_pnl <= -self.stop_loss:
             self._limit_hit = "stop_loss"
 
+    def _reset_stake_levels(self) -> None:
+        """Reset only progression after a recovered P&L; keep statistics intact."""
+
+        self._level_index = 0
+        self._chain_index = 0
+        self._need_double_next = False
+        self._used_double_this_round = False
+        self._chain_profit = 0.0
+        self._recovery_pnl = 0.0
+
     def snapshot(self) -> CapitalStateSnapshot:
         return CapitalStateSnapshot(
             manager_id=self.manager_id,
@@ -285,6 +310,7 @@ class ReferenceMoneyManager:
             stop_loss=self.stop_loss,
             take_profit=self.take_profit,
             banker_commission=self.banker_commission,
+            recovery_pnl=self._recovery_pnl,
         )
 
     def restore(self, snapshot: CapitalStateSnapshot) -> None:
@@ -311,6 +337,7 @@ class ReferenceMoneyManager:
         self._losses = int(snapshot.losses)
         self._pushes = int(snapshot.pushes)
         self._limit_hit = str(snapshot.limit_hit or "")
+        self._recovery_pnl = float(snapshot.recovery_pnl)
 
     def reset(self) -> None:
         self._level_index = 0
@@ -319,6 +346,7 @@ class ReferenceMoneyManager:
         self._used_double_this_round = False
         self._chain_profit = 0.0
         self._session_pnl = 0.0
+        self._recovery_pnl = 0.0
         self._wins = 0
         self._losses = 0
         self._pushes = 0
@@ -333,6 +361,7 @@ def create_money_manager(
     stop_loss: float = 0.0,
     take_profit: float = 0.0,
     banker_commission: float = 0.05,
+    auto_reset_on_nonnegative_pnl: bool = False,
 ) -> ReferenceMoneyManager:
     return ReferenceMoneyManager(
         manager_id,
@@ -341,4 +370,5 @@ def create_money_manager(
         stop_loss=stop_loss,
         take_profit=take_profit,
         banker_commission=banker_commission,
+        auto_reset_on_nonnegative_pnl=auto_reset_on_nonnegative_pnl,
     )

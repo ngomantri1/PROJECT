@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
 
 from src.release_support import inspect_pilot_runtime
 from src.small_stake_guard import (
@@ -70,8 +69,7 @@ class SmallStakePilotGuardTests(unittest.TestCase):
             "now": self.issued + timedelta(minutes=1),
         }
         values.update(overrides)
-        with patch("src.small_stake_guard.is_kill_switch_active", return_value=False):
-            return self.guard.evaluate(**values)
+        return self.guard.evaluate(**values)
 
     def add_bet(
         self, bet_id: int, *, outcome: str | None, profit: float | None, stake: int = 50

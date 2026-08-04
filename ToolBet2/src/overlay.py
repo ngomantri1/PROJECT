@@ -11,11 +11,7 @@ from src.stakes_config import format_stakes
 from src.betting_config import format_limit
 from src.models import BetSide, SIDE_LABEL
 from src.pattern_analyzer import (
-    analyze_patterns,
     filter_history,
-    format_full_history,
-    pattern_catalog,
-    pattern_priority_hint,
 )
 from src.ui_contracts import UiCommand, UiCommandResult, UiScreen, UiSnapshot
 from src.ui_runtime import BrowserUiRuntime
@@ -47,53 +43,14 @@ def build_overlay_payload(
     pnl_today: dict[str, Any] | None = None,
     pnl_7days: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    # Hien thi day du lich su (co ca hoa) tren dots; chi bo qua hoa khi phan tich mau cuoc
+    # History remains available to the strategy-tab pipeline.  The two legacy
+    # 1-1/Bet×2 models no longer run or publish an overlay signal.
     full = list(history)
     h = filter_history(history, skip_tie)
-    enabled_map = pattern_enabled or {}
-    lengths_map = pattern_lengths or {}
-    disabled = frozenset(pid for pid, on in enabled_map.items() if not on)
-    analyses = analyze_patterns(
-        history,
-        skip_tie,
-        disabled_patterns=disabled,
-        pattern_lengths=lengths_map,
-    )
-    matched = [a for a in analyses if a.status == "matched"]
-    building = [a for a in analyses if a.status == "building"][:5]
-
-    active_ids = {a.pattern_id for a in matched}
-    building_ids = {a.pattern_id for a in building} - active_ids
-    rates = pattern_win_rates or {}
-    low_any = False
-    patterns_ui = []
-    for p in pattern_catalog(lengths_map):
-        r = rates.get(str(p["id"]), {})
-        low = bool(r.get("low_confidence"))
-        if low:
-            low_any = True
-        patterns_ui.append(
-        {
-            "id": p["id"],
-            "name": p["name"],
-            "rule": p["rule"],
-            "length": int(p.get("length") or 2),
-            "length_choices": list(p.get("length_choices") or [2, 3, 4]),
-            "enabled": enabled_map.get(str(p["id"]), True),
-            "active": p["id"] in active_ids,
-            "building": p["id"] in building_ids,
-            "win_rate_display": r.get("display", "—"),
-            "win_rate": r.get("win_rate"),
-            "pnl_display": r.get("pnl_display", "—"),
-            "profit": r.get("profit"),
-            "low_confidence": low,
-        }
-        )
 
     dots_full = full[-recent_dots:] if full else []
     text_src = h[-recent_text:] if h else []
 
-    signal = matched[0] if matched else None
     hist_stats = {
         "banker": sum(1 for s in full if s == BetSide.BANKER),
         "player": sum(1 for s in full if s == BetSide.PLAYER),
@@ -118,36 +75,16 @@ def build_overlay_payload(
             for s in dots_full
         ],
         "history_text": " → ".join(SIDE_LABEL.get(s, s.value) for s in text_src) if text_src else "(trong)",
-        "has_signal": signal is not None,
-        "signal_side": SIDE_LABEL[signal.bet_side] if signal and signal.bet_side else None,
-        "signal_key": signal.bet_side.value if signal and signal.bet_side else None,
-        "matched": [
-            {
-                "name": a.pattern_name,
-                "reason": a.reason,
-            }
-            for a in matched
-        ],
-        "building": [
-            {
-                "name": a.pattern_name,
-                "progress": a.progress,
-                "reason": a.reason,
-            }
-            for a in building
-        ],
-        "patterns": patterns_ui,
-        "pattern_priority_hint": pattern_priority_hint(
-            disabled_patterns=disabled,
-            pattern_lengths=lengths_map,
-        ),
+        "has_signal": False,
+        "signal_side": None,
+        "signal_key": None,
+        "matched": [],
+        "building": [],
+        "patterns": [],
+        "pattern_priority_hint": "",
         "stakes_display": format_stakes(stakes) if stakes else "",
         "stats_scope": stats_scope,
-        "stats_low_confidence": (
-            "~ = mau < 30 cuoc, chua du tin cay"
-            if low_any and stats_scope in ("today", "7days")
-            else ""
-        ),
+        "stats_low_confidence": "",
         "stake_steps": stake_steps or [],
         "stake_steps_label": stake_steps_label or "Win% hom nay theo tung buoc",
         "stake_steps_warn": stake_steps_warn or "",
@@ -320,6 +257,7 @@ class GameOverlay:
         "toolbetSaveTieNurture",
         "toolbetToggleTieNurture",
         "toolbetSaveStrategyTabs",
+        "toolbetLoadStrategyHistory",
         "toolbetUiCommand",
     )
 
@@ -337,9 +275,11 @@ class GameOverlay:
         self._stats_scope_handler = None
         self._tie_nurture_handler = None
         self._strategy_tabs_handler = None
+        self._strategy_history_handler = None
         self._ui_command_handler = None
         self._strategy_tabs: dict[str, Any] = {}
         self._auto_bet = False
+        self._run_enabled = False
         self._stop_loss = 0.0
         self._take_profit = 0.0
         self._group_take_profit = 0.0
@@ -388,6 +328,11 @@ class GameOverlay:
         self._group_stop_loss = group_stop_loss
         self._progression_mode = progression_mode
         self._loss_watch_recover = bool(loss_watch_recover)
+
+    def set_run_enabled(self, enabled: bool) -> None:
+        """Keep the operator run latch available to every UI reinstall."""
+
+        self._run_enabled = bool(enabled)
 
     def set_tie_nurture(self, data: dict[str, Any] | None):
         from src.tie_nurture_config import tie_nurture_to_overlay
@@ -483,6 +428,11 @@ class GameOverlay:
 
         self._strategy_tabs_handler = handler
 
+    def set_strategy_history_handler(self, handler):
+        """handler(payload) loads one paginated strategy-history page."""
+
+        self._strategy_history_handler = handler
+
     def set_ui_command_handler(self, handler):
         """handler(command: UiCommand) -> dict; reserved for the v2 command bus."""
 
@@ -490,6 +440,7 @@ class GameOverlay:
 
     def _build_ui_snapshot(self, payload: dict[str, Any] | None = None) -> UiSnapshot:
         data = dict(payload or {})
+        data.setdefault("run_enabled", self._run_enabled)
         strategy_tabs = data.get("strategy_tabs")
         if not isinstance(strategy_tabs, dict):
             strategy_tabs = self._strategy_tabs
@@ -746,6 +697,22 @@ class GameOverlay:
                     return {"ok": False, "error": str(exc)}
 
             if not await self._expose_fn(page, "toolbetSaveStrategyTabs", _save_strategy_tabs):
+                ok = False
+
+        if self._strategy_history_handler:
+
+            async def _load_strategy_history(payload: dict) -> dict:
+                try:
+                    result = self._strategy_history_handler(payload or {})
+                    if hasattr(result, "__await__"):
+                        result = await result
+                    return result if isinstance(result, dict) else {"ok": False}
+                except Exception as exc:
+                    return {"ok": False, "error": str(exc)}
+
+            if not await self._expose_fn(
+                page, "toolbetLoadStrategyHistory", _load_strategy_history
+            ):
                 ok = False
 
         async def _ui_command(raw: dict) -> dict:

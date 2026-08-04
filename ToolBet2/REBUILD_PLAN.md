@@ -280,7 +280,7 @@ Strategy chạy qua simulation/replay và có thể được bật live trực t
 3. [x] Pipeline code signing, checksum, crash report redacted và rollback.
 4. [x] Gate pilot: simulation, tùy chọn shadow comparison, stake 0, stake nhỏ,
    nhóm khách giới hạn.
-5. [x] Kill switch, license revoke và tài liệu support.
+5. [x] License revoke và tài liệu support; local kill switch was later retired.
 6. [ ] Đo CPU/RAM của phiên pilot đủ thời lượng so với baseline hiện tại.
 
 **Nghiệm thu:** cài mới/nâng cấp/gỡ sạch; recovery qua reload/mất mạng; không mất
@@ -289,7 +289,7 @@ pending/state; tài nguyên trong ngân sách.
 Trạng thái 2026-08-02: đã tạo pipeline PyInstaller `onedir`, launcher không cần
 Python hệ thống, tách data sang `%LOCALAPPDATA%\ToolBet2`, SHA-256 integrity,
 customer build bắt buộc HTTPS license/public key/code-signing certificate,
-rotating log có redaction, support ZIP, local kill switch và pilot preflight
+rotating log có redaction, support ZIP và pilot preflight
 fail-closed. Artifact nội bộ `0.8.0` đã qua packaged self-check cho Playwright,
 UI assets, ddddocr/ONNX và SQLite. Chưa gọi đây là bản customer:
 còn cần endpoint/license public key/certificate production, chạy pilot thực tế

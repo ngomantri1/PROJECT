@@ -1499,7 +1499,7 @@ INSTALL_SCRIPT = """
     const add = document.createElement('button'); add.type = 'button'; add.className = 'tb-sim-add'; add.textContent = '+';
     add.disabled = tabs.length >= 5;
     add.addEventListener('click', () => {
-      const next = { id: 'sim_' + Date.now(), name: 'Chiến lược ' + (tabs.length + 1), enabled: true, strategy_id: 'legacy_patterns', stakes: [0,100,110,120,130], progression_mode: 'loss_up_win_reset', stop_loss: 0, take_profit: 0 };
+      const next = { id: 'sim_' + Date.now(), name: 'Chiến lược ' + (tabs.length + 1), enabled: true, strategy_id: 'follow_last', stakes: [0,100,110,120,130], progression_mode: 'loss_up_win_reset', stop_loss: 0, take_profit: 0 };
       window.__tbStrategySelectedId = next.id;
       window.__tbSetStrategyTabs({ ...data, selected_tab_id: next.id, tabs: [...tabs, next] });
     });

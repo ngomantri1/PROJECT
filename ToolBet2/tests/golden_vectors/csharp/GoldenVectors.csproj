@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <BaccaratReferenceRoot>$(MSBuildThisFileDirectory)..\..\..\..\BaccaratChromeAgent2</BaccaratReferenceRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(BaccaratReferenceRoot)\src\BaccaratChromeAgent.Desktop\Tasks\MoneyManager.cs" Link="Reference\MoneyManager.cs" />
+    <Compile Include="$(BaccaratReferenceRoot)\src\BaccaratChromeAgent.Desktop\Tasks\MoneyHelper.cs" Link="Reference\MoneyHelper.cs" />
+  </ItemGroup>
+</Project>

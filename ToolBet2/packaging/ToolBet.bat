@@ -3,8 +3,6 @@ chcp 65001 >nul
 setlocal
 set "INSTALL_DIR=%~dp0"
 set "TOOLBET_HOME=%LOCALAPPDATA%\ToolBet2"
-set "TOOLBET_KILL_SWITCH=%TOOLBET_HOME%\data\KILL_SWITCH"
-
 if not exist "%TOOLBET_HOME%" mkdir "%TOOLBET_HOME%"
 if not exist "%TOOLBET_HOME%\data" mkdir "%TOOLBET_HOME%\data"
 if not exist "%TOOLBET_HOME%\logs" mkdir "%TOOLBET_HOME%\logs"

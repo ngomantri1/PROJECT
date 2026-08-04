@@ -1,13 +1,113 @@
 # TODO
 
+## Shoe-transition authority diagnosis — 2026-08-04
+
+- [x] Add structured per-tab diagnostics when all Live authorities are rejected.
+- [ ] On the next non-money reproduction after a shoe transition, collect the
+  first `NO_ELIGIBLE_AUTHORITY` entry and fix only the condition it proves.
+
+## Live stake/runtime consistency — completed 2026-08-04
+
+- [x] Compare the full MoneyManager configuration when synchronizing a live
+  tab, so a saved stake-chain edit replaces the stale in-memory manager and
+  the next executor quote matches the UI/SQLite configuration.
+- [x] Do not settle a multi-live `placing` intent. Park it as `deferred` until
+  placement evidence is confirmed; do not change P&L or MoneyManager state.
+- [ ] Verify the corrected stake hand-off in a controlled non-money browser
+  session with a real chip tray and authoritative result metadata.
+
+## Placement evidence and table-scoped pending — completed 2026-08-04
+
+- [x] Trust partial DOM chip trays without substituting fake denominations.
+- [x] Record no-zone-click failures as `cancelled` and possible-click failures
+  as `uncertain`; never emit `multi_live_placed` for a failed path.
+- [x] Park other-table pending while retaining exact-round protection.
+- [x] Match the old ToolBet restart behavior: do not restore ambiguous journal
+  rows as active blockers; preserve them as `deferred` evidence instead.
+- [ ] Reconcile bet #52 only from trustworthy casino evidence; do not guess
+  whether it was placed or its outcome.
+
+## Current live-runtime follow-up
+
+- [x] Remove the KILL_SWITCH sentinel/environment gate, its UI state and its
+  source/packaged operator launchers; retain execution mode, Tool capability,
+  pending/exact-round, journal and executor checks.
+- [x] Stop the transient aggregate `risk tổng hợp` snapshot from cancelling a
+  multi-live signal before `wait_and_place_bet()` can wait for the next betting
+  window; retain independent real-guard/journal checks.
+- [x] Add `disabled`/`pilot`/`production` execution policy without bypassing
+  Tool/license, RiskDecision, exact-round or executor gates.
+- [x] Allow simulation-only Start independently of live gates and keep
+  `run_enabled` session-only.
+- [x] Defer confirmed/virtual old bets, quarantine authoritative-stale
+  ambiguous clicks, and create a MoneyManager recovery epoch from the last
+  settled snapshot.
+- [x] Expose live blockers/warnings and pending classifications in the runtime
+  snapshot/workspace.
+- [ ] Diagnose the pre-existing signed license-cache restore regression. It is
+  the only known full-suite failure after the intended UI snapshot update.
+- [ ] Run a controlled non-money browser soak to observe classification and UI
+  banners with real WS/HTTP metadata. No casino browser was used for this patch.
+- [ ] Diagnose the one-off scroll/focus fixture failure seen only in a combined
+  focused run; isolated rerun and the preceding full run passed.
+
+- [x] Match reference Banker whole-chip rounding and add the optional per-tab
+  capital reset when recovery P&L reaches zero or above.
+- [x] Port per-tab runtime state machines for `top10_pattern` and
+  `parity_hotback`; retain their reference transition rules after settlement.
+- [x] Replace shared reduced Ensemble/N-gram logic with independent
+  reference-derived per-tab implementations for `ensemble_majority`,
+  `online_ngram`, and `expert_panel`.
+- [x] Add the three missing B/P reference strategies: configured sequence,
+  configured pattern queue, and random side; persist their tab input through
+  an additive SQLite migration.
+- [x] Create shared C#/Python golden vectors that compare per-round bet side,
+  stake, level, chain and P&L for all eight MoneyManagers.
+- [x] Match Dual Schedule's reference-local AI tie-break, N-gram Tie safety
+  behavior and Top10's 50-result update boundary.
+- [x] Add C#/Python strategy vectors for eight deterministic reference tasks,
+  comparing side, stake, P&L, level, next stake and schedule position.
+- [x] Synchronize the session run button after an ordinary v2 runtime refresh,
+  including its visible state and next start/stop command.
+- [x] Persist a simulation/live checkbox change immediately to the SQLite-owned
+  tab workspace so a quick refresh/re-entry cannot lose the selected mode.
+- [x] Keep the process-local operator run latch enabled across internal
+  execution pauses; only the explicit Stop command clears it.
+- [x] Preserve that run latch in every `GameOverlay` install/reinstall snapshot
+  so DOM recovery cannot redraw “Dừng chạy” as “Bắt đầu chạy”.
+- [x] On explicit Start, evaluate the loaded table history and arm immediately
+  for the betting window instead of requiring one additional result event.
+- [x] Make the SQLite Live/Simulation mode operator-owned: runtime warnings may
+  recover, wait or block the current click, but must not auto-demote a Live tab.
+  Keep an armed decision across a transient failed UI-health probe.
+- [x] Match the older ToolBet betting contract by removing account-balance
+  reads and balance-based rejection from both single and multi-live execution.
+- [x] Prevent vipbet's root SPA URL from being treated as proof that the player
+  left a healthy room; preserve the WEB short-circuit for unrelated pages.
+- [x] Retire the 1-1/Bet×2 runtime models as a decision/default/fallback source;
+  make strategy tabs and their MoneyManagers the only simulation/live authority.
+- [ ] Keep `sequence_major_minor` and `pattern_major_minor` unavailable until
+  the collector provides trustworthy Banker/Player pool totals and an explicit
+  N/I sequence; do not infer N/I from B/P history.
+- [ ] Decide whether Online N-gram's reference AppData persistence should be
+  represented by an explicit versioned ToolBet persistence contract; current
+  implementation intentionally warm-starts in memory to avoid an unreviewed
+  database/config change.
+- [ ] Decide whether Start should reset capital runtime like the reference task
+  constructor or continue ToolBet's SQLite-restored per-tab MoneyManager state.
+- [ ] Extend cross-language strategy vectors to stateful Ensemble, N-gram,
+  Expert Panel, Top10 and Hot-back after defining deterministic state/config
+  injection for their random and persisted inputs.
+
 ## Phase 6 table-scoped deferred pending
 
 - [x] Defer confirmed placed pending on restart/table-or-round mismatch instead
   of consuming an unrelated next result.
 - [x] Require exact table/shoe/round metadata from WS/HTTP sources before an
   automatic deferred resolution; preserve manual reconciliation.
-- [x] Keep `placing`/`uncertain` global fail-closed and exclude only deferred
-  records from unrelated-table pilot gates.
+- [x] Keep current-round `placing`/`uncertain` fail-closed; after authoritative
+  round closure/advance, quarantine it, start a recovery epoch and remove it
+  from active pending without guessing placement/outcome.
 - [ ] Run a controlled source-runtime browser session that switches tables and
   capture evidence that a deferred record is neither mis-resolved nor included
   in new-table progression.
@@ -21,11 +121,10 @@
 - [x] Exclude Tie nurture from the first canary and preserve durable recovery
   if a multi-side placement becomes partial.
 - [x] Add source/packaged arm/status/finish/close commands and regression tests.
-- [ ] Obtain trusted evidence and reconcile or defer bet `id=27`; configure
-  exactly one approved live tab and a production signed `live_bet` license.
-- [ ] With the operator present, backup DB, clear the kill switch only for the
-  approved window, run `arm`, complete at most the approved bets, turn Auto off,
-  run `finish`, then `close` and re-enable the kill switch.
+- [x] Bet `id=27` is preserved as virtual stake-zero `deferred`; it no longer
+  blocks a later round. Trusted evidence is still required to resolve outcome.
+- [ ] With the operator present, backup DB, run `arm`, complete at most the
+  approved bets, turn Auto off, run `finish`, then `close`.
 
 ## Phase 4 stake-zero evidence gate
 
@@ -35,14 +134,14 @@
 - [x] Prove stake zero never invokes the chip-click executor in focused tests.
 - [x] Remove Game/Tool usernames from runtime logs and redact historical login
   identifiers from diagnostics.
-- [ ] Reconcile bet `id=27` from trusted evidence, then configure exactly one
-  live tab whose authoritative MoneyManager envelope is entirely zero.
+- [ ] Trusted exact evidence may still resolve bet `id=27`; this is no longer a
+  prerequisite for starting a different round.
 - [ ] Only after the real preflight passes, run the controlled browser ca and
   produce a PASS finish report; this operational step was not forced.
 
 ## Phase 3 trusted pending reconciliation
 
-- [x] Add read-only inspection and explicit resolve gated by kill switch, exact
+- [x] Add read-only inspection and explicit resolve gated by exact
   identity, evidence and fixed acknowledgement.
 - [x] Create and verify a SQLite backup before reconciliation mutation.
 - [x] Resolve confirmed Player/Banker or fully confirmed aggregate bets in one
@@ -82,8 +181,8 @@
   stopping the running ToolBet session.
 - [x] Build an internal preservation snapshot and verify that it excludes
   runtime credentials, config, database, Chrome profile and license cache.
-- [x] Activate the source-runtime `data/KILL_SWITCH`; keep it in place until
-  stale pending reconciliation and fail-closed preflight work are complete.
+- [x] Historical Phase 0 used `data/KILL_SWITCH`; the mechanism and operator
+  launchers were removed from current source on 2026-08-03.
 - [ ] Reconcile bet `id=27` only from a trusted round-39 result or through an
   explicit domain recovery workflow. Current evidence stops at shoe 24963,
   round 38, so the unresolved stake-0 record and open group 7 were preserved.
@@ -106,8 +205,9 @@
    not a casino end-to-end run.
 4. Measure CPU/RAM for a pilot-duration session and compare it with
    `RESOURCE_BASELINE.md`.
-5. Reconcile every pending from trusted evidence. Recovery is implemented, and
-   pilot remains blocked while any unresolved/uncertain bet exists.
+5. Reconcile active current-round pending. Deferred/quarantined historical
+   records remain warnings; they must not be deleted or assigned guessed
+   outcomes, but they no longer block a different exact round after recovery.
 
 ## Test and observability gaps
 
@@ -128,6 +228,8 @@
 
 ## Completed — workspace persistence (2026-08-03)
 
+- [x] Correct the two 10-round schedule strategies and give each live tab an
+  independent runtime-only schedule counter that advances after settlement.
 - [x] Keep persisted strategy, MoneyManager and stake-chain settings after
   Tool Login/Game Login. Reload SQLite-owned `strategy_tabs` after the site URL
   update; do not overwrite them with fresh YAML defaults.
@@ -142,6 +244,19 @@
   preserve all existing configurations.
 - [x] Recognise the v2 workspace in the health presence check so a live panel
   is not repeatedly reinstalled and its header does not flicker.
+- [x] Add newest-first, SQL-paginated bet history with 10/20/50 page sizes and
+  a persisted browser-side display preference.
+- [x] Reset the control-panel scroll only on its first DOM mount; preserve it
+  during reinstalls and ordinary runtime updates.
+- [x] Render MultiChain stake chains one per line and save each valid line as
+  its own durable `stake_chains` record.
+- [x] Keep the run control visible for both simulation and live tabs, with the
+  concise “Bắt đầu chạy”/“Dừng chạy” visible labels.
+- [x] Extend the desktop workspace to the viewport bottom while retaining its
+  existing top margin.
+- [x] Decouple the session-only Run control from persisted `betting.auto_bet`.
+  A valid Tool session can start a simulation-only or mixed workspace; tab mode
+  alone determines whether an eligible bet reaches the live executor.
 
 ## Completed work intentionally not kept as TODO
 

@@ -38,41 +38,6 @@ BET_ZONE_ALL_PROBE: tuple[str, ...] = (
 _MIN_ZONE_PX = 20
 
 
-async def read_account_balance(page: Page) -> float | None:
-    """Read the casino header balance without guessing from unrelated numbers."""
-
-    script = """
-    () => {
-      const text = document.body?.innerText || '';
-      const match = text.match(/(?:Số\\s*dư|So\\s*du|Balance)\\s*[:：]?\\s*([0-9][0-9.,]*)/i);
-      return match ? match[1] : '';
-    }
-    """
-    for frame in [page.main_frame, *[item for item in page.frames if item != page.main_frame]]:
-        try:
-            raw = str(await frame.evaluate(script) or "").strip()
-        except Exception:
-            continue
-        if not raw:
-            continue
-        normalized = raw.replace(" ", "")
-        if "," in normalized and "." in normalized:
-            normalized = normalized.replace(",", "")
-        elif normalized.count(",") == 1:
-            tail = normalized.rsplit(",", 1)[1]
-            normalized = (
-                normalized.replace(",", ".")
-                if len(tail) <= 2
-                else normalized.replace(",", "")
-            )
-        try:
-            value = float(normalized)
-        except ValueError:
-            continue
-        if value >= 0:
-            return value
-    return None
-
 DEFAULT_CHIP_VALUES = [10, 50, 100, 500, 1000, 5000]
 TABLE_CHIP_VALUES: dict[int, list[int]] = {
     5: [10, 20, 50, 100, 200],
@@ -558,11 +523,14 @@ def chip_values_for_count(count: int) -> list[int]:
 def resolve_chip_values(chip_count: int, dom_values: list[int] | None = None) -> list[int]:
     """Uu tien menh gia doc tu DOM; fallback bang TABLE_CHIP_VALUES theo so chip."""
     if dom_values:
-        cleaned = [int(v) for v in dom_values if int(v or 0) > 0]
-        if len(cleaned) >= 2 and len(cleaned) == len(dom_values):
-            return cleaned
-        if len(cleaned) == int(chip_count) and len(cleaned) >= 2:
-            return cleaned
+        positional = [int(v or 0) for v in dom_values]
+        positive = [value for value in positional if value > 0]
+        # Keep positional zeros so the returned indexes still match the DOM.
+        # Stake planning already ignores non-positive denominations.
+        if len(positional) == int(chip_count) and len(positive) >= 2:
+            return positional
+        if len(positive) >= 2 and len(positive) == len(positional):
+            return positive
     return chip_values_for_count(int(chip_count) if chip_count else 5)
 
 
@@ -1221,6 +1189,7 @@ async def wait_and_place_bet(
     *,
     timeout_sec: int = 55,
     click_scope=None,
+    pre_click_guard=None,
 ) -> bool:
     """Cho cua cuoc mo (chip + zone + countdown) roi dat cuoc ngay trong thoi gian cho phep.
     amount=0: van theo doi — cho cua mo, khong click chip, van tinh thang/thua nhom.
@@ -1262,6 +1231,14 @@ async def wait_and_place_bet(
                 phase.get("chipsVisible"),
                 zone_id or "?",
             )
+            if pre_click_guard is not None:
+                guard_result = await pre_click_guard()
+                if isinstance(guard_result, tuple):
+                    allowed, reason = guard_result
+                else:
+                    allowed, reason = bool(guard_result), "pre-click guard rejected"
+                if not allowed:
+                    raise PreClickGuardRejected(str(reason))
             if await _execute_bet_clicks(page, side, amount, click_scope=click_scope):
                 logger.info(
                     "Da dat cuoc AE SEXY %s %s (%s) — cd=%s confirm=%s",
@@ -1323,6 +1300,14 @@ async def wait_and_place_bet(
         phase.get("cdText", ""),
     )
     return False
+
+
+class PreClickGuardRejected(RuntimeError):
+    """The physical click was cancelled by the final execution policy check."""
+
+
+class BetPlacementUncertain(RuntimeError):
+    """At least one bet-zone click may have occurred, but placement is unproven."""
 
 
 async def place_ae_sexy_bet(page: Page, side: BetSide, amount: int, *, click_scope=None) -> bool:
@@ -1458,6 +1443,7 @@ async def _execute_bet_clicks_inner(page: Page, side: BetSide, amount: int) -> b
     )
 
     last_chip_idx = 0
+    zone_click_attempted = False
     for chip_value, clicks in value_plan:
         chip_index = await _find_chip_index_for_value(page, chip_value)
         if chip_index < 0:
@@ -1466,6 +1452,10 @@ async def _execute_bet_clicks_inner(page: Page, side: BetSide, amount: int) -> b
                 chip_value,
                 chip_values,
             )
+            if zone_click_attempted:
+                raise BetPlacementUncertain(
+                    f"missing chip {chip_value} after a possible zone click"
+                )
             return False
         last_chip_idx = chip_index
         need_clicks = int(clicks)
@@ -1475,6 +1465,7 @@ async def _execute_bet_clicks_inner(page: Page, side: BetSide, amount: int) -> b
             if not await _select_chip_value_js(page, chip_value):
                 await _select_chip_value_mouse(page, chip_value)
             await page.wait_for_timeout(200)
+            zone_click_attempted = True
             if await _playwright_click_bet(
                 page,
                 side,
@@ -1526,7 +1517,9 @@ async def _execute_bet_clicks_inner(page: Page, side: BetSide, amount: int) -> b
                 detail.get("playerStack"),
                 detail.get("bankerStack"),
             )
-            return False
+            raise BetPlacementUncertain(
+                f"zone click for {side.value} may have occurred without confirmation"
+            )
         # Khong "bu chip" / doi chieu zone amount: ban multiplayer hay doc
         # tong ban / so nguoi khac (70, 3267...) → sai stake + HUY nham.
 
@@ -1538,7 +1531,9 @@ async def _execute_bet_clicks_inner(page: Page, side: BetSide, amount: int) -> b
         detail = await _bet_placed_detail(page, side)
         if not detail.get("ok"):
             logger.warning("Chip chua len vung cuoc %s — khong bam Xac nhan", side.value)
-            return False
+            raise BetPlacementUncertain(
+                f"zone click for {side.value} may have occurred without visible stake"
+            )
 
     confirmed = await _try_confirm_bet(page, side, last_chip_idx)
     if confirmed:
@@ -1562,4 +1557,8 @@ async def _execute_bet_clicks_inner(page: Page, side: BetSide, amount: int) -> b
         side.value,
         detail.get("playerStack") or detail.get("bankerStack"),
     )
-    return bool(detail.get("ok"))
+    if detail.get("ok"):
+        return True
+    raise BetPlacementUncertain(
+        f"zone click for {side.value} may have occurred without confirmation"
+    )

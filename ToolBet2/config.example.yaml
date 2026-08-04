@@ -72,3 +72,7 @@ license:
   timeout_seconds: 8
   grace_minutes: 60
   refresh_before_minutes: 5
+live_execution:
+  # disabled = virtual only; pilot = finite lease; production = no pilot lease.
+  # Every real mode still checks Tool/license, Risk, pending and journal.
+  mode: disabled

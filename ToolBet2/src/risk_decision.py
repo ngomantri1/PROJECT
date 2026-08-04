@@ -33,8 +33,6 @@ class RiskCode(str, Enum):
     SOURCE_NOT_ALLOWED = "source_not_allowed"
     UI_UNHEALTHY = "ui_unhealthy"
     BETTING_WINDOW_LATE = "betting_window_late"
-    BALANCE_UNAVAILABLE = "balance_unavailable"
-    INSUFFICIENT_BALANCE = "insufficient_balance"
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,15 +114,10 @@ class RiskContext:
     source_allowed: bool = True
     ui_healthy: bool = True
     countdown: int | None = None
-    balance: float | None = None
-    balance_buffer: float = 0.0
-    require_balance: bool = False
 
     def __post_init__(self) -> None:
         if self.stop_loss < 0 or self.take_profit < 0:
             raise ValueError("risk limits must not be negative")
-        if self.balance_buffer < 0:
-            raise ValueError("balance_buffer must not be negative")
 
 
 class RiskManager:
@@ -220,21 +213,6 @@ class RiskManager:
                     f"{self.minimum_countdown}s"
                 ),
             )
-        if context.require_balance and context.balance is None:
-            return RiskDecision.block(
-                code=RiskCode.BALANCE_UNAVAILABLE,
-                reason="Không đọc được số dư tài khoản",
-            )
-        required_balance = float(context.money.stake) + float(context.balance_buffer)
-        if context.balance is not None and context.balance < required_balance:
-            return RiskDecision.block(
-                code=RiskCode.INSUFFICIENT_BALANCE,
-                reason=(
-                    f"Số dư {context.balance:.0f} nhỏ hơn mức cần "
-                    f"{required_balance:.0f}"
-                ),
-            )
-
         return RiskDecision.approve(
             execution_mode=ExecutionMode.REAL,
             reason="Đủ điều kiện tạo cược thật",

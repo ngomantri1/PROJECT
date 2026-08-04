@@ -11,7 +11,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.database import init_db
-from src.kill_switch import is_kill_switch_active
 from src.pending_reconciliation import (
     RECONCILIATION_ACK,
     ReconciliationError,
@@ -61,9 +60,6 @@ def main() -> int:
     database = _database_path(config_path, args.database)
     if args.action == "list":
         return _list_pending(database)
-    if not is_kill_switch_active():
-        print("BLOCK: kill switch phải đang bật trước khi đối chiếu DB")
-        return 2
     if args.bet_id is None or not args.round_id or not args.result:
         print("BLOCK: resolve cần --bet-id, --round-id và --result")
         return 2

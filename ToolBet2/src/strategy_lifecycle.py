@@ -13,7 +13,13 @@ from src.pattern_analyzer import PatternAnalysis
 from src.risk_decision import ExecutionMode, RiskContext, RiskDecision, RiskManager
 from src.strategy_decision import StrategyDecision
 from src.strategy_tabs import SimulationTabConfig, decision_for_strategy_tab
-from src.statistical_strategies import SPEC_BY_ID
+from src.statistical_strategies import (
+    SCHEDULE_STRATEGY_IDS,
+    STATEFUL_STRATEGY_IDS,
+    SPEC_BY_ID,
+    advance_statistical_runtime,
+    create_statistical_runtime,
+)
 
 
 class TabLifecycleMode(str, Enum):
@@ -90,6 +96,76 @@ class StrategyLifecycleService:
     ):
         self._session_factory = session_factory
         self.policy = policy or ShadowPolicy()
+        self._schedule_round_by_tab: dict[str, tuple[str, int]] = {}
+        self._statistical_runtime_by_tab: dict[str, tuple[str, str, object]] = {}
+
+    def _schedule_round_index(self, tab: SimulationTabConfig) -> int:
+        """Return this tab's runtime position in a 10-round schedule."""
+
+        if tab.strategy_id not in SCHEDULE_STRATEGY_IDS:
+            self._schedule_round_by_tab.pop(tab.id, None)
+            return 0
+        current = self._schedule_round_by_tab.get(tab.id)
+        if current is None or current[0] != tab.strategy_id:
+            self._schedule_round_by_tab[tab.id] = (tab.strategy_id, 0)
+            return 0
+        return current[1]
+
+    def reset_runtime(self, tab_id: str) -> None:
+        key = str(tab_id or "")
+        self._schedule_round_by_tab.pop(key, None)
+        self._statistical_runtime_by_tab.pop(key, None)
+
+    def _statistical_runtime(self, tab: SimulationTabConfig, history: list[BetSide]):
+        if tab.strategy_id not in STATEFUL_STRATEGY_IDS:
+            self._statistical_runtime_by_tab.pop(tab.id, None)
+            return None
+        current = self._statistical_runtime_by_tab.get(tab.id)
+        if (
+            current is None
+            or current[0] != tab.strategy_id
+            or current[1] != tab.strategy_input
+        ):
+            runtime = create_statistical_runtime(
+                tab.strategy_id,
+                history,
+                seed=tab.id,
+                strategy_input=tab.strategy_input,
+            )
+            self._statistical_runtime_by_tab[tab.id] = (
+                tab.strategy_id, tab.strategy_input, runtime
+            )
+            return runtime
+        return current[2]
+
+    def record_settled_bet(
+        self,
+        tab_id: str,
+        *,
+        bet_side: BetSide | None = None,
+        result: BetSide | None = None,
+        history: list[BetSide] | None = None,
+    ) -> None:
+        """Advance runtime only after this tab's allocation is settled."""
+
+        key = str(tab_id or "")
+        current = self._schedule_round_by_tab.get(key)
+        if current is not None:
+            strategy_id, position = current
+            self._schedule_round_by_tab[key] = (strategy_id, (position + 1) % 10)
+        stateful = self._statistical_runtime_by_tab.get(key)
+        if (
+            stateful is None
+            or history is None
+            or result is None
+            or bet_side is None
+        ):
+            return
+        stateful_strategy_id, _strategy_input, runtime = stateful
+        won = None if result == BetSide.TIE else bet_side == result
+        advance_statistical_runtime(
+            stateful_strategy_id, runtime, history, won=won
+        )
 
     @staticmethod
     def _tab_from_row(row: StrategyTabRecord) -> SimulationTabConfig:
@@ -106,6 +182,8 @@ class StrategyLifecycleService:
             stake_chains=json.loads(row.stake_chains_json or "[]"),
             stop_loss=row.stop_loss,
             take_profit=row.take_profit,
+            auto_reset_on_nonnegative_pnl=bool(row.auto_reset_on_nonnegative_pnl),
+            strategy_input=row.strategy_input or "",
             mode=row.mode or "simulation",
         ).normalized()
 
@@ -169,6 +247,7 @@ class StrategyLifecycleService:
             )
             row.demote_reason = ""
             session.commit()
+            self.reset_runtime(row.id)
             return self.status()[row.id]
         finally:
             session.close()
@@ -255,6 +334,7 @@ class StrategyLifecycleService:
             row.mode = TabLifecycleMode.LIVE.value
             row.demote_reason = ""
             session.commit()
+            self.reset_runtime(row.id)
             return self.status()[tab_id]
         finally:
             session.close()
@@ -268,6 +348,7 @@ class StrategyLifecycleService:
             row.mode = TabLifecycleMode.SIMULATION.value
             row.demote_reason = (reason or "Demote thủ công")[:255]
             session.commit()
+            self.reset_runtime(row.id)
             return self.status().get(tab_id, {})
         finally:
             session.close()
@@ -287,6 +368,8 @@ class StrategyLifecycleService:
                 changed.append(row.id)
             if changed:
                 session.commit()
+                for tab_id in changed:
+                    self.reset_runtime(tab_id)
             return changed
         finally:
             session.close()
@@ -335,13 +418,14 @@ class StrategyLifecycleService:
         source_allowed: bool,
         ui_healthy: bool = True,
         countdown: int | None = None,
-        balance: float | None = None,
         disabled_patterns: frozenset[str] = frozenset(),
         pattern_lengths: dict[str, int] | None = None,
         daily_profit: float = 0.0,
         limit_hit: str = "",
     ) -> TabAuthorityDecision:
         if tab.enabled:
+            schedule_round_index = self._schedule_round_index(tab)
+            statistical_runtime = self._statistical_runtime(tab, history)
             strategy = decision_for_strategy_tab(
                 tab,
                 history,
@@ -350,6 +434,8 @@ class StrategyLifecycleService:
                 pattern_lengths=pattern_lengths,
                 table_name=table_name,
                 source=source,
+                schedule_round_index=schedule_round_index,
+                statistical_runtime=statistical_runtime,
             )
         else:
             strategy = StrategyDecision.skip(
@@ -380,7 +466,6 @@ class StrategyLifecycleService:
                 source_allowed=source_allowed,
                 ui_healthy=ui_healthy,
                 countdown=countdown,
-                balance=balance,
             )
         )
         return TabAuthorityDecision(

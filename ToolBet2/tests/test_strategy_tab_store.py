@@ -9,7 +9,8 @@ from unittest.mock import Mock
 from sqlalchemy import inspect
 
 from main import HistoryWatcher
-from src.capital_managers import MONEY_MANAGER_OPTIONS
+from src.capital_managers import MONEY_MANAGER_OPTIONS, create_money_manager
+from src.money_state_store import MoneyStateStore
 from src.database import StrategyMoneyConfigRecord, init_db
 from src.strategy_tab_store import StrategyTabStore
 from src.strategy_tabs import SimulationTabConfig, StrategyTabsConfig
@@ -44,6 +45,7 @@ class StrategyTabStoreTests(unittest.TestCase):
         changed = imported.model_copy(deep=True)
         changed.tabs[0].name = "Từ SQLite"
         changed.tabs[0].strategy_id = "smart_prev"
+        changed.tabs[0].strategy_input = "BPP-BP"
         changed.tabs[0].money_manager_id = "IncreaseWhenWin"
         changed.tabs[0].stakes = [10, 100, 110]
         self.store.save_config(changed)
@@ -55,6 +57,7 @@ class StrategyTabStoreTests(unittest.TestCase):
         self.assertEqual("alpha", reloaded.tabs[0].id)
         self.assertEqual("Từ SQLite", reloaded.tabs[0].name)
         self.assertEqual("smart_prev", reloaded.tabs[0].strategy_id)
+        self.assertEqual("BPP-BP", reloaded.tabs[0].strategy_input)
         self.assertEqual("IncreaseWhenWin", reloaded.tabs[0].money_manager_id)
         self.assertEqual([10, 100, 110], reloaded.tabs[0].stakes)
 
@@ -114,6 +117,29 @@ class StrategyTabStoreTests(unittest.TestCase):
         self.assertEqual([10, 20, 40], watcher.config.strategy_tabs.tabs[0].stakes)
         watcher._sync_live_money_managers.assert_called_once_with()
         watcher.overlay.set_strategy_tabs.assert_called_once_with({"tabs": []})
+
+    def test_live_manager_is_rebuilt_when_stakes_change(self):
+        tab = SimulationTabConfig(
+            id="live-one",
+            mode="live",
+            money_manager_id="IncreaseWhenWin",
+            stakes=[10, 100, 110],
+        ).normalized()
+        watcher = HistoryWatcher.__new__(HistoryWatcher)
+        watcher.strategy_lifecycle = Mock()
+        watcher.strategy_lifecycle.tabs_in_mode.return_value = [tab]
+        watcher.money_state_store = Mock(spec=MoneyStateStore)
+        watcher.money_state_store.restore.return_value = False
+        stale = create_money_manager("IncreaseWhenWin", [20, 100, 110])
+        watcher._live_money_managers = {tab.id: stale}
+
+        watcher._sync_live_money_managers()
+
+        refreshed = watcher._live_money_managers[tab.id]
+        self.assertIsNot(stale, refreshed)
+        self.assertEqual(10, refreshed.quote().stake)
+        watcher.money_state_store.restore.assert_called_once_with(tab.id, refreshed)
+        watcher.money_state_store.save.assert_called_once_with(tab.id, refreshed)
 
     def test_each_tab_has_independent_runtime_and_history(self):
         config = StrategyTabsConfig(
@@ -175,6 +201,23 @@ class StrategyTabStoreTests(unittest.TestCase):
         self.store.record_overlay(payload, table_name="C01")
 
         self.assertEqual(1, len(self.store.history_for_tabs(["one"])["one"]))
+
+    def test_history_page_returns_newest_rows_first_with_bounded_page_size(self):
+        self.store.save_config(StrategyTabsConfig(tabs=[SimulationTabConfig(id="one")]))
+        for size in range(1, 26):
+            self.store.record_overlay(
+                {"tabs": [{"id": "one", "status": {"history_size": size}}]},
+                table_name="C01",
+            )
+
+        page = self.store.history_page("one", page=1, page_size=10)
+        second = self.store.history_page("one", page=2, page_size=10)
+
+        self.assertEqual(25, page["total"])
+        self.assertEqual(3, page["page_count"])
+        self.assertEqual(25, page["items"][0]["history_size"])
+        self.assertEqual(16, page["items"][-1]["history_size"])
+        self.assertEqual(15, second["items"][0]["history_size"])
 
     def test_stake_chains_are_independent_per_tab_and_money_manager(self):
         base = StrategyTabsConfig(

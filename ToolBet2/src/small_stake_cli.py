@@ -10,7 +10,6 @@ from pathlib import Path
 
 import yaml
 
-from src.kill_switch import is_kill_switch_active
 from src.release_support import (
     inspect_license_readiness,
     inspect_pilot_runtime,
@@ -96,7 +95,6 @@ def handle_small_stake_command(argv: list[str], *, config_flag: str = "--config"
         stage="small_stake",
         runtime=runtime,
         maximum_small_stake=max_stake,
-        kill_switch_active=is_kill_switch_active(),
         license_errors=inspect_license_readiness(config, config_dir=config_path.parent),
     )
     if lease_path.exists():

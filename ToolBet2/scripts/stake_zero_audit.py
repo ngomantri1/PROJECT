@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.kill_switch import is_kill_switch_active
 from src.release_support import (
     configure_console_utf8,
     inspect_pilot_runtime,
@@ -48,7 +47,6 @@ def main() -> int:
         config,
         stage="stake_zero",
         runtime=runtime,
-        kill_switch_active=is_kill_switch_active(),
     )
     if errors:
         for error in errors:
@@ -62,7 +60,6 @@ def main() -> int:
                 {
                     "stage": "stake_zero",
                     "baseline_bet_id": baseline,
-                    "kill_switch_active": is_kill_switch_active(),
                     "authoritative_stakes": list(runtime.authoritative_stakes),
                 },
                 ensure_ascii=False,
@@ -78,7 +75,6 @@ def main() -> int:
     )
     payload = evidence.to_dict()
     payload["stage"] = "stake_zero"
-    payload["kill_switch_active"] = is_kill_switch_active()
     rendered = json.dumps(payload, ensure_ascii=False, indent=2)
     if args.output:
         output = Path(args.output).resolve()

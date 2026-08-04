@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
-
-from src.kill_switch import is_kill_switch_active, live_bet_allowed
 from src.release_support import (
     PilotRuntimeState,
     create_integrity_manifest,
@@ -111,10 +107,10 @@ class ReleaseSupportTests(unittest.TestCase):
                 live_tabs=0,
                 authoritative_stakes=(0, 100, 200),
             ),
-            maximum_small_stake=100, kill_switch_active=True,
+            maximum_small_stake=100,
             license_errors=("license blocked",),
         )
-        self.assertGreaterEqual(len(errors), 4)
+        self.assertGreaterEqual(len(errors), 3)
 
     def test_sqlite_money_config_is_authoritative_over_yaml_and_tab_stakes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -253,15 +249,3 @@ class ReleaseSupportTests(unittest.TestCase):
                     allow_plaintext_cache_for_tests=True,
                 ),
             )
-
-    def test_local_or_environment_kill_switch_blocks_live(self):
-        with tempfile.TemporaryDirectory() as directory:
-            switch = Path(directory) / "KILL_SWITCH"
-            with patch.dict(os.environ, {"TOOLBET_KILL_SWITCH": str(switch)}, clear=False):
-                self.assertFalse(is_kill_switch_active())
-                self.assertTrue(live_bet_allowed(True))
-                switch.write_text("stop", encoding="utf-8")
-                self.assertTrue(is_kill_switch_active())
-                self.assertFalse(live_bet_allowed(True))
-            with patch.dict(os.environ, {"TOOLBET_DISABLE_LIVE": "1"}, clear=False):
-                self.assertTrue(is_kill_switch_active())

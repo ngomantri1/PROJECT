@@ -11,7 +11,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from src.kill_switch import is_kill_switch_active
 from src.release_support import PilotRuntimeState, inspect_pilot_runtime
 
 SMALL_STAKE_ACK = "I ACCEPT FINITE SMALL STAKE PILOT"
@@ -171,8 +170,6 @@ class SmallStakePilotGuard:
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
             return SmallStakeDecision(False, f"lease canary không hợp lệ: {type(exc).__name__}")
         deny = lambda reason: SmallStakeDecision(False, reason, lease.pilot_id)
-        if is_kill_switch_active():
-            return deny("kill switch đang bật")
         if Path(lease.database_path).resolve() != self.database_path:
             return deny("lease không thuộc SQLite đang chạy")
         if current > expires:
@@ -210,7 +207,7 @@ class SmallStakePilotGuard:
                 rows = connection.execute(
                     f"SELECT id, outcome, profit FROM bets "
                     f"WHERE id>? AND COALESCE(status, 'placed') "
-                    f"NOT IN ('cancelled', 'deferred') "
+                    f"NOT IN ('cancelled', 'deferred', 'quarantined') "
                     f"AND {real_clause} ORDER BY id",
                     (lease.baseline_bet_id,),
                 ).fetchall()

@@ -426,3 +426,4 @@ FodyWeavers.xsd
 /ToolBet2/data
 /ToolBet2/data
 /ToolBet2/data
+!/ToolBet2/tests/golden_vectors/*.json

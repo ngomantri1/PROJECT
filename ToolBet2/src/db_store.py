@@ -597,12 +597,45 @@ class GameDataStore:
         finally:
             session.close()
 
+    def has_bet_for_exact_round(
+        self, *, table_name: str, game_shoe: int, game_round: int
+    ) -> bool:
+        """Duplicate guard scoped to one authoritative table/shoe/round."""
+
+        if not table_name or not game_shoe or not game_round:
+            return False
+        session = self.session_factory()
+        try:
+            return session.scalar(select(BetRecord.id).where(
+                BetRecord.table_name == table_name,
+                BetRecord.game_shoe == int(game_shoe),
+                BetRecord.game_round == int(game_round),
+                or_(BetRecord.status.is_(None), BetRecord.status != "cancelled"),
+            ).limit(1)) is not None
+        finally:
+            session.close()
+
     def defer_bet(self, bet_id: int, *, reason: str) -> bool:
         """Park a confirmed placed bet without assigning it a later result."""
         session = self.session_factory()
         try:
             bet = session.get(BetRecord, bet_id)
-            if not bet or bet.outcome is not None or bet.status != "placed":
+            virtual_unclicked = bool(
+                bet
+                and bet.execution_mode == "virtual"
+                and float(bet.stake or 0) <= 0
+            )
+            if (
+                not bet
+                or bet.outcome is not None
+                or (
+                    bet.status != "placed"
+                    and not (
+                        virtual_unclicked
+                        and bet.status in {"placing", "uncertain"}
+                    )
+                )
+            ):
                 return False
             bet.status = "deferred"
             bet.reason = f"{bet.reason} | deferred={reason}".strip(" |")
@@ -617,6 +650,123 @@ class GameDataStore:
         except Exception:
             session.rollback()
             raise
+        finally:
+            session.close()
+
+    def park_unresolved_bet(self, bet_id: int, *, reason: str) -> bool:
+        """Park unresolved work without assigning placement or outcome."""
+
+        session = self.session_factory()
+        try:
+            bet = session.get(BetRecord, bet_id)
+            if (
+                not bet
+                or bet.outcome is not None
+                or bet.status not in {"placing", "placed", "uncertain"}
+            ):
+                return False
+            placement_unproven = bet.status != "placed"
+            rows = list(session.scalars(
+                select(BetAllocationRecord).where(
+                    BetAllocationRecord.bet_id == bet.id
+                )
+            ))
+            for row in rows:
+                if row.placement_status in {"planned", "placing", "uncertain"}:
+                    row.placement_status = "deferred"
+                row.updated_at = datetime.now()
+            bet.status = "deferred"
+            bet.reason = f"{bet.reason} | deferred={reason}".strip(" |")
+            session.add(EventRecord(
+                round_id=bet.round_id,
+                event_type="bet_deferred_unresolved",
+                payload=json.dumps(
+                    {
+                        "bet_id": bet.id,
+                        "table": bet.table_name,
+                        "reason": reason,
+                        "placement_unproven": placement_unproven,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                created_at=datetime.now(),
+            ))
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def park_bet_for_other_table(self, bet_id: int, *, reason: str) -> bool:
+        """Compatibility wrapper for table-switch parking."""
+
+        return self.park_unresolved_bet(bet_id, reason=reason)
+
+    def quarantine_bet(self, bet_id: int, *, reason: str) -> list[str]:
+        """Park an ambiguous old click without inventing placement or outcome."""
+
+        session = self.session_factory()
+        try:
+            bet = session.get(BetRecord, bet_id)
+            if (
+                not bet
+                or bet.outcome is not None
+                or bet.status not in {"placing", "uncertain"}
+            ):
+                return []
+            allocations = list(session.scalars(
+                select(BetAllocationRecord).where(
+                    BetAllocationRecord.bet_id == bet.id
+                )
+            ))
+            tab_ids: list[str] = []
+            for row in allocations:
+                if row.placement_status in {"planned", "placing", "uncertain"}:
+                    row.placement_status = "quarantined"
+                if row.tab_id and row.tab_id not in tab_ids:
+                    tab_ids.append(row.tab_id)
+                row.updated_at = datetime.now()
+            bet.status = "quarantined"
+            bet.reason = f"{bet.reason} | quarantined={reason}".strip(" |")
+            session.add(EventRecord(
+                round_id=bet.round_id,
+                event_type="bet_quarantined",
+                payload=json.dumps(
+                    {
+                        "bet_id": bet.id,
+                        "reason": reason,
+                        "tab_ids": tab_ids,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                created_at=datetime.now(),
+            ))
+            session.commit()
+            return tab_ids
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def set_allocation_recovery_epochs(
+        self, bet_id: int, epochs: dict[str, int]
+    ) -> None:
+        session = self.session_factory()
+        try:
+            for row in session.scalars(
+                select(BetAllocationRecord).where(
+                    BetAllocationRecord.bet_id == bet_id
+                )
+            ):
+                if row.tab_id in epochs:
+                    row.recovery_epoch = int(epochs[row.tab_id])
+                    row.updated_at = datetime.now()
+            session.commit()
         finally:
             session.close()
 
@@ -718,7 +868,15 @@ class GameDataStore:
             bet.outcome = "cancelled"
             bet.profit = 0.0
             bet.resolved_at = datetime.now()
-            bet.reason = f"{bet.reason} | canary_block={reason}".strip(" |")
+            bet.reason = f"{bet.reason} | cancelled_before_click={reason}".strip(" |")
+            for row in session.scalars(
+                select(BetAllocationRecord).where(
+                    BetAllocationRecord.bet_id == bet.id
+                )
+            ):
+                if row.placement_status in {"planned", "placing"}:
+                    row.placement_status = "cancelled"
+                    row.updated_at = datetime.now()
             session.commit()
         except Exception:
             session.rollback()
@@ -829,12 +987,41 @@ class GameDataStore:
                         BetRecord.outcome.is_(None),
                         or_(
                             BetRecord.status.is_(None),
-                            BetRecord.status != "deferred",
+                            BetRecord.status.not_in(
+                                ("deferred", "quarantined", "cancelled", "resolved")
+                            ),
                         ),
                     )
                     .order_by(BetRecord.created_at, BetRecord.id)
                 )
             )
+        finally:
+            session.close()
+
+    def pending_status_summary(self, *, table_name: str = "") -> dict[str, Any]:
+        """Return unresolved journal counts without treating warnings as locks."""
+
+        session = self.session_factory()
+        try:
+            statement = (
+                select(BetRecord.status, func.count(BetRecord.id))
+                .where(BetRecord.outcome.is_(None))
+                .group_by(BetRecord.status)
+            )
+            if table_name:
+                statement = statement.where(BetRecord.table_name == table_name)
+            rows = session.execute(statement).all()
+            counts = {
+                str(status or "placed"): int(count)
+                for status, count in rows
+            }
+            active_statuses = {"placing", "placed", "uncertain"}
+            return {
+                "active": sum(counts.get(status, 0) for status in active_statuses),
+                "deferred": counts.get("deferred", 0),
+                "quarantined": counts.get("quarantined", 0),
+                "counts": counts,
+            }
         finally:
             session.close()
     def load_bet_allocations(self, bet_id: int) -> list[dict[str, Any]]:

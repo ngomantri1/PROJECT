@@ -272,8 +272,21 @@ async def detect_ae_sexy_phase(page: Page, table_name: str = "", collector=None)
         url
         and any(x in url for x in ("/casino", "live.html", "webmain", "gamehall", "bactable"))
     )
+    # vipbet keeps the live casino iframe on its root SPA URL after the room
+    # has opened.  The URL alone therefore cannot prove that the player has
+    # left the room; allow the shell/room probes to decide first.
+    root_can_host_game = False
+    try:
+        from src.sites import resolve_site_from_page
+
+        site = resolve_site_from_page(page)
+        root_can_host_game = bool(
+            site is not None and site.info.shell_mode == "casino_iframe"
+        )
+    except Exception:
+        pass
     if url and is_usable_browser_page_url(url):
-        if not on_ae and not on_casino_shell:
+        if not on_ae and not on_casino_shell and not root_can_host_game:
             return PHASE_WEB
 
     # FAST PATH: shell_mode (nhanh) — tranh probe nang treo → nham WEB

@@ -200,6 +200,7 @@ class AutoBettorShadowIntegrationTests(unittest.TestCase):
         self.session = BettingSession([0, 100])
         self.session.configure(auto_bet=True)
         self.bettor = AutoBettor(self.session, self.store)
+        self.bettor.set_decision_shadow_enabled(True)
 
     def test_shadow_match_does_not_arm_or_mutate_session(self) -> None:
         history = [BetSide.PLAYER, BetSide.BANKER]
@@ -283,11 +284,12 @@ class AutoBettorShadowIntegrationTests(unittest.TestCase):
 
 
 class AutoBettorShadowAuthorityTests(unittest.IsolatedAsyncioTestCase):
-    async def test_forced_shadow_mismatch_cannot_change_legacy_arm(self) -> None:
+    async def test_missing_strategy_evaluator_never_falls_back_to_legacy_arm(self) -> None:
         store = FakeStore()
         session = BettingSession([0, 100])
         session.configure(auto_bet=True)
         bettor = AutoBettor(session, store)
+        bettor.set_decision_shadow_enabled(True)
 
         with patch.object(bettor, "_schedule_bet_on_open_poll"):
             with patch(
@@ -302,10 +304,7 @@ class AutoBettorShadowAuthorityTests(unittest.IsolatedAsyncioTestCase):
                     source="gp-winner",
                 )
 
-        self.assertTrue(bettor.has_armed_bet)
-        legacy_signal = bettor._armed_bet["signal"]
-        self.assertEqual(legacy_signal.pattern_id, "mau_1_1")
-        self.assertEqual(legacy_signal.bet_side, BetSide.PLAYER)
+        self.assertFalse(bettor.has_armed_bet)
         self.assertEqual(
             store.events[0][0],
             "decision_shadow_mismatch",

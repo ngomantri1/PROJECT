@@ -74,8 +74,8 @@ ToolBet2\ToolBet2.exe --pilot-preflight small_stake --ack-small-stake
 
 ### Lease canary tiền nhỏ
 
-Sau khi đã xử lý mọi blocker, backup DB và chỉ vừa gỡ kill switch cho ca được
-duyệt, arm một lease hữu hạn. Ví dụ dưới đây giới hạn tổng stake mỗi ván 100,
+Sau khi đã xử lý mọi blocker và backup DB, arm một lease hữu hạn. Ví dụ dưới
+đây giới hạn tổng stake mỗi ván 100,
 tối đa 3 bet, lỗ tối đa 300 và hết hạn sau 30 phút:
 
 ```powershell
@@ -87,16 +87,14 @@ tối đa 3 bet, lỗ tối đa 300 và hết hạn sau 30 phút:
 
 Lease gắn đúng một `tab_id` và SQLite. Runtime kiểm tra lại trước từng physical
 click; thay tab, tăng envelope stake, có pending khác, hết thời gian/số bet,
-chạm stop-loss, mất lease, bật kill switch hoặc Nuôi Hòa đều chặn. Không sửa
+chạm stop-loss, mất lease hoặc bật Nuôi Hòa đều chặn. Không sửa
 file JSON bằng tay.
 
-Kết thúc ca: tắt Auto, chờ mọi pending được resolve, lấy báo cáo rồi đóng lease
-và bật lại kill switch:
+Kết thúc ca: tắt Auto, chờ mọi pending được resolve, lấy báo cáo rồi đóng lease:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\small_stake_pilot.py finish --config config.yaml
 .\.venv\Scripts\python.exe scripts\small_stake_pilot.py close --config config.yaml
-.\STOP-LIVE-BET.bat
 ```
 
 Bản đóng gói dùng `ToolBet2.exe --small-stake-pilot arm|status|finish|close`
@@ -125,14 +123,13 @@ và `execution_mode=virtual`, đồng thời mọi allocation đều stake 0/vir
 đóng gói dùng `ToolBet2.exe --stake-zero-audit start|finish`. Báo cáo DB không
 thay thế kiểm tra UI/collector/reload của operator trong ca browser.
 
-Giữ kill switch trong toàn bộ quá trình chuẩn bị. Chỉ chạy
-`ALLOW-LIVE-BET.bat` sau khi mọi lỗi preflight khác đã được xử lý, DB đã backup
-và operator chuẩn bị bắt đầu đúng ca pilot đã duyệt. Nếu preflight báo pending,
+Xử lý mọi lỗi preflight và backup DB trước khi operator bắt đầu đúng ca pilot
+đã duyệt. Nếu preflight báo pending,
 không xóa/sửa DB thủ công để ép PASS.
 
 ### Đối chiếu pending sau restart
 
-Giữ kill switch và dừng ToolBet trước khi đối chiếu. Trước hết chỉ liệt kê:
+Dừng ToolBet trước khi đối chiếu. Trước hết chỉ liệt kê:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\reconcile_pending.py list --config config.yaml
@@ -155,18 +152,15 @@ ghi audit event. Khởi động lại ToolBet sau đối chiếu để xóa pend
 Bản đóng gói dùng cùng contract qua `ToolBet2.exe --reconcile-pending list`
 hoặc `--reconcile-pending resolve` với các flag tương tự.
 
-## 4. Kill switch và license revoke
+## 4. License revoke
 
-- Chạy `STOP-LIVE-BET.bat`: tạo kill switch trong data người dùng. Cược mới bị
-  chặn; cược pending vẫn được resolve/persist.
-- Chạy `ALLOW-LIVE-BET.bat`: chỉ gỡ kill switch local. License và RiskDecision
-  vẫn phải hợp lệ.
+- KILL_SWITCH local đã được bỏ theo quyết định nghiệp vụ đã xác nhận.
 - Khi cần dừng từ xa, revoke account/device trên license server. Client sẽ
   fail-closed ở lần refresh/kiểm tra kế tiếp.
 
 ## 5. Tiêu chí dừng pilot
 
-Dừng ngay và giữ kill switch nếu có một trong các trường hợp:
+Dừng phiên chạy ngay nếu có một trong các trường hợp:
 
 - Click sai cửa, sai chip hoặc duplicate round.
 - Cược mới xuất hiện khi pending chưa resolve.

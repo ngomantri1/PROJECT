@@ -177,6 +177,7 @@ class BetAllocationRecord(Base):
     placement_status: Mapped[str] = mapped_column(String(16), default="planned")
     outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
     profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recovery_epoch: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
@@ -209,6 +210,8 @@ class StrategyTabRecord(Base):
     stake_chains_json: Mapped[str] = mapped_column(Text, default="[]")
     stop_loss: Mapped[float] = mapped_column(Float, default=0.0)
     take_profit: Mapped[float] = mapped_column(Float, default=0.0)
+    auto_reset_on_nonnegative_pnl: Mapped[int] = mapped_column(Integer, default=0)
+    strategy_input: Mapped[str] = mapped_column(Text, default="")
     mode: Mapped[str] = mapped_column(String(24), default="simulation", index=True)
     shadow_evaluations: Mapped[int] = mapped_column(Integer, default=0)
     shadow_matches: Mapped[int] = mapped_column(Integer, default=0)
@@ -270,6 +273,8 @@ class StrategyMoneyStateRecord(Base):
     manager_id: Mapped[str] = mapped_column(String(64), index=True)
     config_fingerprint: Mapped[str] = mapped_column(String(64))
     state_json: Mapped[str] = mapped_column(Text)
+    settled_state_json: Mapped[str] = mapped_column(Text, default="")
+    recovery_epoch: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
@@ -294,6 +299,36 @@ class StrategyMoneyConfigRecord(Base):
 def _migrate_schema(engine) -> None:
     """Them cot moi cho DB cu (SQLite ALTER TABLE)."""
     insp = inspect(engine)
+    if "strategy_money_states" in insp.get_table_names():
+        money_cols = {
+            c["name"] for c in insp.get_columns("strategy_money_states")
+        }
+        money_alters: list[str] = []
+        if "settled_state_json" not in money_cols:
+            money_alters.append(
+                "ALTER TABLE strategy_money_states "
+                "ADD COLUMN settled_state_json TEXT DEFAULT ''"
+            )
+        if "recovery_epoch" not in money_cols:
+            money_alters.append(
+                "ALTER TABLE strategy_money_states "
+                "ADD COLUMN recovery_epoch INTEGER DEFAULT 0"
+            )
+        if money_alters:
+            with engine.begin() as conn:
+                for stmt in money_alters:
+                    conn.execute(text(stmt))
+
+    if "bet_allocations" in insp.get_table_names():
+        allocation_cols = {
+            c["name"] for c in insp.get_columns("bet_allocations")
+        }
+        if "recovery_epoch" not in allocation_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE bet_allocations "
+                    "ADD COLUMN recovery_epoch INTEGER DEFAULT 0"
+                ))
     if "strategy_tabs" in insp.get_table_names():
         tab_cols = {c["name"] for c in insp.get_columns("strategy_tabs")}
         tab_alters: list[str] = []
@@ -331,6 +366,14 @@ def _migrate_schema(engine) -> None:
             (
                 "stake_chains_json",
                 "ALTER TABLE strategy_tabs ADD COLUMN stake_chains_json TEXT DEFAULT '[]'",
+            ),
+            (
+                "auto_reset_on_nonnegative_pnl",
+                "ALTER TABLE strategy_tabs ADD COLUMN auto_reset_on_nonnegative_pnl INTEGER DEFAULT 0",
+            ),
+            (
+                "strategy_input",
+                "ALTER TABLE strategy_tabs ADD COLUMN strategy_input TEXT DEFAULT ''",
             ),
         ):
             if col not in tab_cols:

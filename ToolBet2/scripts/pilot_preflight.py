@@ -10,7 +10,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.kill_switch import is_kill_switch_active
 from src.release_support import (
     configure_console_utf8,
     inspect_license_readiness,
@@ -48,7 +47,6 @@ def main() -> int:
     errors = pilot_preflight(
         config, stage=args.stage, runtime=runtime,
         maximum_small_stake=max(0, args.max_stake),
-        kill_switch_active=is_kill_switch_active(),
         license_errors=license_errors,
     )
     if errors:
@@ -57,8 +55,7 @@ def main() -> int:
         return 2
     print(
         f"PASS: stage={args.stage}; pending={runtime.pending_bets}; "
-        f"live_tabs={runtime.live_tabs}; max_stake={runtime.maximum_stake}; "
-        f"kill_switch={is_kill_switch_active()}"
+        f"live_tabs={runtime.live_tabs}; max_stake={runtime.maximum_stake}"
     )
     return 0
 

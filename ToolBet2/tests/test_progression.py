@@ -21,6 +21,9 @@ class WinProfitTests(unittest.TestCase):
     def test_banker_win_applies_default_commission(self) -> None:
         self.assertEqual(win_profit(100, BetSide.BANKER), 95.0)
 
+    def test_banker_win_rounds_half_up_to_whole_chip_units(self) -> None:
+        self.assertEqual(win_profit(10, BetSide.BANKER), 10.0)
+
     def test_non_positive_stake_has_no_profit(self) -> None:
         self.assertEqual(win_profit(0, BetSide.PLAYER), 0.0)
 
@@ -118,6 +121,20 @@ class GroupStakeProgressionTests(unittest.TestCase):
         progression.apply_result(BetSide.PLAYER, BetSide.PLAYER)
         self.assertEqual((progression.index, progression.loss_count), (0, 0))
         self.assertEqual(progression.group_pnl, 100.0)
+
+    def test_loss_watch_resets_when_group_pnl_recovers_to_zero(self) -> None:
+        progression = GroupStakeProgression(
+            [100, 100],
+            mode=PROGRESSION_MODE_LOSS_UP_WIN_RESET,
+            loss_watch_recover=True,
+        )
+
+        progression.apply_result(BetSide.PLAYER, BetSide.BANKER)
+        progression.apply_result(BetSide.PLAYER, BetSide.PLAYER)
+
+        self.assertEqual((progression.index, progression.loss_count), (0, 0))
+        self.assertEqual(0.0, progression.group_pnl)
+        self.assertEqual(progression.group_pnl, 0.0)
 
     def test_take_profit_closes_and_resets_group(self) -> None:
         progression = GroupStakeProgression(

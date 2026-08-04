@@ -10,7 +10,6 @@ from pathlib import Path
 import yaml
 
 from src.database import init_db
-from src.kill_switch import is_kill_switch_active
 from src.pending_reconciliation import (
     RECONCILIATION_ACK,
     ReconciliationError,
@@ -92,7 +91,6 @@ def handle_release_command(argv: list[str]) -> int | None:
             config,
             stage="stake_zero",
             runtime=runtime,
-            kill_switch_active=is_kill_switch_active(),
         )
         for error in errors:
             print(f"BLOCK: {error}")
@@ -104,7 +102,6 @@ def handle_release_command(argv: list[str]) -> int | None:
                     {
                         "stage": "stake_zero",
                         "baseline_bet_id": latest_bet_id(database),
-                        "kill_switch_active": is_kill_switch_active(),
                         "authoritative_stakes": list(runtime.authoritative_stakes),
                     },
                     ensure_ascii=False,
@@ -122,7 +119,6 @@ def handle_release_command(argv: list[str]) -> int | None:
         )
         payload = evidence.to_dict()
         payload["stage"] = "stake_zero"
-        payload["kill_switch_active"] = is_kill_switch_active()
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0 if evidence.passed else 2
     if "--reconcile-pending" in argv:
@@ -155,9 +151,6 @@ def handle_release_command(argv: list[str]) -> int | None:
                 return ""
             return argv[pos + 1] if len(argv) > pos + 1 else ""
 
-        if not is_kill_switch_active():
-            print("BLOCK: kill switch phải đang bật trước khi đối chiếu DB")
-            return 2
         if value("--ack") != RECONCILIATION_ACK:
             print(f'BLOCK: thêm --ack "{RECONCILIATION_ACK}"')
             return 2
@@ -213,7 +206,6 @@ def handle_release_command(argv: list[str]) -> int | None:
     )
     errors = pilot_preflight(
         config, stage=stage, runtime=runtime,
-        kill_switch_active=is_kill_switch_active(),
         license_errors=license_errors,
     )
     for error in errors:

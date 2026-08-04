@@ -25,3 +25,5 @@ reports/shadow-smoke-*.log
 build/
 dist/
 artifacts/
+**/bin/
+**/obj/

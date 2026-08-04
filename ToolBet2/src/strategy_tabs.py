@@ -14,7 +14,6 @@ from uuid import uuid4
 import yaml
 from pydantic import BaseModel, Field
 
-from src.decision_pipeline import LegacyPatternStrategy
 from src.capital_managers import (
     MONEY_MANAGER_IDS,
     MONEY_MANAGER_OPTIONS,
@@ -23,16 +22,19 @@ from src.capital_managers import (
 from src.models import BetSide, SIDE_LABEL
 from src.progression import PROGRESSION_MODE_LOSS_UP_WIN_RESET, PROGRESSION_MODES
 from src.risk_decision import RiskContext, RiskManager
-from src.strategy_decision import StrategyContext, StrategyDecision
+from src.strategy_decision import StrategyDecision
 from src.statistical_strategies import (
+    SCHEDULE_STRATEGY_IDS,
+    STATEFUL_STRATEGY_IDS,
     STATISTICAL_STRATEGIES,
     SPEC_BY_ID,
+    advance_statistical_runtime,
+    create_statistical_runtime,
     evaluate_statistical_strategy,
 )
 
 
 SIMULATION_STRATEGIES = (
-    {"id": "legacy_patterns", "label": "Mẫu ToolBet v2 hiện tại"},
     {"id": "follow_last", "label": "Bám kết quả trước"},
     {"id": "reverse_last", "label": "Đảo kết quả trước"},
     {"id": "smart_prev", "label": "Theo cầu trước thông minh"},
@@ -57,13 +59,15 @@ class SimulationTabConfig(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     name: str = "Chiến lược 1"
     enabled: bool = True
-    strategy_id: str = "legacy_patterns"
+    strategy_id: str = "follow_last"
     stakes: list[int] = Field(default_factory=lambda: [0, 100, 110, 120, 130])
     progression_mode: str = PROGRESSION_MODE_LOSS_UP_WIN_RESET
     money_manager_id: str = "IncreaseWhenLose"
     stake_chains: list[list[int]] = Field(default_factory=list)
     stop_loss: float = 0.0
     take_profit: float = 0.0
+    auto_reset_on_nonnegative_pnl: bool = False
+    strategy_input: str = ""
     mode: TabMode = "simulation"
 
     def normalized(self) -> "SimulationTabConfig":
@@ -73,7 +77,7 @@ class SimulationTabConfig(BaseModel):
         values["strategy_id"] = (
             values["strategy_id"]
             if values["strategy_id"] in _STRATEGY_IDS
-            else "legacy_patterns"
+            else "follow_last"
         )
         stakes = [int(value) for value in values["stakes"] if int(value) >= 0]
         values["stakes"] = stakes or [0, 100, 110, 120, 130]
@@ -96,6 +100,10 @@ class SimulationTabConfig(BaseModel):
             values["stake_chains"] = [list(values["stakes"])]
         values["stop_loss"] = max(0.0, float(values["stop_loss"]))
         values["take_profit"] = max(0.0, float(values["take_profit"]))
+        values["auto_reset_on_nonnegative_pnl"] = bool(
+            values.get("auto_reset_on_nonnegative_pnl", False)
+        )
+        values["strategy_input"] = str(values.get("strategy_input") or "")[:500]
         if values.get("mode") not in TAB_MODES:
             values["mode"] = "simulation"
         return SimulationTabConfig.model_validate(values)
@@ -259,15 +267,11 @@ def decision_for_strategy_tab(
     pattern_lengths: dict[str, int] | None = None,
     table_name: str = "",
     source: str = "",
+    schedule_round_index: int = 0,
+    statistical_runtime=None,
 ) -> StrategyDecision:
     """Evaluate one tab without granting it execution authority."""
 
-    lengths = dict(pattern_lengths or {})
-    context = StrategyContext(
-        history=tuple(history),
-        table_name=table_name,
-        source=source,
-    )
     if tab.strategy_id == "follow_last":
         return _heuristic_decision(
             strategy_id="follow-last", strategy_name="Bám kết quả trước", history=history,
@@ -285,12 +289,19 @@ def decision_for_strategy_tab(
             strategy_id="smart-prev-advanced", strategy_name="Bám cầu trước nâng cao", history=history,
         )
     if tab.strategy_id in SPEC_BY_ID:
-        return evaluate_statistical_strategy(tab.strategy_id, history)
-    return LegacyPatternStrategy(
-        skip_tie=skip_tie,
-        disabled_patterns=disabled_patterns,
-        pattern_lengths=lengths,
-    ).evaluate(context)
+        return evaluate_statistical_strategy(
+            tab.strategy_id,
+            history,
+            schedule_round_index=schedule_round_index,
+            runtime_state=statistical_runtime,
+            strategy_input=tab.strategy_input,
+        )
+    return StrategyDecision.skip(
+        strategy_id=tab.strategy_id,
+        strategy_name=tab.strategy_id,
+        reason="Chiến lược không còn khả dụng; hãy chọn chiến lược khác",
+        history_size=len(history),
+    )
 
 
 def simulate_strategy_tab(
@@ -315,6 +326,10 @@ def simulate_strategy_tab(
     risk_manager = RiskManager()
     pnl = 0.0
     wins = losses = pushes = accepted = signals = 0
+    schedule_round_index = 0
+    statistical_runtime = create_statistical_runtime(
+        tab.strategy_id, history[:1], seed=tab.id, strategy_input=tab.strategy_input
+    )
 
     # Each evaluation at index i is a virtual bet whose known result is history[i].
     for index in range(1, len(history)):
@@ -324,6 +339,8 @@ def simulate_strategy_tab(
             skip_tie=skip_tie,
             disabled_patterns=disabled_patterns,
             pattern_lengths=lengths,
+            schedule_round_index=schedule_round_index,
+            statistical_runtime=statistical_runtime,
         )
         if decision.wants_bet:
             signals += 1
@@ -344,6 +361,16 @@ def simulate_strategy_tab(
             losses += 1
         else:
             pushes += 1
+        if tab.strategy_id in SCHEDULE_STRATEGY_IDS:
+            schedule_round_index = (schedule_round_index + 1) % 10
+        if tab.strategy_id in STATEFUL_STRATEGY_IDS and statistical_runtime is not None:
+            won = None if history[index] == BetSide.TIE else decision.side == history[index]
+            advance_statistical_runtime(
+                tab.strategy_id,
+                statistical_runtime,
+                history[:index + 1],
+                won=won,
+            )
 
     current = decision_for_strategy_tab(
         tab,
@@ -351,6 +378,8 @@ def simulate_strategy_tab(
         skip_tie=skip_tie,
         disabled_patterns=disabled_patterns,
         pattern_lengths=lengths,
+        schedule_round_index=schedule_round_index,
+        statistical_runtime=statistical_runtime,
     )
     quote = manager.quote()
     risk = risk_manager.evaluate(RiskContext(

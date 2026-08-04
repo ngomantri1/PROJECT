@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from src.ae_sexy_betting import _execute_bet_clicks_inner, wait_and_place_bet
+from src.ae_sexy_betting import (
+    BetPlacementUncertain,
+    _execute_bet_clicks_inner,
+    wait_and_place_bet,
+)
 from src.database import init_db
 from src.db_store import GameDataStore
 from src.models import BetSide
@@ -43,6 +47,45 @@ class StakeZeroExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result)
         click.assert_not_awaited()
+
+    async def test_failed_zone_attempt_is_reported_as_uncertain(self) -> None:
+        page = AsyncMock()
+        with (
+            patch(
+                "src.ae_sexy_betting._chip_tray_info",
+                AsyncMock(return_value={"chipCount": 2, "chipValues": [50, 100]}),
+            ),
+            patch(
+                "src.ae_sexy_betting._find_chip_index_for_value",
+                AsyncMock(return_value=1),
+            ),
+            patch(
+                "src.ae_sexy_betting._select_chip_value_js",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "src.ae_sexy_betting._select_chip_value_mouse",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "src.ae_sexy_betting._playwright_click_bet",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "src.ae_sexy_betting._viewport_click_bet",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "src.ae_sexy_betting._chip_selected",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "src.ae_sexy_betting._bet_placed_detail",
+                AsyncMock(return_value={"ok": False}),
+            ),
+        ):
+            with self.assertRaises(BetPlacementUncertain):
+                await _execute_bet_clicks_inner(page, BetSide.PLAYER, 100)
 
 
 class StakeZeroAuditTests(unittest.TestCase):

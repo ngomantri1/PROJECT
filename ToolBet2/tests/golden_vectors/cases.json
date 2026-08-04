@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "description": "Shared BaccaratChromeAgent2 / ToolBet2 money-state vectors.",
+  "cases": [
+    {
+      "id": "increase_when_lose_player",
+      "manager_id": "IncreaseWhenLose",
+      "stakes": [10, 20, 30],
+      "rounds": [["P", "B"], ["P", "B"], ["P", "P"], ["P", "T"]]
+    },
+    {
+      "id": "increase_when_win_banker_rounding",
+      "manager_id": "IncreaseWhenWin",
+      "stakes": [11, 20, 30],
+      "rounds": [["B", "B"], ["B", "P"], ["B", "B"], ["B", "T"]]
+    },
+    {
+      "id": "victor2_double_phase",
+      "manager_id": "Victor2",
+      "stakes": [10, 25, 40],
+      "rounds": [["P", "B"], ["P", "P"], ["P", "P"], ["P", "B"]]
+    },
+    {
+      "id": "reverse_fibo_ceiling",
+      "manager_id": "ReverseFibo",
+      "stakes": [10, 20, 30],
+      "rounds": [["P", "B"], ["P", "B"], ["P", "B"], ["P", "P"]]
+    },
+    {
+      "id": "increase_every_round",
+      "manager_id": "IncreaseEveryRound",
+      "stakes": [10, 20, 30],
+      "rounds": [["P", "P"], ["P", "B"], ["P", "T"], ["P", "P"]]
+    },
+    {
+      "id": "win_up_lose_keep",
+      "manager_id": "WinUpLoseKeep",
+      "stakes": [10, 20, 30],
+      "rounds": [["P", "B"], ["P", "P"], ["P", "B"], ["P", "P"]]
+    },
+    {
+      "id": "win_up_lose_down",
+      "manager_id": "WinUpLoseDown",
+      "stakes": [10, 20, 30],
+      "rounds": [["P", "P"], ["P", "P"], ["P", "B"], ["P", "B"]]
+    },
+    {
+      "id": "multi_chain_transition",
+      "manager_id": "MultiChain",
+      "stakes": [10, 20],
+      "stake_chains": [[10, 20], [30, 40]],
+      "rounds": [["P", "B"], ["P", "B"], ["P", "P"], ["P", "P"]]
+    }
+  ]
+}

@@ -189,7 +189,6 @@ def export_diagnostics(
         "frozen": bool(getattr(sys, "frozen", False)),
         "cwd": "<redacted>",
         "database": _database_summary(Path(database_path)),
-        "kill_switch": (Path("data") / "KILL_SWITCH").exists(),
     }
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("system.json", json.dumps(summary, ensure_ascii=False, indent=2))
@@ -283,7 +282,10 @@ def inspect_pilot_runtime(database_path: str | Path) -> PilotRuntimeState:
             }
             pending_query = "SELECT COUNT(*) FROM bets WHERE outcome IS NULL"
             if "status" in bet_columns:
-                pending_query += " AND COALESCE(status, 'placed') != 'deferred'"
+                pending_query += (
+                    " AND COALESCE(status, 'placed') "
+                    "IN ('placing', 'placed', 'uncertain')"
+                )
             pending = int(connection.execute(pending_query).fetchone()[0])
             rows = connection.execute(
                 "SELECT t.id, t.money_manager_id, t.stakes_json AS tab_stakes, "
@@ -425,7 +427,6 @@ def pilot_preflight(
     stage: str,
     runtime: PilotRuntimeState | None = None,
     maximum_small_stake: int = 100,
-    kill_switch_active: bool = False,
     license_errors: Iterable[str] = (),
 ) -> list[str]:
     errors: list[str] = []
@@ -459,6 +460,4 @@ def pilot_preflight(
             errors.append("Pilot tiền thật yêu cầu ít nhất một stake dương")
         if stakes and max(stakes) > maximum_small_stake:
             errors.append(f"Stake vượt ngưỡng pilot {maximum_small_stake}")
-        if kill_switch_active:
-            errors.append("Kill switch đang bật")
     return errors

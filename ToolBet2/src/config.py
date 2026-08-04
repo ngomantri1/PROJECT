@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -113,6 +113,12 @@ class LicenseConfig(BaseModel):
     refresh_before_minutes: int = Field(default=5, ge=1, le=60)
 
 
+class LiveExecutionConfig(BaseModel):
+    """Policy for physical execution; it never replaces the safety gates."""
+
+    mode: Literal["disabled", "pilot", "production"] = "pilot"
+
+
 class AppConfig(BaseModel):
     site: SiteConfig = Field(default_factory=SiteConfig)
     account: AccountConfig = Field(default_factory=AccountConfig)
@@ -127,6 +133,7 @@ class AppConfig(BaseModel):
     ui: UiConfig = Field(default_factory=UiConfig)
     tool_auth: ToolAuthConfig = Field(default_factory=ToolAuthConfig)
     license: LicenseConfig = Field(default_factory=LicenseConfig)
+    live_execution: LiveExecutionConfig = Field(default_factory=LiveExecutionConfig)
 
 
 def load_config(path: str | Path = "config.yaml") -> AppConfig:

@@ -81,8 +81,6 @@ try {
     }
     Copy-Item packaging\ToolBet.bat $releaseRoot
     Copy-Item packaging\Verify-Release.ps1 $releaseRoot
-    Copy-Item packaging\STOP-LIVE-BET.bat $releaseRoot
-    Copy-Item packaging\ALLOW-LIVE-BET.bat $releaseRoot
     Copy-Item packaging\EXPORT-DIAGNOSTICS.bat $releaseRoot
     # cmd.exe parses batch files reliably only with CRLF. apply_patch/source
     # files may use LF, so normalize every shipped launcher mechanically.

@@ -23,7 +23,6 @@ CASES = (
 
 def _snapshot() -> UiSnapshot:
     strategies = [
-        {"id": "legacy_patterns", "label": "Mẫu ToolBet v2 hiện tại"},
         {"id": "follow_last", "label": "Bám kết quả trước"},
         {"id": "reverse_last", "label": "Đảo kết quả trước"},
     ]

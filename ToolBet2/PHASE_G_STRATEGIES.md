@@ -7,6 +7,9 @@ tab `simulation` hoặc `live`; Shadow cũ chỉ còn là công cụ so sánh. C
 gọi Playwright, không chọn stake và không click chip:
 
 - `ai_stat_parity` — Bám cầu B/P theo thống kê AI
+- `sequence_follow` — Chuỗi B/P tự nhập (`BPP` sẽ lặp B → P → P)
+- `pattern_follow` — Thế cầu B/P tự nhập (`BPP-BP; PP-P`)
+- `random_side` — Cửa B/P ngẫu nhiên, giữ nguyên cửa đã chọn đến settle
 - `state_transition` — Xu hướng chuyển trạng thái
 - `run_length` — Run-length
 - `ensemble_majority` — Chuyên gia bỏ phiếu
@@ -43,4 +46,15 @@ Kiểm thử riêng phần G:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest tests.test_statistical_strategies -v
+```
+
+## Golden vectors C# / Python
+
+Các vector quản lý vốn và tám chiến lược xác định dùng chung nằm tại
+`tests/golden_vectors/`. Strategy harness tham chiếu trực tiếp assembly hiện tại
+của BaccaratChromeAgent2 thay vì sao chép thuật toán. Chạy cả reference C# và
+ToolBet Python bằng:
+
+```powershell
+.\scripts\verify_golden_vectors.ps1
 ```

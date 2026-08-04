@@ -63,6 +63,10 @@ class StrategyTabStore:
                             ),
                             "stop_loss": row.stop_loss,
                             "take_profit": row.take_profit,
+                            "auto_reset_on_nonnegative_pnl": bool(
+                                row.auto_reset_on_nonnegative_pnl
+                            ),
+                            "strategy_input": row.strategy_input or "",
                             "mode": row.mode or "simulation",
                         }
                         for row in rows
@@ -102,6 +106,10 @@ class StrategyTabStore:
                 row.stake_chains_json = json.dumps(tab.stake_chains)
                 row.stop_loss = tab.stop_loss
                 row.take_profit = tab.take_profit
+                row.auto_reset_on_nonnegative_pnl = int(
+                    tab.auto_reset_on_nonnegative_pnl
+                )
+                row.strategy_input = tab.strategy_input
                 row.updated_at = now
                 money_config = (
                     session.query(StrategyMoneyConfigRecord)
@@ -269,5 +277,43 @@ class StrategyTabStore:
                     for row in reversed(rows)
                 ]
             return result
+        finally:
+            session.close()
+
+    def history_page(self, tab_id: str, *, page: int = 1, page_size: int = 10) -> dict[str, Any]:
+        page_size = page_size if page_size in (10, 20, 50) else 10
+        page = max(1, int(page))
+        session = self._session_factory()
+        try:
+            query = session.query(StrategyTabHistoryRecord).filter(
+                StrategyTabHistoryRecord.tab_id == tab_id
+            )
+            total = query.count()
+            page_count = max(1, (total + page_size - 1) // page_size)
+            page = min(page, page_count)
+            rows = query.order_by(StrategyTabHistoryRecord.id.desc()).offset(
+                (page - 1) * page_size
+            ).limit(page_size).all()
+            return {
+                "items": [
+                    {
+                        "history_size": row.history_size,
+                        "table_name": row.table_name,
+                        "signals": row.signals,
+                        "virtual_bets": row.virtual_bets,
+                        "wins": row.wins,
+                        "losses": row.losses,
+                        "pushes": row.pushes,
+                        "pnl": row.pnl,
+                        "current": json.loads(row.current_json or "{}"),
+                        "created_at": row.created_at.isoformat(timespec="seconds"),
+                    }
+                    for row in rows
+                ],
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "page_count": page_count,
+            }
         finally:
             session.close()

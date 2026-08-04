@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal, ROUND_HALF_UP
 
 from src.models import BetSide
 
@@ -26,7 +27,11 @@ def win_profit(stake: int, bet_side: BetSide, *, commission: float = BANKER_COMM
     if stake <= 0:
         return 0.0
     if bet_side == BetSide.BANKER:
-        return stake * (1.0 - commission)
+        return float(
+            (Decimal(stake) * (Decimal("1") - Decimal(str(commission)))).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
     return float(stake)
 
 
@@ -137,7 +142,7 @@ class GroupStakeProgression:
         """Cho phep 've dau'. TAT nut → luon cho; BAT → chi khi group_pnl > 0."""
         if not self.loss_watch_recover:
             return True
-        return self.state.group_pnl > 0
+        return self.state.group_pnl >= 0
 
     def _try_reset_to_start(self, *, clear_loss_count: bool) -> bool:
         """Thuc hien ve dau neu duoc phep. False = giu nguyen index."""

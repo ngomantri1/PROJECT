@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <BaccaratReferenceRoot>$(MSBuildThisFileDirectory)..\..\..\..\BaccaratChromeAgent2</BaccaratReferenceRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(BaccaratReferenceRoot)\src\BaccaratChromeAgent.Desktop\BaccaratChromeAgent.Desktop.csproj" />
+  </ItemGroup>
+</Project>

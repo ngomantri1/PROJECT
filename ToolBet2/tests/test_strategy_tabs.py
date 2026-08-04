@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 
 from src.models import BetSide
+from src.overlay import build_overlay_payload
 from src.strategy_tabs import (
+    SIMULATION_STRATEGIES,
     SimulationTabConfig,
     StrategyTabsConfig,
     normalize_strategy_tabs,
@@ -13,6 +15,24 @@ from src.strategy_tabs import (
 
 
 class StrategyTabsTests(unittest.TestCase):
+    def test_base_overlay_no_longer_publishes_legacy_pattern_signals(self):
+        payload = build_overlay_payload(
+            [BetSide.PLAYER, BetSide.BANKER], skip_tie=True
+        )
+        self.assertFalse(payload["has_signal"])
+        self.assertIsNone(payload["signal_key"])
+        self.assertEqual([], payload["matched"])
+        self.assertEqual([], payload["patterns"])
+
+    def test_legacy_patterns_are_removed_and_old_tabs_migrate_to_follow_last(self):
+        self.assertNotIn(
+            "legacy_patterns", {item["id"] for item in SIMULATION_STRATEGIES}
+        )
+        config = normalize_strategy_tabs({
+            "tabs": [{"id": "old", "strategy_id": "legacy_patterns"}],
+        })
+        self.assertEqual("follow_last", config.tabs[0].strategy_id)
+
     def test_normalization_keeps_at_least_one_unique_tab(self):
         config = normalize_strategy_tabs({
             "selected_tab_id": "same",
@@ -68,6 +88,25 @@ class StrategyTabsTests(unittest.TestCase):
 
         self.assertEqual(BetSide.BANKER.value, status["current"]["side"])
         self.assertIn("Đảo", status["current"]["reason"])
+
+    def test_schedule_replay_advances_for_each_settled_round_including_ties(self):
+        tab = SimulationTabConfig(
+            strategy_id="time_sliced_hedge", stakes=[10], enabled=True
+        )
+        status = simulate_strategy_tab(
+            tab,
+            [
+                BetSide.BANKER,
+                BetSide.BANKER,
+                BetSide.TIE,
+                BetSide.TIE,
+                BetSide.BANKER,
+                BetSide.BANKER,
+            ],
+            skip_tie=True,
+        )
+
+        self.assertEqual(BetSide.PLAYER.value, status["current"]["side"])
 
     def test_smart_prev_reverses_when_outer_runs_are_equal(self):
         tab = SimulationTabConfig(strategy_id="smart_prev", stakes=[0, 10])

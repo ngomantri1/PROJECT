@@ -51,7 +51,6 @@ class RiskDecisionTests(unittest.TestCase):
             "money": money_quote(),
             "auto_bet": True,
             "countdown": 10,
-            "balance": 1000,
         }
         values.update(overrides)
         return self.manager.evaluate(RiskContext(**values))
@@ -121,23 +120,11 @@ class RiskDecisionTests(unittest.TestCase):
             RiskCode.BETTING_WINDOW_LATE,
         )
 
-    def test_balance_includes_configured_buffer(self) -> None:
-        decision = self.evaluate(balance=119, balance_buffer=20)
-        self.assertEqual(decision.code, RiskCode.INSUFFICIENT_BALANCE)
-
-        approved = self.evaluate(balance=120, balance_buffer=20)
-        self.assertTrue(approved.allowed)
-
-    def test_live_gate_can_require_a_readable_balance(self) -> None:
-        decision = self.evaluate(balance=None, require_balance=True)
-        self.assertEqual(decision.code, RiskCode.BALANCE_UNAVAILABLE)
-
-    def test_zero_stake_is_virtual_and_does_not_require_live_ui_or_balance(self) -> None:
+    def test_zero_stake_is_virtual_and_does_not_require_live_ui(self) -> None:
         decision = self.evaluate(
             money=money_quote(0),
             ui_healthy=False,
             countdown=0,
-            balance=0,
         )
 
         self.assertTrue(decision.allowed)

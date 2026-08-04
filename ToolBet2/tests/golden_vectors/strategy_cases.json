@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "cases": [
+    {"id": "smart-prev", "strategy_id": "smart_prev", "history": "BBPBB", "manager_id": "IncreaseWhenLose", "stakes": [10, 20, 40], "results": ["P", "B", "T", "P"]},
+    {"id": "smart-prev-advanced", "strategy_id": "smart_prev_advanced", "history": "BPPBB", "manager_id": "IncreaseWhenWin", "stakes": [10, 20, 40], "results": ["B", "P", "B", "P"]},
+    {"id": "ai-stat", "strategy_id": "ai_stat_parity", "history": "BBPBBPBB", "manager_id": "Victor2", "stakes": [10, 20, 40], "results": ["P", "B", "P", "B"]},
+    {"id": "state-transition", "strategy_id": "state_transition", "history": "BPBPBB", "manager_id": "ReverseFibo", "stakes": [10, 20, 40], "results": ["P", "P", "B", "T"]},
+    {"id": "run-length", "strategy_id": "run_length", "history": "PBBB", "manager_id": "IncreaseEveryRound", "stakes": [10, 20, 40], "results": ["P", "B", "B", "P"]},
+    {"id": "knn", "strategy_id": "knn_subsequence", "history": "BBPBPBBPBP", "manager_id": "WinUpLoseKeep", "stakes": [10, 20, 40], "results": ["B", "P", "T", "B"]},
+    {"id": "time-sliced", "strategy_id": "time_sliced_hedge", "history": "BPBPBP", "manager_id": "WinUpLoseDown", "stakes": [10, 20, 40], "results": ["P", "B", "P", "B", "P", "B", "P"]},
+    {"id": "dual-ai-tie", "strategy_id": "dual_schedule_hedge", "history": "BPBB", "manager_id": "IncreaseWhenLose", "stakes": [10, 20, 40], "schedule_index": 4, "results": ["P", "B", "P", "B"]}
+  ]
+}
