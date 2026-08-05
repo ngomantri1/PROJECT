@@ -18,6 +18,15 @@
     simulation: "MÔ PHỎNG/TEST",
     live: "CHẠY THẬT",
   };
+  const scrollTrace = (stage, details = {}) => {
+    try {
+      console.info("[TBV2_SCROLL_TRACE]", JSON.stringify({
+        stage,
+        at: new Date().toISOString(),
+        ...details,
+      }));
+    } catch (_) {}
+  };
 
   const savedPosition = () => {
     try {
@@ -99,8 +108,15 @@
     return node;
   };
   const textarea = (id, value) => {
-    const node = el("textarea", "tbv2-input tbv2-stakes-multichain");
-    node.id = id; node.value = value ?? ""; node.rows = 1; node.spellcheck = false;
+    const node = el("textarea", "tbv2-input tbv2-stakes-area");
+    node.id = id; node.value = value ?? ""; node.rows = 2; node.spellcheck = false;
+    return node;
+  };
+  const bindValueTooltip = node => {
+    const sync = () => { node.title = node.value || ""; };
+    sync();
+    node.addEventListener("input", sync);
+    node.addEventListener("change", sync);
     return node;
   };
   const select = (id, options, value) => {
@@ -131,6 +147,11 @@
       pending.dataset.pendingCatalogue = "true";
       node.append(pending);
     }
+    const syncTooltip = () => {
+      node.title = node.options[node.selectedIndex]?.textContent || "";
+    };
+    syncTooltip();
+    node.addEventListener("change", syncTooltip);
     return node;
   };
   const cardTitle = (title, action) => {
@@ -225,6 +246,7 @@
         id: tab.id,
         name: tab.name,
         enabled: tab.enabled,
+        running: !!tab.running,
       })),
       selectedConfig: {
         name: selected.name,
@@ -241,9 +263,55 @@
       strategies: strategyTabs.strategies || [],
       moneyManagers: strategyTabs.money_managers || [],
       lifecycleMode: lifecycle.mode || selected.mode || "simulation",
-      runEnabled: !!state.run_enabled,
       license: state.license || {},
     });
+  };
+
+  const setWorkspaceLoading = (root, loading) => {
+    const local = window.__toolbetUiLocal;
+    const cover = root.querySelector(".tbv2-loading-cover");
+    const tabsBar = root.querySelector(".tbv2-tabs");
+    const scroll = root.querySelector(".tbv2-scroll");
+    if (!cover || !tabsBar || !scroll) return;
+
+    const wasLoading = !!local.workspaceLoading;
+    local.workspaceLoading = !!loading;
+    root.classList.toggle("tbv2-workspace-loading", !!loading);
+    root.dataset.workspaceLoading = String(!!loading);
+    tabsBar.inert = !!loading;
+    tabsBar.setAttribute("aria-busy", String(!!loading));
+    scroll.setAttribute("aria-busy", String(!!loading));
+    [...scroll.children].forEach(node => {
+      if (node !== cover) node.inert = !!loading;
+    });
+    cover.hidden = !loading;
+
+    if (!loading) {
+      if (local.workspaceLoadingTimer) clearTimeout(local.workspaceLoadingTimer);
+      local.workspaceLoadingTimer = null;
+      return;
+    }
+    if (!wasLoading || !local.workspaceLoadingSince) {
+      local.workspaceLoadingSince = Date.now();
+    }
+    const message = cover.querySelector("[data-bind=workspace-loading-message]");
+    const elapsed = Date.now() - local.workspaceLoadingSince;
+    if (elapsed >= 15000) {
+      if (message) message.textContent = "Chưa nhận được dữ liệu bàn. Đang tiếp tục chờ…";
+      return;
+    }
+    if (message) message.textContent = "Đang kết nối bàn và tải dữ liệu…";
+    if (local.workspaceLoadingTimer) return;
+    local.workspaceLoadingTimer = setTimeout(() => {
+      local.workspaceLoadingTimer = null;
+      if (!local.workspaceLoading) return;
+      const timeoutMessage = document.querySelector(
+        `#${ROOT_ID} [data-bind=workspace-loading-message]`
+      );
+      if (timeoutMessage) {
+        timeoutMessage.textContent = "Chưa nhận được dữ liệu bàn. Đang tiếp tục chờ…";
+      }
+    }, 15000 - elapsed);
   };
 
   const saveTabs = async (tabs, selectedId, message, quiet = false, clearDraftId = "", renderOnSuccess = true) => {
@@ -255,8 +323,17 @@
       const result = await window.toolbetSaveStrategyTabs({ selected_tab_id: selectedId, tabs });
       if (!result || !result.ok) throw new Error((result && result.error) || "Lưu thất bại");
       const next = result.strategy_tabs || {};
-      window.__toolbetUiSnapshot.tabs = clone(next.tabs || tabs);
-      window.__toolbetUiSnapshot.state.strategy_tabs = clone(next);
+      // A configuration save returns durable tab fields only. Keep the latest
+      // runtime ledger on the same tab until the next server snapshot arrives.
+      const existingTabs = new Map(
+        (window.__toolbetUiSnapshot.tabs || []).map(tab => [tab.id, tab])
+      );
+      const savedTabs = (next.tabs || tabs).map(tab => ({
+        ...(existingTabs.get(tab.id) || {}),
+        ...tab,
+      }));
+      window.__toolbetUiSnapshot.tabs = clone(savedTabs);
+      window.__toolbetUiSnapshot.state.strategy_tabs = clone({ ...next, tabs: savedTabs });
       window.__toolbetUiLocal.selectedId = next.selected_tab_id || selectedId;
       if (clearDraftId && window.__toolbetUiLocal.drafts) {
         delete window.__toolbetUiLocal.drafts[clearDraftId];
@@ -284,18 +361,39 @@
       const data = result.data || {};
       const snapshot = window.__toolbetUiSnapshot;
       const tabs = Array.isArray(snapshot.tabs) ? snapshot.tabs : [];
-      snapshot.tabs = tabs.map(tab => tab.id === data.tab_id
-        ? { ...tab, mode: data.mode || tab.mode, lifecycle: { ...(tab.lifecycle || {}), ...data } }
-        : tab);
+      snapshot.tabs = tabs.map(tab => {
+        const isTarget = tab.id === data.tab_id;
+        const running = Object.prototype.hasOwnProperty.call(data, "active_tab_id")
+          ? tab.id === data.active_tab_id
+          : (isTarget && Object.prototype.hasOwnProperty.call(data, "running")
+            ? !!data.running : tab.running);
+        return isTarget
+          ? {
+            ...tab,
+            mode: data.mode || tab.mode,
+            running,
+            status: data.status || tab.status,
+            run_profit: Object.prototype.hasOwnProperty.call(data, "run_profit")
+              ? data.run_profit : tab.run_profit,
+            lifecycle: { ...(tab.lifecycle || {}), ...data },
+          }
+          : { ...tab, running };
+      });
       snapshot.state.strategy_tabs.tabs = clone(snapshot.tabs);
       if (Object.prototype.hasOwnProperty.call(data, "run_enabled")) snapshot.state.run_enabled = !!data.run_enabled;
-      if (message) message.textContent = data.mode === "live"
-        ? "Tab đã nắm quyền quyết định; AutoBettor vẫn tắt cho đến khi xác nhận riêng."
-        : "Đã cập nhật trạng thái tab.";
+      if (message) {
+        message.classList.remove("error");
+        message.textContent = data.running
+          ? "Chiến lược đã bắt đầu."
+          : "Chiến lược đã dừng.";
+      }
       render(snapshot, window.__toolbetUiAssets || {});
       return true;
     } catch (error) {
-      if (message) message.textContent = String(error && error.message ? error.message : error);
+      if (message) {
+        message.classList.add("error");
+        message.textContent = String(error && error.message ? error.message : error);
+      }
       return false;
     }
   };
@@ -324,8 +422,12 @@
 
   const renderRoad = dots => {
     const road = el("div", "tbv2-road");
-    (dots || []).forEach(item => {
-      const dot = el("span", `tbv2-dot ${item.side || ""}`);
+    const lastIndex = (dots || []).length - 1;
+    (dots || []).forEach((item, index) => {
+      const dot = el(
+        "span",
+        `tbv2-dot ${item.side || ""}${index === lastIndex ? " tbv2-dot-latest" : ""}`
+      );
       dot.title = item.label || item.side || ""; road.append(dot);
     });
     if (!road.childElementCount) road.append(el("span", "tbv2-empty", "Chưa có kết quả"));
@@ -347,11 +449,16 @@
     const draft = window.__toolbetUiLocal.drafts[selectedId] || null;
     const status = selected.status || {};
     const current = status.current || {};
-    const risk = current.risk || {};
 
     let root = document.getElementById(ROOT_ID);
     const firstPanelMount = !root;
     const previousScrollTop = root?.querySelector(".tbv2-scroll")?.scrollTop || 0;
+    scrollTrace("render_begin", {
+      first_panel_mount: firstPanelMount,
+      previous_scroll_top: previousScrollTop,
+      revision: snapshot.revision ?? 0,
+      runtime_session_id: state.runtime_session_id || "",
+    });
     const activeControlId = root?.contains(document.activeElement)
       ? (document.activeElement.id || "")
       : "";
@@ -368,10 +475,8 @@
     const shell = el("div", "tbv2-shell"); root.append(shell);
 
     const header = el("header", "tbv2-header");
-    const brand = el("div", "tbv2-brand"); brand.append(el("strong", "", "ToolBet v2"), el("span", "", "Strategy Workspace"));
+    const brand = el("div", "tbv2-brand"); brand.append(el("strong", "", "Baccarat Sexy Casino (Telegram: @minoauto)"));
     const activeMode = ((selected.lifecycle || {}).mode || selected.mode || "simulation");
-    const mode = el("span", `tbv2-mode ${activeMode}`, MODE_LABELS[activeMode] || activeMode);
-    mode.id = "tbv2-active-mode";
     const headerActions = el("div", "tbv2-header-actions");
     const license = state.license || {};
     if (license.status) {
@@ -394,17 +499,92 @@
       });
       headerActions.append(logout);
     }
-    headerActions.append(mode);
     header.append(brand, headerActions); shell.append(header);
     bindDrag(root, header);
 
     const tabsBar = el("nav", "tbv2-tabs");
     tabs.forEach(tab => {
-      const button = el("button", `tbv2-tab ${tab.id === selectedId ? "active" : ""}`, tab.name || "Chiến lược");
+      const button = el("button", `tbv2-tab ${tab.id === selectedId ? "active" : ""}${tab.running ? " running" : ""}`);
       button.type = "button"; button.dataset.tabId = tab.id;
+      const tabMode = ((tab.lifecycle || {}).mode || tab.mode || "simulation");
+      const liveIcon = el(
+        "span",
+        `tbv2-tab-live${tabMode === "live" ? "" : " is-hidden"}`,
+        "●"
+      );
+      if (tabMode === "live") {
+        liveIcon.title = "Chạy thật";
+        liveIcon.setAttribute("aria-label", "Chạy thật");
+      } else {
+        liveIcon.setAttribute("aria-hidden", "true");
+      }
+      button.append(liveIcon);
+      const tabName = el("span", "tbv2-tab-name", tab.name || "Chiến lược");
+      tabName.title = "Double-click để đổi tên";
+      tabName.addEventListener("dblclick", event => {
+        event.preventDefault(); event.stopPropagation();
+        const originalName = tab.name || "Chiến lược";
+        const editor = el("input", "tbv2-tab-name-edit");
+        editor.type = "text"; editor.value = originalName;
+        editor.setAttribute("aria-label", "Tên chiến lược");
+        let finished = false;
+        const finish = async save => {
+          if (finished) return;
+          finished = true;
+          const nextName = editor.value.trim();
+          if (!save || !nextName) {
+            render(window.__toolbetUiSnapshot, window.__toolbetUiAssets || {});
+            return;
+          }
+          await saveTabs(
+            tabs.map(item => item.id === tab.id ? { ...item, name: nextName } : item),
+            selectedId,
+            null,
+            true,
+            "",
+            true
+          );
+        };
+        editor.addEventListener("click", innerEvent => innerEvent.stopPropagation());
+        editor.addEventListener("dblclick", innerEvent => innerEvent.stopPropagation());
+        editor.addEventListener("keydown", keyEvent => {
+          if (keyEvent.key === "Enter") { keyEvent.preventDefault(); finish(true); }
+          if (keyEvent.key === "Escape") { keyEvent.preventDefault(); finish(false); }
+        });
+        editor.addEventListener("blur", () => finish(true));
+        tabName.replaceWith(editor);
+        editor.focus(); editor.select();
+      });
+      button.append(tabName);
+      const close = el("span", "tbv2-tab-close", "×");
+      close.title = tabs.length <= 1 ? "Cần giữ ít nhất một chiến lược" : "Đóng tab";
+      close.setAttribute("aria-label", "Đóng tab");
+      close.setAttribute("role", "button");
+      close.tabIndex = 0;
+      close.classList.toggle("disabled", tabs.length <= 1);
+      const closeTab = event => {
+        event.preventDefault(); event.stopPropagation();
+        if (tabs.length <= 1) return;
+        const remaining = tabs.filter(item => item.id !== tab.id);
+        saveTabs(remaining, (remaining[0] || {}).id || "", null, false, tab.id);
+      };
+      close.addEventListener("click", closeTab);
+      close.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") closeTab(event);
+      });
+      button.append(close);
       button.addEventListener("click", () => {
+        if (window.__toolbetUiLocal.selectedId === tab.id) return;
         window.__toolbetUiLocal.selectedId = tab.id;
-        saveTabs(tabs, tab.id, null, true);
+        // Tab selection is local workspace navigation, not configuration.
+        // Persisting the full tabs array here races with form auto-save and
+        // can restore an older selected tab (or older tab list) over a click.
+        // The active selection remains stable through runtime snapshots via
+        // selectedContext() while the tab is still present.
+        const workspace = window.__toolbetUiSnapshot.state.strategy_tabs || {};
+        workspace.selected_tab_id = tab.id;
+        window.__toolbetUiSnapshot.state.strategy_tabs = workspace;
+        render(window.__toolbetUiSnapshot, window.__toolbetUiAssets || {});
       });
       tabsBar.append(button);
     });
@@ -412,14 +592,26 @@
     add.disabled = tabs.length >= 5;
     add.addEventListener("click", () => {
       const id = (crypto.randomUUID ? crypto.randomUUID() : `tab-${Date.now()}`).replaceAll("-", "");
-      const next = { id, name: `Chiến lược ${tabs.length + 1}`, enabled: true, strategy_id: "follow_last", strategy_input: "", stakes: [0,100,110,120,130], progression_mode: "loss_up_win_reset", money_manager_id: "IncreaseWhenLose", stake_chains: [], stop_loss: 0, take_profit: 0, auto_reset_on_nonnegative_pnl: false };
+      const next = { id, name: `Chiến lược ${tabs.length + 1}`, enabled: true, strategy_id: "follow_last", strategy_input: "", stakes: [0,100,110,120,130], progression_mode: "loss_up_win_reset", money_manager_id: "IncreaseWhenLose", stake_chains: [], stop_loss: 0, take_profit: 0, auto_reset_on_nonnegative_pnl: false, mode: "live" };
       saveTabs([...tabs, next], id, null, true);
     });
     tabsBar.append(add); shell.append(tabsBar);
 
     const scroll = el("div", "tbv2-scroll"); shell.append(scroll);
+    const isSimulationOnly = (draft?.mode ?? activeMode) !== "live";
     const configCard = el("section", "tbv2-card tbv2-config-card");
-    configCard.append(cardTitle("Chiến lược & Chuỗi tiền", el("span", "tbv2-safe", "Không click chip")));
+    const executionBadge = el(
+      "span",
+      `tbv2-safe tbv2-execution-badge ${isSimulationOnly ? "simulation" : "live"}`,
+      isSimulationOnly ? "Không click chip" : "LIVE"
+    );
+    executionBadge.title = isSimulationOnly
+      ? "Mô phỏng: không click chip"
+      : "Live: có thể click chip";
+    configCard.append(cardTitle(
+      "Chiến lược & Chuỗi tiền",
+      executionBadge
+    ));
     const grid = el("div", "tbv2-form-grid");
     const selectedManagerId = draft?.money_manager_id ?? selected.money_manager_id ?? "IncreaseWhenLose";
     const stakeChainsText = (selected.stake_chains || [selected.stakes || []])
@@ -429,7 +621,6 @@
       selectedManagerId === "MultiChain" ? stakeChainsText : (selected.stakes || []).join("-")
     );
     grid.append(
-      field("Tên tab", input("tbv2-name", draft?.name ?? selected.name ?? "Chiến lược")),
       field("Chiến lược", select("tbv2-strategy", (state.strategy_tabs || {}).strategies || [], draft?.strategy_id ?? selected.strategy_id)),
       field("Quản lý vốn", select("tbv2-progression",
         (state.strategy_tabs || {}).money_managers || [],
@@ -453,43 +644,62 @@
       ));
     }
     configCard.append(grid);
-    const initialStakesInput = grid.querySelector("#tbv2-stakes");
-    const initialStakesLabel = initialStakesInput.closest(".tbv2-field").querySelector(".tbv2-label");
+    let stakesInput = grid.querySelector("#tbv2-stakes");
+    const stakesField = stakesInput.closest(".tbv2-field");
+    stakesField.classList.add("tbv2-field-wide");
+    const initialStakesLabel = stakesField.querySelector(".tbv2-label");
+    const replacement = textarea(
+      "tbv2-stakes",
+      selectedManagerId === "MultiChain" ? stakesText : stakesInput.value,
+    );
+    stakesInput.replaceWith(replacement);
+    stakesInput = replacement;
     if (selectedManagerId === "MultiChain") {
-      const replacement = textarea("tbv2-stakes", stakesText);
-      replacement.placeholder = "10-20-40\n50-100-200";
-      initialStakesInput.replaceWith(replacement);
+      stakesInput.placeholder = "10-20-40\n50-100-200";
       initialStakesLabel.textContent = "Chu\u1ed7i ti\u1ec1n (m\u1ed7i d\u00f2ng m\u1ed9t chu\u1ed7i)";
     }
+    bindValueTooltip(stakesInput);
     const controls = el("div", "tbv2-controls");
-    const enabled = el("label", "tbv2-check");
-    const checkbox = input("tbv2-enabled", "", "checkbox");
-    checkbox.checked = draft?.enabled ?? (selected.enabled !== false);
-    enabled.append(checkbox, el("span", "", "Bật tab này"));
     const simulationOnly = el("label", "tbv2-check");
     const simulationCheckbox = input("tbv2-simulation-only", "", "checkbox");
-    simulationCheckbox.checked = (
-      draft?.mode ?? activeMode
-    ) !== "live";
+    simulationCheckbox.checked = isSimulationOnly;
     simulationOnly.append(
       simulationCheckbox,
-      el("span", "", "Chỉ mô phỏng/test")
+      el("span", "", "Mô phỏng")
     );
     const resetOnRecovery = el("label", "tbv2-check");
     const resetCheckbox = input("tbv2-reset-on-recovery", "", "checkbox");
     resetCheckbox.checked = draft?.auto_reset_on_nonnegative_pnl
       ?? !!selected.auto_reset_on_nonnegative_pnl;
-    resetOnRecovery.append(resetCheckbox, el("span", "", "Reset vốn khi P&L ≥ 0"));
-    const remove = el("button", "tbv2-danger", "Đóng tab"); remove.type = "button"; remove.disabled = tabs.length <= 1;
-    controls.append(enabled, simulationOnly, resetOnRecovery, remove); configCard.append(controls);
-    const message = el(
-      "div",
-      "tbv2-message",
-      draft ? "Đang chờ lưu tự động vào SQLite." : "Dữ liệu tab được lưu tự động vào SQLite."
+    resetOnRecovery.append(resetCheckbox, el("span", "", "Tiền thắng >= 0 tự động quay về mức cược đầu"));
+    controls.append(resetOnRecovery); configCard.append(controls);
+    const lifecycleActions = el("div", "tbv2-lifecycle-actions tbv2-run-actions");
+    const runEnabled = Object.prototype.hasOwnProperty.call(selected, "running")
+      ? !!selected.running
+      : !!state.run_enabled;
+    const toggle = el(
+      "button",
+      runEnabled ? "tbv2-danger" : "tbv2-primary",
+      runEnabled ? "Dừng chạy thật" : "Bắt đầu chạy thật"
     );
-    configCard.append(message);
+    toggle.type = "button";
+    toggle.id = "tbv2-run-toggle";
+    const realRunLabel = toggle.textContent;
+    toggle.textContent = runEnabled ? "Dừng chạy" : "Bắt đầu chạy";
+    toggle.setAttribute("aria-label", realRunLabel);
+    toggle.dataset.runEnabled = String(runEnabled);
+    toggle.disabled = false;
+    const lifecycleFeedback = el("span", "tbv2-lifecycle-feedback");
+    lifecycleFeedback.dataset.bind = "lifecycle-message";
+    toggle.addEventListener("click", () => lifecycleCommand(
+      "set_run_state",
+      { tab_id: selected.id, running: !runEnabled },
+      lifecycleFeedback
+    ));
+    lifecycleActions.append(toggle, simulationOnly, lifecycleFeedback);
+    configCard.append(lifecycleActions);
     const managerSelect = configCard.querySelector("#tbv2-progression");
-    let stakesInput = configCard.querySelector("#tbv2-stakes");
+    stakesInput = configCard.querySelector("#tbv2-stakes");
     managerSelect.addEventListener("change", () => {
       const managerId = managerSelect.value;
       const isMultiChain = managerId === "MultiChain";
@@ -499,6 +709,7 @@
           : input("tbv2-stakes", "");
         stakesInput.replaceWith(replacement);
         stakesInput = replacement;
+        bindValueTooltip(stakesInput);
         stakesInput.addEventListener("input", rememberDraft);
         stakesInput.addEventListener("change", rememberDraft);
         stakesInput.closest(".tbv2-field").querySelector(".tbv2-label").textContent = isMultiChain
@@ -514,6 +725,7 @@
       stakesInput.placeholder = isMultiChain
         ? "10-20-40\n50-100-200"
         : "10-20-40-80";
+      stakesInput.title = stakesInput.value || "";
     });
     const autoSave = window.__toolbetUiLocal.autoSave || { timer: null, version: 0 };
     window.__toolbetUiLocal.autoSave = autoSave;
@@ -521,18 +733,16 @@
       if (version !== autoSave.version) return;
       const currentDraft = window.__toolbetUiLocal.drafts[selected.id];
       if (!currentDraft) return;
-      const name = currentDraft.name.trim();
       const chains = currentDraft.stakes_text.split(/[;\r\n]+/).map(part =>
         part.split(/[,\-\s]+/).map(Number).filter(v => Number.isFinite(v) && v >= 0)
       ).filter(chain => chain.length);
-      if (!name || !chains.length) {
-        message.textContent = "Tên tab và chuỗi tiền hợp lệ sẽ được lưu tự động.";
+      if (!chains.length) {
         return;
       }
       const managerId = currentDraft.money_manager_id;
       const changed = {
         ...selected,
-        name,
+        name: selected.name,
         strategy_id: currentDraft.strategy_id,
         strategy_input: currentDraft.strategy_input,
         money_manager_id: managerId,
@@ -541,7 +751,7 @@
         take_profit: number(currentDraft.take_profit),
         stop_loss: number(currentDraft.stop_loss),
         auto_reset_on_nonnegative_pnl: currentDraft.auto_reset_on_nonnegative_pnl,
-        enabled: currentDraft.enabled,
+        enabled: true,
         mode: currentDraft.mode,
       };
       delete changed.status; delete changed.history;
@@ -555,7 +765,6 @@
       );
       if (!saved || version !== autoSave.version) return;
       delete window.__toolbetUiLocal.drafts[selected.id];
-      message.textContent = "Đã lưu tự động vào SQLite.";
       render(window.__toolbetUiSnapshot, window.__toolbetUiAssets || {});
     };
     const scheduleAutoSave = () => {
@@ -577,18 +786,16 @@
         return;
       }
       window.__toolbetUiLocal.drafts[selected.id] = {
-        name: root.querySelector("#tbv2-name").value,
         strategy_id: root.querySelector("#tbv2-strategy").value,
         strategy_input: root.querySelector("#tbv2-strategy-input")?.value ?? (selected.strategy_input ?? ""),
         money_manager_id: managerSelect.value,
         stakes_text: stakesInput.value,
         take_profit: root.querySelector("#tbv2-tp").value,
         stop_loss: root.querySelector("#tbv2-sl").value,
-        enabled: checkbox.checked,
+        enabled: true,
         auto_reset_on_nonnegative_pnl: resetCheckbox.checked,
         mode: simulationCheckbox.checked ? "simulation" : "live",
       };
-      message.textContent = "Đang chờ lưu tự động vào SQLite.";
       scheduleAutoSave();
     };
     configCard.querySelectorAll("input, textarea, select").forEach(control => {
@@ -597,85 +804,56 @@
       control.addEventListener("change", rememberDraft);
     });
     simulationCheckbox.addEventListener("change", () => {
+      const simulation = simulationCheckbox.checked;
+      executionBadge.classList.toggle("simulation", simulation);
+      executionBadge.classList.toggle("live", !simulation);
+      executionBadge.textContent = simulation ? "Không click chip" : "LIVE";
+      executionBadge.title = simulation
+        ? "Mô phỏng: không click chip"
+        : "Live: có thể click chip";
       rememberDraft();
       if (autoSave.timer) window.clearTimeout(autoSave.timer);
       autoSave.timer = null;
       saveCurrentDraft(autoSave.version);
     });
-    remove.addEventListener("click", () => {
-      const remaining = tabs.filter(tab => tab.id !== selected.id);
-      saveTabs(remaining, (remaining[0] || {}).id || "", message, false, selected.id);
-    });
     scroll.append(configCard);
 
-    const lifecycle = selected.lifecycle || { mode: selected.mode || "simulation" };
-    const lifecycleCard = el("section", "tbv2-card tbv2-lifecycle-card");
-    lifecycleCard.append(cardTitle("Chạy chương trình", el("span", `tbv2-mode ${lifecycle.mode || "simulation"}`, MODE_LABELS[lifecycle.mode] || "MÔ PHỎNG/TEST")));
-    const lifecycleActions = el("div", "tbv2-lifecycle-actions");
-    const runEnabled = !!state.run_enabled;
-    const liveTabs = tabs.filter(tab => (
-      (tab.lifecycle || {}).mode || tab.mode
-    ) === "live").length;
-    const toggle = el(
-      "button",
-      runEnabled ? "tbv2-danger" : "tbv2-primary",
-      runEnabled ? "Dừng chạy thật" : "Bắt đầu chạy thật"
-    );
-    toggle.type = "button";
-    toggle.id = "tbv2-run-toggle";
-    const realRunLabel = toggle.textContent;
-    toggle.textContent = runEnabled ? "D\u1eebng ch\u1ea1y" : "B\u1eaft \u0111\u1ea7u ch\u1ea1y";
-    toggle.setAttribute("aria-label", realRunLabel);
-    toggle.dataset.runEnabled = String(runEnabled);
-    toggle.disabled = false;
-    toggle.addEventListener("click", () => lifecycleCommand(
-      "set_run_state",
-      { running: !runEnabled },
-      lifecycleMessage
-    ));
-    lifecycleActions.append(toggle);
-    const lifecycleMessage = el(
-      "div",
-      "tbv2-message",
-      runEnabled
-        ? `Chương trình đang chạy. ${liveTabs} tab ở chế độ live; tab mô phỏng không click chip.`
-        : "Chưa chạy. Nút này không thay đổi chế độ mô phỏng/live của tab."
-    );
-    lifecycleMessage.dataset.bind = "lifecycle-message";
-    const liveView = liveStatusView(state);
-    const liveStatus = el(
-      "div",
-      `tbv2-live-status ${liveView.kind}`,
-      liveView.text
-    );
-    liveStatus.dataset.bind = "live-execution-status";
-    lifecycleCard.append(lifecycleActions, lifecycleMessage, liveStatus);
-    scroll.append(lifecycleCard);
-
+    // Tiền thắng belongs to the current operator run.  It is independent
+    // from status.pnl, which is a historical strategy replay.
+    const tabProfit = Number(selected.run_profit || 0);
+    const lastResultSide = displayedDots.at(-1)?.side;
     const statusCard = el("section", "tbv2-card"); statusCard.append(cardTitle("Trạng thái"));
     const statusGrid = el("div", "tbv2-status-grid");
-    [["Bàn", tableLabelFor(state), "status-table"], ["Kết quả gần nhất", sideLabel(displayedDots.at(-1)?.side), "status-last-result"],
-     ["Cửa đề xuất", sideLabel(current.side), "status-side"], ["Tiền cược ảo", money(current.stake), "status-stake"],
-     ["Mức tiền", `${current.level || 1}/${current.total_levels || 1}`, "status-level"], ["Risk", risk.allowed ? "Cho phép mô phỏng" : (risk.reason || "Chờ tín hiệu"), "status-risk"]]
+    [["Bàn", tableLabelFor(state), "status-table"], ["Kết quả gần nhất", sideLabel(lastResultSide), "status-last-result"],
+     ["Cửa đề xuất", sideLabel(current.side), "status-side"], ["Tiền cược", money(current.stake), "status-stake"],
+     ["Mức tiền", `${current.level || 1}/${current.total_levels || 1}`, "status-level"], ["Tiền thắng", money(tabProfit), "status-profit"]]
       .forEach(([label, value, key]) => {
         const item = el("div", "tbv2-status-item");
         const strong = el("strong", "", value); strong.dataset.bind = key;
+        if (key === "status-last-result") strong.classList.add(`tbv2-result-${lastResultSide || "unknown"}`);
+        if (key === "status-side") strong.classList.add(`tbv2-result-${current.side || "unknown"}`);
+        if (key === "status-profit") strong.classList.toggle("negative", tabProfit < 0);
         item.append(el("span", "", label), strong); statusGrid.append(item);
       });
-    const reason = el("div", "tbv2-reason", current.reason || "Chưa có tín hiệu.");
-    reason.dataset.bind = "status-reason";
-    statusCard.append(statusGrid, reason); scroll.append(statusCard);
+    statusCard.append(statusGrid); scroll.append(statusCard);
 
-    const statsCard = el("section", "tbv2-card"); statsCard.append(cardTitle("Thống kê"));
+    const resetStatistics = el("button", "tbv2-stats-reset", "↻");
+    resetStatistics.type = "button";
+    resetStatistics.title = "Reset thống kê";
+    resetStatistics.setAttribute("aria-label", "Reset thống kê");
+    resetStatistics.addEventListener("click", () => lifecycleCommand(
+      "reset_tab_statistics", { tab_id: selected.id }, null
+    ));
+    const statsCard = el("section", "tbv2-card"); statsCard.append(cardTitle("Thống kê", resetStatistics));
     const stats = el("div", "tbv2-stat-grid");
-    [["Thắng", status.wins, "stats-wins"], ["Thua", status.losses, "stats-losses"], ["Hòa", status.pushes, "stats-pushes"], ["Tín hiệu", status.signals, "stats-signals"], ["Cược ảo", status.virtual_bets, "stats-virtual-bets"], ["P&L ảo", money(status.pnl), "stats-pnl"]]
+    [["Thắng/Thua/Hòa", `${status.wins ?? 0}/${status.losses ?? 0}/${status.pushes ?? 0}`, "stats-results"], ["Thắng/Thua liên tiếp", `${status.max_win_streak ?? 0}/${status.max_loss_streak ?? 0}`, "stats-streaks"], ["Tổng cược hợp lệ", status.valid_bets ?? 0, "stats-valid-bets"], ["Tín hiệu", status.signals, "stats-signals"], ["Cược ảo", status.virtual_bets, "stats-virtual-bets"], ["Tiền thắng", money(tabProfit), "stats-pnl"]]
       .forEach(([label, value, key]) => {
         const item = el("div", "tbv2-stat");
         const strong = el("strong", number(value) < 0 ? "negative" : "", value ?? 0);
         strong.dataset.bind = key;
         item.append(el("span", "", label), strong); stats.append(item);
       });
-    statsCard.append(stats); scroll.append(statsCard);
+    statsCard.append(stats);
 
     const roadStatus = el(
       "span",
@@ -686,7 +864,7 @@
     roadStatus.hidden = !historyView.cached;
     const roadCard = el("section", "tbv2-card");
     roadCard.append(cardTitle("Lịch sử bàn", roadStatus), renderRoad(displayedDots));
-    scroll.append(roadCard);
+    scroll.append(roadCard, statsCard);
     const historyCard = el("section", "tbv2-card"); historyCard.append(cardTitle("Lịch sử cược"));
     const table = el("table", "tbv2-history-table");
     const thead = el("thead"); const trh = el("tr"); ["Ván", "W/L/H", "Cược", "P&L"].forEach(value => trh.append(el("th", "", value))); thead.append(trh); table.append(thead);
@@ -714,9 +892,44 @@
     if (preferredPageSize !== pagination.page_size) {
       queueMicrotask(() => loadHistoryPage(selected.id, 1, preferredPageSize));
     }
+    scroll.addEventListener("scroll", () => {
+      scrollTrace("scroll_event", {
+        scroll_top: scroll.scrollTop,
+        revision: snapshot.revision ?? 0,
+        runtime_session_id: state.runtime_session_id || "",
+      });
+    }, { passive: true });
+    const loadingCover = el("div", "tbv2-loading-cover");
+    loadingCover.setAttribute("role", "status");
+    loadingCover.setAttribute("aria-live", "polite");
+    loadingCover.append(
+      el("span", "tbv2-loading-spinner"),
+      el("strong", "", "Đang tải bảng điều khiển"),
+      el("span", "tbv2-loading-message", "Đang kết nối bàn và tải dữ liệu…"),
+      (() => {
+        const skeleton = el("span", "tbv2-loading-skeleton");
+        skeleton.append(el("i"), el("i"), el("i"));
+        return skeleton;
+      })()
+    );
+    loadingCover.querySelector(".tbv2-loading-message")
+      .setAttribute("data-bind", "workspace-loading-message");
+    scroll.append(loadingCover);
+    setWorkspaceLoading(root, !!state.workspace_loading);
     scroll.scrollTop = firstPanelMount ? 0 : previousScrollTop;
+    scrollTrace("scroll_assigned", {
+      scroll_top: scroll.scrollTop,
+      first_panel_mount: firstPanelMount,
+      revision: snapshot.revision ?? 0,
+    });
     if (firstPanelMount) {
-      requestAnimationFrame(() => { scroll.scrollTop = 0; });
+      requestAnimationFrame(() => {
+        scroll.scrollTop = 0;
+        scrollTrace("first_mount_animation_frame", {
+          scroll_top: scroll.scrollTop,
+          revision: snapshot.revision ?? 0,
+        });
+      });
     }
     if (activeControlId) {
       const nextActive = root.querySelector(`#${CSS.escape(activeControlId)}`);
@@ -754,14 +967,14 @@
     const status = selected.status || {};
     const current = status.current || {};
     const risk = current.risk || {};
-    const lifecycle = selected.lifecycle || {
-      mode: selected.mode || "simulation",
-    };
+    setWorkspaceLoading(root, !!state.workspace_loading);
 
     const liveTabs = (snapshot.tabs || []).filter(tab => (
       (tab.lifecycle || {}).mode || tab.mode
     ) === "live").length;
-    const runEnabled = !!state.run_enabled;
+    const runEnabled = Object.prototype.hasOwnProperty.call(selected, "running")
+      ? !!selected.running
+      : !!state.run_enabled;
     const runToggle = root.querySelector("#tbv2-run-toggle");
     if (runToggle && runToggle.dataset.runEnabled !== String(runEnabled)) {
       const nextToggle = runToggle.cloneNode(false);
@@ -772,7 +985,7 @@
       nextToggle.dataset.runEnabled = String(runEnabled);
       nextToggle.addEventListener("click", () => lifecycleCommand(
         "set_run_state",
-        { running: !runEnabled },
+        { tab_id: selected.id, running: !runEnabled },
         root.querySelector('[data-bind="lifecycle-message"]')
       ));
       runToggle.replaceWith(nextToggle);
@@ -781,8 +994,8 @@
       root,
       "lifecycle-message",
       runEnabled
-        ? `Chương trình đang chạy. ${liveTabs} tab ở chế độ live; tab mô phỏng không click chip.`
-        : "Chưa chạy. Nút này không thay đổi chế độ mô phỏng/live của tab."
+        ? `Chiến lược này đang chạy. ${liveTabs} tab ở chế độ live; tab mô phỏng không click chip.`
+        : "Chiến lược này đang dừng."
     );
     const liveView = liveStatusView(state);
     const liveStatus = setBoundText(
@@ -795,38 +1008,39 @@
     }
 
     setBoundText(root, "status-table", tableLabelFor(state));
-    setBoundText(
+    const lastResultSide = displayedDots.at(-1)?.side || "unknown";
+    const lastResult = setBoundText(
       root,
       "status-last-result",
-      sideLabel(displayedDots.at(-1)?.side)
+      sideLabel(lastResultSide)
     );
-    setBoundText(root, "status-side", sideLabel(current.side));
+    if (lastResult) {
+      lastResult.classList.remove("tbv2-result-player", "tbv2-result-banker", "tbv2-result-tie", "tbv2-result-unknown");
+      lastResult.classList.add(`tbv2-result-${lastResultSide}`);
+    }
+    const suggestedSide = current.side || "unknown";
+    const side = setBoundText(root, "status-side", sideLabel(suggestedSide));
+    if (side) {
+      side.classList.remove("tbv2-result-player", "tbv2-result-banker", "tbv2-result-tie", "tbv2-result-unknown");
+      side.classList.add(`tbv2-result-${suggestedSide}`);
+    }
     setBoundText(root, "status-stake", money(current.stake));
     setBoundText(
       root,
       "status-level",
       `${current.level || 1}/${current.total_levels || 1}`
     );
-    setBoundText(
-      root,
-      "status-risk",
-      risk.allowed
-        ? "Cho phép mô phỏng"
-        : (risk.reason || "Chờ tín hiệu")
-    );
-    setBoundText(
-      root,
-      "status-reason",
-      current.reason || "Chưa có tín hiệu."
-    );
+    const tabProfit = Number(selected.run_profit || 0);
+    const profit = setBoundText(root, "status-profit", money(tabProfit));
+    if (profit) profit.classList.toggle("negative", tabProfit < 0);
 
     const statValues = {
-      "stats-wins": status.wins ?? 0,
-      "stats-losses": status.losses ?? 0,
-      "stats-pushes": status.pushes ?? 0,
+      "stats-results": `${status.wins ?? 0}/${status.losses ?? 0}/${status.pushes ?? 0}`,
+      "stats-streaks": `${status.max_win_streak ?? 0}/${status.max_loss_streak ?? 0}`,
+      "stats-valid-bets": status.valid_bets ?? ((status.wins ?? 0) + (status.losses ?? 0)),
       "stats-signals": status.signals ?? 0,
       "stats-virtual-bets": status.virtual_bets ?? 0,
-      "stats-pnl": money(status.pnl),
+      "stats-pnl": money(tabProfit),
     };
     Object.entries(statValues).forEach(([key, value]) => {
       const node = setBoundText(root, key, value);

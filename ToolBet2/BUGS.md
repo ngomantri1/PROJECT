@@ -1,5 +1,20 @@
 # Bugs
 
+## Fixed: historical daily P&L could stop a new Live run — 2026-08-04
+
+- Cause: `BettingSession` used `pnl_today()` and YAML `betting.stop_loss` /
+  `take_profit`, so old SQLite bets could turn `auto_bet` off after a new run
+  started even though the tab UI showed zero limits.
+- Fix: `LiveRunLimitTracker` is reset by explicit Start and tracks confirmed
+  net profit independently for each Live tab. The next non-money browser run
+  must still verify the UI rendering and tab isolation.
+
+### Follow-up startup crash after adding the tracker
+
+- Cause: the initial overlay payload was constructed before `_live_run_limits`
+  existed.
+- Fix: initialize the process-local tracker before `set_strategy_tabs()`.
+
 ## Open investigation: Live authority disappears after a shoe transition — 2026-08-04
 
 - Evidence: physical placement succeeded through 02:46:50; the first generic

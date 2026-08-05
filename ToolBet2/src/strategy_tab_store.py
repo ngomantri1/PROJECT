@@ -96,7 +96,7 @@ class StrategyTabStore:
                 tab.mode = row.mode
                 row.ordinal = ordinal
                 row.name = tab.name
-                row.enabled = int(tab.enabled)
+                row.enabled = 1
                 row.active = 1
                 row.selected = int(tab.id == config.selected_tab_id)
                 row.strategy_id = tab.strategy_id
@@ -185,6 +185,101 @@ class StrategyTabStore:
             return result
         finally:
             session.close()
+
+    def statistics_baselines_for_tabs(
+        self, tab_ids: list[str]
+    ) -> dict[str, dict[str, int]]:
+        """Return each tab's operator-selected statistics reset baseline."""
+        ids = [str(tab_id) for tab_id in tab_ids if str(tab_id)]
+        result: dict[str, dict[str, int]] = {tab_id: {} for tab_id in ids}
+        if not ids:
+            return result
+        session = self._session_factory()
+        try:
+            rows = (
+                session.query(StrategyTabRuntimeRecord)
+                .filter(StrategyTabRuntimeRecord.tab_id.in_(ids))
+                .all()
+            )
+            for row in rows:
+                try:
+                    baseline = json.loads(row.statistics_baseline_json or "{}")
+                except json.JSONDecodeError:
+                    baseline = {}
+                if isinstance(baseline, dict):
+                    result[row.tab_id] = {
+                        key: int(baseline.get(key) or 0)
+                        for key in (
+                            "signals", "virtual_bets", "wins", "losses", "pushes",
+                            "result_outcome_count",
+                        )
+                    }
+            return result
+        finally:
+            session.close()
+
+    def reset_statistics(self, tab_id: str, status: dict[str, Any]) -> dict[str, int]:
+        """Persist the current replay totals as the new zero point for one tab."""
+        result_outcomes = status.get("result_outcomes")
+        baseline = {
+            key: int(status.get(key) or 0)
+            for key in ("signals", "virtual_bets", "wins", "losses", "pushes")
+        }
+        baseline["result_outcome_count"] = len(
+            result_outcomes if isinstance(result_outcomes, list) else []
+        )
+        session = self._session_factory()
+        try:
+            runtime = session.get(StrategyTabRuntimeRecord, tab_id)
+            if runtime is None:
+                runtime = StrategyTabRuntimeRecord(tab_id=tab_id)
+                session.add(runtime)
+            runtime.statistics_baseline_json = json.dumps(
+                baseline, ensure_ascii=False, sort_keys=True
+            )
+            runtime.updated_at = datetime.now()
+            session.commit()
+            return baseline
+        finally:
+            session.close()
+
+    @staticmethod
+    def apply_statistics_baseline(
+        status: dict[str, Any], baseline: dict[str, int]
+    ) -> dict[str, Any]:
+        """Keep strategy state intact while presenting counters since reset."""
+        displayed = dict(status)
+        for key in ("signals", "virtual_bets", "wins", "losses", "pushes"):
+            displayed[key] = max(0, int(status.get(key) or 0) - int(baseline.get(key) or 0))
+        outcomes = status.get("result_outcomes")
+        if isinstance(outcomes, list):
+            start = int(baseline.get("result_outcome_count") or sum(
+                int(baseline.get(key) or 0)
+                for key in ("wins", "losses", "pushes")
+            ))
+            active_outcomes = outcomes[max(0, start):]
+            displayed["wins"] = sum(outcome == "win" for outcome in active_outcomes)
+            displayed["losses"] = sum(outcome == "loss" for outcome in active_outcomes)
+            displayed["pushes"] = sum(outcome not in {"win", "loss"} for outcome in active_outcomes)
+            current_win_streak = current_loss_streak = 0
+            max_win_streak = max_loss_streak = 0
+            for outcome in active_outcomes:
+                if outcome == "win":
+                    current_win_streak += 1
+                    current_loss_streak = 0
+                elif outcome == "loss":
+                    current_loss_streak += 1
+                    current_win_streak = 0
+                max_win_streak = max(max_win_streak, current_win_streak)
+                max_loss_streak = max(max_loss_streak, current_loss_streak)
+            displayed["max_win_streak"] = max_win_streak
+            displayed["max_loss_streak"] = max_loss_streak
+        else:
+            displayed["max_win_streak"] = int(status.get("max_win_streak") or 0)
+            displayed["max_loss_streak"] = int(status.get("max_loss_streak") or 0)
+        displayed["valid_bets"] = displayed["wins"] + displayed["losses"]
+        displayed.pop("result_outcomes", None)
+        return displayed
 
     def record_overlay(self, payload: dict[str, Any], *, table_name: str = "") -> None:
         tabs = payload.get("tabs") if isinstance(payload, dict) else None

@@ -1,5 +1,20 @@
 # Current Project State
 
+## Per-tab live run limits and “Tiền thắng” — 2026-08-04
+
+- Each explicit `Bắt đầu chạy` resets process-local net profit for every
+  enabled Live tab to zero. The displayed `Tiền thắng` is this confirmed
+  per-run net profit: a win adds its net payout, a loss subtracts stake and a
+  Tie/push adds zero. It may therefore be negative.
+- A tab's SQLite `Cắt lãi` / `Cắt lỗ` values are the only live run limits:
+  zero disables that direction. Limits are independent per Live tab; reaching
+  one prevents only that tab from participating while other Live tabs continue.
+- Historical SQLite P&L, `config.yaml` betting stop/take values and persisted
+  MoneyManager P&L no longer decide this limit. No database schema or YAML was
+  changed. `src/live_run_limits.py` owns the process-only tracker.
+- Startup fix: create the tracker before the initial overlay workspace payload;
+  this prevents `AttributeError: _live_run_limits` before ToolBet reaches login.
+
 ## Live-authority diagnosis after shoe transition — 2026-08-04
 
 - The 2026-08-04 runtime log placed successfully through 02:46:50, then first
@@ -645,3 +660,10 @@
   is no separate `live_bet` license-capability check in the UI run command.
   Pending/duplicate-round protections, table checks, and
   the configured real-bet guard remain independent safeguards.
+# Same-round additive placement — implemented 2026-08-04
+
+The old physical exact-round one-shot guard has been replaced for multi-live
+operator re-entry. The SQLite migration is additive and records attempts by
+run epoch while retaining one `BetRecord` and aggregate allocations for
+settlement. Remaining operational risk: this is unit-tested with mocked
+executors only; it has not been run against a casino.

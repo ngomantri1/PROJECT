@@ -380,3 +380,10 @@ RiskDecision cuối. Private key/server database không thuộc gói customer.
 cho lần import khi SQLite chưa có tab active; luồng đổi site/Game Login tạo
 `AppConfig` mới phải rehydrate `strategy_tabs` từ store trước khi publish
 snapshot overlay.
+# Same-round additive placement (product decision, 2026-08-04)
+
+`bets` remains the single logical record for an exact table/shoe/round. Physical
+actions are now journalled in `bet_placement_attempts` and
+`bet_placement_attempt_allocations`; an attempt is idempotent per `(bet_id,
+run_epoch)`. The existing per-tab `bet_allocations` row is the aggregate used
+for one settlement/MoneyManager update, not a second logical bet.

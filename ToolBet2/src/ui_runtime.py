@@ -26,6 +26,7 @@ class BrowserUiRuntime:
         self._last_snapshot: UiSnapshot | None = None
         self._update_lock = asyncio.Lock()
         self._pending_update: tuple[Page, UiSnapshot] | None = None
+        self._scroll_trace_pages: set[int] = set()
 
     @property
     def last_snapshot(self) -> UiSnapshot | None:
@@ -39,6 +40,22 @@ class BrowserUiRuntime:
             self._assets = load_ui_assets()
         return self._assets
 
+    def _bind_scroll_trace(self, page: Page) -> None:
+        """Forward explicit browser scroll diagnostics into the runtime log."""
+        page_key = id(page)
+        if page_key in self._scroll_trace_pages:
+            return
+        try:
+            def on_console(message) -> None:
+                text = str(getattr(message, "text", ""))
+                if "[TBV2_SCROLL_TRACE]" in text:
+                    logger.info("%s", text)
+
+            page.on("console", on_console)
+            self._scroll_trace_pages.add(page_key)
+        except Exception as exc:
+            logger.debug("Khong gan duoc scroll trace cho UI runtime: %s", exc)
+
     async def install(self, page: Page, snapshot: UiSnapshot | None = None) -> bool:
         if snapshot is not None:
             self._last_snapshot = snapshot
@@ -48,6 +65,7 @@ class BrowserUiRuntime:
         current = self._last_snapshot or UiSnapshot()
         assets = self._bundle()
         try:
+            self._bind_scroll_trace(page)
             await page.evaluate(assets.bridge_js)
             return bool(
                 await page.evaluate(

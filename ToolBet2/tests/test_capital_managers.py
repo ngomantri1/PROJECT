@@ -105,19 +105,26 @@ class ReferenceMoneyManagerParityTests(unittest.TestCase):
         self.assertEqual(1, manager.snapshot().chain_index)
         self.assertEqual(29.0, manager.snapshot().chain_profit)
 
-    def test_recovery_to_nonnegative_resets_stake_level_but_keeps_session_pnl(self):
+    def test_nonnegative_win_total_resets_stake_level_like_reference(self):
         manager = create_money_manager(
             "IncreaseEveryRound", [100, 200, 300], auto_reset_on_nonnegative_pnl=True
         )
-        apply_code(manager, "L")
-        self.assertEqual(1, manager.quote().level_index)
-
         update = manager.apply_result(BetSide.PLAYER, BetSide.PLAYER)
 
         self.assertEqual(0, update.next_quote.level_index)
         self.assertEqual(100, update.next_quote.stake)
         self.assertEqual(100.0, manager.snapshot().session_pnl)
         self.assertEqual(0.0, manager.snapshot().recovery_pnl)
+
+    def test_nonnegative_option_resets_after_first_win_from_zero(self):
+        manager = create_money_manager(
+            "IncreaseWhenWin", [10, 20], auto_reset_on_nonnegative_pnl=True
+        )
+
+        update = apply_code(manager, "W")
+
+        self.assertEqual(10, update.next_quote.stake)
+        self.assertEqual(0, update.next_quote.level_index)
 
     def test_tie_is_push_and_does_not_change_next_quote(self):
         for manager_id in MONEY_MANAGER_IDS:

@@ -182,7 +182,6 @@ class ReferenceMoneyManager:
             bet_side, result, previous.stake
         )
         self._session_pnl += profit
-        previous_recovery_pnl = self._recovery_pnl
         self._recovery_pnl += profit
         if outcome == MoneyOutcome.WIN:
             self._wins += 1
@@ -194,7 +193,7 @@ class ReferenceMoneyManager:
             self._pushes += 1
         if (
             self.auto_reset_on_nonnegative_pnl
-            and previous_recovery_pnl < 0 <= self._recovery_pnl
+            and self._recovery_pnl >= 0
         ):
             self._reset_stake_levels()
         self._apply_limits()

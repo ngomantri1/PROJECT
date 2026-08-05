@@ -115,6 +115,14 @@ class UiContractTests(unittest.TestCase):
         self.assertTrue(snapshot.state["run_enabled"])
         self.assertFalse(snapshot.state.get("auto_bet", False))
 
+    def test_overlay_workspace_starts_locked_until_initial_table_snapshot(self):
+        overlay = GameOverlay()
+
+        self.assertTrue(overlay._build_ui_snapshot().state["workspace_loading"])
+
+        overlay.set_workspace_loading(False)
+        self.assertFalse(overlay._build_ui_snapshot().state["workspace_loading"])
+
 
 class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -185,6 +193,139 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
 
         await runtime.remove(self.page)
         self.assertFalse(await runtime.present(self.page))
+
+    async def test_workspace_loading_locks_controls_then_unlocks_with_snapshot(self):
+        tab = {
+            "id": "tab-1",
+            "name": "Chiáº¿n lÆ°á»£c 1",
+            "enabled": True,
+            "strategy_id": SIMULATION_STRATEGIES[0]["id"],
+            "money_manager_id": MONEY_MANAGER_OPTIONS[0]["id"],
+            "stakes": [10, 100],
+            "status": {},
+        }
+        workspace = {
+            "selected_tab_id": "tab-1",
+            "strategies": list(SIMULATION_STRATEGIES),
+            "money_managers": list(MONEY_MANAGER_OPTIONS),
+            "tabs": [tab],
+        }
+        runtime = BrowserUiRuntime(enabled=True)
+        loading = UiSnapshot(
+            revision=1,
+            state={
+                "runtime_session_id": "loading-session",
+                "workspace_loading": True,
+                "strategy_tabs": workspace,
+            },
+            tabs=[tab],
+        )
+        self.assertTrue(await runtime.install(self.page, loading))
+        self.assertTrue(await self.page.locator(".tbv2-loading-cover").is_visible())
+        self.assertEqual(
+            "true",
+            await self.page.locator(".tbv2-tabs").get_attribute("aria-busy"),
+        )
+        self.assertTrue(
+            await self.page.locator(".tbv2-tabs").evaluate("node => node.inert")
+        )
+
+        await self.page.evaluate(
+            """() => {
+              window.__toolbetUiLocal.workspaceLoadingSince = Date.now() - 16000;
+              window.__toolbetUiLocal.workspaceLoadingTimer = null;
+            }"""
+        )
+        timed_out = UiSnapshot(
+            revision=2,
+            state={**loading.state, "workspace_loading": True},
+            tabs=[tab],
+        )
+        self.assertTrue(await runtime.update(self.page, timed_out))
+        self.assertIn(
+            "Chưa nhận được dữ liệu bàn",
+            await self.page.locator('[data-bind="workspace-loading-message"]').inner_text(),
+        )
+
+        ready = UiSnapshot(
+            revision=3,
+            state={**loading.state, "workspace_loading": False, "table": "Baccarat C01"},
+            tabs=[tab],
+        )
+        self.assertTrue(await runtime.update(self.page, ready))
+        self.assertFalse(await self.page.locator(".tbv2-loading-cover").is_visible())
+        self.assertEqual(
+            "false",
+            await self.page.locator(".tbv2-tabs").get_attribute("aria-busy"),
+        )
+        self.assertFalse(
+            await self.page.locator(".tbv2-tabs").evaluate("node => node.inert")
+        )
+        self.assertEqual(
+            [],
+            await self.page.locator(".tbv2-tab[data-tab-id='tab-1']").evaluate(
+                "node => [...node.parentElement.closest('[inert]') ? [node.parentElement.closest('[inert]')] : []].map(item => item.tagName)"
+            ),
+        )
+
+    async def test_tab_selection_is_immediate_and_does_not_save_workspace(self):
+        first = {
+            "id": "tab-1",
+            "name": "Chiến lược 1",
+            "enabled": True,
+            "strategy_id": "follow_last",
+            "money_manager_id": "IncreaseWhenLose",
+            "stakes": [10],
+            "status": {"current": {"stake": 10}},
+        }
+        second = {
+            "id": "tab-2",
+            "name": "Chiến lược 2",
+            "enabled": True,
+            "strategy_id": "follow_last",
+            "money_manager_id": "IncreaseWhenLose",
+            "stakes": [120],
+            "status": {"current": {"stake": 120}},
+        }
+        received = []
+
+        async def save_strategy_tabs(payload):
+            received.append(payload)
+            return {"ok": False, "error": "selection must not save"}
+
+        await self.page.expose_function("toolbetSaveStrategyTabs", save_strategy_tabs)
+        snapshot = UiSnapshot(
+            revision=1,
+            state={
+                "strategy_tabs": {
+                    "selected_tab_id": "tab-2",
+                    "strategies": list(SIMULATION_STRATEGIES),
+                    "money_managers": list(MONEY_MANAGER_OPTIONS),
+                    "tabs": [first, second],
+                },
+            },
+            tabs=[first, second],
+        )
+        runtime = BrowserUiRuntime(enabled=True)
+        self.assertTrue(await runtime.install(self.page, snapshot))
+        self.assertEqual("120", await self.page.locator("#tbv2-stakes").input_value())
+        self.assertFalse(
+            await self.page.locator(".tbv2-tabs").evaluate("node => node.inert")
+        )
+
+        await self.page.locator(".tbv2-tab[data-tab-id='tab-1']").click()
+
+        self.assertEqual(
+            "tab-1",
+            await self.page.evaluate("() => window.__toolbetUiLocal.selectedId"),
+        )
+        self.assertEqual("10", await self.page.locator("#tbv2-stakes").input_value())
+        self.assertTrue(
+            await self.page.locator(".tbv2-tab[data-tab-id='tab-1']").evaluate(
+                "node => node.classList.contains('active')"
+            )
+        )
+        self.assertEqual([], received)
 
     async def test_initial_install_and_dom_reinstall_render_all_catalogues(self):
         overlay = GameOverlay()
@@ -329,9 +470,9 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
                 "(node) => node.scrollTop"
             ),
         )
-        self.assertIn(
-            "Đang chờ lưu tự động",
-            await self.page.locator(".tbv2-config-card .tbv2-message").inner_text(),
+        self.assertEqual(
+            0,
+            await self.page.locator(".tbv2-config-card .tbv2-message").count(),
         )
 
     async def test_realtime_update_patches_regions_without_rebuilding_form(self):
@@ -444,10 +585,30 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             "100",
             await self.page.locator('[data-bind="status-stake"]').inner_text(),
         )
-        self.assertEqual(2, await self.page.locator(".tbv2-road .tbv2-dot").count())
         self.assertEqual(
-            "2",
-            await self.page.locator('[data-bind="stats-wins"]').inner_text(),
+            3,
+            await self.page.locator(".tbv2-status-grid").evaluate(
+                "node => getComputedStyle(node).gridTemplateColumns.split(' ').length"
+            ),
+        )
+        self.assertIn(
+            "tbv2-result-banker",
+            await self.page.locator('[data-bind="status-side"]').get_attribute("class"),
+        )
+        self.assertIn(
+            "tbv2-result-banker",
+            await self.page.locator('[data-bind="status-last-result"]').get_attribute("class"),
+        )
+        self.assertEqual(2, await self.page.locator(".tbv2-road .tbv2-dot").count())
+        self.assertEqual(1, await self.page.locator(".tbv2-road .tbv2-dot-latest").count())
+        self.assertTrue(
+            await self.page.locator(".tbv2-road .tbv2-dot:last-child").evaluate(
+                "node => node.classList.contains('tbv2-dot-latest')"
+            )
+        )
+        self.assertEqual(
+            "2/1/0",
+            await self.page.locator('[data-bind="stats-results"]').inner_text(),
         )
 
     async def test_older_revision_cannot_overwrite_newer_snapshot(self):
@@ -776,14 +937,14 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         )
         runtime = BrowserUiRuntime(enabled=True)
         self.assertTrue(await runtime.install(self.page, snapshot))
-        await self.page.locator("#tbv2-name").fill("Tab đã lưu")
+        await self.page.locator("#tbv2-stakes").fill("10-100-120")
         await self.page.wait_for_function(
-            "() => window.__toolbetUiSnapshot.tabs[0].name === 'Tab đã lưu'"
+            "() => window.__toolbetUiSnapshot.tabs[0].stakes[0] === 10"
         )
 
         self.assertEqual(1, len(received))
         saved_tab = received[0]["tabs"][0]
-        self.assertEqual("Tab đã lưu", saved_tab["name"])
+        self.assertEqual("Chiến lược 1", saved_tab["name"])
         self.assertEqual("IncreaseWhenLose", saved_tab["money_manager_id"])
         self.assertEqual("simulation", saved_tab["mode"])
         self.assertNotIn("status", saved_tab)
@@ -792,6 +953,59 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             0,
             await self.page.get_by_role("button", name="Lưu cấu hình").count(),
+        )
+
+    async def test_tab_name_is_edited_in_place_and_escape_cancels(self):
+        received = []
+
+        async def save_strategy_tabs(payload):
+            received.append(payload)
+            return {"ok": True, "strategy_tabs": {"tabs": payload["tabs"]}}
+
+        await self.page.expose_function("toolbetSaveStrategyTabs", save_strategy_tabs)
+        tab = {
+            "id": "tab-1",
+            "name": "Chiến lược 1",
+            "enabled": True,
+            "strategy_id": "follow_last",
+            "money_manager_id": "IncreaseWhenLose",
+            "stakes": [10],
+            "status": {},
+        }
+        snapshot = UiSnapshot(
+            revision=1,
+            state={
+                "strategy_tabs": {
+                    "selected_tab_id": "tab-1",
+                    "strategies": list(SIMULATION_STRATEGIES),
+                    "money_managers": list(MONEY_MANAGER_OPTIONS),
+                    "tabs": [tab],
+                },
+            },
+            tabs=[tab],
+        )
+        runtime = BrowserUiRuntime(enabled=True)
+        self.assertTrue(await runtime.install(self.page, snapshot))
+
+        name = self.page.locator(".tbv2-tab-name")
+        await name.dblclick()
+        editor = self.page.locator(".tbv2-tab-name-edit")
+        self.assertEqual(1, await editor.count())
+        await editor.fill("Tab da doi")
+        await editor.press("Enter")
+        await self.page.wait_for_function(
+            "() => window.__toolbetUiSnapshot.tabs[0].name === 'Tab da doi'"
+        )
+        self.assertEqual("Tab da doi", received[0]["tabs"][0]["name"])
+
+        renamed = self.page.locator(".tbv2-tab-name")
+        await renamed.dblclick()
+        editor = self.page.locator(".tbv2-tab-name-edit")
+        await editor.fill("Khong luu")
+        await editor.press("Escape")
+        self.assertEqual(1, len(received))
+        self.assertEqual(
+            "Tab da doi", await self.page.locator(".tbv2-tab-name").inner_text()
         )
 
     async def test_simulation_checkbox_persists_live_mode_immediately(self):
@@ -827,7 +1041,8 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             "stop_loss": 0,
             "take_profit": 0,
             "mode": "simulation",
-            "status": {},
+            "run_profit": -120,
+            "status": {"pnl": -999},
         }
         snapshot = UiSnapshot(
             revision=9,
@@ -846,14 +1061,38 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         )
         runtime = BrowserUiRuntime(enabled=True)
         self.assertTrue(await runtime.install(self.page, snapshot))
+        self.assertEqual(
+            ["tbv2-run-toggle", "tbv2-simulation-only", None],
+            await self.page.locator(".tbv2-run-actions > *").evaluate_all(
+                "nodes => nodes.map(node => node.id || node.querySelector('input')?.id)"
+            ),
+        )
+        self.assertEqual("Mô phỏng", await self.page.locator(".tbv2-run-actions label").inner_text())
+        self.assertEqual(
+            "-120",
+            await self.page.locator("[data-bind='status-profit']").inner_text(),
+        )
+        self.assertEqual(
+            "Không click chip",
+            await self.page.locator(".tbv2-execution-badge").inner_text(),
+        )
 
         await self.page.locator("#tbv2-simulation-only").uncheck()
+        self.assertEqual("LIVE", await self.page.locator(".tbv2-execution-badge").inner_text())
+        self.assertIn(
+            "live",
+            await self.page.locator(".tbv2-execution-badge").get_attribute("class"),
+        )
         await self.page.wait_for_timeout(100)
 
         self.assertEqual(1, len(received))
         self.assertEqual("live", received[0]["tabs"][0]["mode"])
         self.assertFalse(
             await self.page.locator("#tbv2-simulation-only").is_checked()
+        )
+        self.assertEqual(
+            "-120",
+            await self.page.locator("[data-bind='status-profit']").inner_text(),
         )
 
     async def test_multi_chain_uses_one_stake_chain_per_line(self):
@@ -897,9 +1136,9 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             .locator("xpath=ancestor::label[1]//span")
             .inner_text(),
         )
-        self.assertLessEqual(
+        self.assertGreaterEqual(
             (await stakes.bounding_box())["height"],
-            40,
+            60,
         )
 
         await stakes.fill("1-2-3\n10-20-30")
@@ -945,6 +1184,42 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await toggle.is_visible())
         await self.page.locator("#tbv2-simulation-only").uncheck()
         self.assertTrue(await toggle.is_visible())
+
+    async def test_long_strategy_configuration_values_have_tooltips(self):
+        tab = {
+            "id": "tab-1",
+            "name": "Strategy 1",
+            "enabled": True,
+            "strategy_id": "follow_last",
+            "money_manager_id": "IncreaseWhenLose",
+            "stakes": [10, 100, 120, 140, 160, 200, 250],
+            "status": {},
+        }
+        snapshot = UiSnapshot(
+            revision=1,
+            state={
+                "strategy_tabs": {
+                    "selected_tab_id": "tab-1",
+                    "strategies": list(SIMULATION_STRATEGIES),
+                    "money_managers": list(MONEY_MANAGER_OPTIONS),
+                    "tabs": [tab],
+                },
+            },
+            tabs=[tab],
+        )
+        runtime = BrowserUiRuntime(enabled=True)
+        self.assertTrue(await runtime.install(self.page, snapshot))
+
+        for selector in ("#tbv2-strategy", "#tbv2-progression"):
+            self.assertEqual(
+                await self.page.locator(f"{selector} option:checked").inner_text(),
+                await self.page.locator(selector).get_attribute("title"),
+            )
+        stakes = self.page.locator("#tbv2-stakes")
+        self.assertEqual(await stakes.input_value(), await stakes.get_attribute("title"))
+
+        await stakes.fill("10-100-120-140-160-200-250-300")
+        self.assertEqual(await stakes.input_value(), await stakes.get_attribute("title"))
 
     async def test_workspace_lifecycle_action_uses_typed_command_bridge(self):
         received = []
@@ -999,14 +1274,86 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(received))
         self.assertEqual("set_run_state", received[0]["type"])
         self.assertTrue(received[0]["payload"]["running"])
+        self.assertEqual("tab-1", received[0]["payload"]["tab_id"])
+        self.assertTrue(
+            await self.page.locator(".tbv2-tab[data-tab-id='tab-1']").evaluate(
+                "node => node.classList.contains('running')"
+            )
+        )
 
-    async def test_runtime_refresh_updates_run_toggle_and_its_next_action(self):
+    async def test_statistics_reset_button_uses_typed_command_and_updates_values(self):
+        received = []
+
+        async def ui_command(command):
+            received.append(command)
+            return {
+                "ok": True,
+                "data": {
+                    "tab_id": "tab-1",
+                    "status": {
+                        "wins": 0,
+                        "losses": 0,
+                        "pushes": 0,
+                        "signals": 0,
+                        "virtual_bets": 0,
+                    },
+                    "run_profit": 0,
+                },
+            }
+
+        await self.page.expose_function("toolbetUiCommand", ui_command)
+        tab = {
+            "id": "tab-1",
+            "name": "Chiáº¿n lÆ°á»£c 1",
+            "enabled": True,
+            "strategy_id": "follow_last",
+            "stakes": [10],
+            "run_profit": -120,
+            "status": {
+                "wins": 4,
+                "losses": 3,
+                "pushes": 1,
+                "signals": 8,
+                "virtual_bets": 7,
+            },
+        }
+        snapshot = UiSnapshot(
+            revision=1,
+            state={
+                "strategy_tabs": {
+                    "selected_tab_id": "tab-1",
+                    "strategies": list(SIMULATION_STRATEGIES),
+                    "money_managers": list(MONEY_MANAGER_OPTIONS),
+                    "tabs": [tab],
+                },
+            },
+            tabs=[tab],
+        )
+        runtime = BrowserUiRuntime(enabled=True)
+        self.assertTrue(await runtime.install(self.page, snapshot))
+
+        await self.page.get_by_role("button", name="Reset thống kê").click()
+
+        self.assertEqual(1, len(received))
+        self.assertEqual("reset_tab_statistics", received[0]["type"])
+        self.assertEqual({"tab_id": "tab-1"}, received[0]["payload"])
+        self.assertEqual("0/0/0", await self.page.locator("[data-bind='stats-results']").inner_text())
+        self.assertEqual("0", await self.page.locator("[data-bind='stats-pnl']").inner_text())
+
+    async def test_runtime_refresh_keeps_tab_id_for_start_stop_start(self):
         received = []
 
         async def ui_command(command):
             received.append(command)
             running = bool(command["payload"]["running"])
-            return {"ok": True, "data": {"run_enabled": running}}
+            return {
+                "ok": True,
+                "data": {
+                    "tab_id": command["payload"]["tab_id"],
+                    "running": running,
+                    "run_enabled": running,
+                },
+            }
 
         await self.page.expose_function("toolbetUiCommand", ui_command)
         tab = {
@@ -1036,19 +1383,72 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         runtime = BrowserUiRuntime(enabled=True)
         self.assertTrue(await runtime.install(self.page, snapshot))
 
+        await self.page.locator("#tbv2-run-toggle").click()
+        self.assertEqual("tab-1", received[-1]["payload"]["tab_id"])
+        self.assertTrue(received[-1]["payload"]["running"])
+
+        running_tab = {**tab, "running": True}
         refreshed = UiSnapshot(
             revision=10,
             state={**snapshot.state, "run_enabled": True},
-            tabs=[tab],
+            tabs=[running_tab],
         )
         self.assertTrue(await runtime.update(self.page, refreshed))
         toggle = self.page.get_by_role("button", name="Dừng chạy thật")
         self.assertTrue(await toggle.is_visible())
         await toggle.click()
 
-        self.assertEqual(1, len(received))
-        self.assertEqual("set_run_state", received[0]["type"])
-        self.assertFalse(received[0]["payload"]["running"])
+        self.assertEqual(2, len(received))
+        self.assertEqual("set_run_state", received[1]["type"])
+        self.assertEqual("tab-1", received[1]["payload"]["tab_id"])
+        self.assertFalse(received[1]["payload"]["running"])
+
+        stopped_tab = {**tab, "running": False}
+        stopped = UiSnapshot(
+            revision=11,
+            state={**snapshot.state, "run_enabled": False},
+            tabs=[stopped_tab],
+        )
+        self.assertTrue(await runtime.update(self.page, stopped))
+        await self.page.locator("#tbv2-run-toggle").click()
+
+        self.assertEqual(3, len(received))
+        self.assertEqual("tab-1", received[2]["payload"]["tab_id"])
+        self.assertTrue(received[2]["payload"]["running"])
+
+    async def test_run_command_error_is_shown_next_to_the_toggle(self):
+        async def ui_command(_command):
+            return {"ok": False, "error": "Tab đang bị chặn"}
+
+        await self.page.expose_function("toolbetUiCommand", ui_command)
+        tab = {
+            "id": "tab-1",
+            "name": "Strategy 1",
+            "enabled": True,
+            "strategy_id": "follow_last",
+            "stakes": [10],
+            "status": {},
+        }
+        snapshot = UiSnapshot(
+            revision=1,
+            state={
+                "strategy_tabs": {
+                    "selected_tab_id": "tab-1",
+                    "strategies": list(SIMULATION_STRATEGIES),
+                    "money_managers": list(MONEY_MANAGER_OPTIONS),
+                    "tabs": [tab],
+                },
+            },
+            tabs=[tab],
+        )
+        runtime = BrowserUiRuntime(enabled=True)
+        self.assertTrue(await runtime.install(self.page, snapshot))
+
+        await self.page.locator("#tbv2-run-toggle").click()
+
+        feedback = self.page.locator("[data-bind='lifecycle-message']")
+        self.assertEqual("Tab đang bị chặn", await feedback.inner_text())
+        self.assertTrue(await feedback.evaluate("node => node.classList.contains('error')"))
 
     async def test_license_status_and_tool_logout_use_typed_command(self):
         received = []

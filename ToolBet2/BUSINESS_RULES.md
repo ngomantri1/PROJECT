@@ -39,6 +39,18 @@ Source: `src/auto_bettor.py:BET_TRIGGER_SOURCES`, `on_history_grew()`, `_arm_bet
 
 ## Run state and tab mode
 
+### Per-tab Cắt lãi / Cắt lỗ and Tiền thắng
+
+- `Cắt lãi` and `Cắt lỗ` are stored with each strategy tab in SQLite. Value
+  `0` disables the relevant direction; `config.yaml` does not supply a live
+  run limit.
+- `Tiền thắng` is confirmed net profit for the current explicit run of that
+  tab: payout on a win, negative stake on a loss and zero on a Tie/push. It is
+  reset to zero for all enabled Live tabs on each `Bắt đầu chạy`; historical
+  SQLite P&L and persisted MoneyManager P&L are excluded.
+- Live tabs are independent. Reaching a tab's limit prevents only that tab
+  from creating a new allocation; another eligible Live tab may continue.
+
 - A valid Tool session permits use of the workspace. It does not require a
   separate `live_bet` capability merely to start the session run state.
 - `run_enabled` is session-only and starts false on every process start; it is
@@ -245,3 +257,10 @@ Source: `src/config.py`, `src/sites/__init__.py:resolve_site()`, `src/credential
 - `target_round_index`: index history mà bet nhắm tới.
 - `pattern_id`: ID ổn định (`mau_1_1`, `mau_bet_2`, `tie_nurture`); `rule_name`/`pattern_name` là nhãn hiển thị.
 - `group_pnl_after`, `session_profit_after`: snapshot sau khi resolve.
+# Additive same-side re-entry
+
+An operator Stop then Start creates a new run epoch. During that epoch the
+current logical round may receive one additional physical attempt only for a
+side already physically placed in that round. A newly-signalled opposite side
+is calculate-only (`SIDE_CONFLICT_CALCULATE_ONLY`). Polling, UI refresh, and a
+repeated Start while already running never create an epoch or placement.

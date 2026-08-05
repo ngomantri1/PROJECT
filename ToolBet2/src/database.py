@@ -182,6 +182,45 @@ class BetAllocationRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
+class BetPlacementAttemptRecord(Base):
+    """One durable physical-placement attempt within a logical bet."""
+
+    __tablename__ = "bet_placement_attempts"
+    __table_args__ = (
+        UniqueConstraint("bet_id", "run_epoch", name="uq_bet_attempt_epoch"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bet_id: Mapped[int] = mapped_column(Integer, ForeignKey("bets.id"), index=True)
+    attempt_no: Mapped[int] = mapped_column(Integer)
+    run_epoch: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(160), unique=True)
+    placement_status: Mapped[str] = mapped_column(String(24), default="placing")
+    assumed_placed: Mapped[bool] = mapped_column(Integer, default=False)
+    error_code: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class BetPlacementAttemptAllocationRecord(Base):
+    __tablename__ = "bet_placement_attempt_allocations"
+    __table_args__ = (
+        UniqueConstraint("attempt_id", "tab_id", "side", name="uq_attempt_allocation"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    attempt_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("bet_placement_attempts.id"), index=True
+    )
+    tab_id: Mapped[str] = mapped_column(String(64))
+    side: Mapped[str] = mapped_column(String(16))
+    requested_stake: Mapped[float] = mapped_column(Float)
+    execution_mode: Mapped[str] = mapped_column(String(16), default="real")
+    placement_status: Mapped[str] = mapped_column(String(24), default="planned")
+    zone_amount_before: Mapped[float | None] = mapped_column(Float, nullable=True)
+    zone_amount_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
 class EventRecord(Base):
     __tablename__ = "events"
 
@@ -231,6 +270,7 @@ class StrategyTabRuntimeRecord(Base):
     table_name: Mapped[str] = mapped_column(String(128), default="")
     history_size: Mapped[int] = mapped_column(Integer, default=0)
     status_json: Mapped[str] = mapped_column(Text, default="{}")
+    statistics_baseline_json: Mapped[str] = mapped_column(Text, default="{}")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
@@ -299,6 +339,18 @@ class StrategyMoneyConfigRecord(Base):
 def _migrate_schema(engine) -> None:
     """Them cot moi cho DB cu (SQLite ALTER TABLE)."""
     insp = inspect(engine)
+    if "strategy_tab_runtime" in insp.get_table_names():
+        runtime_cols = {
+            column["name"] for column in insp.get_columns("strategy_tab_runtime")
+        }
+        if "statistics_baseline_json" not in runtime_cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE strategy_tab_runtime "
+                        "ADD COLUMN statistics_baseline_json TEXT DEFAULT '{}'"
+                    )
+                )
     if "strategy_money_states" in insp.get_table_names():
         money_cols = {
             c["name"] for c in insp.get_columns("strategy_money_states")

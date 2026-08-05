@@ -278,6 +278,9 @@ class GameOverlay:
         self._strategy_history_handler = None
         self._ui_command_handler = None
         self._strategy_tabs: dict[str, Any] = {}
+        # The workspace shell is installed before the first trustworthy table
+        # snapshot.  Keep that transient state in the overlay, not in SQLite.
+        self._workspace_loading = True
         self._auto_bet = False
         self._run_enabled = False
         self._stop_loss = 0.0
@@ -333,6 +336,11 @@ class GameOverlay:
         """Keep the operator run latch available to every UI reinstall."""
 
         self._run_enabled = bool(enabled)
+
+    def set_workspace_loading(self, loading: bool) -> None:
+        """Lock the v2 workspace until the current table has initial data."""
+
+        self._workspace_loading = bool(loading)
 
     def set_tie_nurture(self, data: dict[str, Any] | None):
         from src.tie_nurture_config import tie_nurture_to_overlay
@@ -441,6 +449,7 @@ class GameOverlay:
     def _build_ui_snapshot(self, payload: dict[str, Any] | None = None) -> UiSnapshot:
         data = dict(payload or {})
         data.setdefault("run_enabled", self._run_enabled)
+        data.setdefault("workspace_loading", self._workspace_loading)
         strategy_tabs = data.get("strategy_tabs")
         if not isinstance(strategy_tabs, dict):
             strategy_tabs = self._strategy_tabs
@@ -761,7 +770,13 @@ class GameOverlay:
         except Exception:
             return False
 
-    async def install(self, page: Page, stakes: list[int] | None = None) -> bool:
+    async def install(
+        self,
+        page: Page,
+        stakes: list[int] | None = None,
+        *,
+        allow_early_host: bool = False,
+    ) -> bool:
         try:
             url = ""
             try:
@@ -769,7 +784,10 @@ class GameOverlay:
             except Exception:
                 url = ""
             # provider_tab → tab AE SEXY; casino_iframe → /casino khi da mo game
-            if not await page_should_host_overlay(page):
+            can_host = await page_should_host_overlay(page)
+            if not can_host and allow_early_host:
+                can_host = url_should_host_overlay(url)
+            if not can_host:
                 logger.debug("Bo qua overlay — khong phai host game: %s", url[:70])
                 return False
             if stakes:

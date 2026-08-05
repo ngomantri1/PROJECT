@@ -73,6 +73,9 @@ class SimulationTabConfig(BaseModel):
     def normalized(self) -> "SimulationTabConfig":
         values = self.model_dump()
         values["id"] = str(values["id"]).strip() or uuid4().hex
+        # Start/Stop is the only execution switch. Old per-tab disabled values
+        # are upgraded to enabled so a hidden legacy checkbox cannot block bets.
+        values["enabled"] = True
         values["name"] = str(values["name"]).strip()[:40] or "Chiến lược"
         values["strategy_id"] = (
             values["strategy_id"]
@@ -326,6 +329,7 @@ def simulate_strategy_tab(
     risk_manager = RiskManager()
     pnl = 0.0
     wins = losses = pushes = accepted = signals = 0
+    result_outcomes: list[str] = []
     schedule_round_index = 0
     statistical_runtime = create_statistical_runtime(
         tab.strategy_id, history[:1], seed=tab.id, strategy_input=tab.strategy_input
@@ -361,6 +365,7 @@ def simulate_strategy_tab(
             losses += 1
         else:
             pushes += 1
+        result_outcomes.append(update.outcome.value)
         if tab.strategy_id in SCHEDULE_STRATEGY_IDS:
             schedule_round_index = (schedule_round_index + 1) % 10
         if tab.strategy_id in STATEFUL_STRATEGY_IDS and statistical_runtime is not None:
@@ -387,6 +392,19 @@ def simulate_strategy_tab(
         daily_profit=pnl, stop_loss=tab.stop_loss, take_profit=tab.take_profit,
         limit_hit=manager.limit_hit,
     ))
+    max_win_streak = max_loss_streak = 0
+    current_win_streak = current_loss_streak = 0
+    for outcome in result_outcomes:
+        if outcome == "win":
+            current_win_streak += 1
+            current_loss_streak = 0
+        elif outcome == "loss":
+            current_loss_streak += 1
+            current_win_streak = 0
+        # A tie/push is not a valid bet, so it does not break either streak.
+        max_win_streak = max(max_win_streak, current_win_streak)
+        max_loss_streak = max(max_loss_streak, current_loss_streak)
+
     return {
         "id": tab.id,
         "name": tab.name,
@@ -398,6 +416,10 @@ def simulate_strategy_tab(
         "wins": wins,
         "losses": losses,
         "pushes": pushes,
+        "valid_bets": wins + losses,
+        "max_win_streak": max_win_streak,
+        "max_loss_streak": max_loss_streak,
+        "result_outcomes": result_outcomes,
         "pnl": round(pnl, 2),
         "current": {
             "action": current.action.value,

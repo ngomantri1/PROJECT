@@ -10,7 +10,14 @@ from sqlalchemy import select
 from src.ae_sexy_betting import BetPlacementUncertain
 from src.auto_bettor import AutoBettor
 from src.betting_session import BettingSession, PendingBet
-from src.database import BetAllocationRecord, BetRecord, EventRecord, init_db
+from src.database import (
+    BetAllocationRecord,
+    BetPlacementAttemptAllocationRecord,
+    BetPlacementAttemptRecord,
+    BetRecord,
+    EventRecord,
+    init_db,
+)
 from src.db_store import GameDataStore
 from src.models import BetSide
 from src.risk_decision import ExecutionMode, RiskDecision
@@ -111,6 +118,50 @@ class BetJournalTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(placed)
         self.assertIsNotNone(session.state.pending)
+
+    def test_attempt_journal_is_idempotent_and_effective_stake_is_additive(self) -> None:
+        """A logical round stays one bet while Start epochs add audited attempts."""
+        bet = self.store.save_bet(
+            round_id="ae_sexy:C01:7:12", table_name="Baccarat C01", side="player",
+            stake=20, stake_index=0, pattern_id="multi_live", pattern_name="test",
+            reason="first", target_round_index=2, game_shoe=7, game_round=12,
+            status="placed",
+        )
+        assert bet is not None
+        self.store.save_bet_allocations(bet.id, [{
+            "tab_id": "player-tab", "tab_name": "Player", "side": "player", "stake": 20,
+            "placement_status": "placed",
+        }])
+        first = self.store.begin_placement_attempt(bet.id, "epoch-1", [{
+            "tab_id": "player-tab", "side": "player", "stake": 20,
+        }])
+        self.assertEqual(first.id, self.store.begin_placement_attempt(bet.id, "epoch-1", [{
+            "tab_id": "player-tab", "side": "player", "stake": 20,
+        }]).id)
+        second = self.store.begin_placement_attempt(bet.id, "epoch-2", [{
+            "tab_id": "player-tab", "side": "player", "stake": 20,
+        }])
+        self.store.complete_placement_attempt(second.id, status="placed")
+        self.store.add_effective_allocations(bet.id, [{
+            "tab_id": "player-tab", "side": "player", "stake": 20,
+        }])
+        db = self.session_factory()
+        try:
+            self.assertEqual(1, db.scalar(select(BetRecord).where(BetRecord.id == bet.id)).id)
+            self.assertEqual(2, len(list(db.scalars(select(BetPlacementAttemptRecord)))))
+            self.assertEqual(2, len(list(db.scalars(select(BetPlacementAttemptAllocationRecord)))))
+            allocation = db.scalar(select(BetAllocationRecord).where(BetAllocationRecord.bet_id == bet.id))
+            self.assertEqual(40, allocation.stake)
+            self.assertEqual(40, db.get(BetRecord, bet.id).stake)
+        finally:
+            db.close()
+
+    def test_operator_epoch_changes_only_when_explicitly_started(self) -> None:
+        _session, bettor = self.make_bettor()
+        first = bettor.begin_run_epoch()
+        self.assertEqual(first, bettor.run_epoch)
+        second = bettor.begin_run_epoch()
+        self.assertNotEqual(first, second)
 
     async def test_canary_guard_blocks_before_executor_and_before_intent(self) -> None:
         session, bettor = self.make_bettor()

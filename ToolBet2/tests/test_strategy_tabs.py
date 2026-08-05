@@ -48,7 +48,7 @@ class StrategyTabsTests(unittest.TestCase):
         self.assertEqual([0, 100], config.tabs[0].stakes)
         self.assertEqual([0, 100, 110, 120, 130], config.tabs[1].stakes)
 
-    def test_disabled_tab_never_accepts_virtual_bets(self):
+    def test_legacy_disabled_tab_is_upgraded_to_start_controlled_tab(self):
         tab = SimulationTabConfig(
             enabled=False,
             strategy_id="follow_last",
@@ -60,10 +60,9 @@ class StrategyTabsTests(unittest.TestCase):
             skip_tie=True,
         )
 
+        self.assertTrue(tab.normalized().enabled)
         self.assertGreater(status["signals"], 0)
-        self.assertEqual(0, status["virtual_bets"])
-        self.assertEqual(0, status["pnl"])
-        self.assertEqual("auto_bet_off", status["current"]["risk"]["code"])
+        self.assertGreater(status["virtual_bets"], 0)
 
     def test_follow_last_replay_is_virtual_and_reports_current_signal(self):
         tab = SimulationTabConfig(
@@ -79,6 +78,30 @@ class StrategyTabsTests(unittest.TestCase):
         self.assertEqual(1, status["wins"])
         self.assertEqual(1, status["losses"])
         self.assertEqual(BetSide.BANKER.value, status["current"]["side"])
+
+    def test_statistics_include_valid_bets_and_max_win_loss_streaks(self):
+        tab = SimulationTabConfig(
+            strategy_id="follow_last", stakes=[10], enabled=True
+        )
+        status = simulate_strategy_tab(
+            tab,
+            [
+                BetSide.PLAYER,
+                BetSide.PLAYER,
+                BetSide.PLAYER,
+                BetSide.PLAYER,
+                BetSide.BANKER,
+                BetSide.PLAYER,
+                BetSide.BANKER,
+                BetSide.PLAYER,
+                BetSide.BANKER,
+            ],
+            skip_tie=True,
+        )
+
+        self.assertEqual(status["wins"] + status["losses"], status["valid_bets"])
+        self.assertGreaterEqual(status["max_win_streak"], 3)
+        self.assertGreaterEqual(status["max_loss_streak"], 3)
 
     def test_reverse_last_ignores_tie_and_chooses_opposite_side(self):
         tab = SimulationTabConfig(strategy_id="reverse_last", stakes=[0, 10])

@@ -534,29 +534,52 @@ def resolve_chip_values(chip_count: int, dom_values: list[int] | None = None) ->
     return chip_values_for_count(int(chip_count) if chip_count else 5)
 
 
+def split_stake_by_available_chips(
+    stake: int, chip_values: list[int] | None = None
+) -> list[tuple[int, int]] | None:
+    """Chia dung stake theo menh gia phinh dang co, lon den nho.
+
+    Day la cung co che ``makePlan`` cua BaccaratChromeAgent2: phinh duoc lay
+    tu DOM, sap xep giam dan va dung lap lai mot menh gia khi can. Vi du khay
+    ``[10, 50, 100, 500, 1000]`` va stake ``120`` thanh ``[(100, 1), (10, 2)]``.
+    Tra ve ``None`` neu khong the tao dung tong tien.
+    """
+    amount = int(stake)
+    if amount == 0:
+        return []
+    if amount < 0:
+        return None
+    denominations = sorted(
+        {int(value) for value in (chip_values or DEFAULT_CHIP_VALUES) if int(value) > 0},
+        reverse=True,
+    )
+    if not denominations:
+        return None
+
+    remaining = amount
+    plan: list[tuple[int, int]] = []
+    for value in denominations:
+        clicks = remaining // value
+        if clicks:
+            plan.append((value, clicks))
+            remaining -= value * clicks
+    return plan if remaining == 0 else None
+
+
 def stake_to_chip_clicks(stake: int, chip_values: list[int] | None = None) -> list[tuple[int, int]] | None:
     """Chia stake thanh (chip_index, so_lan_click), UU TIEN CHIP LON TRUOC.
     Tra ve None neu khong dat chinh xac. Stake 0 → [].
     """
-    chips = chip_values or DEFAULT_CHIP_VALUES
-    if int(stake) == 0:
-        return []
-    if not chips:
-        return [(0, 1)]
-    amount = max(int(stake), min(chips) if chips else 1)
-    plan: list[tuple[int, int]] = []
-    remaining = amount
-    for i in range(len(chips) - 1, -1, -1):
-        value = chips[i]
-        if value <= 0:
-            continue
-        n = remaining // value
-        if n > 0:
-            plan.append((i, n))
-            remaining -= n * value
-    if remaining > 0:
+    chips = list(chip_values or DEFAULT_CHIP_VALUES)
+    value_plan = split_stake_by_available_chips(stake, chips)
+    if value_plan is None:
         return None
-    return plan
+    chip_indexes = {
+        int(value): index
+        for index, value in enumerate(chips)
+        if int(value) > 0
+    }
+    return [(chip_indexes[value], clicks) for value, clicks in value_plan]
 
 
 # AE Sexy: lan click chip 10 DAU TIEN tren ban bi ep thanh 20 (min/table quirk).
@@ -575,6 +598,7 @@ def value_plan_effective_total(plan: list[tuple[int, int]]) -> int:
     NHUNG stake dung 10 (plan = 10x1) van = 10 (ban min chip 10).
     Chip 10 o cuoi (sau 50/20/...) van = 10.
     """
+    return value_plan_total(plan)
     if not plan:
         return 0
     # Mot click chip 10 = stake 10 — khong ep 20
@@ -616,6 +640,7 @@ def stake_to_value_clicks(
     - 30 = 20+10 greedy → 10x2 (lan 1 ep 20, chon lai 10 → +10 = 30)
     - 80/130... lon→nho, chip 10 chi o CUOI (50+20+10)
     """
+    return split_stake_by_available_chips(stake, chip_values)
     chips = list(chip_values or DEFAULT_CHIP_VALUES)
     amount = int(stake)
     if amount == 0:

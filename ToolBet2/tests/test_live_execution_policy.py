@@ -92,6 +92,77 @@ class LiveExecutionPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(response["run_enabled"])
         self.assertFalse(watcher._run_enabled)
 
+    def test_new_start_resets_money_manager_once_but_start_retry_does_not(self):
+        session = BettingSession([10, 100])
+
+        class Bettor:
+            durable_block_reason = ""
+
+            def on_toggle(self, enabled, *, ignore_durable=False):
+                session.configure(auto_bet=enabled)
+                return bool(enabled)
+
+            def begin_run_epoch(self):
+                return "epoch"
+
+        class Manager:
+            def __init__(self):
+                self.reset_calls = 0
+
+            def reset(self):
+                self.reset_calls += 1
+
+        manager = Manager()
+        store = SimpleNamespace(saved=[])
+        store.save = lambda tab_id, saved_manager: store.saved.append((tab_id, saved_manager))
+        live_tab = SimpleNamespace(id="live-tab", enabled=True)
+        watcher = SimpleNamespace(
+            auto_bettor=Bettor(), betting_session=session,
+            overlay=SimpleNamespace(set_betting_ui=lambda **_kwargs: None, set_run_enabled=lambda _enabled: None),
+            config=AppConfig(), _run_enabled=False,
+            strategy_lifecycle=SimpleNamespace(tabs_in_mode=lambda _mode: [live_tab]),
+            _live_money_managers={"live-tab": manager},
+            money_state_store=store, _active_money_tab_id="",
+        )
+        watcher._apply_execution_enabled = lambda enabled, ignore_durable=False: (
+            HistoryWatcher._apply_execution_enabled(watcher, enabled, ignore_durable=ignore_durable)
+        )
+        watcher._running_tab_id = ""
+        watcher._reset_live_money_for_new_run = lambda tab_id: (
+            HistoryWatcher._reset_live_money_for_new_run(watcher, tab_id)
+        )
+        watcher._live_run_limits = SimpleNamespace(reset_tab=Mock())
+
+        HistoryWatcher._handle_set_run_enabled(
+            watcher, True, tab_id="live-tab"
+        )
+        HistoryWatcher._handle_set_run_enabled(
+            watcher, True, tab_id="live-tab"
+        )
+
+        self.assertEqual(1, manager.reset_calls)
+        self.assertEqual([("live-tab", manager)], store.saved)
+        watcher._live_run_limits.reset_tab.assert_called_once_with("live-tab")
+
+    def test_running_tab_status_uses_live_money_manager_quote(self):
+        quote = SimpleNamespace(stake=10, level_index=0, total_levels=16)
+        watcher = SimpleNamespace(
+            _live_money_managers={
+                "live-tab": SimpleNamespace(quote=lambda: quote)
+            }
+        )
+
+        status = HistoryWatcher._status_with_live_quote(
+            watcher,
+            "live-tab",
+            {"current": {"side": "player", "stake": 140, "level": 4}},
+        )
+
+        self.assertEqual("player", status["current"]["side"])
+        self.assertEqual(10, status["current"]["stake"])
+        self.assertEqual(1, status["current"]["level"])
+        self.assertEqual(16, status["current"]["total_levels"])
+
     def test_runtime_issue_never_demotes_the_operator_live_tab(self):
         lifecycle = SimpleNamespace(
             tabs_in_mode=Mock(return_value=[SimpleNamespace(id="live-tab")]),
@@ -120,9 +191,12 @@ class LiveExecutionPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("operator-start", BET_TRIGGER_SOURCES)
         live_tab = SimpleNamespace(id="live-tab")
         arm_current = AsyncMock(return_value=True)
+        live_tab = SimpleNamespace(id="live-tab", mode="live")
         watcher = SimpleNamespace(
             _require_tool_session=lambda: None,
-            _live_preflight_status=lambda: {
+            _effective_table_name=lambda: "Baccarat C01",
+            config=SimpleNamespace(strategy_tabs=SimpleNamespace(tabs=[live_tab])),
+            _live_preflight_status=lambda **_kwargs: {
                 "enabled_live_tabs": 1,
                 "allowed": True,
                 "blockers": [],
@@ -130,10 +204,15 @@ class LiveExecutionPolicyTests(unittest.IsolatedAsyncioTestCase):
             _enabled_tabs=lambda mode: (
                 [live_tab] if mode == TabLifecycleMode.LIVE else []
             ),
-            _handle_set_run_enabled=lambda enabled, simulation_only=False: {
+            _handle_set_run_enabled=lambda enabled, **_kwargs: {
                 "run_enabled": bool(enabled),
+                "running": bool(enabled),
                 "auto_bet": bool(enabled),
             },
+            _overlay_strategy_tabs_payload=lambda: {
+                "tabs": [{"id": "live-tab", "status": {}, "run_profit": 0}]
+            },
+            overlay=SimpleNamespace(set_strategy_tabs=lambda _payload: None),
             _arm_current_history_after_start=arm_current,
         )
 
@@ -141,13 +220,84 @@ class LiveExecutionPolicyTests(unittest.IsolatedAsyncioTestCase):
             watcher,
             UiCommand(
                 type=UiCommandType.SET_RUN_STATE,
-                payload={"running": True},
+                payload={"tab_id": "live-tab", "running": True},
             ),
         )
 
         self.assertTrue(result["ok"])
         self.assertTrue(result["data"]["run_enabled"])
         arm_current.assert_awaited_once_with()
+
+    async def test_start_cancels_and_parks_previous_click_before_arming_new_run(self):
+        live_tab = SimpleNamespace(id="live-tab", mode="live")
+        arm_current = AsyncMock(return_value=True)
+        abandon = AsyncMock(return_value=[42])
+        watcher = SimpleNamespace(
+            _require_tool_session=lambda: None,
+            _effective_table_name=lambda: "Baccarat C01",
+            config=SimpleNamespace(strategy_tabs=SimpleNamespace(tabs=[live_tab])),
+            auto_bettor=SimpleNamespace(
+                is_busy=True,
+                abandon_for_operator_restart=abandon,
+                park_pending_for_table=lambda _table: [],
+            ),
+            betting_session=SimpleNamespace(state=SimpleNamespace(pending=None)),
+            state=SimpleNamespace(history=[BetSide.PLAYER]),
+            _live_preflight_status=lambda **_kwargs: {
+                "enabled_live_tabs": 1,
+                "allowed": False,
+                "blockers": [{
+                    "code": "CLICK_IN_PROGRESS",
+                    "message": "Pipeline click đang hoạt động",
+                }],
+            },
+            _handle_set_run_enabled=lambda enabled, **_kwargs: {
+                "run_enabled": bool(enabled),
+                "running": bool(enabled),
+                "auto_bet": bool(enabled),
+            },
+            _overlay_strategy_tabs_payload=lambda: {
+                "tabs": [{"id": "live-tab", "status": {}, "run_profit": 0}]
+            },
+            overlay=SimpleNamespace(set_strategy_tabs=lambda _payload: None),
+            _arm_current_history_after_start=arm_current,
+        )
+
+        result = await HistoryWatcher._handle_ui_command(
+            watcher,
+            UiCommand(
+                type=UiCommandType.SET_RUN_STATE,
+                payload={"tab_id": "live-tab", "running": True},
+            ),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["data"]["restart_pending"])
+        abandon.assert_awaited_once_with("Baccarat C01")
+        arm_current.assert_awaited_once_with()
+
+    def test_old_run_result_does_not_advance_restarted_money_manager(self):
+        manager = SimpleNamespace(apply_result=Mock())
+        watcher = SimpleNamespace(
+            _live_tab_run_epochs={"live-tab": "new-run"},
+            _live_money_managers={"live-tab": manager},
+        )
+
+        resolved = HistoryWatcher._resolve_multi_live_allocations(
+            watcher,
+            [{
+                "tab_id": "live-tab",
+                "side": "player",
+                "stake": 10,
+                "run_epoch": "old-run",
+            }],
+            BetSide.PLAYER,
+        )
+
+        manager.apply_result.assert_not_called()
+        self.assertEqual("win", resolved[0]["outcome"])
+        self.assertEqual(10.0, resolved[0]["profit"])
+        self.assertTrue(resolved[0]["progression_ignored"])
 
     async def test_pilot_still_requires_finite_lease(self):
         watcher = self.watcher("pilot")

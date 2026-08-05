@@ -30,6 +30,7 @@ class UiCommandType(str, Enum):
     DISABLE_LIVE_BET = "disable_live_bet"
     SET_TAB_MODE = "set_tab_mode"
     SET_RUN_STATE = "set_run_state"
+    RESET_TAB_STATISTICS = "reset_tab_statistics"
     QUERY_HISTORY = "query_history"
     UPDATE_SETTINGS = "update_settings"
 

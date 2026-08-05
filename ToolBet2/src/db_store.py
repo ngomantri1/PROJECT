@@ -9,6 +9,8 @@ from src.ae_sexy_ws import primary_table_id
 from sqlalchemy import func, or_, select
 from src.database import (
     BetAllocationRecord,
+    BetPlacementAttemptAllocationRecord,
+    BetPlacementAttemptRecord,
     BetGroupRecord,
     BetRecord,
     EventRecord,
@@ -612,6 +614,103 @@ class GameDataStore:
                 BetRecord.game_round == int(game_round),
                 or_(BetRecord.status.is_(None), BetRecord.status != "cancelled"),
             ).limit(1)) is not None
+        finally:
+            session.close()
+
+    def get_bet_for_exact_round(self, *, table_name: str, game_shoe: int, game_round: int) -> BetRecord | None:
+        """Return the one logical bet for an authoritative round."""
+        session = self.session_factory()
+        try:
+            return session.scalar(select(BetRecord).where(
+                BetRecord.table_name == table_name,
+                BetRecord.game_shoe == int(game_shoe),
+                BetRecord.game_round == int(game_round),
+                BetRecord.outcome.is_(None),
+                BetRecord.status.not_in(("cancelled", "deferred", "quarantined", "resolved")),
+            ).limit(1))
+        finally:
+            session.close()
+
+    def begin_placement_attempt(self, bet_id: int, run_epoch: str, allocations: list[dict[str, Any]]) -> BetPlacementAttemptRecord:
+        """Journal an idempotent attempt before any chip click."""
+        session = self.session_factory()
+        try:
+            existing = session.scalar(select(BetPlacementAttemptRecord).where(
+                BetPlacementAttemptRecord.bet_id == bet_id,
+                BetPlacementAttemptRecord.run_epoch == run_epoch,
+            ))
+            if existing:
+                return existing
+            count = session.scalar(select(func.count(BetPlacementAttemptRecord.id)).where(
+                BetPlacementAttemptRecord.bet_id == bet_id
+            )) or 0
+            attempt = BetPlacementAttemptRecord(
+                bet_id=bet_id, attempt_no=int(count) + 1, run_epoch=run_epoch,
+                idempotency_key=f"{bet_id}:{run_epoch}", placement_status="placing",
+            )
+            session.add(attempt)
+            session.flush()
+            for item in allocations:
+                session.add(BetPlacementAttemptAllocationRecord(
+                    attempt_id=attempt.id, tab_id=str(item["tab_id"]), side=str(item["side"]),
+                    requested_stake=float(item.get("stake") or 0),
+                    execution_mode="virtual" if float(item.get("stake") or 0) <= 0 else "real",
+                    placement_status="planned",
+                ))
+            session.commit(); session.refresh(attempt)
+            return attempt
+        except Exception:
+            session.rollback(); raise
+        finally:
+            session.close()
+
+    def complete_placement_attempt(self, attempt_id: int, *, status: str, assumed_placed: bool = False, error_code: str = "") -> None:
+        session = self.session_factory()
+        try:
+            row = session.get(BetPlacementAttemptRecord, attempt_id)
+            if row:
+                row.placement_status = status; row.assumed_placed = assumed_placed
+                row.error_code = error_code or None; row.completed_at = datetime.now()
+                session.execute(
+                    select(BetPlacementAttemptAllocationRecord).where(
+                        BetPlacementAttemptAllocationRecord.attempt_id == attempt_id
+                    )
+                ).scalars().all()
+            session.commit()
+        finally:
+            session.close()
+
+    def has_placement_attempt(self, bet_id: int, run_epoch: str) -> bool:
+        session = self.session_factory()
+        try:
+            return session.scalar(select(BetPlacementAttemptRecord.id).where(
+                BetPlacementAttemptRecord.bet_id == bet_id,
+                BetPlacementAttemptRecord.run_epoch == run_epoch,
+            ).limit(1)) is not None
+        finally:
+            session.close()
+
+    def add_effective_allocations(self, bet_id: int, allocations: list[dict[str, Any]]) -> None:
+        """Add a confirmed/assumed attempt to the one settlement allocation."""
+        session = self.session_factory()
+        try:
+            rows = {row.tab_id: row for row in session.scalars(select(BetAllocationRecord).where(BetAllocationRecord.bet_id == bet_id))}
+            added = 0.0
+            for item in allocations:
+                row = rows.get(str(item["tab_id"]))
+                if row is None:
+                    continue
+                if row.side != str(item["side"]):
+                    raise ValueError("physical side conflict in logical allocation")
+                amount = float(item.get("stake") or 0)
+                row.stake += amount; row.placement_status = "placed" if amount > 0 else "virtual"; row.updated_at = datetime.now()
+                added += amount
+            bet = session.get(BetRecord, bet_id)
+            if bet:
+                bet.stake += added
+            session.commit()
+        except Exception:
+            session.rollback(); raise
         finally:
             session.close()
 

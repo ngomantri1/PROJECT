@@ -961,6 +961,7 @@ _SCROLL_LOBBY_TO_TABLE_BODY = """
   const findCard = () => {
     let best = null, bestScore = -1;
     for (const el of doc.querySelectorAll('div.cursor-pointer, div[class*="cursor-pointer"]')) {
+      if (el.closest('#toolbet-ui-v2')) continue;
       const t = el.textContent || '';
       if (!nameRe.test(t)) continue;
       const names = t.match(/Baccarat\\s*C\\d+/gi) || [];
@@ -978,9 +979,10 @@ _SCROLL_LOBBY_TO_TABLE_BODY = """
   };
   const scrollers = [
     ...doc.querySelectorAll('.vue-recycle-scroller, [class*="recycle-scroller"], [class*="scroller"]')
-  ].filter(el => el.scrollHeight > el.clientHeight + 30 || el.scrollWidth > el.clientWidth + 30);
+  ].filter(el => !el.closest('#toolbet-ui-v2') && (el.scrollHeight > el.clientHeight + 30 || el.scrollWidth > el.clientWidth + 30));
   if (!scrollers.length) {
     for (const el of doc.querySelectorAll('*')) {
+      if (el.closest('#toolbet-ui-v2')) continue;
       const s = doc.defaultView.getComputedStyle(el);
       if ((s.overflowY === 'auto' || s.overflowY === 'scroll' || s.overflowX === 'auto' || s.overflowX === 'scroll')
         && (el.scrollHeight > el.clientHeight + 60 || el.scrollWidth > el.clientWidth + 60))
@@ -1051,6 +1053,7 @@ async def scroll_lobby_to_table(page: Page, table_name: str) -> bool:
               const findCard = () => {
                 let best = null, bestScore = -1;
                 for (const el of doc.querySelectorAll('div.cursor-pointer, div[class*="cursor-pointer"], *')) {
+                  if (el.closest('#toolbet-ui-v2')) continue;
                   const t = el.textContent || '';
                   if (!t.includes(fullName)) continue;
                   const names = t.match(/Baccarat C\\d+/g) || [];
@@ -1067,7 +1070,7 @@ async def scroll_lobby_to_table(page: Page, table_name: str) -> bool:
               };
               const scrollers = [
                 ...doc.querySelectorAll('.vue-recycle-scroller, [class*="recycle-scroller"], [class*="scroller"]')
-              ].filter(el => el.scrollHeight > el.clientHeight + 30);
+              ].filter(el => !el.closest('#toolbet-ui-v2') && el.scrollHeight > el.clientHeight + 30);
               if (!scrollers.length) scrollers.push(doc.documentElement, doc.body);
               let moved = 0;
               for (const sc of scrollers) {
@@ -1189,6 +1192,7 @@ _LIST_VISIBLE_LOBBY_TABLES_SHELL = """
 
 _SCROLL_LOBBY_BODY = """
   const scrollers = [...document.querySelectorAll('*')].filter(el => {
+    if (el.closest('#toolbet-ui-v2')) return false;
     const s = getComputedStyle(el);
     return (s.overflowY === 'auto' || s.overflowY === 'scroll' || s.overflow === 'auto')
       && el.scrollHeight > el.clientHeight + 60;
@@ -1212,6 +1216,7 @@ _GET_TABLE_CARD_POS_BODY = """
   const findCard = () => {
     let best = null, bestScore = -1;
     for (const el of document.querySelectorAll('*')) {
+      if (el.closest('#toolbet-ui-v2')) continue;
       const t = el.textContent || '';
       if (!t.includes(fullName)) continue;
       const names = t.match(/Baccarat C\\d+/g) || [];
@@ -1230,7 +1235,7 @@ _GET_TABLE_CARD_POS_BODY = """
   };
   const scrollers = [
     ...document.querySelectorAll('.vue-recycle-scroller, [class*="recycle-scroller"]')
-  ].filter(el => el.scrollHeight > el.clientHeight + 40);
+  ].filter(el => !el.closest('#toolbet-ui-v2') && el.scrollHeight > el.clientHeight + 40);
   if (!scrollers.length) scrollers.push(document.documentElement);
   for (const sc of scrollers) {
     const step = Math.max(160, Math.floor((sc.clientHeight || 400) * 0.65));
@@ -1667,6 +1672,7 @@ _CLICK_TABLE_IN_HALL_BODY = """
   const findCard = () => {
     let best = null, bestScore = -1;
     for (const el of doc.querySelectorAll('div.cursor-pointer, div[class*="cursor-pointer"]')) {
+      if (el.closest('#toolbet-ui-v2')) continue;
       const t = el.textContent || '';
       if (!nameRe.test(t)) continue;
       const names = t.match(/Baccarat\\s*C\\d+/gi) || [];
@@ -1687,9 +1693,10 @@ _CLICK_TABLE_IN_HALL_BODY = """
   };
   const scrollers = [
     ...doc.querySelectorAll('.vue-recycle-scroller, [class*="recycle-scroller"], [class*="scroller"]')
-  ].filter(el => el.scrollHeight > el.clientHeight + 30 || el.scrollWidth > el.clientWidth + 30);
+  ].filter(el => !el.closest('#toolbet-ui-v2') && (el.scrollHeight > el.clientHeight + 30 || el.scrollWidth > el.clientWidth + 30));
   if (!scrollers.length) {
     for (const el of doc.querySelectorAll('*')) {
+      if (el.closest('#toolbet-ui-v2')) continue;
       try {
         const s = doc.defaultView.getComputedStyle(el);
         if ((s.overflowY === 'auto' || s.overflowY === 'scroll' || s.overflowX === 'auto' || s.overflowX === 'scroll')
@@ -1739,6 +1746,7 @@ _CLICK_TABLE_IN_DOC_BODY = """
   const findCard = () => {
     let best = null, bestScore = -1;
     for (const el of doc.querySelectorAll('div.cursor-pointer, div[class*="cursor-pointer"]')) {
+      if (el.closest('#toolbet-ui-v2')) continue;
       const t = el.textContent || '';
       if (!nameRe.test(t)) continue;
       const names = t.match(/Baccarat\\s*C\\d+/gi) || [];
@@ -1757,7 +1765,7 @@ _CLICK_TABLE_IN_DOC_BODY = """
   };
   const scrollers = [
     ...doc.querySelectorAll('.vue-recycle-scroller, [class*="recycle-scroller"], [class*="scroller"]')
-  ].filter(el => el.scrollHeight > el.clientHeight + 30 || el.scrollWidth > el.clientWidth + 30);
+  ].filter(el => !el.closest('#toolbet-ui-v2') && (el.scrollHeight > el.clientHeight + 30 || el.scrollWidth > el.clientWidth + 30));
   if (!scrollers.length) scrollers.push(doc.documentElement, doc.body);
   for (const sc of scrollers) {
     if (!sc) continue;
@@ -3243,6 +3251,7 @@ async def _click_table_in_hall(page: Page, table_name: str) -> bool:
                   const nameRe = new RegExp('Baccarat\\\\s*C0*' + num + '(?!\\\\d)', 'i');
                   let best = null, bestScore = -1;
                   for (const el of document.querySelectorAll('div.cursor-pointer, div[class*="cursor-pointer"], div')) {
+                    if (el.closest('#toolbet-ui-v2')) continue;
                     const t = el.textContent || '';
                     if (!nameRe.test(t)) continue;
                     const names = t.match(/Baccarat\\s*C\\d+/gi) || [];

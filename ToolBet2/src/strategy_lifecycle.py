@@ -174,7 +174,7 @@ class StrategyLifecycleService:
         return SimulationTabConfig(
             id=row.id,
             name=row.name,
-            enabled=bool(row.enabled),
+            enabled=True,
             strategy_id=row.strategy_id,
             stakes=json.loads(row.stakes_json or "[]"),
             progression_mode=row.progression_mode,
@@ -423,27 +423,19 @@ class StrategyLifecycleService:
         daily_profit: float = 0.0,
         limit_hit: str = "",
     ) -> TabAuthorityDecision:
-        if tab.enabled:
-            schedule_round_index = self._schedule_round_index(tab)
-            statistical_runtime = self._statistical_runtime(tab, history)
-            strategy = decision_for_strategy_tab(
-                tab,
-                history,
-                skip_tie=skip_tie,
-                disabled_patterns=disabled_patterns,
-                pattern_lengths=pattern_lengths,
-                table_name=table_name,
-                source=source,
-                schedule_round_index=schedule_round_index,
-                statistical_runtime=statistical_runtime,
-            )
-        else:
-            strategy = StrategyDecision.skip(
-                strategy_id=tab.strategy_id,
-                strategy_name=tab.name,
-                reason="Tab đang tắt",
-                history_size=len(history),
-            )
+        schedule_round_index = self._schedule_round_index(tab)
+        statistical_runtime = self._statistical_runtime(tab, history)
+        strategy = decision_for_strategy_tab(
+            tab,
+            history,
+            skip_tie=skip_tie,
+            disabled_patterns=disabled_patterns,
+            pattern_lengths=pattern_lengths,
+            table_name=table_name,
+            source=source,
+            schedule_round_index=schedule_round_index,
+            statistical_runtime=statistical_runtime,
+        )
         money = (
             money_quote
             if money_quote is not None

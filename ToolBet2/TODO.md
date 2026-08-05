@@ -1,5 +1,13 @@
 # TODO
 
+## Per-tab live run limits — 2026-08-04
+
+- [x] Use SQLite-owned tab Cắt lãi/Cắt lỗ rather than YAML/day-P&L limits.
+- [x] Reset each enabled Live tab's process-only Tiền thắng on explicit Start
+  and isolate limit hits by tab.
+- [ ] Verify the displayed Tiền thắng and independent tab stopping in a
+  controlled non-money browser session.
+
 ## Shoe-transition authority diagnosis — 2026-08-04
 
 - [x] Add structured per-tab diagnostics when all Live authorities are rejected.
@@ -264,3 +272,8 @@
   license authority/client, phase-G strategies, packaging support, direct
   simulation/live tabs and concurrent Player/Banker aggregate placement are
   implemented in source and covered by the current test suite.
+# Same-round additive placement follow-up
+
+- [ ] Exercise additive same-side re-entry in a stake-zero pilot before any
+  real-money pilot; verify UI displays attempt count and confirmed/assumed
+  exposure from the attempt journal.

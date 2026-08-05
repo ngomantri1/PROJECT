@@ -97,6 +97,7 @@ from src.strategy_tab_store import StrategyTabStore
 from src.strategy_lifecycle import StrategyLifecycleService, TabLifecycleMode
 from src.capital_managers import create_money_manager
 from src.money_state_store import MoneyStateStore, money_config_fingerprint
+from src.live_run_limits import LiveRunLimitTracker
 from src.bet_analytics import (
     MIN_CONFIDENCE_SAMPLES,
     pattern_win_rates_by_id,
@@ -199,7 +200,17 @@ class HistoryWatcher:
         # A process must always start stopped; the run switch exists only for
         # this Tool session and is never restored from disk.
         self._run_enabled = False
+        # The v2 shell appears immediately, but its controls remain locked
+        # until the current table has yielded its first authoritative history.
+        self._workspace_loading = True
+        self._running_tab_id = ""
+        # Kept for compatibility with existing runtime snapshots.  A new Start
+        # now cancels/parks old work and arms immediately instead of queuing.
+        self._restart_pending_tab_id = ""
+        self._restart_pending_after_history_len = 0
+        self._live_tab_run_epochs: dict[str, str] = {}
         self.overlay.set_run_enabled(False)
+        self.overlay.set_workspace_loading(True)
         self.overlay.set_stakes(self.config.betting.stakes)
         self.overlay.set_betting_ui(
             auto_bet=False,
@@ -225,6 +236,9 @@ class HistoryWatcher:
         self.overlay.set_suggest_handler(self._handle_suggest_config)
         self.overlay.set_daily_handler(self._handle_daily_analysis)
         self.overlay.set_stats_scope_handler(self._handle_stats_scope)
+        # The initial overlay payload reads this process-local state before
+        # BettingSession and the Live managers are initialized.
+        self._live_run_limits = LiveRunLimitTracker()
         # The first workspace install happens before the first collector
         # refresh. Supply the complete UI payload now so saved strategy and
         # money-manager ids can be rendered immediately.
@@ -232,16 +246,13 @@ class HistoryWatcher:
         self.overlay.set_strategy_tabs_handler(self._handle_save_strategy_tabs)
         self.overlay.set_strategy_history_handler(self._handle_load_strategy_history)
         self.overlay.set_ui_command_handler(self._handle_ui_command)
+        # Live take-profit/stop-loss belongs to each strategy tab and is
+        # process-local.  Legacy YAML/day-P&L limits must not stop Live tabs.
         self.betting_session = BettingSession(
             self.config.betting.stakes,
-            stop_loss=self.config.betting.stop_loss,
-            take_profit=self.config.betting.take_profit,
-            group_take_profit=self.config.betting.group_take_profit,
-            group_stop_loss=self.config.betting.group_stop_loss,
             progression_mode=self.config.betting.progression_mode,
             loss_watch_recover=self.config.betting.loss_watch_recover,
         )
-        self.betting_session.set_profit_for_limits(lambda: self._get_pnl_overlay()["today"].profit)
         self.betting_session.configure(auto_bet=False)
         self._live_money_managers: dict[str, Any] = {}
         persisted_live_tabs = self.strategy_lifecycle.tabs_in_mode(
@@ -429,46 +440,106 @@ class HistoryWatcher:
                 return {"ok": False, "error": str(exc)}
         if command.type == UiCommandType.SET_RUN_STATE:
             running = bool(command.payload.get("running"))
+            tab_id = str(command.payload.get("tab_id") or "")
             try:
+                tab = next(
+                    (
+                        item for item in self.config.strategy_tabs.tabs
+                        if item.id == tab_id
+                    ),
+                    None,
+                )
+                if tab is None:
+                    raise ValueError("KhÃ´ng tÃ¬m tháº¥y tab chiáº¿n lÆ°á»£c")
                 if running:
                     self._require_tool_session()
                     bettor = getattr(self, "auto_bettor", None)
                     if bettor is not None:
+                        await bettor.abandon_for_operator_restart(
+                            self._effective_table_name()
+                        )
                         bettor.park_pending_for_table(
                             self._effective_table_name()
                         )
-                    preflight = self._live_preflight_status()
-                    if preflight["enabled_live_tabs"] and not preflight["allowed"]:
-                        first = preflight["blockers"][0]
+                    preflight = self._live_preflight_status(tab_ids=[tab_id])
+                    # An existing physical attempt belongs to the prior run.
+                    # It is not safe to click alongside it, but it must not make
+                    # the operator's new Start button fail.
+                    start_blockers = [
+                        item for item in preflight["blockers"]
+                        if item["code"] not in {
+                            "CLICK_IN_PROGRESS", "ACTIVE_PENDING_FOR_TABLE",
+                        }
+                    ]
+                    if preflight["enabled_live_tabs"] and start_blockers:
+                        first = start_blockers[0]
                         raise ValueError(
                             f"{first['code']}: {first['message']}"
                         )
                 response = self._handle_set_run_enabled(
                     running,
-                    simulation_only=(
-                        running
-                        and not self._enabled_tabs(TabLifecycleMode.LIVE)
-                    ),
+                    tab_id=tab_id,
+                    simulation_only=running and tab.mode != "live",
                 )
+                if running:
+                    self._restart_pending_tab_id = ""
+                    self._restart_pending_after_history_len = 0
                 if (
                     running
                     and bool(response.get("run_enabled"))
-                    and self._enabled_tabs(TabLifecycleMode.LIVE)
+                    and tab.mode == "live"
                 ):
                     await self._arm_current_history_after_start()
+                refreshed = self._overlay_strategy_tabs_payload()
+                self.overlay.set_strategy_tabs(refreshed)
+                refreshed_tab = next(
+                    (item for item in refreshed.get("tabs", []) if item.get("id") == tab_id),
+                    {},
+                )
                 return {
                     "ok": True,
                     "data": {
-                        "running": bool(response.get("run_enabled")),
+                        "tab_id": tab_id,
+                        "running": bool(response.get("running")),
                         "run_enabled": bool(response.get("run_enabled")),
                         "auto_bet": bool(response.get("auto_bet")),
-                        "live_tabs": len(
-                            self._enabled_tabs(TabLifecycleMode.LIVE)
-                        ),
+                        "restart_pending": False,
+                        "live_tabs": int(tab.mode == "live"),
+                        "status": refreshed_tab.get("status", {}),
+                        "run_profit": refreshed_tab.get("run_profit", 0),
                     },
                 }
             except (PermissionError, ValueError) as exc:
                 return {"ok": False, "error": str(exc)}
+        if command.type == UiCommandType.RESET_TAB_STATISTICS:
+            tab_id = str(command.payload.get("tab_id") or "")
+            if tab_id not in {tab.id for tab in self.config.strategy_tabs.tabs}:
+                return {"ok": False, "error": "KhÃ´ng tÃ¬m tháº¥y tab chiáº¿n lÆ°á»£c"}
+            raw_payload = self._strategy_tabs_raw_payload()
+            tab = next(
+                (item for item in raw_payload.get("tabs", []) if item.get("id") == tab_id),
+                None,
+            )
+            if tab is None:
+                return {"ok": False, "error": "KhÃ´ng cÃ³ dữ liệu thá»‘ng kÃª cho tab"}
+            status = tab.get("status") if isinstance(tab.get("status"), dict) else {}
+            self.strategy_tab_store.reset_statistics(tab_id, status)
+            self._live_run_limits.reset_tab(tab_id)
+            refreshed = self._overlay_strategy_tabs_payload()
+            self.overlay.set_strategy_tabs(refreshed)
+            refreshed_tab = next(
+                (item for item in refreshed.get("tabs", []) if item.get("id") == tab_id),
+                {},
+            )
+            return {
+                "ok": True,
+                "data": {
+                    "tab_id": tab_id,
+                    "statistics_reset": True,
+                    "status": refreshed_tab.get("status", {}),
+                    "run_profit": refreshed_tab.get("run_profit", 0),
+                },
+            }
         if command.type == UiCommandType.START_SHADOW:
             tab_id = str(command.payload.get("tab_id") or "")
             try:
@@ -653,8 +724,10 @@ class HistoryWatcher:
             tab.money_manager_id,
             tab.stakes,
             stake_chains=tab.stake_chains,
-            stop_loss=tab.stop_loss,
-            take_profit=tab.take_profit,
+            # Per-run limits are tracked separately so persisted capital state
+            # never carries an old run's P&L into the next Start.
+            stop_loss=0,
+            take_profit=0,
             auto_reset_on_nonnegative_pnl=tab.auto_reset_on_nonnegative_pnl,
         )
 
@@ -696,6 +769,52 @@ class HistoryWatcher:
         if not tab_id:
             return
         self.money_state_store.save(tab_id, manager)
+
+    def _reset_live_money_for_new_run(self, tab_id: str) -> None:
+        """Start a new operator run from the first stake, not old SQLite P&L."""
+
+        tab = next(
+            (
+                item for item in self.strategy_lifecycle.tabs_in_mode(
+                    TabLifecycleMode.LIVE
+                )
+                if item.id == tab_id
+            ),
+            None,
+        )
+        if tab is None:
+            return
+        manager = self._live_money_managers.get(tab.id)
+        if manager is None:
+            manager = self._create_money_manager_for_tab(tab)
+            self._live_money_managers[tab.id] = manager
+        manager.reset()
+        self.money_state_store.save(tab.id, manager)
+
+        active_manager = self.betting_session.active_money_manager
+        active_tab_id = self._active_money_tab_id
+        if active_manager is not None and active_tab_id == tab_id:
+            active_manager.reset()
+            self.money_state_store.save(active_tab_id, active_manager)
+
+        logger.info("[RUN_START] Reset money manager: %s", tab.id)
+
+    def _status_with_live_quote(
+        self, tab_id: str, status: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Show the active run's actual money level instead of replay history."""
+
+        manager = self._live_money_managers.get(tab_id)
+        if manager is None:
+            return status
+        quote = manager.quote()
+        current = dict(status.get("current") or {})
+        current.update(
+            stake=quote.stake,
+            level=quote.level_index + 1,
+            total_levels=quote.total_levels,
+        )
+        return {**status, "current": current}
 
     def _deactivate_money_manager_if_safe(self) -> None:
         manager = self.betting_session.active_money_manager
@@ -1000,6 +1119,8 @@ class HistoryWatcher:
             self._reset_table_caches()
             if self.ae_collector:
                 self.ae_collector.reset_for_table(table_name)
+            self._workspace_loading = True
+            self.overlay.set_workspace_loading(True)
         elif reason and reason not in ("preferred", "preferred_blind", "continue_in_room"):
             logger.warning(
                 "Chuyen sang ban %s — %s",
@@ -1187,18 +1308,22 @@ class HistoryWatcher:
             return {"ok": False, "error": str(exc)}
 
     def _enabled_tabs(self, mode: TabLifecycleMode) -> list:
-        return [
-            tab for tab in self.strategy_lifecycle.tabs_in_mode(mode)
-            if tab.enabled
-        ]
+        return list(self.strategy_lifecycle.tabs_in_mode(mode))
 
     @staticmethod
     def _issue(code: str, message: str, **extra) -> dict:
         return {"code": code, "message": message, **extra}
 
-    def _live_preflight_status(self) -> dict:
-        live_tabs = self._enabled_tabs(TabLifecycleMode.LIVE)
-        simulation_tabs = self._enabled_tabs(TabLifecycleMode.SIMULATION)
+    def _live_preflight_status(self, *, tab_ids: list[str] | None = None) -> dict:
+        requested_ids = set(tab_ids or ())
+        live_tabs = [
+            tab for tab in self._enabled_tabs(TabLifecycleMode.LIVE)
+            if not requested_ids or tab.id in requested_ids
+        ]
+        simulation_tabs = [
+            tab for tab in self._enabled_tabs(TabLifecycleMode.SIMULATION)
+            if not requested_ids or tab.id in requested_ids
+        ]
         table_name = self._effective_table_name()
         summary = self.store.pending_status_summary(table_name=table_name)
         blockers: list[dict] = []
@@ -1229,11 +1354,15 @@ class HistoryWatcher:
                 blockers.append(self._issue(
                     "CLICK_IN_PROGRESS", "Pipeline click đang hoạt động"
                 ))
-            if summary["active"] or self.auto_bettor.durable_block_reason:
+            if summary["active"]:
                 blockers.append(self._issue(
                     "ACTIVE_PENDING_FOR_TABLE",
-                    self.auto_bettor.durable_block_reason
-                    or f"Bàn {table_name or '?'} có pending active chưa hoàn tất",
+                    f"Bàn {table_name or '?'} có pending active chưa hoàn tất",
+                ))
+            if self.auto_bettor.durable_block_reason:
+                blockers.append(self._issue(
+                    "DURABLE_EXECUTION_BLOCK",
+                    self.auto_bettor.durable_block_reason,
                 ))
             if mode == "pilot" and runtime.maximum_stake > 0:
                 decision = self.small_stake_guard.evaluate(
@@ -1270,19 +1399,44 @@ class HistoryWatcher:
         }
 
     def _handle_set_run_enabled(
-        self, enabled: bool, *, simulation_only: bool = False
+        self, enabled: bool, *, tab_id: str = "", simulation_only: bool = False
     ) -> dict:
-        """Apply an explicit operator Start/Stop command for this process."""
+        """Run one operator-selected tab; another tab never joins its bet."""
 
+        was_running = self._run_enabled
+        previous_tab_id = getattr(self, "_running_tab_id", "")
+        started_new_tab = bool(enabled and tab_id and previous_tab_id != tab_id)
+        if enabled and tab_id and previous_tab_id and previous_tab_id != tab_id:
+            # Starting another tab transfers the single execution slot and
+            # clears any arm belonging to the previous strategy.
+            self._apply_execution_enabled(False)
+        if enabled and tab_id:
+            self._running_tab_id = tab_id
+        elif not enabled and (not tab_id or tab_id == self._running_tab_id):
+            self._running_tab_id = ""
         actual = self._apply_execution_enabled(
-            enabled, ignore_durable=simulation_only
+            bool(self._running_tab_id), ignore_durable=simulation_only
         )
-        self._run_enabled = bool(actual) if enabled else False
+        if enabled and actual and started_new_tab:
+            self._reset_live_money_for_new_run(tab_id)
+            self._live_run_limits.reset_tab(tab_id)
+        self._run_enabled = bool(self._running_tab_id) and bool(actual)
+        if self._run_enabled and not was_running:
+            epochs = getattr(self, "_live_tab_run_epochs", None)
+            if epochs is None:
+                epochs = self._live_tab_run_epochs = {}
+            epochs[tab_id] = self.auto_bettor.begin_run_epoch()
+        if not enabled and tab_id == getattr(self, "_restart_pending_tab_id", ""):
+            self._restart_pending_tab_id = ""
+            self._restart_pending_after_history_len = 0
         self.overlay.set_run_enabled(self._run_enabled)
         return {
             "ok": actual == enabled,
             "run_enabled": self._run_enabled,
+            "running": bool(tab_id and tab_id == self._running_tab_id),
+            "active_tab_id": self._running_tab_id,
             "auto_bet": self.betting_session.state.auto_bet,
+            "restart_pending": tab_id == getattr(self, "_restart_pending_tab_id", ""),
             "error": (
                 self.auto_bettor.durable_block_reason
                 if enabled and not actual
@@ -1335,6 +1489,8 @@ class HistoryWatcher:
 
         data = self.betting_session.overlay_status()
         data["run_enabled"] = bool(self._run_enabled)
+        data["run_epoch"] = self.auto_bettor.run_epoch
+        data["same_round"] = self.auto_bettor.same_round_snapshot()
         preflight = self._live_preflight_status()
         data["live_execution_mode"] = preflight["mode"]
         data["live_preflight_allowed"] = preflight["allowed"]
@@ -1350,14 +1506,17 @@ class HistoryWatcher:
         data["decision_shadow"] = self.auto_bettor.decision_shadow_status()
         return data
 
-    def _overlay_strategy_tabs_payload(self) -> dict:
-        payload = strategy_tabs_to_overlay(
+    def _strategy_tabs_raw_payload(self) -> dict:
+        return strategy_tabs_to_overlay(
             self.config.strategy_tabs,
             list(self.state.history or []),
             skip_tie=self.config.game.skip_tie,
             disabled_patterns=disabled_pattern_ids(self._pattern_enabled),
             pattern_lengths=self._pattern_lengths,
         )
+
+    def _overlay_strategy_tabs_payload(self) -> dict:
+        payload = self._strategy_tabs_raw_payload()
         table_name = self._effective_table_name()
         # Stopped sessions may keep collecting authoritative results, but they
         # must not create new simulation decision/history snapshots.
@@ -1366,9 +1525,20 @@ class HistoryWatcher:
         money_configs = self.strategy_tab_store.money_configs_for_tabs(
             [str(tab.get("id") or "") for tab in payload.get("tabs", [])]
         )
+        statistics_baselines = self.strategy_tab_store.statistics_baselines_for_tabs(
+            [str(tab.get("id") or "") for tab in payload.get("tabs", [])]
+        )
         lifecycle = self.strategy_lifecycle.status()
         for tab in payload.get("tabs", []):
             tab_id = str(tab.get("id") or "")
+            tab["running"] = tab_id == getattr(self, "_running_tab_id", "")
+            status = tab.get("status") if isinstance(tab.get("status"), dict) else {}
+            status = self.strategy_tab_store.apply_statistics_baseline(
+                status, statistics_baselines.get(tab_id, {})
+            )
+            if tab["running"]:
+                status = self._status_with_live_quote(tab_id, status)
+            tab["status"] = status
             history_page = self.strategy_tab_store.history_page(tab_id)
             tab["history"] = history_page["items"]
             tab["history_pagination"] = {
@@ -1387,7 +1557,14 @@ class HistoryWatcher:
                     "demote_reason": "",
                 },
             )
+            tab["lifecycle"] = {
+                **tab["lifecycle"],
+                "restart_pending": tab_id == getattr(self, "_restart_pending_tab_id", ""),
+            }
             tab["mode"] = tab["lifecycle"]["mode"]
+            run_limit = self._live_run_limits.status_for(tab_id)
+            tab["run_profit"] = run_limit.profit
+            tab["run_limit_hit"] = run_limit.limit_hit
         return payload
 
     def _handle_load_strategy_history(self, payload: dict) -> dict:
@@ -1409,11 +1586,28 @@ class HistoryWatcher:
         self._sync_live_money_managers()
         self.overlay.set_strategy_tabs(self._overlay_strategy_tabs_payload())
 
-    async def _install_workspace_overlay(self, page: Page) -> bool:
+    async def _install_workspace_overlay(
+        self, page: Page, *, allow_early_host: bool = False
+    ) -> bool:
         self._reload_workspace_for_overlay()
         return await self.overlay.install(
-            page, stakes=self.config.betting.stakes
+            page,
+            stakes=self.config.betting.stakes,
+            allow_early_host=allow_early_host,
         )
+
+    async def _install_early_workspace_overlay(self, page: Page, *, stage: str) -> bool:
+        """Show the locked workspace before table entry/history collection."""
+        self._workspace_loading = True
+        self.overlay.set_workspace_loading(True)
+        ok = await self._install_workspace_overlay(page, allow_early_host=True)
+        logger.info(
+            "[OVERLAY_EARLY_INSTALL] stage=%s ok=%s url=%s",
+            stage,
+            ok,
+            (page.url or "")[:80],
+        )
+        return ok
 
     def _evaluate_strategy_tab_shadow(
         self,
@@ -1484,7 +1678,11 @@ class HistoryWatcher:
         source: str,
         shuffling: bool,
     ):
-        tabs = self.strategy_lifecycle.tabs_in_mode(TabLifecycleMode.LIVE)
+        tabs = [
+            tab
+            for tab in self.strategy_lifecycle.tabs_in_mode(TabLifecycleMode.LIVE)
+            if tab.id == getattr(self, "_running_tab_id", "")
+        ]
         if not tabs:
             return []
         source_allowed = not source or source in BET_TRIGGER_SOURCES
@@ -1522,8 +1720,8 @@ class HistoryWatcher:
                         self._pattern_enabled
                     ),
                     pattern_lengths=self._pattern_lengths,
-                    daily_profit=self.betting_session.effective_profit,
-                    limit_hit=self.betting_session.state.limit_hit,
+                    daily_profit=self._live_run_limits.status_for(tab.id).profit,
+                    limit_hit=self._live_run_limits.status_for(tab.id).limit_hit,
                 )
             )
         return decisions
@@ -1537,11 +1735,64 @@ class HistoryWatcher:
         settled_tabs: set[str] = set()
         for allocation in allocations:
             tab_id = str(allocation.get("tab_id") or "")
+            allocation_epoch = str(allocation.get("run_epoch") or "")
+            current_epoch = getattr(self, "_live_tab_run_epochs", {}).get(tab_id, "")
             manager = self._live_money_managers.get(tab_id)
             if manager is None:
                 continue
             side = BetSide(str(allocation.get("side") or ""))
+            if allocation_epoch and current_epoch and allocation_epoch != current_epoch:
+                stake = float(allocation.get("stake") or 0)
+                if result == BetSide.TIE:
+                    outcome, profit = "push", 0.0
+                elif result == side:
+                    outcome = "win"
+                    profit = stake * 0.95 if side == BetSide.BANKER else stake
+                else:
+                    outcome, profit = "loss", -stake
+                logger.info(
+                    "[RUN_RESTART] Settled old allocation without advancing "
+                    "new run: tab=%s old_epoch=%s new_epoch=%s",
+                    tab_id, allocation_epoch, current_epoch,
+                )
+                resolved.append({
+                    **allocation, "outcome": outcome, "profit": float(profit),
+                    "progression_ignored": True,
+                })
+                continue
             update = manager.apply_result(side, result)
+            tab_config = next(
+                (
+                    item
+                    for item in self.config.strategy_tabs.tabs
+                    if item.id == tab_id
+                ),
+                None,
+            )
+            run_limit = self._live_run_limits.record(
+                tab_id,
+                update.profit,
+                take_profit=tab_config.take_profit if tab_config else 0,
+                stop_loss=tab_config.stop_loss if tab_config else 0,
+            )
+            if (
+                tab_config is not None
+                and tab_config.auto_reset_on_nonnegative_pnl
+                and run_limit.profit >= 0
+                and not run_limit.limit_hit
+            ):
+                self._live_run_limits.reset_tab(tab_id)
+                logger.info(
+                    "[MONEY][AUTO_RESET_NONNEG] tab=%s action=reset_run_profit_and_level1",
+                    tab_id,
+                )
+            if run_limit.limit_hit:
+                logger.warning(
+                    "[TAB_LIVE] RUN_LIMIT_REACHED | tab=%s | kind=%s | profit=%+.0f",
+                    tab_id,
+                    run_limit.limit_hit,
+                    run_limit.profit,
+                )
             self.money_state_store.save(tab_id, manager)
             if tab_id not in settled_tabs:
                 self.strategy_lifecycle.record_settled_bet(
@@ -1627,8 +1878,10 @@ class HistoryWatcher:
         saved = self.strategy_tab_store.save_config(cfg)
         self.config.strategy_tabs = saved
         self._sync_live_money_managers()
-        if self._run_enabled and self._enabled_tabs(TabLifecycleMode.LIVE):
-            preflight = self._live_preflight_status()
+        if self._run_enabled and self._running_tab_id:
+            preflight = self._live_preflight_status(
+                tab_ids=[self._running_tab_id]
+            )
             if not preflight["allowed"]:
                 self._apply_execution_enabled(False)
                 logger.warning(
@@ -1637,7 +1890,10 @@ class HistoryWatcher:
                 )
         if (
             self.betting_session.active_money_manager is not None
-            and self.strategy_lifecycle.tab_in_mode(TabLifecycleMode.LIVE) is None
+            and not any(
+                tab.id == self._running_tab_id and tab.mode == "live"
+                for tab in self.config.strategy_tabs.tabs
+            )
         ):
             self._apply_execution_enabled(False)
             self._persist_active_money_manager()
@@ -1922,6 +2178,11 @@ class HistoryWatcher:
         def _mark():
             if not self._recovering:
                 self._recovery_pending = True
+            # A document navigation invalidates the workspace snapshot even
+            # when the table name is unchanged.  The next install therefore
+            # shows the locked loading shell until fresh table data arrives.
+            self._workspace_loading = True
+            self.overlay.set_workspace_loading(True)
 
         try:
             page.on("load", lambda _=None: _mark())
@@ -1946,6 +2207,11 @@ class HistoryWatcher:
     async def _reload_table_history(self, page: Page, target_name: str) -> None:
         if not self.ae_collector or not target_name:
             return
+        # Render the familiar workspace immediately while the collector waits
+        # for an authoritative history.  This does not arm, recover or bet.
+        self._workspace_loading = True
+        self.overlay.set_workspace_loading(True)
+        await self._install_early_workspace_overlay(page, stage="history_reload")
         from src.ae_sexy_state import probe_in_room, probe_table_ready
 
         probe = await probe_game_state(page, "", self.ae_collector)
@@ -1966,6 +2232,12 @@ class HistoryWatcher:
         hist = await self.ae_collector.wait_for_history(target_name, page, timeout_sec=40)
         if hist:
             self.state.history = hist
+            logger.info(
+                "[HISTORY_INITIAL_READY] table=%s count=%d", target_name, len(hist)
+            )
+            self._workspace_loading = False
+            self.overlay.set_workspace_loading(False)
+            logger.info("[WORKSPACE_UNLOCK] table=%s source=history_reload", target_name)
             self.auto_bettor.sync_history_len(len(hist), force=True)
             self.auto_bettor.configure_tie_nurture(
                 self.config.betting.tie_nurture, history=hist
@@ -3086,6 +3358,7 @@ class HistoryWatcher:
                 return False
 
         self._apply_runtime_table(target_name, reason="continue_in_room")
+        await self._install_early_workspace_overlay(page, stage="startup_in_room")
         logger.info("Da o trong ban %s — bo qua sanh/web", target_name)
         self.store.register_active_table(target_name)
         if self.ae_collector:
@@ -3093,6 +3366,8 @@ class HistoryWatcher:
             ready = await wait_for_ae_sexy_table_ready(page, target_name, timeout_sec=45)
             self.ae_collector.set_in_room(True)
             self.ae_collector.set_table_ready(ready)
+            if ready:
+                logger.info("[TABLE_READY] table=%s", target_name)
             await self.ae_collector.inject_hook_frames(page)
             if not ready:
                 logger.warning(
@@ -3127,6 +3402,11 @@ class HistoryWatcher:
             )
             if hist:
                 self.state.history = hist
+                logger.info(
+                    "[HISTORY_INITIAL_READY] table=%s count=%d",
+                    target_name,
+                    len(hist),
+                )
                 c = {
                     "B": sum(1 for s in hist if s == BetSide.BANKER),
                     "P": sum(1 for s in hist if s == BetSide.PLAYER),
@@ -3209,6 +3489,8 @@ class HistoryWatcher:
         if not (wanted or "").strip():
             wanted = DEFAULT_TABLE_NAME
 
+        await self._install_early_workspace_overlay(page, stage="startup_lobby")
+        logger.info("[TABLE_ENTRY_BEGIN] table=%s", wanted)
         await scroll_ae_sexy_lobby(page)
         tables = await list_ae_sexy_tables(page)
         if not tables:
@@ -3273,6 +3555,7 @@ class HistoryWatcher:
             pick_reason = reason
             stats = tstats or stats
             if ready:
+                logger.info("[TABLE_READY] table=%s", candidate_name)
                 break
 
         if not ready:
@@ -3334,6 +3617,11 @@ class HistoryWatcher:
                 ws_hist = await self.ae_collector.wait_for_history(target_name, page, timeout_sec=25)
                 if ws_hist:
                     self.state.history = ws_hist
+                    logger.info(
+                        "[HISTORY_INITIAL_READY] table=%s count=%d",
+                        target_name,
+                        len(ws_hist),
+                    )
                     logger.info("Nap %d van lich su day du", len(ws_hist))
                     ws_stats = self.ae_collector.get_stats(target_name) or stats
                     round_meta = self._round_meta_for_history(target_name, ws_hist)
@@ -3753,6 +4041,7 @@ class HistoryWatcher:
         page = await self.browser_mgr.resolve_game_page(self.config.site.url, wanted)
         self.page = page
         logger.info("Tab AE SEXY sau goGame: %s", (page.url or "")[:90])
+        await self._install_early_workspace_overlay(page, stage="startup_game_host")
         try:
             from src.ae_sexy import is_ae_sexy_url, switch_to_ae_sexy_page
 
@@ -3843,6 +4132,19 @@ class HistoryWatcher:
                     source=source,
                     round_meta_by_index=round_meta,
                 )
+            if (
+                getattr(self, "_restart_pending_tab_id", "")
+                and len(history) > self._restart_pending_after_history_len
+                and not self.auto_bettor.is_busy
+                and self.betting_session.state.pending is None
+            ):
+                logger.info(
+                    "[RUN_RESTART] Ready tab=%s at history=%d; "
+                    "new-round arm was evaluated",
+                    self._restart_pending_tab_id, len(history),
+                )
+                self._restart_pending_tab_id = ""
+                self._restart_pending_after_history_len = 0
             await self._analyze_patterns(last_result=last_label)
         elif prev_len == 0 and history:
             await self._analyze_patterns(full=True)
@@ -3931,6 +4233,18 @@ class HistoryWatcher:
         if not full and history_key == self._last_history_key:
             return
         self._last_history_key = history_key
+
+        # A background collector can deliver the initial trusted history
+        # without passing through _reload_table_history.  Unlock only when
+        # that data is about to become the matching workspace snapshot.
+        if self._workspace_loading and self.state.history:
+            self._workspace_loading = False
+            self.overlay.set_workspace_loading(False)
+            logger.info(
+                "[WORKSPACE_UNLOCK] table=%s source=history_update count=%d",
+                self._effective_table_name(),
+                len(self.state.history),
+            )
 
         if self.page:
             steps_label, steps_warn = self._stake_steps_overlay_meta()

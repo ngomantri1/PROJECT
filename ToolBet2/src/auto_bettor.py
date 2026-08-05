@@ -4,8 +4,10 @@ import asyncio
 import json
 import logging
 import time
+from uuid import uuid4
 from contextlib import asynccontextmanager
 from datetime import datetime
+from types import SimpleNamespace
 
 from playwright.async_api import Page
 
@@ -83,6 +85,21 @@ class AutoBettor:
         self._real_bet_guard = None
         self._recovery_handler = None
         self._durable_block_reason = ""
+        self._run_epoch = ""
+        self._same_round_status: dict[str, object] = {}
+
+    @property
+    def run_epoch(self) -> str:
+        return self._run_epoch
+
+    def begin_run_epoch(self) -> str:
+        """Called only for an operator false -> true transition."""
+        self._run_epoch = uuid4().hex
+        return self._run_epoch
+
+    def same_round_snapshot(self) -> dict:
+        """Read-only UI state; it never creates an epoch or an attempt."""
+        return {"run_epoch": self._run_epoch, **self._same_round_status}
 
     @property
     def durable_block_reason(self) -> str:
@@ -805,6 +822,46 @@ class AutoBettor:
             await task
         except asyncio.CancelledError:
             pass
+
+    async def abandon_for_operator_restart(self, table_name: str) -> list[int]:
+        """Stop the old run now so an explicit Start can arm without waiting.
+
+        The prior intent is retained as ``deferred`` for authoritative
+        reconciliation.  It is no longer the one in-memory pending slot, and
+        the exact-round journal remains in force, so this cannot place the
+        same table/shoe/round twice.
+        """
+
+        await self.cancel_bet_watch()
+        current = str(table_name or "").strip()
+        loader = getattr(self.store, "load_unresolved_bets", None)
+        parker = getattr(self.store, "park_unresolved_bet", None)
+        parked: list[int] = []
+        if current and loader is not None and parker is not None:
+            for bet in list(loader()):
+                if str(bet.table_name or "").strip() != current:
+                    continue
+                if parker(
+                    bet.id,
+                    reason="operator_restart_new_run",
+                ):
+                    parked.append(int(bet.id))
+
+        # The journal owns reconciliation after this point.  Free the single
+        # process-local slot so the new run can reserve its own next round.
+        self.session.clear_pending()
+        self._multi_live_pending = None
+        self.session.clear_current_group()
+        self.tie.clear_pending()
+        self._placing_key = None
+        if parked:
+            self._durable_block_reason = ""
+            logger.info(
+                "[RUN_RESTART] Parked old pending=%s; arm new run for table=%s",
+                parked,
+                current,
+            )
+        return parked
 
     def _current_history(self) -> list[BetSide]:
         if not self._history_provider:
@@ -1891,6 +1948,9 @@ class AutoBettor:
                     "stake_index": 0,
                     "signal_id": authority.strategy.signal_id,
                     "reason": authority.strategy.reason,
+                    # In-memory ownership of this allocation.  The durable
+                    # placement attempt journals the same epoch before click.
+                    "run_epoch": self._run_epoch,
                 }
             )
         if not allocations:
@@ -1929,24 +1989,48 @@ class AutoBettor:
             target_index,
             "multi_live",
         )
-        if (
-            round_key in self._placed_round_keys
-            or self._exact_round_already_journaled(
-                table_name, game_shoe, game_round
+        logical_lookup = getattr(self.store, "get_bet_for_exact_round", None)
+        logical_bet = (
+            logical_lookup(
+                table_name=table_name, game_shoe=game_shoe, game_round=game_round
             )
-            or self._placing_key
-            or self.session.state.pending
-        ):
+            if logical_lookup is not None
+            else None
+        )
+        reentry = logical_bet is not None
+        if self._placing_key:
+            return False
+        if reentry:
+            if not self._run_epoch or self.store.has_placement_attempt(logical_bet.id, self._run_epoch):
+                self._same_round_status = {"code": "SAME_RUN_EPOCH_DUPLICATE", "bet_id": logical_bet.id}
+                return False
+            physical_sides = {
+                str(item["side"]) for item in self.store.load_bet_allocations(logical_bet.id)
+                if str(item.get("placement_status")) in {"placed", "virtual", "uncertain"}
+            }
+            allowed = [item for item in allocations if item["side"] in physical_sides]
+            conflicts = [item for item in allocations if item["side"] not in physical_sides]
+            if conflicts:
+                self._same_round_status = {"code": "SIDE_CONFLICT_CALCULATE_ONLY", "bet_id": logical_bet.id, "physical_sides": sorted(physical_sides)}
+                self.store.save_event("side_conflict_calculate_only", self._same_round_status, round_id=logical_bet.round_id)
+            allocations = allowed
+            if not allocations:
+                return False
+        elif round_key in self._placed_round_keys or self.session.state.pending:
             return False
 
         physical_total = sum(
             item["stake"] for item in allocations if item["stake"] > 0
         )
+        exposure_after = physical_total + (
+            float(logical_bet.stake or 0) if reentry else 0.0
+        )
         if physical_total > 0:
             guard_ok, guard_reason = await self._real_bet_guard_allowed(
-                stake=physical_total,
+                stake=exposure_after,
                 tab_ids=[str(item["tab_id"]) for item in allocations],
                 bet_kind="main",
+                current_bet_id=(logical_bet.id if reentry else None),
             )
             if not guard_ok:
                 cuoc_bo_qua(
@@ -2026,7 +2110,7 @@ class AutoBettor:
             game_round=game_round,
         )
         self._placing_key = round_key
-        if not self.session.try_reserve_pending(pending):
+        if not reentry and not self.session.try_reserve_pending(pending):
             self._placing_key = None
             return False
 
@@ -2043,7 +2127,7 @@ class AutoBettor:
             next(iter(planned_sides)) if len(planned_sides) == 1 else "multi"
         )
         try:
-            bet = self.store.save_bet(
+            bet = logical_bet or self.store.save_bet(
                 round_id=round_ref.round_id,
                 table_name=table_name,
                 side=planned_side,
@@ -2065,14 +2149,23 @@ class AutoBettor:
             allocation_saver = getattr(
                 self.store, "save_bet_allocations", None
             )
-            if allocation_saver is not None:
+            if allocation_saver is not None and not reentry:
                 allocation_saver(bet.id, allocations)
+            attempt_begin = getattr(self.store, "begin_placement_attempt", None)
+            attempt = (
+                attempt_begin(bet.id, self._run_epoch or "legacy", allocations)
+                if attempt_begin is not None
+                else SimpleNamespace(id=0, attempt_no=1)
+            )
         except Exception as exc:
-            self.session.clear_pending()
+            if not reentry:
+                self.session.clear_pending()
             self._placing_key = None
             logger.error("[MULTI_LIVE] Khong ghi duoc intent truoc click: %s", exc)
             return False
-        self.session.attach_bet_id(bet.id)
+        if not reentry:
+            self.session.attach_bet_id(bet.id)
+        allocation_loader = getattr(self.store, "load_bet_allocations", None)
         self._multi_live_pending = {
             "round_id": round_ref.round_id,
             "bet_id": bet.id,
@@ -2124,7 +2217,7 @@ class AutoBettor:
                         timeout_sec=bet_timeout_sec,
                         click_scope=self._click_scope,
                         pre_click_guard=lambda: self._real_bet_guard_allowed(
-                            stake=physical_total,
+                            stake=exposure_after,
                             tab_ids=[
                                 str(item["tab_id"]) for item in allocations
                             ],
@@ -2186,8 +2279,9 @@ class AutoBettor:
             self.store.cancel_bet_before_click(
                 bet.id, "executor ended before any bet-zone click"
             )
-            self.session.clear_pending()
-            self._multi_live_pending = None
+            if not reentry:
+                self.session.clear_pending()
+                self._multi_live_pending = None
             self._placing_key = None
             return False
 
@@ -2198,7 +2292,11 @@ class AutoBettor:
             else "multi"
         )
         try:
-            bet = self.store.save_bet(
+            if reentry:
+                self.store.add_effective_allocations(bet.id, kept)
+                bet = logical_bet
+            else:
+                bet = self.store.save_bet(
             round_id=round_ref.round_id,
             table_name=table_name,
             side=aggregate_side,
@@ -2226,7 +2324,8 @@ class AutoBettor:
             self.session.clear_pending()
             self._placing_key = None
             return False
-        self.session.attach_bet_id(bet.id)
+        if not reentry:
+            self.session.attach_bet_id(bet.id)
         if uncertain_sides and not placed_sides and not self._durable_block_reason:
             self._update_bet_status(bet.id, "uncertain")
             self.store.park_unresolved_bet(
@@ -2262,13 +2361,25 @@ class AutoBettor:
             )
         else:
             self._update_bet_status(bet.id, "placed")
+        attempt_complete = getattr(self.store, "complete_placement_attempt", None)
+        if attempt_complete is not None:
+            attempt_complete(
+                attempt.id,
+                status="uncertain" if uncertain_sides else "placed",
+                assumed_placed=bool(uncertain_sides),
+            )
         self._multi_live_pending = {
             "round_id": round_ref.round_id,
             "bet_id": bet.id,
-            "allocations": kept,
+            "allocations": allocation_loader(bet.id) if allocation_loader else kept,
             "ready_to_resolve": not uncertain_sides,
         }
         self._placed_round_keys.add(round_key)
+        self._same_round_status = {
+            "code": "SAME_ROUND_REENTRY_ALLOWED" if reentry else "ATTEMPT_CONFIRMED",
+            "bet_id": bet.id,
+            "attempt_count": attempt.attempt_no,
+        }
         self._placing_key = None
         self.session.state.last_bet_summary = (
             f"Đã đặt {len(kept)} tab Live: "

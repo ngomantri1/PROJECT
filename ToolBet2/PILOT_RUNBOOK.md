@@ -184,3 +184,10 @@ Bản source:
 Bản đóng gói: chạy `EXPORT-DIAGNOSTICS.bat`. ZIP chỉ chứa config/log đã che bí
 mật, thông tin hệ thống và thống kê schema/count; không chứa DB, password, token
 hoặc cookie.
+# Same-round re-entry operational rule
+
+Stop then Start intentionally creates one new run epoch and can add stake to
+the already placed physical side of the current exact round. Do not use a UI
+refresh or repeat Start while already running to request another placement.
+Validate this first in stake-zero mode; an opposite-side signal is expected to
+remain calculate-only.

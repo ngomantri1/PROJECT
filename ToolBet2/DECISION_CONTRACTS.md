@@ -140,3 +140,10 @@ tab sang live. Workspace hiện dùng switch trực tiếp `simulation`/`live`; 
 Smoke ngày 2026-08-02 với `auto_bet=false` đã quan sát một trigger thật:
 `total=1, match=1, mismatch=0, error=0`. Đây chỉ là smoke proof, chưa đủ thay thế
 soak test nhiều round.
+# Same-round execution contract
+
+`RiskDecision` and executor callers must distinguish an executor-in-progress
+from a settled-round pending record. Same-side re-entry is permitted only with
+a new operator `run_epoch`; the combined exposure (confirmed/assumed existing
+stake plus requested stake) remains subject to all active guards. Settlement
+uses the aggregate logical allocation exactly once.
