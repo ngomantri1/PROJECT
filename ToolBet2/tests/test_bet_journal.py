@@ -119,6 +119,82 @@ class BetJournalTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(placed)
         self.assertIsNotNone(session.state.pending)
 
+    async def test_running_simulation_keeps_stake_but_never_clicks_chip(self) -> None:
+        session, bettor = self.make_bettor()
+        bettor._armed_bet["live_authorities"] = [
+            self.authority("player-tab", BetSide.PLAYER, 100)
+        ]
+        bettor.set_tab_execution_mode_resolver(lambda _tab_id: "simulation")
+        executor = AsyncMock(return_value=True)
+
+        with patch("src.auto_bettor.wait_and_place_bet", executor):
+            placed = await bettor._try_place_multi_live(
+                object(),
+                [BetSide.PLAYER, BetSide.BANKER],
+                table_name="Baccarat C01",
+                source="cuoc-mo-multi-live",
+                bet_timeout_sec=30,
+            )
+
+        self.assertTrue(placed)
+        executor.assert_not_awaited()
+        db = self.session_factory()
+        try:
+            bet = db.scalar(select(BetRecord))
+            allocation = db.scalar(select(BetAllocationRecord))
+            self.assertEqual(100, bet.stake)
+            self.assertEqual("virtual", bet.execution_mode)
+            self.assertEqual(100, allocation.stake)
+            self.assertEqual("virtual", allocation.placement_status)
+        finally:
+            db.close()
+
+    async def test_mode_change_while_waiting_converts_live_allocation_to_virtual(self) -> None:
+        _session, bettor = self.make_bettor()
+        bettor._armed_bet["live_authorities"] = [
+            self.authority("player-tab", BetSide.PLAYER, 100)
+        ]
+        mode = {"value": "live"}
+        bettor.set_tab_execution_mode_resolver(lambda _tab_id: mode["value"])
+
+        async def mode_changes_before_zone_click(*_args, **kwargs):
+            mode["value"] = "simulation"
+            allowed, reason = await kwargs["pre_click_guard"]()
+            self.assertFalse(allowed)
+            self.assertEqual("simulation_mode", reason)
+            from src.ae_sexy_betting import PreClickGuardRejected
+
+            raise PreClickGuardRejected(reason)
+
+        with (
+            patch(
+                "src.auto_bettor.probe_betting_phase",
+                AsyncMock(return_value={
+                    "chipsVisible": True, "zoneVisible": True,
+                    "closed": False, "cdText": "12",
+                }),
+            ),
+            patch(
+                "src.auto_bettor.wait_and_place_bet",
+                side_effect=mode_changes_before_zone_click,
+            ),
+        ):
+            placed = await bettor._try_place_multi_live(
+                object(), [BetSide.PLAYER, BetSide.BANKER],
+                table_name="Baccarat C01", source="cuoc-mo-multi-live",
+                bet_timeout_sec=30,
+            )
+
+        self.assertTrue(placed)
+        db = self.session_factory()
+        try:
+            self.assertEqual("virtual", db.scalar(select(BetRecord)).execution_mode)
+            self.assertEqual(
+                "virtual", db.scalar(select(BetAllocationRecord)).placement_status
+            )
+        finally:
+            db.close()
+
     def test_attempt_journal_is_idempotent_and_effective_stake_is_additive(self) -> None:
         """A logical round stays one bet while Start epochs add audited attempts."""
         bet = self.store.save_bet(
@@ -755,6 +831,169 @@ class BetJournalTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("uncertain", db.get(BetRecord, bet.id).status)
         finally:
             db.close()
+
+    def test_tab_run_outcomes_include_only_settled_allocations_in_epoch(self) -> None:
+        def save_settled(round_number: int, epoch: str, outcome: str) -> None:
+            bet = self.store.save_bet(
+                round_id=f"ae_sexy:C01:7:{round_number}",
+                table_name="Baccarat C01", side="player", stake=100,
+                stake_index=0, pattern_id="multi_live", pattern_name="test",
+                reason="outcome history", target_round_index=round_number,
+                game_shoe=7, game_round=round_number, status="placed",
+            )
+            self.store.save_bet_allocations(bet.id, [{
+                "tab_id": "tab-1", "tab_name": "Tab 1", "side": "player",
+                "stake": 100, "placement_status": "virtual",
+            }])
+            self.store.begin_placement_attempt(bet.id, epoch, [{
+                "tab_id": "tab-1", "side": "player", "stake": 100,
+                "execution_mode": "simulation", "placement_status": "virtual",
+            }])
+            self.store.resolve_bet_allocations(bet.id, [{
+                "tab_id": "tab-1", "outcome": outcome,
+                "profit": 100 if outcome == "win" else (-100 if outcome == "loss" else 0),
+            }])
+
+        save_settled(11, "old-epoch", "loss")
+        save_settled(12, "current-epoch", "win")
+        save_settled(13, "current-epoch", "push")
+
+        pending = self.store.save_bet(
+            round_id="ae_sexy:C01:7:14", table_name="Baccarat C01", side="player",
+            stake=100, stake_index=0, pattern_id="multi_live", pattern_name="test",
+            reason="pending", target_round_index=14, game_shoe=7, game_round=14,
+            status="placed",
+        )
+        self.store.save_bet_allocations(pending.id, [{
+            "tab_id": "tab-1", "tab_name": "Tab 1", "side": "player",
+            "stake": 100, "placement_status": "placed",
+        }])
+        self.store.begin_placement_attempt(pending.id, "current-epoch", [{
+            "tab_id": "tab-1", "side": "player", "stake": 100,
+        }])
+
+        outcomes = self.store.load_tab_run_outcomes("tab-1", "current-epoch")
+
+        self.assertEqual(["win", "push"], [row["outcome"] for row in outcomes])
+        self.assertEqual([12, 13], [row["round"] for row in outcomes])
+        self.assertTrue(all(row["execution_mode"] == "virtual" for row in outcomes))
+
+    def test_tab_run_bet_history_includes_pending_and_only_current_epoch(self) -> None:
+        def save_allocation(
+            round_number: int,
+            epoch: str,
+            *,
+            execution_mode: str,
+            placement_status: str,
+            outcome: str | None = None,
+        ) -> None:
+            bet = self.store.save_bet(
+                round_id=f"ae_sexy:C01:8:{round_number}",
+                table_name="Baccarat C01", side="player", stake=100,
+                stake_index=round_number, pattern_id="multi_live",
+                pattern_name="test", reason="bet history",
+                target_round_index=round_number, game_shoe=8,
+                game_round=round_number, status=placement_status,
+            )
+            self.store.save_bet_allocations(bet.id, [{
+                "tab_id": "tab-1", "tab_name": "Tab 1", "side": "player",
+                "stake": 100, "stake_index": round_number,
+                "placement_status": placement_status,
+            }])
+            self.store.begin_placement_attempt(bet.id, epoch, [{
+                "tab_id": "tab-1", "side": "player", "stake": 100,
+                "execution_mode": execution_mode,
+                "placement_status": placement_status,
+            }])
+            if outcome is not None:
+                self.store.resolve_bet_allocations(bet.id, [{
+                    "tab_id": "tab-1", "outcome": outcome,
+                    "profit": 100 if outcome == "win" else -100,
+                }])
+
+        save_allocation(
+            21, "old-epoch", execution_mode="real", placement_status="placed",
+            outcome="loss",
+        )
+        save_allocation(
+            22, "current-epoch", execution_mode="simulation",
+            placement_status="virtual", outcome="win",
+        )
+        save_allocation(
+            23, "current-epoch", execution_mode="real",
+            placement_status="placed",
+        )
+
+        page = self.store.load_tab_run_bet_history(
+            "tab-1", "current-epoch", page=1, page_size=10
+        )
+
+        self.assertEqual(2, page["total"])
+        self.assertEqual([23, 22], [row["round"] for row in page["items"]])
+        pending, settled = page["items"]
+        self.assertEqual("real", pending["execution_mode"])
+        self.assertEqual("placed", pending["placement_status"])
+        self.assertIsNone(pending["outcome"])
+        self.assertEqual("virtual", settled["execution_mode"])
+        self.assertEqual("win", settled["outcome"])
+        self.assertEqual(100.0, settled["profit"])
+
+    def test_journal_statistics_use_only_settled_allocations_and_durable_signals(self) -> None:
+        def save_settled(
+            round_number: int, outcome: str, execution_mode: str
+        ) -> None:
+            bet = self.store.save_bet(
+                round_id=f"ae_sexy:C01:9:{round_number}",
+                table_name="Baccarat C01", side="player", stake=100,
+                stake_index=0, pattern_id="multi_live", pattern_name="test",
+                reason="statistics", target_round_index=round_number,
+                game_shoe=9, game_round=round_number, status="placed",
+            )
+            self.store.save_bet_allocations(bet.id, [{
+                "tab_id": "tab-stat", "tab_name": "Stats", "side": "player",
+                "stake": 100, "placement_status": "virtual"
+                if execution_mode == "simulation" else "placed",
+            }])
+            self.store.begin_placement_attempt(bet.id, "run", [{
+                "tab_id": "tab-stat", "side": "player", "stake": 100,
+                "execution_mode": execution_mode,
+            }])
+            self.store.resolve_bet_allocations(bet.id, [{
+                "tab_id": "tab-stat", "outcome": outcome,
+                "profit": 100 if outcome == "win" else (-50 if outcome == "loss" else 0),
+            }])
+
+        save_settled(31, "win", "simulation")
+        save_settled(32, "loss", "real")
+        save_settled(33, "push", "real")
+        self.assertTrue(self.store.record_strategy_signal(
+            tab_id="tab-stat", run_epoch="run", table_name="Baccarat C01",
+            history_size=31, side="player", reason="signal",
+        ))
+        self.assertFalse(self.store.record_strategy_signal(
+            tab_id="tab-stat", run_epoch="run", table_name="Baccarat C01",
+            history_size=31, side="player", reason="duplicate",
+        ))
+        self.assertTrue(self.store.record_strategy_signal(
+            tab_id="tab-stat", run_epoch="run", table_name="Baccarat C01",
+            history_size=32, side="banker", reason="signal",
+        ))
+
+        stats = self.store.load_tab_journal_statistics("tab-stat")
+
+        self.assertEqual({
+            "signals": 2, "virtual_bets": 1, "wins": 1, "losses": 1,
+            "pushes": 1, "valid_bets": 2, "max_win_streak": 1,
+            "max_loss_streak": 1, "statistics_profit": 50.0,
+        }, stats)
+        self.assertEqual({
+            "signals": 0, "virtual_bets": 0, "wins": 0, "losses": 0,
+            "pushes": 0, "valid_bets": 0, "max_win_streak": 0,
+            "max_loss_streak": 0, "statistics_profit": 0.0,
+        }, self.store.load_tab_journal_statistics(
+            "tab-stat", reset_after_allocation_id=99999,
+            reset_after_signal_id=99999,
+        ))
 
 
 if __name__ == "__main__":

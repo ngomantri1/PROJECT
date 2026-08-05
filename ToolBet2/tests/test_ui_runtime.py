@@ -199,6 +199,7 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             "id": "tab-1",
             "name": "Chiáº¿n lÆ°á»£c 1",
             "enabled": True,
+            "running": True,
             "strategy_id": SIMULATION_STRATEGIES[0]["id"],
             "money_manager_id": MONEY_MANAGER_OPTIONS[0]["id"],
             "stakes": [10, 100],
@@ -480,11 +481,17 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             "id": "tab-1",
             "name": "Chiến lược 1",
             "enabled": True,
+            "running": True,
             "strategy_id": SIMULATION_STRATEGIES[0]["id"],
             "money_manager_id": MONEY_MANAGER_OPTIONS[0]["id"],
             "stakes": [0, 100],
             "status": {},
             "history": [],
+            "win_loss_history": [],
+            "bet_history": [],
+            "bet_history_pagination": {
+                "page": 1, "page_size": 10, "total": 0, "page_count": 1,
+            },
         }
         strategy_tabs = {
             "selected_tab_id": "tab-1",
@@ -499,6 +506,7 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
                 "runtime_session_id": "same-session",
                 "table": "Baccarat C01",
                 "history_dots": [],
+                "click_in_progress": False,
                 "strategy_tabs": strategy_tabs,
             },
             tabs=[tab],
@@ -543,6 +551,33 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
                     "pnl": 80,
                 }
             ],
+            "win_loss_history": [
+                {"outcome": "loss", "side": "player", "stake": 100, "profit": -100, "round": 2},
+                {"outcome": "win", "side": "banker", "stake": 100, "profit": 95, "round": 3},
+            ],
+            "bet_history": [
+                {
+                    "bet_id": 102, "placed_at": "2026-08-05T21:45:05",
+                    "table_name": "Baccarat C02", "shoe": 7, "round": 3,
+                    "side": "banker", "stake": 100,
+                    "execution_mode": "virtual", "placement_status": "virtual",
+                    "outcome": "win", "profit": 95,
+                    "reason": "Tín hiệu mới", "signal_id": "signal-3",
+                    "stake_index": 1,
+                },
+                {
+                    "bet_id": 103, "placed_at": "2026-08-05T21:46:05",
+                    "table_name": "Baccarat C02", "shoe": 7, "round": 4,
+                    "side": "player", "stake": 120,
+                    "execution_mode": "real", "placement_status": "placed",
+                    "outcome": None, "profit": None,
+                    "reason": "Tín hiệu mới", "signal_id": "signal-4",
+                    "stake_index": 2,
+                },
+            ],
+            "bet_history_pagination": {
+                "page": 1, "page_size": 10, "total": 2, "page_count": 1,
+            },
         }
         updated_workspace = {**strategy_tabs, "tabs": [updated_tab]}
         realtime = UiSnapshot(
@@ -550,6 +585,7 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             state={
                 "runtime_session_id": "same-session",
                 "table": "Baccarat C02",
+                "click_in_progress": True,
                 "history_dots": [
                     {"side": "player", "label": "xanh"},
                     {"side": "banker", "label": "đỏ"},
@@ -609,6 +645,43 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             "2/1/0",
             await self.page.locator('[data-bind="stats-results"]').inner_text(),
+        )
+        self.assertEqual(
+            ["Thua", "Thắng"],
+            await self.page.locator('[data-bind="win-loss-history"] .tbv2-win-loss').all_inner_texts(),
+        )
+        self.assertEqual(
+            1,
+            await self.page.locator('[data-bind="win-loss-history"] .tbv2-win-loss-latest').count(),
+        )
+        self.assertEqual(
+            ["Thắng", "Đang chờ"],
+            await self.page.locator(
+                '[data-bind="bet-history-body"] .tbv2-bet-outcome'
+            ).all_inner_texts(),
+        )
+        self.assertEqual(
+            "Mô phỏng",
+            await self.page.locator(
+                '[data-bind="bet-history-body"] .tbv2-bet-mode.virtual'
+            ).inner_text(),
+        )
+        self.assertEqual(
+            2,
+            await self.page.locator(
+                '[data-bind="bet-history-body"] .tbv2-bet-row-new'
+            ).count(),
+        )
+        self.assertEqual(
+            "Trang 1/1 · 2 cược",
+            await self.page.locator(
+                '[data-bind="bet-history-page-label"]'
+            ).inner_text(),
+        )
+
+        self.assertIn(
+            "cấu hình mới",
+            await self.page.locator('[data-bind="lifecycle-message"]').inner_text(),
         )
 
     async def test_older_revision_cannot_overwrite_newer_snapshot(self):
@@ -1296,8 +1369,8 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
                         "pushes": 0,
                         "signals": 0,
                         "virtual_bets": 0,
+                        "statistics_profit": 0,
                     },
-                    "run_profit": 0,
                 },
             }
 
@@ -1315,6 +1388,7 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
                 "pushes": 1,
                 "signals": 8,
                 "virtual_bets": 7,
+                "statistics_profit": 45,
             },
         }
         snapshot = UiSnapshot(
@@ -1339,6 +1413,7 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({"tab_id": "tab-1"}, received[0]["payload"])
         self.assertEqual("0/0/0", await self.page.locator("[data-bind='stats-results']").inner_text())
         self.assertEqual("0", await self.page.locator("[data-bind='stats-pnl']").inner_text())
+        self.assertEqual("-120", await self.page.locator("[data-bind='status-profit']").inner_text())
 
     async def test_runtime_refresh_keeps_tab_id_for_start_stop_start(self):
         received = []

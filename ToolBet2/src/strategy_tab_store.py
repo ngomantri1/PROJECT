@@ -5,12 +5,15 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select
 
 from src.database import (
+    BetAllocationRecord,
     StrategyMoneyConfigRecord,
     StrategyTabHistoryRecord,
     StrategyTabRecord,
     StrategyTabRuntimeRecord,
+    StrategySignalRecord,
 )
 from src.capital_managers import MONEY_MANAGER_OPTIONS
 from src.strategy_tabs import StrategyTabsConfig, normalize_strategy_tabs
@@ -189,7 +192,7 @@ class StrategyTabStore:
     def statistics_baselines_for_tabs(
         self, tab_ids: list[str]
     ) -> dict[str, dict[str, int]]:
-        """Return each tab's operator-selected statistics reset baseline."""
+        """Return durable journal anchors chosen by the statistics reset."""
         ids = [str(tab_id) for tab_id in tab_ids if str(tab_id)]
         result: dict[str, dict[str, int]] = {tab_id: {} for tab_id in ids}
         if not ids:
@@ -208,28 +211,36 @@ class StrategyTabStore:
                     baseline = {}
                 if isinstance(baseline, dict):
                     result[row.tab_id] = {
-                        key: int(baseline.get(key) or 0)
+                        key: max(0, int(baseline.get(key) or 0))
                         for key in (
-                            "signals", "virtual_bets", "wins", "losses", "pushes",
-                            "result_outcome_count",
+                            "reset_after_allocation_id",
+                            "reset_after_signal_id",
                         )
                     }
             return result
         finally:
             session.close()
 
-    def reset_statistics(self, tab_id: str, status: dict[str, Any]) -> dict[str, int]:
-        """Persist the current replay totals as the new zero point for one tab."""
-        result_outcomes = status.get("result_outcomes")
-        baseline = {
-            key: int(status.get(key) or 0)
-            for key in ("signals", "virtual_bets", "wins", "losses", "pushes")
-        }
-        baseline["result_outcome_count"] = len(
-            result_outcomes if isinstance(result_outcomes, list) else []
-        )
+    def reset_statistics(
+        self, tab_id: str, status: dict[str, Any] | None = None
+    ) -> dict[str, int]:
+        """Start a fresh statistics window without deleting durable history."""
         session = self._session_factory()
         try:
+            allocation_id = session.scalar(
+                select(func.max(BetAllocationRecord.id)).where(
+                    BetAllocationRecord.tab_id == str(tab_id)
+                )
+            ) or 0
+            signal_id = session.scalar(
+                select(func.max(StrategySignalRecord.id)).where(
+                    StrategySignalRecord.tab_id == str(tab_id)
+                )
+            ) or 0
+            baseline = {
+                "reset_after_allocation_id": int(allocation_id),
+                "reset_after_signal_id": int(signal_id),
+            }
             runtime = session.get(StrategyTabRuntimeRecord, tab_id)
             if runtime is None:
                 runtime = StrategyTabRuntimeRecord(tab_id=tab_id)
@@ -247,39 +258,8 @@ class StrategyTabStore:
     def apply_statistics_baseline(
         status: dict[str, Any], baseline: dict[str, int]
     ) -> dict[str, Any]:
-        """Keep strategy state intact while presenting counters since reset."""
-        displayed = dict(status)
-        for key in ("signals", "virtual_bets", "wins", "losses", "pushes"):
-            displayed[key] = max(0, int(status.get(key) or 0) - int(baseline.get(key) or 0))
-        outcomes = status.get("result_outcomes")
-        if isinstance(outcomes, list):
-            start = int(baseline.get("result_outcome_count") or sum(
-                int(baseline.get(key) or 0)
-                for key in ("wins", "losses", "pushes")
-            ))
-            active_outcomes = outcomes[max(0, start):]
-            displayed["wins"] = sum(outcome == "win" for outcome in active_outcomes)
-            displayed["losses"] = sum(outcome == "loss" for outcome in active_outcomes)
-            displayed["pushes"] = sum(outcome not in {"win", "loss"} for outcome in active_outcomes)
-            current_win_streak = current_loss_streak = 0
-            max_win_streak = max_loss_streak = 0
-            for outcome in active_outcomes:
-                if outcome == "win":
-                    current_win_streak += 1
-                    current_loss_streak = 0
-                elif outcome == "loss":
-                    current_loss_streak += 1
-                    current_win_streak = 0
-                max_win_streak = max(max_win_streak, current_win_streak)
-                max_loss_streak = max(max_loss_streak, current_loss_streak)
-            displayed["max_win_streak"] = max_win_streak
-            displayed["max_loss_streak"] = max_loss_streak
-        else:
-            displayed["max_win_streak"] = int(status.get("max_win_streak") or 0)
-            displayed["max_loss_streak"] = int(status.get("max_loss_streak") or 0)
-        displayed["valid_bets"] = displayed["wins"] + displayed["losses"]
-        displayed.pop("result_outcomes", None)
-        return displayed
+        """Compatibility helper; journal statistics are built by GameDataStore."""
+        return dict(status)
 
     def record_overlay(self, payload: dict[str, Any], *, table_name: str = "") -> None:
         tabs = payload.get("tabs") if isinstance(payload, dict) else None

@@ -274,6 +274,29 @@ class StrategyTabRuntimeRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
+class StrategySignalRecord(Base):
+    """One durable strategy signal for an operator-owned tab run."""
+
+    __tablename__ = "strategy_signals"
+    __table_args__ = (
+        UniqueConstraint(
+            "tab_id", "run_epoch", "table_name", "history_size",
+            name="uq_strategy_signal_tab_run_round",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tab_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("strategy_tabs.id"), index=True
+    )
+    run_epoch: Mapped[str] = mapped_column(String(64), index=True)
+    table_name: Mapped[str] = mapped_column(String(128), default="")
+    history_size: Mapped[int] = mapped_column(Integer, default=0)
+    side: Mapped[str] = mapped_column(String(16), default="")
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 class StrategyTabHistoryRecord(Base):
     __tablename__ = "strategy_tab_history"
     __table_args__ = (

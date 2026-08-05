@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from main import HistoryWatcher
 from src.auto_bettor import AutoBettor, BET_TRIGGER_SOURCES
-from src.betting_session import BettingSession
+from src.betting_session import BettingSession, PendingBet
 from src.database import init_db
 from src.db_store import GameDataStore
+from src.live_run_limits import LiveRunLimitTracker
 from src.ae_sexy_betting import (
     PreClickGuardRejected,
     resolve_chip_values,
@@ -29,11 +31,95 @@ class _ToolAuth:
 
 
 class LiveExecutionPolicyTests(unittest.IsolatedAsyncioTestCase):
+    def test_journal_change_refreshes_only_strategy_tabs_overlay(self):
+        overlay = Mock()
+        watcher = SimpleNamespace(
+            overlay=overlay,
+            _overlay_strategy_tabs_payload=Mock(return_value={"tabs": []}),
+        )
+
+        HistoryWatcher._on_bet_journal_changed_refresh_overlay(watcher)
+
+        watcher._overlay_strategy_tabs_payload.assert_called_once_with(
+            record_runtime=False
+        )
+        overlay.set_strategy_tabs.assert_called_once_with({"tabs": []})
+
+    def test_auto_bettor_notifies_after_committed_journal_change(self):
+        handler = Mock()
+        bettor = AutoBettor(BettingSession([10]), SimpleNamespace())
+        bettor.set_bet_journal_changed_handler(handler)
+
+        bettor._notify_bet_journal_changed()
+
+        handler.assert_called_once_with()
+
+    def test_same_table_history_refresh_keeps_valid_workspace_ready(self):
+        watcher = SimpleNamespace(
+            _workspace_loading=False,
+            state=SimpleNamespace(
+                table_name="Baccarat C01",
+                table_id="Baccarat C01",
+                history=[BetSide.BANKER],
+            ),
+        )
+
+        self.assertFalse(
+            HistoryWatcher._history_reload_needs_loading(watcher, "Baccarat C01")
+        )
+        self.assertTrue(
+            HistoryWatcher._history_reload_needs_loading(watcher, "Baccarat C02")
+        )
+        watcher._workspace_loading = True
+        self.assertTrue(
+            HistoryWatcher._history_reload_needs_loading(watcher, "Baccarat C01")
+        )
+
     def test_partial_dom_chip_values_never_fall_back_to_fake_tray(self):
         self.assertEqual(
             [10, 50, 100, 500, 0],
             resolve_chip_values(5, [10, 50, 100, 500, 0]),
         )
+
+    async def test_result_before_multi_live_click_expires_the_intent(self):
+        session = BettingSession([10, 100])
+        pending = PendingBet(
+            bet_id=99,
+            round_id="ae_sexy:C02:26965:2",
+            side=BetSide.BANKER,
+            stake=10,
+            stake_index=0,
+            pattern_id="multi_live",
+            pattern_name="Multi live",
+            reason="test",
+            target_round_index=1,
+            placed_at=datetime.now(),
+            table_name="Baccarat C02",
+            game_shoe=26965,
+            game_round=2,
+        )
+        session.set_pending(pending)
+        bettor = AutoBettor(session, SimpleNamespace())
+        bettor._multi_live_pending = {
+            "round_id": pending.round_id,
+            "bet_id": pending.bet_id,
+            "ready_to_resolve": False,
+        }
+        bettor._real_bet_guard_allowed = AsyncMock(return_value=(True, "ok"))
+
+        bettor._note_result_arrival_before_placement(
+            table_name="Baccarat C02",
+            result_meta={"game_shoe": 26965, "game_round": 2},
+        )
+        allowed, reason = await bettor._multi_live_pre_click_guard(
+            bet_id=99,
+            stake=10,
+            tab_ids=["tab-1"],
+        )
+
+        self.assertFalse(allowed)
+        self.assertEqual("result_before_placement_confirmation", reason)
+        bettor._real_bet_guard_allowed.assert_not_awaited()
 
     def watcher(self, mode: str, *, allowed: bool = True):
         return SimpleNamespace(
@@ -83,6 +169,34 @@ class LiveExecutionPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(actual)
         self.assertFalse(watcher.betting_session.state.auto_bet)
         self.assertTrue(watcher._run_enabled)
+
+    def test_saving_config_while_clicking_keeps_execution_enabled(self):
+        saved = SimpleNamespace(tabs=[SimpleNamespace(
+            id="live-tab", enabled=True,
+        )])
+        save_config = Mock(return_value=saved)
+        apply_execution = Mock()
+        watcher = SimpleNamespace(
+            strategy_tab_store=SimpleNamespace(save_config=save_config),
+            config=SimpleNamespace(strategy_tabs=None),
+            _sync_live_money_managers=Mock(),
+            _run_enabled=True,
+            _running_tab_id="live-tab",
+            auto_bettor=SimpleNamespace(is_busy=True),
+            _apply_execution_enabled=apply_execution,
+            betting_session=SimpleNamespace(active_money_manager=None),
+            _overlay_strategy_tabs_payload=lambda: {"tabs": []},
+            overlay=SimpleNamespace(set_strategy_tabs=Mock()),
+        )
+        payload = {"selected_tab_id": "live-tab", "tabs": []}
+
+        with patch("main.normalize_strategy_tabs", return_value="normalized"):
+            result = HistoryWatcher._handle_save_strategy_tabs(watcher, payload)
+
+        self.assertTrue(result["ok"])
+        save_config.assert_called_once_with("normalized")
+        watcher._sync_live_money_managers.assert_called_once_with()
+        apply_execution.assert_not_called()
 
     def test_explicit_stop_is_the_only_path_that_clears_run_latch(self):
         watcher = self.run_watcher()
@@ -298,6 +412,42 @@ class LiveExecutionPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("win", resolved[0]["outcome"])
         self.assertEqual(10.0, resolved[0]["profit"])
         self.assertTrue(resolved[0]["progression_ignored"])
+
+    def test_auto_reset_keeps_statistics_but_resets_run_profit_and_money_level(self):
+        manager = Mock()
+        manager.apply_result.return_value = SimpleNamespace(
+            profit=10.0,
+            outcome=SimpleNamespace(value="win"),
+            next_quote=SimpleNamespace(stake=20, level_index=1),
+        )
+        run_limits = LiveRunLimitTracker()
+        money_state_store = SimpleNamespace(save=Mock())
+        watcher = SimpleNamespace(
+            _live_tab_run_epochs={"tab-1": "run-1"},
+            _live_money_managers={"tab-1": manager},
+            config=SimpleNamespace(strategy_tabs=SimpleNamespace(tabs=[
+                SimpleNamespace(
+                    id="tab-1", auto_reset_on_nonnegative_pnl=True,
+                    take_profit=0, stop_loss=0,
+                ),
+            ])),
+            _live_run_limits=run_limits,
+            money_state_store=money_state_store,
+            strategy_lifecycle=SimpleNamespace(record_settled_bet=Mock()),
+            state=SimpleNamespace(history=[BetSide.PLAYER]),
+        )
+
+        resolved = HistoryWatcher._resolve_multi_live_allocations(
+            watcher,
+            [{"tab_id": "tab-1", "side": "player", "stake": 10, "run_epoch": "run-1"}],
+            BetSide.PLAYER,
+        )
+
+        manager.reset.assert_called_once_with()
+        money_state_store.save.assert_called_once_with("tab-1", manager)
+        self.assertEqual(0, run_limits.status_for("tab-1").profit)
+        self.assertEqual("win", resolved[0]["outcome"])
+        self.assertEqual(10.0, resolved[0]["profit"])
 
     async def test_pilot_still_requires_finite_lease(self):
         watcher = self.watcher("pilot")

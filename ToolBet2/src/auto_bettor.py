@@ -60,6 +60,7 @@ class AutoBettor:
         self._ui_failed_handler = None
         self._healthy_handler = None
         self._bet_resolved_handler = None
+        self._bet_journal_changed_handler = None
         self._round_meta_provider = None
         self._history_provider = None
         self._ui_alive_checker = None
@@ -79,6 +80,7 @@ class AutoBettor:
         self._last_shadow_event_key: tuple | None = None
         self._strategy_tab_shadow_evaluator = None
         self._strategy_tab_live_evaluator = None
+        self._tab_execution_mode_resolver = None
         self._multi_live_result_handler = None
         self._runtime_unsafe_handler = None
         self._license_checker = None
@@ -87,6 +89,10 @@ class AutoBettor:
         self._durable_block_reason = ""
         self._run_epoch = ""
         self._same_round_status: dict[str, object] = {}
+        # Result events must be observed even while the placement coroutine is
+        # holding _bet_lock.  Otherwise a late click can be settled against a
+        # result that arrived before that click.
+        self._result_before_placement_bet_ids: set[int] = set()
 
     @property
     def run_epoch(self) -> str:
@@ -114,6 +120,60 @@ class AutoBettor:
         updater = getattr(self.store, "update_bet_status", None)
         if updater is not None:
             updater(bet_id, status)
+            self._notify_bet_journal_changed()
+
+    def _note_result_arrival_before_placement(
+        self,
+        *,
+        table_name: str,
+        result_meta: dict | None,
+    ) -> None:
+        """Record a result immediately, before a placement lock can delay it."""
+
+        pending = self.session.state.pending
+        multi = self._multi_live_pending
+        if not pending or not multi or multi.get("ready_to_resolve", False):
+            return
+        if multi.get("round_id") != pending.round_id or pending.bet_id <= 0:
+            return
+        meta = result_meta or {}
+        shoe = int(meta.get("game_shoe") or 0)
+        game_round = int(meta.get("game_round") or 0)
+        same_table = not pending.table_name or pending.table_name == table_name
+        same_shoe = not pending.game_shoe or pending.game_shoe == shoe
+        same_round = not pending.game_round or pending.game_round == game_round
+        if not (same_table and shoe and game_round and same_shoe and same_round):
+            return
+        self._result_before_placement_bet_ids.add(pending.bet_id)
+        logger.warning(
+            "[MULTI_LIVE] Result arrived before placement confirmation: "
+            "bet=%s table=%s shoe=%s round=%s",
+            pending.bet_id,
+            table_name,
+            shoe,
+            game_round,
+        )
+
+    def _placement_expired_before_confirmation(self, bet_id: int) -> bool:
+        return bet_id in self._result_before_placement_bet_ids
+
+    async def _multi_live_pre_click_guard(
+        self,
+        *,
+        bet_id: int,
+        stake: float,
+        tab_ids: list[str],
+    ) -> tuple[bool, str]:
+        if self._placement_expired_before_confirmation(bet_id):
+            return False, "result_before_placement_confirmation"
+        if any(self._execution_mode_for_tab(tab_id) != "live" for tab_id in tab_ids):
+            return False, "simulation_mode"
+        return await self._real_bet_guard_allowed(
+            stake=stake,
+            tab_ids=tab_ids,
+            bet_kind="main",
+            current_bet_id=bet_id,
+        )
 
     def restore_durable_pending(self) -> str:
         """Restore only active ambiguous work; park confirmed old placements."""
@@ -483,6 +543,19 @@ class AutoBettor:
         """handler() — goi sau khi resolve_bet vao DB."""
         self._bet_resolved_handler = handler
 
+    def set_bet_journal_changed_handler(self, handler) -> None:
+        """handler() — goi sau khi journal cuoc da commit thanh cong."""
+        self._bet_journal_changed_handler = handler
+
+    def _notify_bet_journal_changed(self) -> None:
+        """Refresh-only notification; it must never arm or place another bet."""
+        if not self._bet_journal_changed_handler:
+            return
+        try:
+            self._bet_journal_changed_handler()
+        except Exception as exc:
+            logger.debug("bet_journal_changed_handler: %s", exc)
+
     def set_round_meta_provider(self, provider) -> None:
         """provider(table_name, bead_index) -> {game_shoe, game_round}."""
         self._round_meta_provider = provider
@@ -515,6 +588,23 @@ class AutoBettor:
 
     def set_strategy_tab_live_evaluator(self, evaluator) -> None:
         self._strategy_tab_live_evaluator = evaluator
+
+    def set_tab_execution_mode_resolver(self, resolver) -> None:
+        """resolver(tab_id) -> ``live`` or ``simulation`` at execution time."""
+        self._tab_execution_mode_resolver = resolver
+
+    def _execution_mode_for_tab(self, tab_id: str) -> str:
+        if self._tab_execution_mode_resolver is None:
+            return "live"
+        try:
+            return (
+                "live"
+                if self._tab_execution_mode_resolver(str(tab_id)) == "live"
+                else "simulation"
+            )
+        except Exception as exc:
+            logger.warning("[TAB_MODE] Khong doc duoc mode tab %s: %s", tab_id, exc)
+            return "simulation"
 
     def set_multi_live_result_handler(self, handler) -> None:
         self._multi_live_result_handler = handler
@@ -601,6 +691,7 @@ class AutoBettor:
             return
         if self.store.defer_bet(pending.bet_id, reason=reason):
             logger.warning("[PENDING] Defer bet #%d: %s", pending.bet_id, reason)
+            self._notify_bet_journal_changed()
         self.session.clear_pending()
         self._multi_live_pending = None
         self.session.clear_current_group()
@@ -611,6 +702,7 @@ class AutoBettor:
             return
         if self.store.defer_bet(pending.bet_id, reason=reason):
             logger.warning("[PENDING] Defer bet Hoa #%d: %s", pending.bet_id, reason)
+            self._notify_bet_journal_changed()
         self.tie.clear_pending()
 
     async def _resolve_deferred_if_exact(
@@ -926,6 +1018,15 @@ class AutoBettor:
         source: str = "",
         round_meta_by_index: dict[int, dict] | None = None,
     ) -> None:
+        # Do this outside _bet_lock.  Placement may be waiting for the betting
+        # window; a result that arrives then must still invalidate that intent
+        # before any subsequent chip click.
+        if len(history) > prev_len:
+            for index in range(prev_len, len(history)):
+                self._note_result_arrival_before_placement(
+                    table_name=table_name,
+                    result_meta=dict((round_meta_by_index or {}).get(index, {})),
+                )
         async with self._bet_lock:
             if len(history) <= prev_len:
                 return
@@ -1440,6 +1541,7 @@ class AutoBettor:
                 round_id=pending.round_id,
             )
             self._multi_live_pending = None
+            self._notify_bet_journal_changed()
             if self._bet_resolved_handler:
                 self._bet_resolved_handler()
             return
@@ -1513,6 +1615,7 @@ class AutoBettor:
             profit,
             self.session.state.session_profit,
         )
+        self._notify_bet_journal_changed()
         if self._bet_resolved_handler:
             try:
                 self._bet_resolved_handler()
@@ -1589,6 +1692,7 @@ class AutoBettor:
             profit,
             self.tie.session_pnl,
         )
+        self._notify_bet_journal_changed()
         if self._bet_resolved_handler:
             try:
                 self._bet_resolved_handler()
@@ -1939,6 +2043,7 @@ class AutoBettor:
                 )
             ):
                 continue
+            execution_mode = self._execution_mode_for_tab(authority.tab_id)
             allocations.append(
                 {
                     "tab_id": authority.tab_id,
@@ -1951,6 +2056,11 @@ class AutoBettor:
                     # In-memory ownership of this allocation.  The durable
                     # placement attempt journals the same epoch before click.
                     "run_epoch": self._run_epoch,
+                    # Rechecked immediately before a physical click below.
+                    "execution_mode": execution_mode,
+                    "placement_status": (
+                        "virtual" if execution_mode == "simulation" else "planned"
+                    ),
                 }
             )
         if not allocations:
@@ -2020,7 +2130,9 @@ class AutoBettor:
             return False
 
         physical_total = sum(
-            item["stake"] for item in allocations if item["stake"] > 0
+            item["stake"]
+            for item in allocations
+            if item["stake"] > 0 and item["execution_mode"] == "live"
         )
         exposure_after = physical_total + (
             float(logical_bet.stake or 0) if reentry else 0.0
@@ -2178,21 +2290,57 @@ class AutoBettor:
         self._betting_active += 1
         try:
             for side in (BetSide.PLAYER, BetSide.BANKER):
-                amount = side_totals[side]
+                side_allocations = [
+                    item for item in allocations if item["side"] == side.value
+                ]
+                mode_changed = False
+                for item in side_allocations:
+                    if self._execution_mode_for_tab(item["tab_id"]) != "live":
+                        if item["execution_mode"] != "simulation":
+                            mode_changed = True
+                        item["execution_mode"] = "simulation"
+                        item["placement_status"] = "virtual"
+                if mode_changed and allocation_saver is not None:
+                    allocation_saver(bet.id, allocations)
+                amount = sum(
+                    item["stake"]
+                    for item in side_allocations
+                    if item["execution_mode"] == "live"
+                )
                 if amount <= 0:
+                    if side_allocations:
+                        placed_sides.add(side)
                     continue
-                guard_ok, guard_reason = await self._real_bet_guard_allowed(
+                guard_ok, guard_reason = await self._multi_live_pre_click_guard(
+                    bet_id=bet.id,
                     stake=physical_total,
                     tab_ids=[str(item["tab_id"]) for item in allocations],
-                    bet_kind="main",
-                    current_bet_id=bet.id,
                 )
                 if not guard_ok:
+                    if guard_reason == "simulation_mode":
+                        for item in side_allocations:
+                            item["execution_mode"] = "simulation"
+                            item["placement_status"] = "virtual"
+                        if allocation_saver is not None:
+                            allocation_saver(bet.id, allocations)
+                        placed_sides.add(side)
+                        continue
                     if not placed_sides:
-                        self.store.cancel_bet_before_click(bet.id, guard_reason)
+                        if self._placement_expired_before_confirmation(bet.id):
+                            self.store.park_unresolved_bet(
+                                bet.id,
+                                reason="result_before_placement_confirmation",
+                            )
+                            logger.warning(
+                                "[MULTI_LIVE] Park bet #%s: result arrived before click",
+                                bet.id,
+                            )
+                        else:
+                            self.store.cancel_bet_before_click(bet.id, guard_reason)
                         self.session.clear_pending()
                         self._multi_live_pending = None
                         self._placing_key = None
+                        self._result_before_placement_bet_ids.discard(bet.id)
                         return False
                     self._block_durable_execution(
                         f"bet #{bet.id} bị guard chặn sau một phần allocation"
@@ -2216,21 +2364,37 @@ class AutoBettor:
                         amount,
                         timeout_sec=bet_timeout_sec,
                         click_scope=self._click_scope,
-                        pre_click_guard=lambda: self._real_bet_guard_allowed(
+                        pre_click_guard=lambda: self._multi_live_pre_click_guard(
+                            bet_id=bet.id,
                             stake=exposure_after,
-                            tab_ids=[
-                                str(item["tab_id"]) for item in allocations
-                            ],
-                            bet_kind="main",
-                            current_bet_id=bet.id,
+                            tab_ids=[str(item["tab_id"]) for item in side_allocations],
                         ),
                     )
                 except PreClickGuardRejected as exc:
+                    if str(exc) == "simulation_mode":
+                        for item in side_allocations:
+                            item["execution_mode"] = "simulation"
+                            item["placement_status"] = "virtual"
+                        if allocation_saver is not None:
+                            allocation_saver(bet.id, allocations)
+                        placed_sides.add(side)
+                        continue
                     if not placed_sides:
-                        self.store.cancel_bet_before_click(bet.id, str(exc))
+                        if self._placement_expired_before_confirmation(bet.id):
+                            self.store.park_unresolved_bet(
+                                bet.id,
+                                reason="result_before_placement_confirmation",
+                            )
+                            logger.warning(
+                                "[MULTI_LIVE] Park bet #%s: result arrived before click",
+                                bet.id,
+                            )
+                        else:
+                            self.store.cancel_bet_before_click(bet.id, str(exc))
                         self.session.clear_pending()
                         self._multi_live_pending = None
                         self._placing_key = None
+                        self._result_before_placement_bet_ids.discard(bet.id)
                         return False
                     self._block_durable_execution(
                         f"bet #{bet.id} bị chặn trước allocation tiếp theo"
@@ -2244,8 +2408,14 @@ class AutoBettor:
                     break
                 if placed:
                     placed_sides.add(side)
+                    for item in side_allocations:
+                        if item["execution_mode"] == "live":
+                            item["placement_status"] = "placed"
                 else:
                     cancelled_sides.add(side)
+                    for item in side_allocations:
+                        if item["execution_mode"] == "live":
+                            item["placement_status"] = "cancelled"
                     logger.warning(
                         "[MULTI_LIVE] Không đặt được %s %s",
                         side.value,
@@ -2285,6 +2455,11 @@ class AutoBettor:
             self._placing_key = None
             return False
 
+        actual_physical_total = sum(
+            item["stake"]
+            for item in kept
+            if item.get("execution_mode") == "live"
+        )
         distinct_sides = {item["side"] for item in kept}
         aggregate_side = (
             next(iter(distinct_sides))
@@ -2311,7 +2486,7 @@ class AutoBettor:
             game_shoe=round_ref.game_shoe,
             game_round=round_ref.game_round,
             status="placed",
-            execution_mode=("real" if physical_total > 0 else "virtual"),
+            execution_mode=("real" if actual_physical_total > 0 else "virtual"),
         )
         except Exception as exc:
             self._placing_key = None
@@ -2324,6 +2499,12 @@ class AutoBettor:
             self.session.clear_pending()
             self._placing_key = None
             return False
+        mode_writer = getattr(self.store, "set_bet_execution_mode", None)
+        if mode_writer is not None:
+            mode_writer(
+                bet.id,
+                "real" if actual_physical_total > 0 else "virtual",
+            )
         if not reentry:
             self.session.attach_bet_id(bet.id)
         if uncertain_sides and not placed_sides and not self._durable_block_reason:
@@ -2341,6 +2522,7 @@ class AutoBettor:
                 },
                 round_id=round_ref.round_id,
             )
+            self._notify_bet_journal_changed()
             self.session.clear_pending()
             self._multi_live_pending = None
             self._placed_round_keys.add(round_key)
@@ -2374,6 +2556,7 @@ class AutoBettor:
             "allocations": allocation_loader(bet.id) if allocation_loader else kept,
             "ready_to_resolve": not uncertain_sides,
         }
+        self._result_before_placement_bet_ids.discard(bet.id)
         self._placed_round_keys.add(round_key)
         self._same_round_status = {
             "code": "SAME_ROUND_REENTRY_ALLOWED" if reentry else "ATTEMPT_CONFIRMED",
@@ -2403,6 +2586,7 @@ class AutoBettor:
             },
             round_id=round_ref.round_id,
         )
+        self._notify_bet_journal_changed()
         return not uncertain_sides and not cancelled_sides
 
     async def _try_place_bet(

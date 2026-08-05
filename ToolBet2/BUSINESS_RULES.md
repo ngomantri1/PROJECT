@@ -24,7 +24,7 @@ Source: `src/pattern_analyzer.py:analyze_patterns()`, `get_active_signal()`.
 
 - Bootstrap nhiều ván ban đầu chỉ đồng bộ, không tạo cược.
 - Các source `gp-winner`, `road-info-round`, `marker-roads` được phép trigger arm cược chính. Ngoài ra, `operator-start` được phép arm ngay từ snapshot lịch sử đã nạp khi người dùng bấm Start.
-- Start không yêu cầu chờ thêm một kết quả mới. Nếu tab Live, bàn và lịch sử hiện tại hợp lệ, chiến lược được tính ngay và watcher chờ cửa cược. Nếu chưa có lịch sử/bàn thì runtime vẫn chạy và chờ dữ liệu.
+- Start không yêu cầu chờ thêm một kết quả mới. Nếu tab đang chạy, bàn và lịch sử hiện tại hợp lệ, chiến lược được tính ngay và watcher chờ cửa cược. Nếu chưa có lịch sử/bàn thì runtime vẫn chạy và chờ dữ liệu.
 - Tín hiệu được arm sau kết quả rồi chờ đúng cửa cược kế tiếp. Nếu history đã tăng quá length lúc arm thì hủy để tránh cược trễ.
 - Không đặt khi Auto tắt, limit đã hit, có pending, đang shuffle, UI không sống hoặc round đã được đặt.
 - Với aggregate multi-live, snapshot `risk tổng hợp` ngay sau khi có kết quả chỉ
@@ -46,8 +46,9 @@ Source: `src/auto_bettor.py:BET_TRIGGER_SOURCES`, `on_history_grew()`, `_arm_bet
   run limit.
 - `Tiền thắng` is confirmed net profit for the current explicit run of that
   tab: payout on a win, negative stake on a loss and zero on a Tie/push. It is
-  reset to zero for all enabled Live tabs on each `Bắt đầu chạy`; historical
-  SQLite P&L and persisted MoneyManager P&L are excluded.
+  reset to zero for the selected tab on each `Bắt đầu chạy`, regardless of
+  whether that run is Live or Mô phỏng; historical SQLite P&L and persisted
+  MoneyManager P&L are excluded.
 - Live tabs are independent. Reaching a tab's limit prevents only that tab
   from creating a new allocation; another eligible Live tab may continue.
 
@@ -57,10 +58,17 @@ Source: `src/auto_bettor.py:BET_TRIGGER_SOURCES`, `on_history_grew()`, `_arm_bet
   not a persisted betting preference. Start/Stop is the only command allowed to
   change this operator latch. An internal safety/configuration path may pause
   `auto_bet` without changing the latch or the visible “Dừng chạy” state.
-- The per-tab simulation/live setting controls whether an eligible signal can
-  reach the live executor. Simulation still evaluates strategy, stake, and
-  P&L, but never clicks a chip. Changing this checkbox is persisted immediately
-  to SQLite and is reloaded only when the workspace is installed again.
+- The per-tab simulation/live setting controls only physical execution. A
+  running tab always keeps one MoneyManager, stake level, P&L, statistics and
+  betting history. Simulation writes a virtual allocation with the real stake,
+  waits for the authoritative result and advances that same MoneyManager, but
+  never clicks a chip. Live uses that identical calculation path and clicks a
+  chip only after the final mode check. Changing this checkbox is persisted
+  immediately to SQLite; it never resets or stops the active run.
+- If mode changes to Simulation while a Live allocation is waiting for the
+  betting window, the final pre-click check converts that allocation to virtual.
+  A chip click already begun or completed is never reversed and is only
+  reconciled against its result.
 - The durable simulation/live setting is operator-owned. Browser, UI, license,
   strategy or executor warnings may wait, recover or reject the current click,
   but must never rewrite a Live tab to Simulation. A transient unhealthy UI

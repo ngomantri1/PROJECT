@@ -405,7 +405,7 @@
     const snapshot = window.__toolbetUiSnapshot;
     const data = result.data || {};
     snapshot.tabs = (snapshot.tabs || []).map(tab => tab.id === tabId
-      ? { ...tab, history: data.items || [], history_pagination: { page: data.page, page_size: data.page_size, total: data.total, page_count: data.page_count } }
+      ? { ...tab, bet_history: data.items || [], bet_history_pagination: { page: data.page, page_size: data.page_size, total: data.total, page_count: data.page_count } }
       : tab);
     snapshot.state.strategy_tabs.tabs = clone(snapshot.tabs);
     render(snapshot, window.__toolbetUiAssets || {});
@@ -432,6 +432,103 @@
     });
     if (!road.childElementCount) road.append(el("span", "tbv2-empty", "Chưa có kết quả"));
     return road;
+  };
+
+  const winLossLabel = outcome => ({
+    win: "Thắng", loss: "Thua", push: "Hòa",
+  }[outcome] || "Chưa rõ");
+
+  const renderWinLossRoad = outcomes => {
+    const road = el("div", "tbv2-win-loss-road");
+    const lastIndex = (outcomes || []).length - 1;
+    (outcomes || []).forEach((item, index) => {
+      const outcome = item.outcome || "unknown";
+      const chip = el(
+        "span",
+        `tbv2-win-loss ${outcome}${index === lastIndex ? " tbv2-win-loss-latest" : ""}`,
+        winLossLabel(outcome)
+      );
+      const resultText = outcome === "win" ? "Lời" : (outcome === "loss" ? "Lỗ" : "Hòa");
+      const roundText = item.round == null ? "" : ` · Ván ${item.round}`;
+      chip.title = `${winLossLabel(outcome)} · ${sideLabel(item.side)} · Cược ${money(item.stake)} · ${resultText} ${money(item.profit)}${roundText}`;
+      road.append(chip);
+    });
+    if (!road.childElementCount) road.append(el("span", "tbv2-empty", "Chưa có cược đã chốt"));
+    return road;
+  };
+
+  const betHistoryStatus = row => {
+    if (row.outcome === "win") return { label: "Thắng", kind: "win" };
+    if (row.outcome === "loss") return { label: "Thua", kind: "loss" };
+    if (row.outcome === "push") return { label: "Hòa", kind: "push" };
+    return ({
+      planned: { label: "Đang chờ", kind: "pending" },
+      placing: { label: "Đang đặt", kind: "pending" },
+      placed: { label: "Đang chờ", kind: "pending" },
+      virtual: { label: "Đang chờ", kind: "pending" },
+      uncertain: { label: "Không chắc chắn", kind: "uncertain" },
+      quarantined: { label: "Không chắc chắn", kind: "uncertain" },
+      deferred: { label: "Bỏ qua", kind: "skipped" },
+      cancelled: { label: "Đã hủy", kind: "skipped" },
+    }[row.placement_status] || { label: "Chưa rõ", kind: "unknown" });
+  };
+
+  const betHistoryTime = value => {
+    const date = new Date(value || "");
+    if (Number.isNaN(date.getTime())) return "—";
+    return date.toLocaleTimeString("vi-VN", {
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+  };
+
+  const betHistoryRound = row => {
+    const table = String(row.table_name || "").replace(/^Baccarat\s+/i, "");
+    if (table && row.round != null) return `${table}·${row.round}`;
+    if (row.round != null) return `Ván ${row.round}`;
+    return table || "—";
+  };
+
+  const renderBetHistoryRows = (rows, previousRows = null) => {
+    const fragment = document.createDocumentFragment();
+    (rows || []).forEach(row => {
+      const status = betHistoryStatus(row);
+      const tr = el("tr", `tbv2-bet-row ${status.kind}`);
+      const betId = String(row.bet_id || "");
+      const rowSignature = JSON.stringify([
+        row.placement_status, row.outcome, row.profit, row.execution_mode,
+      ]);
+      tr.dataset.betId = betId;
+      tr.dataset.betSignature = rowSignature;
+      if (previousRows) {
+        const previousSignature = previousRows.get(betId);
+        if (!previousSignature) tr.classList.add("tbv2-bet-row-new");
+        else if (previousSignature !== rowSignature) tr.classList.add("tbv2-bet-row-updated");
+      }
+      const details = [
+        `Mã journal #${row.bet_id || "—"}`,
+        row.shoe == null ? "" : `Shoe ${row.shoe}`,
+        row.stake_index == null ? "" : `Mức ${Number(row.stake_index) + 1}`,
+        row.signal_id ? `Tín hiệu ${row.signal_id}` : "",
+        row.reason || "",
+      ].filter(Boolean);
+      tr.title = details.join(" · ");
+      tr.append(el("td", "tbv2-bet-time", betHistoryTime(row.placed_at)));
+      tr.append(el("td", "tbv2-bet-round", betHistoryRound(row)));
+      tr.append(el("td", `tbv2-bet-side tbv2-result-${row.side || "unknown"}`, sideLabel(row.side)));
+      const stake = el("td", "tbv2-bet-stake");
+      stake.append(el("strong", "", money(row.stake)));
+      stake.append(el("span", `tbv2-bet-mode ${row.execution_mode === "virtual" ? "virtual" : "live"}`, row.execution_mode === "virtual" ? "Mô phỏng" : "Live"));
+      tr.append(stake);
+      tr.append(el("td", `tbv2-bet-outcome ${status.kind}`, status.label));
+      const pnl = el("td", "tbv2-bet-pnl", row.profit == null ? "—" : money(row.profit));
+      if (Number(row.profit) < 0) pnl.classList.add("negative");
+      tr.append(pnl); fragment.append(tr);
+    });
+    if (!fragment.childNodes.length) {
+      const tr = el("tr"); const td = el("td", "tbv2-empty", "Chưa có cược trong phiên này");
+      td.colSpan = 6; tr.append(td); fragment.append(tr);
+    }
+    return fragment;
   };
 
   const render = (snapshot, assets) => {
@@ -691,6 +788,11 @@
     toggle.disabled = false;
     const lifecycleFeedback = el("span", "tbv2-lifecycle-feedback");
     lifecycleFeedback.dataset.bind = "lifecycle-message";
+    lifecycleFeedback.textContent = runEnabled
+      ? (state.click_in_progress
+        ? "Đang xử lý cược trước; cấu hình mới áp dụng từ lượt kế tiếp."
+        : `Chiến lược này đang chạy. ${(snapshot.tabs || []).filter(tab => ((tab.lifecycle || {}).mode || tab.mode) === "live").length} tab ở chế độ live; tab mô phỏng không click chip.`)
+      : "Chiến lược này đang dừng.";
     toggle.addEventListener("click", () => lifecycleCommand(
       "set_run_state",
       { tab_id: selected.id, running: !runEnabled },
@@ -837,6 +939,12 @@
       });
     statusCard.append(statusGrid); scroll.append(statusCard);
 
+    const winLossCard = el("section", "tbv2-card");
+    const winLossRoad = renderWinLossRoad(selected.win_loss_history || []);
+    winLossRoad.dataset.bind = "win-loss-history";
+    winLossCard.append(cardTitle("Chuỗi thắng thua"), winLossRoad);
+    scroll.append(winLossCard);
+
     const resetStatistics = el("button", "tbv2-stats-reset", "↻");
     resetStatistics.type = "button";
     resetStatistics.title = "Reset thống kê";
@@ -846,7 +954,7 @@
     ));
     const statsCard = el("section", "tbv2-card"); statsCard.append(cardTitle("Thống kê", resetStatistics));
     const stats = el("div", "tbv2-stat-grid");
-    [["Thắng/Thua/Hòa", `${status.wins ?? 0}/${status.losses ?? 0}/${status.pushes ?? 0}`, "stats-results"], ["Thắng/Thua liên tiếp", `${status.max_win_streak ?? 0}/${status.max_loss_streak ?? 0}`, "stats-streaks"], ["Tổng cược hợp lệ", status.valid_bets ?? 0, "stats-valid-bets"], ["Tín hiệu", status.signals, "stats-signals"], ["Cược ảo", status.virtual_bets, "stats-virtual-bets"], ["Tiền thắng", money(tabProfit), "stats-pnl"]]
+    [["Thắng/Thua/Hòa", `${status.wins ?? 0}/${status.losses ?? 0}/${status.pushes ?? 0}`, "stats-results"], ["Thắng/Thua liên tiếp", `${status.max_win_streak ?? 0}/${status.max_loss_streak ?? 0}`, "stats-streaks"], ["Tổng cược hợp lệ", status.valid_bets ?? 0, "stats-valid-bets"], ["Tín hiệu", status.signals, "stats-signals"], ["Cược ảo", status.virtual_bets, "stats-virtual-bets"], ["Tiền thắng", money(status.statistics_profit ?? 0), "stats-pnl"]]
       .forEach(([label, value, key]) => {
         const item = el("div", "tbv2-stat");
         const strong = el("strong", number(value) < 0 ? "negative" : "", value ?? 0);
@@ -867,28 +975,39 @@
     scroll.append(roadCard, statsCard);
     const historyCard = el("section", "tbv2-card"); historyCard.append(cardTitle("Lịch sử cược"));
     const table = el("table", "tbv2-history-table");
-    const thead = el("thead"); const trh = el("tr"); ["Ván", "W/L/H", "Cược", "P&L"].forEach(value => trh.append(el("th", "", value))); thead.append(trh); table.append(thead);
-    const tbody = el("tbody"); tbody.dataset.bind = "simulation-history-body";
-    (selected.history || []).forEach(row => {
-      const tr = el("tr"); [row.history_size, `${row.wins}/${row.losses}/${row.pushes}`, row.virtual_bets, money(row.pnl)].forEach(value => tr.append(el("td", "", value))); tbody.append(tr);
-    });
-    if (!tbody.childElementCount) { const tr = el("tr"); const td = el("td", "tbv2-empty", "Chưa có snapshot mô phỏng"); td.colSpan = 4; tr.append(td); tbody.append(tr); }
+    const thead = el("thead"); const trh = el("tr"); ["Giờ", "Ván", "Cửa", "Cược", "Kết quả", "P&L"].forEach(value => trh.append(el("th", "", value))); thead.append(trh); table.append(thead);
+    const tbody = el("tbody"); tbody.dataset.bind = "bet-history-body";
+    tbody.append(renderBetHistoryRows(selected.bet_history || []));
     table.append(tbody); historyCard.append(table);
-    const pagination = selected.history_pagination || { page: 1, page_size: 10, total: (selected.history || []).length, page_count: 1 };
+    const pagination = selected.bet_history_pagination || { page: 1, page_size: 10, total: (selected.bet_history || []).length, page_count: 1 };
     const storedPageSize = readHistoryPageSize();
     const preferredPageSize = [10, 20, 50].includes(storedPageSize)
       ? storedPageSize
       : (pagination.page_size || 10);
-    const pager = el("div", "tbv2-controls");
+    const pager = el("div", "tbv2-controls tbv2-history-pager");
+    pager.dataset.bind = "bet-history-pager";
     const pageSize = select("tbv2-history-page-size", [10, 20, 50].map(value => ({ id: String(value), label: `${value}/trang` })), String(preferredPageSize));
     const previous = el("button", "tbv2-secondary", "‹"); previous.type = "button"; previous.disabled = pagination.page <= 1;
     const pageLabel = el("span", "tbv2-message", `Trang ${pagination.page}/${pagination.page_count} · ${pagination.total} cược`);
     const next = el("button", "tbv2-secondary", "›"); next.type = "button"; next.disabled = pagination.page >= pagination.page_count;
+    previous.dataset.bind = "bet-history-prev";
+    previous.dataset.page = String(pagination.page);
+    pageLabel.dataset.bind = "bet-history-page-label";
+    next.dataset.bind = "bet-history-next";
+    next.dataset.page = String(pagination.page);
+    const newer = el("button", "tbv2-history-newer", "Có cược mới · Xem mới");
+    newer.type = "button";
+    newer.hidden = true;
+    newer.dataset.bind = "bet-history-newer";
     const requestPage = page => loadHistoryPage(selected.id, page, Number(pageSize.value));
     pageSize.addEventListener("change", () => { saveHistoryPageSize(pageSize.value); requestPage(1); });
-    previous.addEventListener("click", () => requestPage(pagination.page - 1));
-    next.addEventListener("click", () => requestPage(pagination.page + 1));
-    pager.append(pageSize, previous, pageLabel, next); historyCard.append(pager); scroll.append(historyCard);
+    previous.addEventListener("click", () => requestPage(Number(previous.dataset.page || 1) - 1));
+    next.addEventListener("click", () => requestPage(Number(next.dataset.page || 1) + 1));
+    newer.addEventListener("click", () => requestPage(1));
+    pager.append(previous, pageLabel, next, pageSize); historyCard.append(pager, newer); scroll.append(historyCard);
+    window.__toolbetUiLocal.betHistoryPage = pagination.page;
+    window.__toolbetUiLocal.betHistoryTotal = pagination.total;
+    window.__toolbetUiLocal.betHistoryHasNewer = false;
     if (preferredPageSize !== pagination.page_size) {
       queueMicrotask(() => loadHistoryPage(selected.id, 1, preferredPageSize));
     }
@@ -945,8 +1064,11 @@
       cached: historyView.cached,
       dots: displayedDots,
     });
-    window.__toolbetUiLocal.simulationHistorySignature = JSON.stringify(
-      selected.history || []
+    window.__toolbetUiLocal.winLossHistorySignature = JSON.stringify(
+      selected.win_loss_history || []
+    );
+    window.__toolbetUiLocal.betHistorySignature = JSON.stringify(
+      selected.bet_history || []
     );
     return true;
   };
@@ -994,7 +1116,9 @@
       root,
       "lifecycle-message",
       runEnabled
-        ? `Chiến lược này đang chạy. ${liveTabs} tab ở chế độ live; tab mô phỏng không click chip.`
+        ? (state.click_in_progress
+          ? "Đang xử lý cược trước; cấu hình mới áp dụng từ lượt kế tiếp."
+          : `Chiến lược này đang chạy. ${liveTabs} tab ở chế độ live; tab mô phỏng không click chip.`)
         : "Chiến lược này đang dừng."
     );
     const liveView = liveStatusView(state);
@@ -1040,7 +1164,7 @@
       "stats-valid-bets": status.valid_bets ?? ((status.wins ?? 0) + (status.losses ?? 0)),
       "stats-signals": status.signals ?? 0,
       "stats-virtual-bets": status.virtual_bets ?? 0,
-      "stats-pnl": money(tabProfit),
+      "stats-pnl": money(status.statistics_profit ?? 0),
     };
     Object.entries(statValues).forEach(([key, value]) => {
       const node = setBoundText(root, key, value);
@@ -1059,6 +1183,15 @@
       }
       window.__toolbetUiLocal.roadSignature = roadSignature;
     }
+    const winLossHistorySignature = JSON.stringify(selected.win_loss_history || []);
+    if (winLossHistorySignature !== window.__toolbetUiLocal.winLossHistorySignature) {
+      const road = root.querySelector('[data-bind="win-loss-history"]');
+      if (road) {
+        const replacement = renderWinLossRoad(selected.win_loss_history || []);
+        road.replaceChildren(...replacement.childNodes);
+      }
+      window.__toolbetUiLocal.winLossHistorySignature = winLossHistorySignature;
+    }
     const roadCacheStatus = setBoundText(
       root,
       "road-cache-status",
@@ -1066,41 +1199,53 @@
     );
     if (roadCacheStatus) roadCacheStatus.hidden = !historyView.cached;
 
-    const simulationHistorySignature = JSON.stringify(
-      selected.history || []
+    const pagination = selected.bet_history_pagination || {
+      page: 1,
+      page_size: 10,
+      total: (selected.bet_history || []).length,
+      page_count: 1,
+    };
+    const displayedPage = Number(window.__toolbetUiLocal.betHistoryPage || pagination.page || 1);
+    const displayedTotal = Number(window.__toolbetUiLocal.betHistoryTotal || 0);
+    const hasNewerHistory = displayedPage > 1 && (
+      Number(pagination.total || 0) > displayedTotal
+      || !!window.__toolbetUiLocal.betHistoryHasNewer
     );
-    const tbody = root.querySelector('[data-bind="simulation-history-body"]');
+    if (hasNewerHistory) window.__toolbetUiLocal.betHistoryHasNewer = true;
+    const pagerPage = hasNewerHistory ? displayedPage : pagination.page;
+    const pageLabel = root.querySelector('[data-bind="bet-history-page-label"]');
+    if (pageLabel) pageLabel.textContent = `Trang ${pagerPage}/${pagination.page_count} · ${pagination.total} cược`;
+    const previous = root.querySelector('[data-bind="bet-history-prev"]');
+    if (previous) {
+      previous.disabled = pagerPage <= 1;
+      previous.dataset.page = String(pagerPage);
+    }
+    const next = root.querySelector('[data-bind="bet-history-next"]');
+    if (next) {
+      next.disabled = pagerPage >= pagination.page_count;
+      next.dataset.page = String(pagerPage);
+    }
+    const newer = root.querySelector('[data-bind="bet-history-newer"]');
+    if (newer) newer.hidden = !hasNewerHistory;
+
+    const betHistorySignature = JSON.stringify(selected.bet_history || []);
+    const tbody = root.querySelector('[data-bind="bet-history-body"]');
     if (
       tbody
-      && simulationHistorySignature
-        !== window.__toolbetUiLocal.simulationHistorySignature
+      && !hasNewerHistory
+      && betHistorySignature !== window.__toolbetUiLocal.betHistorySignature
     ) {
-      const fragment = document.createDocumentFragment();
-      (selected.history || []).slice(-12).reverse().forEach(row => {
-        const tr = el("tr");
-        [
-          row.history_size,
-          `${row.wins}/${row.losses}/${row.pushes}`,
-          row.virtual_bets,
-          money(row.pnl),
-        ].forEach(value => tr.append(el("td", "", value)));
-        fragment.append(tr);
-      });
-      if (!fragment.childNodes.length) {
-        const tr = el("tr");
-        const td = el(
-          "td",
-          "tbv2-empty",
-          "Chưa có snapshot mô phỏng"
-        );
-        td.colSpan = 4;
-        tr.append(td);
-        fragment.append(tr);
-      }
-      tbody.replaceChildren(fragment);
-      window.__toolbetUiLocal.simulationHistorySignature =
-        simulationHistorySignature;
+      const previousRows = new Map(
+        Array.from(tbody.querySelectorAll("tr[data-bet-id]")).map(node => [
+          node.dataset.betId,
+          node.dataset.betSignature || "",
+        ])
+      );
+      tbody.replaceChildren(renderBetHistoryRows(selected.bet_history || [], previousRows));
+      window.__toolbetUiLocal.betHistorySignature = betHistorySignature;
+      window.__toolbetUiLocal.betHistoryPage = pagination.page;
     }
+    window.__toolbetUiLocal.betHistoryTotal = pagination.total;
     return true;
   };
 

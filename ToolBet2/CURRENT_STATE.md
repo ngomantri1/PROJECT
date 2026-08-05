@@ -1,5 +1,20 @@
 # Current Project State
 
+## Mô phỏng is execution-only for an active run — 2026-08-05
+
+- A running tab now retains one MoneyManager, stake level, run P&L, statistics
+  and journal whether its persisted mode is `live` or `simulation`.
+- Changing the Mô phỏng checkbox saves `mode=simulation` immediately to SQLite
+  but does not stop, reset or discard the active run. The next allocation is
+  recorded as `virtual` with its full calculated stake, then settles against
+  the authoritative table result exactly like Live.
+- The executor re-reads the tab mode immediately before chip click. A waiting
+  Live allocation therefore becomes virtual if the operator ticks Mô phỏng;
+  an already-started/completed physical click is retained only for safe result
+  reconciliation.
+- Focused live/lifecycle/journal/UI coverage passes 83 tests. No casino page
+  or physical-money click was used for this change.
+
 ## Per-tab live run limits and “Tiền thắng” — 2026-08-04
 
 - Each explicit `Bắt đầu chạy` resets process-local net profit for every

@@ -202,7 +202,7 @@ class StrategyTabStoreTests(unittest.TestCase):
 
         self.assertEqual(1, len(self.store.history_for_tabs(["one"])["one"]))
 
-    def test_statistics_reset_baseline_is_durable_and_tab_scoped(self):
+    def test_statistics_reset_anchor_is_durable_and_tab_scoped(self):
         self.store.save_config(
             StrategyTabsConfig(
                 selected_tab_id="one",
@@ -226,22 +226,14 @@ class StrategyTabStoreTests(unittest.TestCase):
         visible = self.store.apply_statistics_baseline(status, baselines["one"])
 
         self.assertEqual({}, baselines["two"])
-        self.assertEqual(0, visible["signals"])
-        self.assertEqual(0, visible["virtual_bets"])
-        self.assertEqual(0, visible["wins"])
-        self.assertEqual(0, visible["losses"])
-        self.assertEqual(0, visible["pushes"])
-        self.assertEqual(0, visible["valid_bets"])
-        self.assertEqual(0, visible["max_win_streak"])
-        self.assertEqual(0, visible["max_loss_streak"])
+        self.assertEqual(0, baselines["one"]["reset_after_allocation_id"])
+        self.assertEqual(0, baselines["one"]["reset_after_signal_id"])
+        self.assertEqual(9, visible["signals"])
+        self.assertEqual(7, visible["virtual_bets"])
+        self.assertEqual(4, visible["wins"])
+        self.assertEqual(2, visible["losses"])
+        self.assertEqual(1, visible["pushes"])
         self.assertEqual({"side": "player"}, visible["current"])
-        advanced = self.store.apply_statistics_baseline(
-            {**status, "signals": 11, "virtual_bets": 9, "wins": 5},
-            baselines["one"],
-        )
-        self.assertEqual(2, advanced["signals"])
-        self.assertEqual(2, advanced["virtual_bets"])
-        self.assertEqual(1, advanced["wins"])
 
     def test_history_page_returns_newest_rows_first_with_bounded_page_size(self):
         self.store.save_config(StrategyTabsConfig(tabs=[SimulationTabConfig(id="one")]))

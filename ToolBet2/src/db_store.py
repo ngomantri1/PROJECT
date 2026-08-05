@@ -16,6 +16,7 @@ from src.database import (
     EventRecord,
     HallRecord,
     RoundRecord,
+    StrategySignalRecord,
     TableRecord,
 )
 from src.models import BetSide
@@ -654,8 +655,13 @@ class GameDataStore:
                 session.add(BetPlacementAttemptAllocationRecord(
                     attempt_id=attempt.id, tab_id=str(item["tab_id"]), side=str(item["side"]),
                     requested_stake=float(item.get("stake") or 0),
-                    execution_mode="virtual" if float(item.get("stake") or 0) <= 0 else "real",
-                    placement_status="planned",
+                    execution_mode=(
+                        "virtual"
+                        if item.get("execution_mode") == "simulation"
+                        or float(item.get("stake") or 0) <= 0
+                        else "real"
+                    ),
+                    placement_status=str(item.get("placement_status") or "planned"),
                 ))
             session.commit(); session.refresh(attempt)
             return attempt
@@ -1050,6 +1056,17 @@ class GameDataStore:
         finally:
             session.close()
 
+    def set_bet_execution_mode(self, bet_id: int, execution_mode: str) -> None:
+        """Keep the journal truthful when a pending Live allocation turns virtual."""
+        session = self.session_factory()
+        try:
+            bet = session.get(BetRecord, bet_id)
+            if bet is not None:
+                bet.execution_mode = "real" if execution_mode == "real" else "virtual"
+                session.commit()
+        finally:
+            session.close()
+
     def resolve_bet_allocations(
         self, bet_id: int, allocations: list[dict[str, Any]]
     ) -> None:
@@ -1146,6 +1163,305 @@ class GameDataStore:
                 }
                 for row in rows
             ]
+        finally:
+            session.close()
+
+    def load_tab_run_outcomes(
+        self, tab_id: str, run_epoch: str, *, limit: int = 28
+    ) -> list[dict[str, Any]]:
+        """Return only settled outcomes belonging to one tab's operator run.
+
+        ``bet_allocations`` is the per-tab settlement ledger.  Its matching
+        placement attempt supplies the run epoch, so a result from an older
+        Start cannot appear in the current run's visual history.
+        """
+        if not tab_id or not run_epoch:
+            return []
+        session = self.session_factory()
+        try:
+            rows = session.execute(
+                select(
+                    BetAllocationRecord,
+                    BetRecord,
+                    BetPlacementAttemptAllocationRecord.execution_mode,
+                )
+                .join(BetRecord, BetRecord.id == BetAllocationRecord.bet_id)
+                .join(
+                    BetPlacementAttemptRecord,
+                    BetPlacementAttemptRecord.bet_id == BetAllocationRecord.bet_id,
+                )
+                .join(
+                    BetPlacementAttemptAllocationRecord,
+                    (BetPlacementAttemptAllocationRecord.attempt_id
+                     == BetPlacementAttemptRecord.id)
+                    & (BetPlacementAttemptAllocationRecord.tab_id
+                       == BetAllocationRecord.tab_id)
+                    & (BetPlacementAttemptAllocationRecord.side
+                       == BetAllocationRecord.side),
+                )
+                .where(
+                    BetAllocationRecord.tab_id == str(tab_id),
+                    BetPlacementAttemptRecord.run_epoch == str(run_epoch),
+                    BetAllocationRecord.placement_status.in_(("placed", "virtual")),
+                    BetAllocationRecord.outcome.in_(("win", "loss", "push")),
+                )
+                .order_by(
+                    BetRecord.resolved_at.desc(),
+                    BetAllocationRecord.updated_at.desc(),
+                    BetAllocationRecord.id.desc(),
+                )
+                .limit(max(1, min(100, int(limit))))
+            ).all()
+            return [
+                {
+                    "outcome": allocation.outcome,
+                    "side": allocation.side,
+                    "stake": float(allocation.stake or 0),
+                    "profit": float(allocation.profit or 0),
+                    "execution_mode": execution_mode or "live",
+                    "round": bet.game_round,
+                }
+                for allocation, bet, execution_mode in reversed(rows)
+            ]
+        finally:
+            session.close()
+
+    def load_tab_run_bet_history(
+        self,
+        tab_id: str,
+        run_epoch: str,
+        *,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> dict[str, Any]:
+        """Load the durable per-allocation bet ledger for one tab/run.
+
+        A logical ``BetRecord`` can contain allocations belonging to different
+        strategy tabs.  The UI history must therefore be based on allocation
+        rows, not the aggregate bet row.  Placement attempt rows attach the
+        allocation to the operator run and retain Live versus virtual mode.
+        """
+        page_size = page_size if page_size in (10, 20, 50) else 10
+        page = max(1, int(page))
+        if not tab_id or not run_epoch:
+            return {"items": [], "page": 1, "page_size": page_size, "total": 0, "page_count": 1}
+
+        session = self.session_factory()
+        try:
+            base = (
+                select(
+                    BetAllocationRecord,
+                    BetRecord,
+                    BetPlacementAttemptAllocationRecord.execution_mode,
+                )
+                .join(BetRecord, BetRecord.id == BetAllocationRecord.bet_id)
+                .join(
+                    BetPlacementAttemptRecord,
+                    BetPlacementAttemptRecord.bet_id == BetAllocationRecord.bet_id,
+                )
+                .join(
+                    BetPlacementAttemptAllocationRecord,
+                    (BetPlacementAttemptAllocationRecord.attempt_id
+                     == BetPlacementAttemptRecord.id)
+                    & (BetPlacementAttemptAllocationRecord.tab_id
+                       == BetAllocationRecord.tab_id)
+                    & (BetPlacementAttemptAllocationRecord.side
+                       == BetAllocationRecord.side),
+                )
+                .where(
+                    BetAllocationRecord.tab_id == str(tab_id),
+                    BetPlacementAttemptRecord.run_epoch == str(run_epoch),
+                )
+            )
+            total = session.scalar(
+                select(func.count())
+                .select_from(BetAllocationRecord)
+                .join(BetRecord, BetRecord.id == BetAllocationRecord.bet_id)
+                .join(
+                    BetPlacementAttemptRecord,
+                    BetPlacementAttemptRecord.bet_id == BetAllocationRecord.bet_id,
+                )
+                .join(
+                    BetPlacementAttemptAllocationRecord,
+                    (BetPlacementAttemptAllocationRecord.attempt_id
+                     == BetPlacementAttemptRecord.id)
+                    & (BetPlacementAttemptAllocationRecord.tab_id
+                       == BetAllocationRecord.tab_id)
+                    & (BetPlacementAttemptAllocationRecord.side
+                       == BetAllocationRecord.side),
+                )
+                .where(
+                    BetAllocationRecord.tab_id == str(tab_id),
+                    BetPlacementAttemptRecord.run_epoch == str(run_epoch),
+                )
+            ) or 0
+            page_count = max(1, (int(total) + page_size - 1) // page_size)
+            page = min(page, page_count)
+            rows = session.execute(
+                base.order_by(
+                    BetRecord.created_at.desc(), BetAllocationRecord.id.desc()
+                ).offset((page - 1) * page_size).limit(page_size)
+            ).all()
+            return {
+                "items": [
+                    {
+                        "bet_id": allocation.bet_id,
+                        "placed_at": (bet.placed_at or bet.created_at).isoformat(
+                            timespec="seconds"
+                        ),
+                        "table_name": bet.table_name or "",
+                        "shoe": bet.game_shoe,
+                        "round": bet.game_round,
+                        "side": allocation.side,
+                        "stake": float(allocation.stake or 0),
+                        "execution_mode": execution_mode or "real",
+                        "placement_status": allocation.placement_status,
+                        "outcome": allocation.outcome,
+                        "profit": (
+                            float(allocation.profit)
+                            if allocation.profit is not None else None
+                        ),
+                        "reason": allocation.reason or "",
+                        "signal_id": allocation.signal_id or "",
+                        "stake_index": allocation.stake_index,
+                    }
+                    for allocation, bet, execution_mode in rows
+                ],
+                "page": page,
+                "page_size": page_size,
+                "total": int(total),
+                "page_count": page_count,
+            }
+        finally:
+            session.close()
+
+    def record_strategy_signal(
+        self,
+        *,
+        tab_id: str,
+        run_epoch: str,
+        table_name: str,
+        history_size: int,
+        side: str,
+        reason: str,
+    ) -> bool:
+        """Persist one eligible signal once per tab/run/table result position."""
+        if not tab_id or not run_epoch or history_size <= 0:
+            return False
+        session = self.session_factory()
+        try:
+            existing = session.scalar(
+                select(StrategySignalRecord.id).where(
+                    StrategySignalRecord.tab_id == str(tab_id),
+                    StrategySignalRecord.run_epoch == str(run_epoch),
+                    StrategySignalRecord.table_name == str(table_name or ""),
+                    StrategySignalRecord.history_size == int(history_size),
+                )
+            )
+            if existing is not None:
+                return False
+            session.add(StrategySignalRecord(
+                tab_id=str(tab_id),
+                run_epoch=str(run_epoch),
+                table_name=str(table_name or ""),
+                history_size=int(history_size),
+                side=str(side or ""),
+                reason=str(reason or ""),
+                created_at=datetime.now(),
+            ))
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def load_tab_journal_statistics(
+        self,
+        tab_id: str,
+        *,
+        reset_after_allocation_id: int = 0,
+        reset_after_signal_id: int = 0,
+    ) -> dict[str, int | float]:
+        """Aggregate settled, durable allocations for one strategy tab.
+
+        This deliberately does not replay the table history.  Pending,
+        deferred, uncertain and cancelled allocations remain visible in the
+        ledger but cannot alter strategy statistics.
+        """
+        if not tab_id:
+            return {
+                "signals": 0, "virtual_bets": 0, "wins": 0, "losses": 0,
+                "pushes": 0, "valid_bets": 0, "max_win_streak": 0,
+                "max_loss_streak": 0, "statistics_profit": 0.0,
+            }
+        session = self.session_factory()
+        try:
+            rows = session.execute(
+                select(
+                    BetAllocationRecord.outcome,
+                    BetPlacementAttemptAllocationRecord.execution_mode,
+                    BetAllocationRecord.profit,
+                )
+                .join(BetRecord, BetRecord.id == BetAllocationRecord.bet_id)
+                .join(
+                    BetPlacementAttemptRecord,
+                    BetPlacementAttemptRecord.bet_id == BetAllocationRecord.bet_id,
+                )
+                .join(
+                    BetPlacementAttemptAllocationRecord,
+                    (BetPlacementAttemptAllocationRecord.attempt_id
+                     == BetPlacementAttemptRecord.id)
+                    & (BetPlacementAttemptAllocationRecord.tab_id
+                       == BetAllocationRecord.tab_id)
+                    & (BetPlacementAttemptAllocationRecord.side
+                       == BetAllocationRecord.side),
+                )
+                .where(
+                    BetAllocationRecord.tab_id == str(tab_id),
+                    BetAllocationRecord.id > max(0, int(reset_after_allocation_id)),
+                    BetAllocationRecord.placement_status.in_(("placed", "virtual")),
+                    BetAllocationRecord.outcome.in_(("win", "loss", "push")),
+                )
+                .order_by(
+                    BetRecord.resolved_at.asc(), BetAllocationRecord.id.asc()
+                )
+            ).all()
+            signals = session.scalar(
+                select(func.count(StrategySignalRecord.id)).where(
+                    StrategySignalRecord.tab_id == str(tab_id),
+                    StrategySignalRecord.id > max(0, int(reset_after_signal_id)),
+                )
+            ) or 0
+            wins = sum(outcome == "win" for outcome, _mode, _profit in rows)
+            losses = sum(outcome == "loss" for outcome, _mode, _profit in rows)
+            pushes = sum(outcome == "push" for outcome, _mode, _profit in rows)
+            virtual_bets = sum(mode == "virtual" for _outcome, mode, _profit in rows)
+            statistics_profit = sum(
+                float(profit or 0) for _outcome, _mode, profit in rows
+            )
+            current_win = current_loss = max_win = max_loss = 0
+            for outcome, _mode, _profit in rows:
+                if outcome == "win":
+                    current_win += 1
+                    current_loss = 0
+                elif outcome == "loss":
+                    current_loss += 1
+                    current_win = 0
+                max_win = max(max_win, current_win)
+                max_loss = max(max_loss, current_loss)
+            return {
+                "signals": int(signals),
+                "virtual_bets": int(virtual_bets),
+                "wins": int(wins),
+                "losses": int(losses),
+                "pushes": int(pushes),
+                "valid_bets": int(wins + losses),
+                "max_win_streak": int(max_win),
+                "max_loss_streak": int(max_loss),
+                "statistics_profit": float(statistics_profit),
+            }
         finally:
             session.close()
 

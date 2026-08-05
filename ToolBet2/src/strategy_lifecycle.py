@@ -64,8 +64,7 @@ class TabAuthorityDecision:
     @property
     def may_participate(self) -> bool:
         return (
-            self.mode == TabLifecycleMode.LIVE
-            and self.strategy.wants_bet
+            self.strategy.wants_bet
             and self.risk.allowed
             and self.risk.execution_mode
             in (ExecutionMode.REAL, ExecutionMode.VIRTUAL)
