@@ -1020,6 +1020,9 @@ class GameDataStore:
                 row.stake_index = int(item.get("stake_index") or 0)
                 row.signal_id = str(item.get("signal_id") or "")
                 row.reason = str(item.get("reason") or "")
+                row.bet_when_remaining_seconds = max(
+                    3, int(item.get("bet_when_remaining_seconds") or 10)
+                )
                 row.placement_status = str(
                     item.get("placement_status")
                     or ("virtual" if row.stake <= 0 else "planned")
@@ -1157,6 +1160,7 @@ class GameDataStore:
                     "stake_index": row.stake_index,
                     "signal_id": row.signal_id,
                     "reason": row.reason or "",
+                    "bet_when_remaining_seconds": row.bet_when_remaining_seconds,
                     "placement_status": row.placement_status,
                     "outcome": row.outcome,
                     "profit": row.profit,
@@ -1323,6 +1327,9 @@ class GameDataStore:
                         ),
                         "reason": allocation.reason or "",
                         "signal_id": allocation.signal_id or "",
+                        "bet_when_remaining_seconds": (
+                            allocation.bet_when_remaining_seconds
+                        ),
                         "stake_index": allocation.stake_index,
                     }
                     for allocation, bet, execution_mode in rows

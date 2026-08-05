@@ -488,7 +488,7 @@ class LiveExecutionPolicyTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch(
                 "src.ae_sexy_betting.probe_betting_phase",
-                AsyncMock(return_value={"closed": False}),
+                AsyncMock(return_value={"closed": False, "cdText": "10"}),
             ),
             patch(
                 "src.ae_sexy_betting._betting_ready",

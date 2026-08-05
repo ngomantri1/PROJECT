@@ -67,6 +67,7 @@ class SimulationTabConfig(BaseModel):
     stop_loss: float = 0.0
     take_profit: float = 0.0
     auto_reset_on_nonnegative_pnl: bool = False
+    bet_when_remaining_seconds: int = 10
     strategy_input: str = ""
     mode: TabMode = "simulation"
 
@@ -105,6 +106,15 @@ class SimulationTabConfig(BaseModel):
         values["take_profit"] = max(0.0, float(values["take_profit"]))
         values["auto_reset_on_nonnegative_pnl"] = bool(
             values.get("auto_reset_on_nonnegative_pnl", False)
+        )
+        try:
+            bet_when_remaining_seconds = int(
+                values.get("bet_when_remaining_seconds", 10)
+            )
+        except (TypeError, ValueError):
+            bet_when_remaining_seconds = 10
+        values["bet_when_remaining_seconds"] = max(
+            3, bet_when_remaining_seconds
         )
         values["strategy_input"] = str(values.get("strategy_input") or "")[:500]
         if values.get("mode") not in TAB_MODES:

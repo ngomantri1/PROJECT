@@ -134,10 +134,14 @@ class BetJournalTests(unittest.IsolatedAsyncioTestCase):
                 table_name="Baccarat C01",
                 source="cuoc-mo-multi-live",
                 bet_timeout_sec=30,
-            )
+        )
 
         self.assertTrue(placed)
-        executor.assert_not_awaited()
+        executor.assert_awaited_once()
+        self.assertEqual(0, executor.await_args.args[2])
+        self.assertEqual(
+            10, executor.await_args.kwargs["place_when_remaining_seconds"]
+        )
         db = self.session_factory()
         try:
             bet = db.scalar(select(BetRecord))

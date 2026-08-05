@@ -48,6 +48,17 @@ class StrategyTabsTests(unittest.TestCase):
         self.assertEqual([0, 100], config.tabs[0].stakes)
         self.assertEqual([0, 100, 110, 120, 130], config.tabs[1].stakes)
 
+    def test_bet_when_remaining_seconds_defaults_to_ten_and_minimum_three(self):
+        config = normalize_strategy_tabs({
+            "tabs": [
+                {"id": "default"},
+                {"id": "too-low", "bet_when_remaining_seconds": 1},
+            ],
+        })
+
+        self.assertEqual(10, config.tabs[0].bet_when_remaining_seconds)
+        self.assertEqual(3, config.tabs[1].bet_when_remaining_seconds)
+
     def test_legacy_disabled_tab_is_upgraded_to_start_controlled_tab(self):
         tab = SimulationTabConfig(
             enabled=False,

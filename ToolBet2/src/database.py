@@ -174,6 +174,7 @@ class BetAllocationRecord(Base):
     stake_index: Mapped[int] = mapped_column(Integer, default=0)
     signal_id: Mapped[str] = mapped_column(String(64), default="")
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bet_when_remaining_seconds: Mapped[int] = mapped_column(Integer, default=10)
     placement_status: Mapped[str] = mapped_column(String(16), default="planned")
     outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
     profit: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -250,6 +251,7 @@ class StrategyTabRecord(Base):
     stop_loss: Mapped[float] = mapped_column(Float, default=0.0)
     take_profit: Mapped[float] = mapped_column(Float, default=0.0)
     auto_reset_on_nonnegative_pnl: Mapped[int] = mapped_column(Integer, default=0)
+    bet_when_remaining_seconds: Mapped[int] = mapped_column(Integer, default=10)
     strategy_input: Mapped[str] = mapped_column(Text, default="")
     mode: Mapped[str] = mapped_column(String(24), default="simulation", index=True)
     shadow_evaluations: Mapped[int] = mapped_column(Integer, default=0)
@@ -404,6 +406,12 @@ def _migrate_schema(engine) -> None:
                     "ALTER TABLE bet_allocations "
                     "ADD COLUMN recovery_epoch INTEGER DEFAULT 0"
                 ))
+        if "bet_when_remaining_seconds" not in allocation_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE bet_allocations "
+                    "ADD COLUMN bet_when_remaining_seconds INTEGER DEFAULT 10"
+                ))
     if "strategy_tabs" in insp.get_table_names():
         tab_cols = {c["name"] for c in insp.get_columns("strategy_tabs")}
         tab_alters: list[str] = []
@@ -445,6 +453,10 @@ def _migrate_schema(engine) -> None:
             (
                 "auto_reset_on_nonnegative_pnl",
                 "ALTER TABLE strategy_tabs ADD COLUMN auto_reset_on_nonnegative_pnl INTEGER DEFAULT 0",
+            ),
+            (
+                "bet_when_remaining_seconds",
+                "ALTER TABLE strategy_tabs ADD COLUMN bet_when_remaining_seconds INTEGER DEFAULT 10",
             ),
             (
                 "strategy_input",

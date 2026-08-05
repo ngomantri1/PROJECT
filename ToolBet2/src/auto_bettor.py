@@ -593,6 +593,24 @@ class AutoBettor:
         """resolver(tab_id) -> ``live`` or ``simulation`` at execution time."""
         self._tab_execution_mode_resolver = resolver
 
+    def set_tab_bet_when_remaining_seconds_resolver(self, resolver) -> None:
+        """resolver(tab_id) -> countdown threshold captured when an allocation arms."""
+        self._tab_bet_when_remaining_seconds_resolver = resolver
+
+    def _bet_when_remaining_seconds_for_tab(self, tab_id: str) -> int:
+        resolver = getattr(self, "_tab_bet_when_remaining_seconds_resolver", None)
+        if resolver is None:
+            return 10
+        try:
+            return max(3, int(resolver(str(tab_id))))
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "[BET_COUNTDOWN] Khong doc duoc nguong tab %s: %s; dung 10 giay",
+                tab_id,
+                exc,
+            )
+            return 10
+
     def _execution_mode_for_tab(self, tab_id: str) -> str:
         if self._tab_execution_mode_resolver is None:
             return "live"
@@ -2053,6 +2071,11 @@ class AutoBettor:
                     "stake_index": 0,
                     "signal_id": authority.strategy.signal_id,
                     "reason": authority.strategy.reason,
+                    # Capture the threshold at arm time. A later configuration
+                    # save applies only to the following round.
+                    "bet_when_remaining_seconds": self._bet_when_remaining_seconds_for_tab(
+                        authority.tab_id
+                    ),
                     # In-memory ownership of this allocation.  The durable
                     # placement attempt journals the same epoch before click.
                     "run_epoch": self._run_epoch,
@@ -2293,6 +2316,8 @@ class AutoBettor:
                 side_allocations = [
                     item for item in allocations if item["side"] == side.value
                 ]
+                if not side_allocations:
+                    continue
                 mode_changed = False
                 for item in side_allocations:
                     if self._execution_mode_for_tab(item["tab_id"]) != "live":
@@ -2307,9 +2332,26 @@ class AutoBettor:
                     for item in side_allocations
                     if item["execution_mode"] == "live"
                 )
+                # All allocations for a side share one physical click.  The
+                # strictest captured window keeps every participating tab
+                # inside its own configured deadline.
+                bet_when_remaining_seconds = min(
+                    max(3, int(item.get("bet_when_remaining_seconds") or 10))
+                    for item in side_allocations
+                )
                 if amount <= 0:
-                    if side_allocations:
+                    placed = await wait_and_place_bet(
+                        page,
+                        side,
+                        0,
+                        timeout_sec=bet_timeout_sec,
+                        click_scope=self._click_scope,
+                        place_when_remaining_seconds=bet_when_remaining_seconds,
+                    )
+                    if placed:
                         placed_sides.add(side)
+                    else:
+                        cancelled_sides.add(side)
                     continue
                 guard_ok, guard_reason = await self._multi_live_pre_click_guard(
                     bet_id=bet.id,
@@ -2364,6 +2406,7 @@ class AutoBettor:
                         amount,
                         timeout_sec=bet_timeout_sec,
                         click_scope=self._click_scope,
+                        place_when_remaining_seconds=bet_when_remaining_seconds,
                         pre_click_guard=lambda: self._multi_live_pre_click_guard(
                             bet_id=bet.id,
                             stake=exposure_after,

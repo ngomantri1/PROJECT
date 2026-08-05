@@ -258,6 +258,7 @@
         stop_loss: selected.stop_loss,
         take_profit: selected.take_profit,
         auto_reset_on_nonnegative_pnl: selected.auto_reset_on_nonnegative_pnl,
+        bet_when_remaining_seconds: selected.bet_when_remaining_seconds,
         strategy_input: selected.strategy_input,
       },
       strategies: strategyTabs.strategies || [],
@@ -689,7 +690,7 @@
     add.disabled = tabs.length >= 5;
     add.addEventListener("click", () => {
       const id = (crypto.randomUUID ? crypto.randomUUID() : `tab-${Date.now()}`).replaceAll("-", "");
-      const next = { id, name: `Chiến lược ${tabs.length + 1}`, enabled: true, strategy_id: "follow_last", strategy_input: "", stakes: [0,100,110,120,130], progression_mode: "loss_up_win_reset", money_manager_id: "IncreaseWhenLose", stake_chains: [], stop_loss: 0, take_profit: 0, auto_reset_on_nonnegative_pnl: false, mode: "live" };
+      const next = { id, name: `Chiến lược ${tabs.length + 1}`, enabled: true, strategy_id: "follow_last", strategy_input: "", stakes: [0,100,110,120,130], progression_mode: "loss_up_win_reset", money_manager_id: "IncreaseWhenLose", stake_chains: [], stop_loss: 0, take_profit: 0, auto_reset_on_nonnegative_pnl: false, bet_when_remaining_seconds: 10, mode: "live" };
       saveTabs([...tabs, next], id, null, true);
     });
     tabsBar.append(add); shell.append(tabsBar);
@@ -726,9 +727,19 @@
         draft?.stakes_text ?? ((selected.money_manager_id === "MultiChain"
           ? (selected.stake_chains || [selected.stakes || []]).map(chain => chain.join("-")).join("; ")
           : (selected.stakes || []).join("-"))))),
+      field("Đặt khi còn (giây)", input(
+        "tbv2-bet-when-remaining",
+        draft?.bet_when_remaining_seconds ?? selected.bet_when_remaining_seconds ?? 10,
+        "number"
+      )),
       field("Cắt lãi", input("tbv2-tp", draft?.take_profit ?? selected.take_profit ?? 0, "number")),
       field("Cắt lỗ", input("tbv2-sl", draft?.stop_loss ?? selected.stop_loss ?? 0, "number"))
     );
+    const betWhenRemainingInput = grid.querySelector("#tbv2-bet-when-remaining");
+    betWhenRemainingInput.closest(".tbv2-field").classList.add("tbv2-field-wide");
+    betWhenRemainingInput.min = "3";
+    betWhenRemainingInput.step = "1";
+    betWhenRemainingInput.title = "Chỉ đặt khi đồng hồ còn từ 3 giây đến số giây này.";
     const activeStrategyId = draft?.strategy_id ?? selected.strategy_id;
     const strategyInputLabels = {
       sequence_follow: "Chuỗi B/P (ví dụ B-P-P)",
@@ -853,6 +864,7 @@
         take_profit: number(currentDraft.take_profit),
         stop_loss: number(currentDraft.stop_loss),
         auto_reset_on_nonnegative_pnl: currentDraft.auto_reset_on_nonnegative_pnl,
+        bet_when_remaining_seconds: number(currentDraft.bet_when_remaining_seconds),
         enabled: true,
         mode: currentDraft.mode,
       };
@@ -894,6 +906,7 @@
         stakes_text: stakesInput.value,
         take_profit: root.querySelector("#tbv2-tp").value,
         stop_loss: root.querySelector("#tbv2-sl").value,
+        bet_when_remaining_seconds: root.querySelector("#tbv2-bet-when-remaining").value,
         enabled: true,
         auto_reset_on_nonnegative_pnl: resetCheckbox.checked,
         mode: simulationCheckbox.checked ? "simulation" : "live",

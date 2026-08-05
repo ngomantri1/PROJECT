@@ -29,7 +29,7 @@ class StakeZeroExecutionTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch(
                 "src.ae_sexy_betting.probe_betting_phase",
-                AsyncMock(return_value={"closed": False, "cdText": "12"}),
+                AsyncMock(return_value={"closed": False, "cdText": "10"}),
             ),
             patch(
                 "src.ae_sexy_betting._betting_ready",
@@ -46,6 +46,66 @@ class StakeZeroExecutionTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(result)
+        click.assert_not_awaited()
+
+    async def test_waits_until_configured_countdown_then_clicks_once(self) -> None:
+        page = AsyncMock()
+        click = AsyncMock(return_value=True)
+        phases = [
+            {"closed": False, "cdText": "15"},
+            {"closed": False, "cdText": "10"},
+        ]
+        with (
+            patch(
+                "src.ae_sexy_betting.probe_betting_phase",
+                AsyncMock(side_effect=phases),
+            ),
+            patch(
+                "src.ae_sexy_betting._betting_ready",
+                AsyncMock(return_value=True),
+            ),
+            patch(
+                "src.ae_sexy_betting.side_zone_visible",
+                AsyncMock(return_value=(True, "chipBoxPlayer")),
+            ),
+            patch("src.ae_sexy_betting._execute_bet_clicks", click),
+        ):
+            result = await wait_and_place_bet(
+                page,
+                BetSide.PLAYER,
+                10,
+                timeout_sec=1,
+                place_when_remaining_seconds=10,
+            )
+
+        self.assertTrue(result)
+        click.assert_awaited_once_with(
+            page, BetSide.PLAYER, 10, click_scope=None
+        )
+
+    async def test_countdown_below_three_never_clicks(self) -> None:
+        page = AsyncMock()
+        click = AsyncMock(return_value=True)
+        with (
+            patch(
+                "src.ae_sexy_betting.probe_betting_phase",
+                AsyncMock(return_value={"closed": False, "cdText": "2"}),
+            ),
+            patch(
+                "src.ae_sexy_betting._betting_ready",
+                AsyncMock(return_value=True),
+            ),
+            patch("src.ae_sexy_betting._execute_bet_clicks", click),
+        ):
+            result = await wait_and_place_bet(
+                page,
+                BetSide.PLAYER,
+                10,
+                timeout_sec=0,
+                place_when_remaining_seconds=2,
+            )
+
+        self.assertFalse(result)
         click.assert_not_awaited()
 
     async def test_failed_zone_attempt_is_reported_as_uncertain(self) -> None:

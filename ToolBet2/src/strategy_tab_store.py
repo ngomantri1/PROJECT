@@ -69,6 +69,9 @@ class StrategyTabStore:
                             "auto_reset_on_nonnegative_pnl": bool(
                                 row.auto_reset_on_nonnegative_pnl
                             ),
+                            "bet_when_remaining_seconds": (
+                                row.bet_when_remaining_seconds or 10
+                            ),
                             "strategy_input": row.strategy_input or "",
                             "mode": row.mode or "simulation",
                         }
@@ -112,6 +115,7 @@ class StrategyTabStore:
                 row.auto_reset_on_nonnegative_pnl = int(
                     tab.auto_reset_on_nonnegative_pnl
                 )
+                row.bet_when_remaining_seconds = tab.bet_when_remaining_seconds
                 row.strategy_input = tab.strategy_input
                 row.updated_at = now
                 money_config = (

@@ -1215,6 +1215,7 @@ async def wait_and_place_bet(
     timeout_sec: int = 55,
     click_scope=None,
     pre_click_guard=None,
+    place_when_remaining_seconds: int = 10,
 ) -> bool:
     """Cho cua cuoc mo (chip + zone + countdown) roi dat cuoc ngay trong thoi gian cho phep.
     amount=0: van theo doi — cho cua mo, khong click chip, van tinh thang/thua nhom.
@@ -1231,6 +1232,10 @@ async def wait_and_place_bet(
     last_log = -5
     last_fail_log = 0.0
     virtual = int(amount) <= 0
+    try:
+        threshold = max(3, int(place_when_remaining_seconds))
+    except (TypeError, ValueError):
+        threshold = 10
 
     for i in range(polls):
         phase = await probe_betting_phase(page)
@@ -1239,6 +1244,49 @@ async def wait_and_place_bet(
                 last_log = i
                 logger.debug("Cho cua cuoc... (%ds) dang mo bai/dong cua", int(i * 0.2))
         elif await _betting_ready(page, side, phase):
+            cd_text = str(phase.get("cdText") or "").strip()
+            countdown = int(cd_text) if cd_text.isdigit() else None
+            if countdown is None:
+                if i - last_log >= 15:
+                    last_log = i
+                    logger.warning(
+                        "[BET_COUNTDOWN_INVALID] %s %s | cd=%r | cho countdown hop le",
+                        label,
+                        amount,
+                        cd_text,
+                    )
+                await page.wait_for_timeout(200)
+                continue
+            if countdown < 3:
+                if i - last_log >= 10:
+                    last_log = i
+                    logger.info(
+                        "[BET_COUNTDOWN_LATE] %s %s | con %ss (< 3), khong click",
+                        label,
+                        amount,
+                        countdown,
+                    )
+                await page.wait_for_timeout(200)
+                continue
+            if countdown > threshold:
+                if i - last_log >= 10:
+                    last_log = i
+                    logger.info(
+                        "[BET_WAIT_COUNTDOWN] %s %s | con %ss, cho nguong %ss",
+                        label,
+                        amount,
+                        countdown,
+                        threshold,
+                    )
+                await page.wait_for_timeout(200)
+                continue
+            logger.info(
+                "[BET_COUNTDOWN_READY] %s %s | con %ss, nguong %ss",
+                label,
+                amount,
+                countdown,
+                threshold,
+            )
             _, zone_id = await side_zone_visible(page, side)
             if virtual:
                 logger.info(

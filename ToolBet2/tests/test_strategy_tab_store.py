@@ -48,6 +48,7 @@ class StrategyTabStoreTests(unittest.TestCase):
         changed.tabs[0].strategy_input = "BPP-BP"
         changed.tabs[0].money_manager_id = "IncreaseWhenWin"
         changed.tabs[0].stakes = [10, 100, 110]
+        changed.tabs[0].bet_when_remaining_seconds = 7
         self.store.save_config(changed)
 
         reloaded = self.store.load_or_import(
@@ -57,6 +58,7 @@ class StrategyTabStoreTests(unittest.TestCase):
         self.assertEqual("alpha", reloaded.tabs[0].id)
         self.assertEqual("Từ SQLite", reloaded.tabs[0].name)
         self.assertEqual("smart_prev", reloaded.tabs[0].strategy_id)
+        self.assertEqual(7, reloaded.tabs[0].bet_when_remaining_seconds)
         self.assertEqual("BPP-BP", reloaded.tabs[0].strategy_input)
         self.assertEqual("IncreaseWhenWin", reloaded.tabs[0].money_manager_id)
         self.assertEqual([10, 100, 110], reloaded.tabs[0].stakes)

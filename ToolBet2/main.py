@@ -315,6 +315,9 @@ class HistoryWatcher:
         self.auto_bettor.set_tab_execution_mode_resolver(
             self._execution_mode_for_running_tab
         )
+        self.auto_bettor.set_tab_bet_when_remaining_seconds_resolver(
+            self._bet_when_remaining_seconds_for_tab
+        )
         self.auto_bettor.set_multi_live_result_handler(
             self._resolve_multi_live_allocations
         )
@@ -1883,6 +1886,16 @@ class HistoryWatcher:
             None,
         )
         return "live" if tab is not None and tab.mode == "live" else "simulation"
+
+    def _bet_when_remaining_seconds_for_tab(self, tab_id: str) -> int:
+        """Return the persisted per-tab threshold before an allocation arms."""
+        tab = next(
+            (item for item in self.config.strategy_tabs.tabs if item.id == tab_id),
+            None,
+        )
+        if tab is None:
+            return 10
+        return max(3, int(tab.bet_when_remaining_seconds))
 
     def _resolve_multi_live_allocations(
         self,
