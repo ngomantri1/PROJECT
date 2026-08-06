@@ -152,6 +152,7 @@ class AeSexyCollector:
         self._ssot_poll_interval: float = 8.0
         self._ssot_catchup_task: asyncio.Task | None = None
         self._last_bet_phase: dict[str, Any] = {}
+        self._last_pool_trace_key: tuple[Any, ...] = ()
         self._last_cuoc_mo_logged: bool = False
         self._http_fetch_interval: float = 8.0
         self.poll_error_streak: int = 0
@@ -1980,6 +1981,37 @@ class AeSexyCollector:
                 break
         ws_stats = self.get_stats(self.table_name)
         tool_len = len(self.state.history)
+        try:
+            from src.ae_sexy_betting import probe_bet_pool_totals
+
+            pools = await probe_bet_pool_totals(page)
+        except Exception:
+            pools = {}
+        player_pool = pools.get("player") if isinstance(pools, dict) else {}
+        banker_pool = pools.get("banker") if isinstance(pools, dict) else {}
+        pool_key = (
+            game_round,
+            player_pool.get("value") if isinstance(player_pool, dict) else None,
+            banker_pool.get("value") if isinstance(banker_pool, dict) else None,
+        )
+        if pool_key != self._last_pool_trace_key:
+            self._last_pool_trace_key = pool_key
+            logger.info(
+                "[BET_POOL_TRACE] source=%s | table=%s | round=%s | "
+                "player=%s token=%r via=%s raw=%r | "
+                "banker=%s token=%r via=%s raw=%r",
+                pools.get("source", "dom_bet_ui") if isinstance(pools, dict) else "?",
+                self.table_name,
+                game_round or "?",
+                player_pool.get("value") if isinstance(player_pool, dict) else None,
+                player_pool.get("token") if isinstance(player_pool, dict) else "",
+                player_pool.get("source") if isinstance(player_pool, dict) else "",
+                player_pool.get("raw") if isinstance(player_pool, dict) else "",
+                banker_pool.get("value") if isinstance(banker_pool, dict) else None,
+                banker_pool.get("token") if isinstance(banker_pool, dict) else "",
+                banker_pool.get("source") if isinstance(banker_pool, dict) else "",
+                banker_pool.get("raw") if isinstance(banker_pool, dict) else "",
+            )
         open_now = bool(phase.get("open") or phase.get("canClick"))
         closed_now = bool(phase.get("closed") or phase.get("moBai"))
         was_open = bool(prev.get("open") or prev.get("canClick"))

@@ -130,6 +130,90 @@ _BET_PHASE_BODY = """
   };
 """
 
+# Diagnostic-only DOM probe.  It deliberately returns the raw nearby text as
+# well as the parsed value so pool data can be validated across real rounds
+# before any I/N strategy is permitted to consume it.
+_BET_POOL_TRACE_BODY = r"""
+  const visible = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return false;
+    const s = getComputedStyle(el);
+    return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity || 1) > .05;
+  };
+  const compact = (value) => String(value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  const money = (token) => {
+    const raw = compact(token).replace(/\s/g, '');
+    if (!raw) return null;
+    const suffix = raw.match(/^([\d.,]+)([KMB])$/i);
+    if (suffix) {
+      const number = Number(suffix[1].replace(',', '.'));
+      const scale = { K: 1e3, M: 1e6, B: 1e9 }[suffix[2].toUpperCase()];
+      return Number.isFinite(number) && scale ? Math.round(number * scale) : null;
+    }
+    if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(raw)) return Number(raw.replace(/,/g, ''));
+    if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(raw)) return Number(raw.replace(/\./g, '').replace(',', '.'));
+    return null;
+  };
+  const stakeIn = (text) => {
+    const source = compact(text);
+    const re = /\d+(?:[.,]\d+)?\s*[KMB]\b|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{1,3}(?:\.\d{3})+(?:,\d+)?/ig;
+    let best = null, match;
+    while ((match = re.exec(source))) {
+      const token = compact(match[0]);
+      const before = source[match.index - 1] || '';
+      const after = source[match.index + token.length] || '';
+      if (before === ':' || after === ':') continue; // odds, e.g. 1:1
+      const value = money(token);
+      if (!(value > 0)) continue;
+      const score = (/^[\d.,]+\s*[KMB]$/i.test(token) ? 1e12 : 0) + value;
+      if (!best || score > best.score) best = { value, token, score };
+    }
+    return best ? { value: best.value, token: best.token } : null;
+  };
+  const sideInfo = (side, ids, labels) => {
+    const candidates = [];
+    const add = (node, source) => {
+      if (!node || !visible(node)) return;
+      const text = compact(node.innerText || node.textContent || '');
+      const stake = stakeIn(text);
+      if (!stake) return;
+      candidates.push({ ...stake, source, text: text.slice(0, 220) });
+    };
+    for (const id of ids) {
+      const zone = document.getElementById(id);
+      if (!zone) continue;
+      add(zone, `#${id}`);
+      let node = zone.parentElement;
+      for (let depth = 1; node && depth <= 4; depth += 1, node = node.parentElement) {
+        add(node, `#${id}:parent${depth}`);
+      }
+    }
+    for (const element of [...document.querySelectorAll('div,span,p,b,strong,label')]) {
+      if (!visible(element)) continue;
+      const text = compact(element.innerText || element.textContent || '');
+      if (text.length > 90 || !labels.test(text)) continue;
+      add(element, 'label');
+      add(element.parentElement, 'label:parent');
+    }
+    candidates.sort((a, b) => b.value - a.value || a.source.length - b.source.length);
+    const best = candidates[0] || null;
+    return {
+      side,
+      value: best ? best.value : null,
+      token: best ? best.token : '',
+      source: best ? best.source : '',
+      raw: best ? best.text : '',
+      candidates: candidates.slice(0, 4),
+    };
+  };
+  return {
+    source: 'dom_bet_ui',
+    player: sideInfo('player', ['chipBoxPlayer', 'betBoxPlayer'], /(?:tay\s*con|player)/i),
+    banker: sideInfo('banker', ['chipBoxBanker', 'betBoxBanker'], /(?:nha\s*cai|banker)/i),
+  };
+"""
+
 _VERIFY_BET_BODY = """
   const side = String(args[0] || '').toLowerCase();
   const visEl = (el) => {
@@ -1152,6 +1236,15 @@ async def probe_betting_phase(page: Page) -> dict:
         except Exception:
             continue
     return {}
+
+
+async def probe_bet_pool_totals(page: Page) -> dict:
+    """Read displayed Player/Banker pools for diagnostic tracing only.
+
+    This does not affect collector history, strategy input, SQLite or betting.
+    """
+    info = await _eval_in_bet_ui(page, _BET_POOL_TRACE_BODY)
+    return info if isinstance(info, dict) else {}
 
 
 async def is_betting_open(page: Page) -> bool:

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from src.ae_sexy_betting import (
     BetPlacementUncertain,
     _execute_bet_clicks_inner,
+    probe_bet_pool_totals,
     wait_and_place_bet,
 )
 from src.database import init_db
@@ -18,6 +19,21 @@ from src.stake_zero_audit import inspect_stake_zero_window, latest_bet_id
 
 
 class StakeZeroExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_pool_probe_returns_diagnostic_dom_payload_without_betting(self) -> None:
+        expected = {
+            "source": "dom_bet_ui",
+            "player": {"value": 272800, "token": "272.8K"},
+            "banker": {"value": 483300, "token": "483.3K"},
+        }
+        with patch(
+            "src.ae_sexy_betting._eval_in_bet_ui",
+            AsyncMock(return_value=expected),
+        ) as probe:
+            result = await probe_bet_pool_totals(object())
+
+        self.assertEqual(expected, result)
+        probe.assert_awaited_once()
+
     async def test_inner_guard_returns_before_any_page_or_chip_access(self) -> None:
         self.assertTrue(
             await _execute_bet_clicks_inner(None, BetSide.PLAYER, 0)  # type: ignore[arg-type]

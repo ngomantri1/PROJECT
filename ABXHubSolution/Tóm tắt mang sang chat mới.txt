@@ -1,323 +1,433 @@
-Hãy phân tích project hiện tại và xây dựng bộ tài liệu context chuẩn dành cho AI coding.
+Hãy phân tích repository hiện tại và xây dựng bộ tài liệu context chuẩn dành cho AI coding.
+
+CHẾ ĐỘ:
+CONTEXT_BOOTSTRAP_ONLY
+
+PHẠM VI:
+- Chỉ phân tích repository và tạo/cập nhật tài liệu context.
+- Không sửa source code, database, migration, cấu hình runtime hoặc business logic.
+- Không chạy thao tác có thể làm mất dữ liệu.
+- Không tự cài dependency hoặc thay đổi lockfile.
 
 MỤC TIÊU:
-Sau khi hoàn thành, một AI khác không có lịch sử chat hiện tại phải có thể đọc bộ tài liệu này để:
-- hiểu project dùng để làm gì
-- hiểu kiến trúc và các module chính
-- hiểu các quy tắc nghiệp vụ
-- biết những phần code quan trọng
-- biết trạng thái hiện tại
-- biết TODO và BUG còn tồn tại
-- có thể tiếp tục phát triển project mà không cần đọc lại toàn bộ source ngay từ đầu
+Sau khi hoàn thành, một AI khác không có lịch sử chat hiện tại có thể đọc bộ tài liệu để:
+
+- Hiểu project dùng để làm gì.
+- Hiểu kiến trúc và module chính.
+- Hiểu các business rule có bằng chứng.
+- Biết các file, class, function, API và test quan trọng.
+- Biết trạng thái hiện tại.
+- Biết công việc đang làm, TODO, bug và rủi ro còn tồn tại.
+- Tiếp tục công việc mà không cần đọc lại toàn bộ repository.
+
+AI trong phiên sau vẫn phải kiểm tra source liên quan trực tiếp đến task.
+Tài liệu context không thay thế việc xác minh source.
 
 ==================================================
-1. TRƯỚC KHI TẠO FILE
+1. KIỂM TRA TRƯỚC KHI PHÂN TÍCH
 ==================================================
 
-Hãy phân tích project hiện tại một cách có chọn lọc.
+Trước tiên:
 
-Ưu tiên đọc:
-- file solution/project/package/config chính
-- entry point
-- cấu trúc thư mục
-- các module/service/controller/model/view quan trọng
-- database/schema/migration nếu có
-- API/WebSocket/network layer nếu có
-- background worker/thread/task nếu có
-- UI flow nếu có
-- OCR/canvas/browser automation nếu có
-- các file README/config/document hiện có
-- các phần code đang được sử dụng thực tế
+1. Xác định repository root.
+2. Kiểm tra `git status` bằng thao tác chỉ đọc.
+3. Tìm tất cả `AGENTS.md` ở root, thư mục cha và các thư mục con liên quan.
+4. Kiểm tra xem các file context sau đã tồn tại hay chưa:
+
+- `AGENTS.md`
+- `PROJECT_CONTEXT.md`
+- `ARCHITECTURE.md`
+- `BUSINESS_RULES.md`
+- `CURRENT_STATE.md`
+- `TODO.md`
+- `BUGS.md`
+- `README.md`
+
+Nếu file đã tồn tại:
+
+- Đọc đầy đủ trước khi cập nhật.
+- Không ghi đè toàn bộ nếu có thể hợp nhất.
+- Bảo toàn thông tin đúng và các thay đổi hiện có của người dùng.
+- Xóa hoặc sửa nội dung lỗi thời chỉ khi có bằng chứng từ source/config/test.
+- Nêu rõ mâu thuẫn giữa tài liệu và source.
+
+Nếu file chưa tồn tại:
+
+- Tạo file tại repository root.
+- Không tạo bản trùng trong `docs/`.
+- Bộ context tại root là nguồn canonical, trừ khi repository đã có quy ước khác.
+
+Trước khi tạo file, báo cáo ngắn:
+
+1. Project làm gì.
+2. Stack được nhận diện.
+3. Kiến trúc chính.
+4. Module chính.
+5. Tài liệu context đã có.
+6. Tài liệu còn thiếu.
+7. Nguồn bằng chứng sẽ sử dụng.
+8. File dự kiến tạo hoặc cập nhật.
+
+Sau báo cáo này, tiếp tục tạo tài liệu; không cần chờ xác nhận nếu chỉ tạo tài liệu và không có mâu thuẫn/rủi ro đáng kể.
+
+==================================================
+2. NGUỒN BẰNG CHỨNG
+==================================================
+
+Ưu tiên theo thứ tự:
+
+1. Source, schema, migration, config và test đang được sử dụng.
+2. Tài liệu chính thức hiện có.
+3. Git history gần đây nếu có thể xác minh.
+4. Comment, TODO, FIXME và placeholder trong source.
+5. Suy luận của AI — chỉ được ghi dưới trạng thái `Chưa xác nhận`.
+
+Quy tắc nguồn sự thật:
+
+- Source hiện tại là nguồn xác minh trạng thái đã triển khai.
+- Business rule được ghi là “đã xác nhận” chỉ khi có ít nhất một trong các bằng chứng:
+  - Được tài liệu nghiệp vụ hiện có xác nhận.
+  - Được người dùng xác nhận.
+  - Được backend/database/workflow enforce rõ ràng.
+  - Có test nghiệp vụ trực tiếp chứng minh.
+- Source không được dùng để phủ nhận một business rule đã được tài liệu hoặc người dùng xác nhận.
+- Nếu source và rule đã xác nhận mâu thuẫn, ghi rõ đây là sai lệch cần xử lý.
+- Không tự sửa source trong task này.
+- Nếu chưa chắc chắn, ghi `Status: Chưa xác nhận`.
+
+Không suy diễn “ý định nghiệp vụ” chỉ từ tên field, giao diện hoặc comment đơn lẻ.
+
+==================================================
+3. PHẠM VI SOURCE CẦN ĐỌC
+==================================================
+
+Đọc có chọn lọc:
+
+- Solution, workspace, project, package và config chính.
+- Entry point và composition root.
+- Cấu trúc thư mục/module.
+- Domain entity/model quan trọng.
+- Controller, endpoint, service, repository và data access chính.
+- Database schema, migration, seed/bootstrap.
+- Authentication, authorization, permission và data scope.
+- Workflow, status transition, audit và snapshot.
+- API/network/event/WebSocket nếu có.
+- Worker, queue, scheduler hoặc background task nếu có.
+- UI route, layout, form, state và luồng thao tác chính.
+- Test quan trọng.
+- README và tài liệu hiện có.
+- Git diff hiện tại để tránh ghi đè thay đổi của người dùng.
 
 Không cần đọc:
-- bin/
-- obj/
-- node_modules/
-- packages cache
-- build output
-- generated files
-- dependency source
-- file binary
-- file log lớn
-- file không liên quan đến logic project
 
-Không rewrite hoặc refactor source code.
-Không thay đổi logic chương trình.
-Chỉ phân tích và tạo tài liệu.
+- `bin/`
+- `obj/`
+- `node_modules/`
+- cache package
+- build output
+- coverage output
+- generated source
+- dependency source
+- binary
+- file log lớn
+- secret hoặc giá trị credential
+
+Có thể đọc tên biến cấu hình nhưng không đưa secret, token, password hoặc dữ liệu nhạy cảm vào tài liệu.
 
 Nếu project lớn:
-- không cần đọc từng file
-- hãy xác định kiến trúc trước
-- sau đó đọc sâu các file/module quan trọng nhất
+
+- Xác định kiến trúc và dependency flow trước.
+- Đọc sâu module lõi và vùng đang hoạt động.
+- Không đọc tuần tự từng file nếu không cần.
 
 ==================================================
-2. TẠO CẤU TRÚC FILE
+4. TẠO BỘ FILE CONTEXT
 ==================================================
 
-Tạo:
+Tạo hoặc hợp nhất:
 
-/AGENTS.md
+- `AGENTS.md`
+- `PROJECT_CONTEXT.md`
+- `ARCHITECTURE.md`
+- `BUSINESS_RULES.md`
+- `CURRENT_STATE.md`
+- `TODO.md`
+- `BUGS.md`
 
-/PROJECT_CONTEXT.md
-/ARCHITECTURE.md
-/BUSINESS_RULES.md
-/CURRENT_STATE.md
-/TODO.md
-/BUGS.md
-
-
-==================================================
-3. AGENTS.md
-==================================================
-
-AGENTS.md phải ngắn gọn và chỉ chứa những chỉ dẫn AI cần tuân thủ khi làm việc với project.
-
-Bao gồm:
-
-- project là gì
-- stack/công nghệ chính
-- nơi chứa tài liệu context
-- coding conventions quan trọng
-- naming conventions quan trọng
-- nguyên tắc sửa code
-- quy tắc threading/async/UI nếu có
-- quy tắc database/API/WebSocket nếu có
-- những vùng nhạy cảm không được phá
-- yêu cầu build/test sau khi sửa nếu phù hợp
-- yêu cầu ưu tiên thay đổi tối thiểu
-- không refactor ngoài phạm vi task nếu không cần thiết
-
-AGENTS.md KHÔNG được:
-- chứa lịch sử dài
-- chứa TODO chi tiết
-- chứa BUG chi tiết
-- copy architecture dài
-- copy source code dài
-
+Không tạo nội dung trùng lặp giữa các file.
 
 ==================================================
-4. PROJECT_CONTEXT.md
+5. AGENTS.md
 ==================================================
 
-Bao gồm thông tin ổn định giúp AI hiểu project:
+`AGENTS.md` phải ngắn, có tính bắt buộc và dùng được cho mọi chat sau.
+
+Phải bao gồm:
+
+# Project
+- Project là gì.
+- Stack chính.
+
+# Context bắt buộc
+Mọi AI phải đọc trước khi sửa code:
+
+1. `AGENTS.md`
+2. `PROJECT_CONTEXT.md`
+3. `ARCHITECTURE.md`
+4. `BUSINESS_RULES.md`
+5. `CURRENT_STATE.md`
+6. `TODO.md`
+7. `BUGS.md`
+8. `README.md`
+9. Tài liệu được các file trên tham chiếu.
+10. Source và test liên quan đến yêu cầu hiện tại.
+
+# Audit trước khi code
+Trước khi sửa source, AI phải báo cáo ngắn:
+
+1. Project làm gì.
+2. Kiến trúc chính.
+3. Công việc gần nhất.
+4. Nội dung đã hoàn thành và bằng chứng.
+5. Việc cần làm tiếp theo.
+6. Bug/rủi ro còn lại.
+7. File/module/API/test liên quan.
+8. Patch tối thiểu dự kiến.
+
+# Conflict gate
+Nếu yêu cầu mới hoặc patch dự kiến vi phạm business rule/nguyên tắc đã xác nhận:
+
+1. Dừng trước khi sửa code.
+2. Chỉ rõ rule và file tài liệu liên quan.
+3. Nêu tác động, rủi ro, trade-off và phương án thay thế.
+4. Đề xuất nội dung tài liệu cần thay đổi.
+5. Chờ người dùng xác nhận rõ việc sửa nguyên tắc.
+6. Chỉ sau khi được xác nhận mới cập nhật tài liệu.
+7. Sau đó mới được sửa code theo nguyên tắc mới.
+
+Không tự ý vừa thay đổi rule vừa sửa code trong một quyết định ngầm.
+
+Nếu source đang vi phạm rule đã xác nhận và task là đưa source về đúng rule:
+
+- Không cần thay đổi rule.
+- Nêu rõ sai lệch.
+- Sửa source để tuân thủ rule khi task code được phép thực hiện.
+- Cập nhật trạng thái và bằng chứng test.
+
+# Quy tắc sửa code
+- Patch nhỏ và đúng phạm vi.
+- Không refactor ngoài task nếu không cần.
+- Không sửa file không liên quan.
+- Không thay đổi API, database, workflow, permission, ownership, pricing, snapshot hoặc kiến trúc nếu chưa có căn cứ.
+- Frontend không được là nơi duy nhất enforce mutation nghiệp vụ quan trọng.
+- Không ghi đè snapshot, lịch sử hoặc dữ liệu đã ký.
+- Giữ UTF-8, BOM và line ending hiện tại.
+- Bảo toàn thay đổi chưa commit của người dùng.
+- Chạy kiểm tra phù hợp và báo rõ lệnh đã/không chạy.
+
+# Cập nhật context
+Sau thay đổi quan trọng:
+
+- `CURRENT_STATE.md`: trạng thái đã triển khai.
+- `TODO.md`: việc chưa làm/đang làm.
+- `BUGS.md`: bug và rủi ro.
+- `BUSINESS_RULES.md`: rule đã xác nhận.
+- `ARCHITECTURE.md`: kiến trúc/API/data flow.
+- `PROJECT_CONTEXT.md`: quyết định dài hạn.
+- `AGENTS.md`: chỉ cập nhật khi quy trình bắt buộc thay đổi.
+
+`AGENTS.md` không chứa:
+
+- Lịch sử dài.
+- TODO/bug chi tiết.
+- Kiến trúc dài.
+- Source code dài.
+
+==================================================
+6. PROJECT_CONTEXT.md
+==================================================
+
+Chỉ chứa thông tin ổn định và có giá trị xuyên phiên:
 
 # Project Overview
-- mục đích project
-- đối tượng/người dùng chính
-- chức năng chính
+- Mục đích.
+- Người dùng chính.
+- Chức năng chính.
 
 # Technology Stack
-- language
-- framework
-- runtime
-- database
-- thư viện/framework quan trọng
-- external services quan trọng
+- Ngôn ngữ, framework, runtime.
+- Database.
+- Thư viện quan trọng.
+- External service quan trọng.
 
-# Main Application Flow
-- flow hoạt động chính từ đầu tới cuối
+# Main Business Flow
+- Luồng chính từ đầu đến cuối.
+
+# Stable Domain Decisions
+- Ownership dữ liệu.
+- Nguồn dữ liệu chuẩn.
+- Snapshot/version identity.
+- Những quyết định dài hạn có bằng chứng.
 
 # Important Components
-- module/service/class quan trọng
-- trách nhiệm của từng phần
-
-# Coding Conventions
-- coding rules đã quan sát được
-- naming rules
-- error handling
-- logging
-- async/threading conventions
+- Module/service/class quan trọng.
+- Trách nhiệm.
 
 # Important Technical Rules
-- các invariant/rule kỹ thuật quan trọng
-- những điều tuyệt đối không được phá
+- Invariant kỹ thuật.
+- Điều tuyệt đối không được phá.
 
-# External Integration
-Nếu có:
-- API
-- WebSocket
-- database
-- browser
-- OCR
-- canvas
-- filesystem
-- external service
+# External Integrations
+Chỉ ghi integration thực sự tồn tại.
 
 # Important Paths
-Liệt kê các file/thư mục quan trọng để AI biết nên bắt đầu đọc ở đâu.
+- Đường dẫn bắt đầu đọc cho từng vùng chính.
 
-Chỉ ghi những điều có thể xác nhận từ source/config/document hiện tại.
-Không tự suy diễn nghiệp vụ.
+Không đưa trạng thái thay đổi hằng ngày hoặc TODO chi tiết vào file này.
 
 ==================================================
-5. ARCHITECTURE.md
+7. ARCHITECTURE.md
 ==================================================
 
-Mô tả kiến trúc kỹ thuật của hệ thống.
+Mô tả kiến trúc đang tồn tại, không mô tả kiến trúc mục tiêu như thể đã triển khai.
 
 Bao gồm khi phù hợp:
 
 # High-Level Architecture
-- frontend
-- backend
-- desktop
-- service
-- database
-- worker
-- external system
 
 # Project Structure
-- các thư mục/module chính
-- trách nhiệm của từng module
+
+# Module Ownership
 
 # Dependency Flow
-Ví dụ:
-UI
-→ Service
-→ Repository
-→ Database
-
-hoặc flow thực tế của project.
 
 # Data Flow
-- dữ liệu đi từ đâu
-- được xử lý ở đâu
-- lưu ở đâu
-- trả về đâu
 
-# Important Runtime Flows
+# Authentication and Authorization Flow
 
-Nếu project có thì mô tả:
-- WebSocket flow
-- packet/message flow
-- reconnect flow
-- pending request flow
-- API request flow
-- authentication flow
-- background task flow
-- threading flow
-- UI update flow
-- OCR flow
-- canvas/image flow
-- event flow
+# API / Event / WebSocket Flow
+
+# Background Task Flow
+
+# UI State and Update Flow
+
+# Persistence, Migration and Snapshot Flow
 
 # Key Files / Classes
 
-Dùng dạng:
+Dạng trình bày:
 
 `path/to/file`
-- ClassName
-- MethodName()
-- trách nhiệm
-
-Không copy source code dài.
+- `ClassName`
+- `MethodName()`
+- Trách nhiệm
 
 # Architectural Constraints
-- dependency không nên phá
-- thread affinity
-- state ownership
-- lifecycle
-- singleton/service scope
-- concurrency rules
-- các constraint quan trọng khác
-
-Chỉ ghi kiến trúc hiện đang tồn tại.
-Không mô tả kiến trúc mong muốn như thể đã triển khai.
+- Dependency.
+- Lifecycle.
+- Service scope.
+- State ownership.
+- Concurrency/async.
+- Transaction boundary.
+- Snapshot/immutability.
 
 ==================================================
-6. BUSINESS_RULES.md
+8. BUSINESS_RULES.md
 ==================================================
 
-Tách riêng nghiệp vụ khỏi kiến trúc.
+Tách nghiệp vụ khỏi kiến trúc.
 
-Bao gồm:
+Có thể gồm:
 
 # Core Business Rules
-- các rule nghiệp vụ đã có trong code
 
-# Conditions / Decisions
-Ví dụ:
-- nếu A thì B
-- nếu C thì không được D
-- trường hợp đặc biệt
+# Ownership Rules
 
 # Validation Rules
 
 # Calculation Rules
 
-# State / Status Rules
+# Workflow / Status Rules
 
-# Important Edge Cases
+# Permission and Data Scope Rules
+
+# Snapshot / Revision Rules
+
+# Edge Cases
 
 # Data Meaning
-Giải thích các field/status/type quan trọng nếu có thể xác định chắc chắn.
 
-Với mỗi rule quan trọng, nếu hữu ích hãy ghi nơi implementation:
+Mỗi rule quan trọng nên ghi:
 
-Source:
-`path/to/file`
-`Class.Method()`
+- Rule.
+- Điều kiện áp dụng.
+- Trạng thái bằng chứng:
+  - `Confirmed: User/Document`
+  - `Enforced: Backend/Database`
+  - `Covered: Test`
+  - `Status: Chưa xác nhận`
+- Vị trí implementation nếu có:
+  - File.
+  - Class/method/endpoint/test.
 
-KHÔNG tự tạo business rule dựa trên suy đoán.
+Không biến hành vi tình cờ của frontend thành business rule.
 
-Nếu chưa chắc:
-ghi rõ:
+Rule đã được xác nhận nhưng source chưa triển khai phải:
 
-`Status: Chưa xác nhận`
-
-thay vì biến giả thuyết thành sự thật.
+- Vẫn được giữ trong `BUSINESS_RULES.md`.
+- Được ghi vào `TODO.md`.
+- Được ghi vào `BUGS.md` nếu sai lệch hiện tại tạo ra lỗi/rủi ro thực tế.
 
 ==================================================
-7. CURRENT_STATE.md
+9. CURRENT_STATE.md
 ==================================================
 
-Đây là file để AI mới tiếp tục công việc nhanh nhất.
-
-Phải NGẮN, tập trung vào trạng thái hiện tại.
+Phải đủ ngắn để AI mới đọc trong khoảng 1–2 phút.
 
 Bao gồm:
 
 # Current Project State
-- project hiện build/chạy ở trạng thái nào nếu xác định được
+- Trạng thái build/runtime nếu có bằng chứng.
+- Module thật và module prototype/demo.
 
 # Current Work
-- chức năng/tính năng hiện đang được phát triển nếu xác định được
+- Việc đang làm nếu có bằng chứng.
 
 # Recently Changed
-- thay đổi gần đây có thể xác định chắc chắn từ git/source/chat hiện tại
+- Chỉ ghi thay đổi xác định được từ source/git/tài liệu.
+- Không gán tác giả hoặc mục đích nếu không có bằng chứng.
 
 # Active Areas
-- module/file đang có khả năng được làm việc nhiều nhất
+- Module/file đang được sửa hoặc có thay đổi chưa commit.
 
 # Current Known Problems
-- vấn đề đang tồn tại
 
-# Next Suggested Actions
-- những việc hợp lý tiếp theo nếu có bằng chứng rõ ràng
+# Next Actions
+- Chỉ ghi việc tiếp theo có căn cứ.
 
-# Important Files For Next Session
-- file nên đọc đầu tiên khi tiếp tục
+# Files For Next Session
 
-Không biến file này thành nhật ký dài.
-
-Mục tiêu:
-AI mới đọc file này trong 1–2 phút là biết project hiện đang ở đâu.
+Không biến `CURRENT_STATE.md` thành changelog dài.
+Thông tin cũ phải được hợp nhất hoặc xóa khi không còn cần thiết.
 
 ==================================================
-8. TODO.md
+10. TODO.md
 ==================================================
 
 Chỉ ghi TODO có bằng chứng.
 
-Tìm từ:
-- TODO
-- FIXME
-- HACK
-- NotImplemented
-- placeholder
-- comment
-- code chưa hoàn thiện
-- task thể hiện rõ trong project/chat hiện tại
+Nguồn có thể gồm:
+
+- Yêu cầu đã xác nhận nhưng chưa triển khai.
+- `TODO`, `FIXME`, `HACK`, `NotImplemented`.
+- Placeholder thực sự chặn chức năng.
+- Test bị thiếu đã được tài liệu/task xác nhận.
+- Sai lệch giữa business rule đã xác nhận và source.
+
+Lưu ý:
+
+- Comment `TODO/FIXME` chỉ là bằng chứng cần audit, không tự động là TODO hợp lệ.
+- Không tự tạo hàng loạt TODO chỉ vì code có thể tối ưu hơn.
 
 Phân loại:
 
@@ -327,33 +437,23 @@ Phân loại:
 
 # Pending
 
-# Refactor / Technical Debt
+# Technical Debt
 
 # Needs Testing
 
-Mỗi mục nếu có thể ghi:
-
-- mô tả
-- file/module liên quan
-- lý do
-- trạng thái
-
-Không tự sáng tạo hàng loạt TODO chỉ vì thấy code có thể cải thiện.
-
-Phân biệt rõ:
-
-Confirmed TODO
-và
-Suggested Improvement
-
-Nếu chỉ là đề xuất của AI, phải đặt dưới:
-
 # Suggested Improvements
 
-không được coi là TODO đã được người dùng yêu cầu.
+Mỗi mục nên có:
+
+- Mô tả.
+- Bằng chứng.
+- File/module.
+- Trạng thái.
+
+`Suggested Improvements` không được trình bày như cam kết đã được người dùng phê duyệt.
 
 ==================================================
-9. BUGS.md
+11. BUGS.md
 ==================================================
 
 Phân loại:
@@ -366,70 +466,86 @@ Phân loại:
 
 # Known Risks / Fragile Areas
 
-Mỗi bug nếu có thông tin thì ghi:
+Một vấn đề chỉ được ghi là bug xác nhận khi có một trong các bằng chứng:
 
-- triệu chứng
-- nguyên nhân
-- trạng thái
-- file/module liên quan
-- workaround nếu có
-- cách fix nếu đã fix
-- cần test lại gì
+- Có bước tái hiện.
+- Có test fail trực tiếp.
+- Có lỗi runtime/log.
+- Có yêu cầu người dùng xác nhận triệu chứng.
+- Có mâu thuẫn rõ giữa source và rule đã xác nhận.
 
-Không được tự gọi một đoạn code là "bug" nếu chưa có bằng chứng.
+Test fail do môi trường, dependency hoặc dữ liệu thiếu phải được phân loại đúng; không tự gọi là bug sản phẩm.
 
-Nếu chỉ nghi ngờ, ghi:
+Mỗi mục nên có:
+
+- Triệu chứng.
+- Bằng chứng.
+- Nguyên nhân nếu đã xác minh.
+- Trạng thái.
+- File/module.
+- Workaround nếu có.
+- Kiểm tra cần chạy lại.
+
+Nếu chỉ nghi ngờ:
 
 `Status: Suspected / Chưa xác nhận`
 
-Fixed Bugs chỉ giữ tóm tắt ngắn gọn những bug có giá trị tham khảo về sau.
-Không biến BUGS.md thành changelog vô hạn.
+`Fixed Bugs` chỉ giữ bài học hoặc rủi ro hồi quy có giá trị lâu dài, không biến thành changelog vô hạn.
 
 ==================================================
-10. NGUYÊN TẮC CHUNG CHO TẤT CẢ FILE
+12. NGUYÊN TẮC CHUNG
 ==================================================
 
 - Markdown sạch và dễ đọc.
 - Heading rõ ràng.
-- Bullet list ngắn gọn.
-- Ưu tiên thông tin quan trọng cho AI coding.
+- Bullet ngắn.
 - Không copy source code dài.
-- Không ghi nội dung trùng lặp giữa nhiều file.
-- Dùng đường dẫn file, class, method/function thay cho việc paste code.
-- Không suy đoán thông tin không thể xác nhận.
-- Không biến giả thuyết thành fact.
-- Không ghi những chi tiết debug tạm thời không có giá trị lâu dài.
-- Không ghi nội dung thừa chỉ để làm tài liệu dài hơn.
-- Tối ưu để giảm token khi AI đọc lại trong các phiên sau.
-- Ưu tiên thông tin có giá trị cao và ổn định.
-- Source code hiện tại là nguồn sự thật chính.
-- Nếu tài liệu cũ có mâu thuẫn với source thì ưu tiên source.
-- Không sửa source code trong nhiệm vụ này.
+- Không lặp nội dung giữa nhiều file.
+- Dùng đường dẫn, class, method, endpoint và test thay cho paste code.
+- Không ghi suy đoán thành sự thật.
+- Không ghi chi tiết debug tạm thời.
+- Không thêm nội dung chỉ để tài liệu dài hơn.
+- Tối ưu token cho các phiên AI sau.
+- Giữ nguyên UTF-8, BOM và line ending của file đã tồn tại.
+- Không sửa source trong nhiệm vụ này.
+- Không ghi secret, token, password hoặc dữ liệu cá nhân nhạy cảm.
+- Không đánh dấu hoàn thành nếu không có bằng chứng.
+- Không âm thầm xóa rule đã được xác nhận.
 
 ==================================================
-11. KIỂM TRA SAU KHI TẠO
+13. KIỂM TRA SAU KHI TẠO
 ==================================================
 
-Sau khi tạo xong:
+Sau khi tạo/cập nhật:
 
-1. Đọc lại 7 file vừa tạo.
+1. Đọc lại toàn bộ 7 file context.
 2. Loại bỏ nội dung trùng lặp.
-3. Kiểm tra các đường dẫn/class/method đã ghi có tồn tại thực tế.
-4. Kiểm tra không có thông tin suy đoán được viết như sự thật.
-5. Bảo đảm CURRENT_STATE.md ngắn gọn.
-6. Bảo đảm AGENTS.md không bị phình to.
-7. Bảo đảm PROJECT_CONTEXT.md và ARCHITECTURE.md chứa thông tin tương đối ổn định.
-8. Bảo đảm TODO.md và BUGS.md phản ánh trạng thái thực, không phải danh sách do AI tự tưởng tượng.
+3. Kiểm tra đường dẫn, class, method, endpoint và test được nhắc đến có tồn tại.
+4. Kiểm tra không có suy đoán được ghi như fact.
+5. Kiểm tra `CURRENT_STATE.md` đủ ngắn.
+6. Kiểm tra `AGENTS.md` không chứa lịch sử/TODO/bug chi tiết.
+7. Kiểm tra `PROJECT_CONTEXT.md` và `ARCHITECTURE.md` chỉ chứa thông tin tương đối ổn định.
+8. Kiểm tra `TODO.md` và `BUGS.md` có bằng chứng.
+9. Kiểm tra không tạo context trùng trong `docs/`.
+10. Kiểm tra `git diff` chỉ gồm tài liệu đúng phạm vi.
+11. Chạy `git diff --check`.
+12. Không chạy build/test toàn bộ nếu chỉ tạo tài liệu, trừ khi cần xác minh một claim và lệnh đó an toàn.
 
-Sau đó lưu trực tiếp các file vào project.
+==================================================
+14. BÁO CÁO CUỐI
+==================================================
 
-Cuối cùng chỉ báo cáo ngắn gọn:
+Báo cáo ngắn:
 
-- Các file đã tạo
-- Project/stack đã nhận diện
-- Các module chính
-- Số TODO xác nhận được
-- Số BUG xác nhận được
-- Có thông tin nào chưa chắc chắn cần tôi xác nhận hay không
+- File đã tạo.
+- File đã hợp nhất/cập nhật.
+- Project và stack nhận diện được.
+- Module chính.
+- Số TODO đã xác nhận.
+- Số bug đã xác nhận.
+- Các mục `Chưa xác nhận`.
+- Kiểm tra đã chạy.
+- Tài liệu hoặc source nào có mâu thuẫn.
+- Điểm cần người dùng xác nhận.
 
 Không sửa source code.
