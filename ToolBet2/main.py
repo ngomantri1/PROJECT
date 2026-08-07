@@ -3980,6 +3980,10 @@ class HistoryWatcher:
         page = await self.browser_mgr.resolve_game_page(self.config.site.url, preferred)
         self.page = page
         logger.info("Tab dang dung: %s", (page.url or "")[:90])
+        # The site chooses its desktop/mobile login form from the browser
+        # window layout. Expand before phase detection and CAPTCHA login so
+        # the desktop form is rendered; the Tool login panels remain compact.
+        await self.browser_mgr.maximize_window()
         # Dong tab login/about:blank de tranh switch_to nhay ve trang trang
         try:
             from src.ae_sexy import is_usable_browser_page_url
