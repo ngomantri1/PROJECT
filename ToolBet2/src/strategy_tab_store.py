@@ -73,6 +73,9 @@ class StrategyTabStore:
                                 row.bet_when_remaining_seconds or 10
                             ),
                             "strategy_input": row.strategy_input or "",
+                            "strategy_inputs": self._decode_strategy_inputs(
+                                getattr(row, "strategy_inputs_json", "")
+                            ),
                             "mode": row.mode or "simulation",
                         }
                         for row in rows
@@ -116,7 +119,12 @@ class StrategyTabStore:
                     tab.auto_reset_on_nonnegative_pnl
                 )
                 row.bet_when_remaining_seconds = tab.bet_when_remaining_seconds
-                row.strategy_input = tab.strategy_input
+                inputs = dict(tab.strategy_inputs)
+                inputs[tab.strategy_id] = tab.input_for_strategy()
+                row.strategy_input = inputs.get(tab.strategy_id, "")
+                row.strategy_inputs_json = json.dumps(
+                    inputs, ensure_ascii=False, sort_keys=True
+                )
                 row.updated_at = now
                 money_config = (
                     session.query(StrategyMoneyConfigRecord)
@@ -141,6 +149,14 @@ class StrategyTabStore:
             return config
         finally:
             session.close()
+
+    @staticmethod
+    def _decode_strategy_inputs(raw: str | None) -> dict[str, str]:
+        try:
+            value = json.loads(raw or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
 
     @staticmethod
     def _seed_missing_money_configs(session, tab_id: str, now: datetime) -> bool:

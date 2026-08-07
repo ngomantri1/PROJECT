@@ -96,7 +96,6 @@ def launch_chrome_cdp(cdp_url: str, profile_dir: Path | None = None) -> bool:
         chrome,
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile}",
-        "--start-maximized",
         "--no-first-run",
         "--no-default-browser-check",
         "about:blank",
@@ -165,8 +164,14 @@ class BrowserManager:
         except Exception:
             return False
 
-    async def _maximize_cdp_window(self) -> None:
-        """Maximize an already-running CDP Chrome window on Windows."""
+    async def _set_cdp_window_bounds(
+        self,
+        *,
+        window_state: str,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> None:
+        """Set the current CDP Chrome window state on Windows."""
 
         if os.name != "nt" or self._context is None:
             return
@@ -181,11 +186,16 @@ class BrowserManager:
             window = await session.send("Browser.getWindowForTarget")
             window_id = window.get("windowId")
             if window_id:
+                bounds = {"windowState": window_state}
+                if width is not None:
+                    bounds["width"] = int(width)
+                if height is not None:
+                    bounds["height"] = int(height)
                 await session.send(
                     "Browser.setWindowBounds",
-                    {"windowId": window_id, "bounds": {"windowState": "maximized"}},
+                    {"windowId": window_id, "bounds": bounds},
                 )
-                logger.info("Da toi da hoa cua so Chrome CDP")
+                logger.info("Dat trang thai cua so Chrome CDP: %s", window_state)
         except Exception as exc:
             logger.debug("Khong toi da hoa duoc cua so Chrome CDP: %s", exc)
         finally:
@@ -194,6 +204,11 @@ class BrowserManager:
                     await session.detach()
                 except Exception:
                     pass
+
+    async def maximize_window(self) -> None:
+        """Expand the browser after authentication, before entering the game."""
+
+        await self._set_cdp_window_bounds(window_state="maximized")
 
     async def start(self) -> BrowserContext:
         self._playwright = await async_playwright().start()
@@ -220,7 +235,9 @@ class BrowserManager:
                             self._context = await self._browser.new_context()
                         self._owns_browser = False
                         self.cdp_url = url
-                        await self._maximize_cdp_window()
+                        await self._set_cdp_window_bounds(
+                            window_state="normal", width=520, height=900
+                        )
                         logger.info("Đã kết nối Chrome qua CDP: %s", url)
                         return self._context
                     except Exception as e:
@@ -309,7 +326,7 @@ class BrowserManager:
                     else:
                         self._context = await self._browser.new_context()
                     self._owns_browser = False
-                    await self._maximize_cdp_window()
+                    await self._set_cdp_window_bounds(window_state="maximized")
                     logger.info(
                         "Da ket noi lai Chrome CDP (lan %d): %s",
                         attempt,

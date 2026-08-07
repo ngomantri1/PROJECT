@@ -52,6 +52,7 @@ class LicenseStatus(str, Enum):
     CAPABILITY_MISSING = "capability_missing"
     INVALID_SIGNATURE = "invalid_signature"
     UNAVAILABLE = "unavailable"
+    ACCOUNT_IN_USE = "account_in_use"
     LOGGED_OUT = "logged_out"
 
 

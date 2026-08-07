@@ -776,6 +776,7 @@ class GameOverlay:
         stakes: list[int] | None = None,
         *,
         allow_early_host: bool = False,
+        license_status: dict[str, Any] | None = None,
     ) -> bool:
         try:
             url = ""
@@ -817,8 +818,13 @@ class GameOverlay:
             except Exception as e:
                 logger.warning("Khong gan duoc legacy overlay: %s", e)
         self._installed = legacy_ok
+        # Include the current license lease in the very first snapshot.  The
+        # early workspace is intentionally installed before table history, so
+        # it must not wait for a later history-driven update to render the
+        # expiry countdown.
+        initial_payload = {"license": dict(license_status or {})}
         runtime_ok = await self._ui_runtime.install(
-            page, self._build_ui_snapshot()
+            page, self._build_ui_snapshot(initial_payload)
         )
         return legacy_ok or runtime_ok
 

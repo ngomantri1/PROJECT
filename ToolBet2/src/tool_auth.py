@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from src.license_client import LicenseBackendError, LicenseService
+from src.secure_token_store import SecureTokenStore
 
 
 _PBKDF2_ITERATIONS = 310_000
@@ -30,6 +31,7 @@ class ToolAuthService:
         self,
         *,
         store_path: str | Path = "data/tool_accounts.json",
+        remembered_credentials_path: str | Path = "data/tool_login.bin",
         bootstrap_username: str = "toolbet",
         bootstrap_password: str = "toolbet",
         session_timeout_minutes: int = 480,
@@ -38,6 +40,7 @@ class ToolAuthService:
     ):
         self.enabled = bool(enabled)
         self._store_path = Path(store_path)
+        self._remembered_credentials = SecureTokenStore(remembered_credentials_path)
         self._bootstrap_username = (bootstrap_username or "").strip()
         self._bootstrap_password = bootstrap_password or ""
         self._timeout = timedelta(minutes=max(1, int(session_timeout_minutes)))
@@ -66,6 +69,31 @@ class ToolAuthService:
     @property
     def license_enabled(self) -> bool:
         return self._license is not None
+
+    def remembered_credentials(self) -> dict[str, str]:
+        """Return saved login fields without exposing them to logs."""
+        payload = self._remembered_credentials.load()
+        if not isinstance(payload, dict):
+            return {"username": "", "password": ""}
+        return {
+            "username": str(payload.get("username") or "").strip(),
+            "password": str(payload.get("password") or ""),
+        }
+
+    def remember_credentials(self, username: str, password: str) -> bool:
+        """Persist login fields in OS-protected storage after successful auth."""
+        user = str(username or "").strip()
+        secret = str(password or "")
+        if not user or not secret:
+            return False
+        try:
+            self._remembered_credentials.save({"username": user, "password": secret})
+        except (OSError, RuntimeError):
+            return False
+        return True
+
+    def clear_remembered_credentials(self) -> None:
+        self._remembered_credentials.clear()
 
     @property
     def last_error(self) -> str:

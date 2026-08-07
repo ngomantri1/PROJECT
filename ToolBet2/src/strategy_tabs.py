@@ -35,20 +35,28 @@ from src.statistical_strategies import (
 
 
 SIMULATION_STRATEGIES = (
-    {"id": "follow_last", "label": "Bám kết quả trước"},
-    {"id": "reverse_last", "label": "Đảo kết quả trước"},
-    {"id": "smart_prev", "label": "Theo cầu trước thông minh"},
-    {"id": "smart_prev_advanced", "label": "Bám cầu trước nâng cao"},
-    *(
-        {
-            "id": spec.id,
-            "label": spec.label,
-            "reference_id": spec.reference_id,
-            "live_eligible": spec.live_eligible,
-            "unavailable_reason": spec.unavailable_reason,
-        }
-        for spec in STATISTICAL_STRATEGIES
-    ),
+    {"id": "sequence_follow", "label": "1) Chuỗi cầu B/P (Banker/Player tự nhập)"},
+    {"id": "pattern_follow", "label": "2) Thế cầu B/P (Banker/Player tự nhập)"},
+    {"id": "sequence_major_minor", "label": "3) Chuỗi cầu I/N (Ít/Nhiều, tự nhập)"},
+    {"id": "pattern_major_minor", "label": "4) Thế cầu I/N (Ít/Nhiều, tự nhập)"},
+    {"id": "smart_prev", "label": "5) Bám cầu trước (thông minh)"},
+    {"id": "random_side", "label": "6) Cửa đặt ngẫu nhiên"},
+    {"id": "ai_stat_parity", "label": "7) Bám cầu B/P theo thống kê AI"},
+    {"id": "state_transition", "label": "8) Xu hướng chuyển trạng thái"},
+    {"id": "run_length", "label": "9) Run-length (dài-chuỗi)"},
+    {"id": "ensemble_majority", "label": "10) Chuyên gia bỏ phiếu"},
+    {"id": "time_sliced_hedge", "label": "11) Lịch chẻ 10 tay"},
+    {"id": "knn_subsequence", "label": "12) KNN chuỗi con"},
+    {"id": "dual_schedule_hedge", "label": "13) Lịch hai lớp"},
+    {"id": "online_ngram", "label": "14) AI học tại chỗ (n-gram)"},
+    {"id": "expert_panel", "label": "15) AI15 – Hội đồng Chuyên gia (Top10 + Guard + Regime)"},
+    {"id": "top10_pattern", "label": "16) Top10 tích lũy (khởi từ 50 B/P)"},
+    {"id": "parity_hotback", "label": "17) Chuỗi cầu B/P hay về"},
+    {"id": "smart_prev_advanced", "label": "18) Bám cầu trước nâng cao"},
+    # Giữ các ID cũ để tab đã lưu và bộ kiểm thử/lịch sử cũ vẫn mở được;
+    # chúng không thuộc danh sách đánh số mới.
+    {"id": "follow_last", "label": "Bám kết quả trước (cũ)"},
+    {"id": "reverse_last", "label": "Đảo kết quả trước (cũ)"},
 )
 _STRATEGY_IDS = frozenset(item["id"] for item in SIMULATION_STRATEGIES)
 TAB_MODES = ("simulation", "live")
@@ -69,7 +77,14 @@ class SimulationTabConfig(BaseModel):
     auto_reset_on_nonnegative_pnl: bool = False
     bet_when_remaining_seconds: int = 10
     strategy_input: str = ""
+    strategy_inputs: dict[str, str] = Field(default_factory=dict)
     mode: TabMode = "simulation"
+
+    def input_for_strategy(self, strategy_id: str | None = None) -> str:
+        sid = strategy_id or self.strategy_id
+        if sid in self.strategy_inputs:
+            return self.strategy_inputs[sid]
+        return self.strategy_input if sid == self.strategy_id else ""
 
     def normalized(self) -> "SimulationTabConfig":
         values = self.model_dump()
@@ -117,6 +132,20 @@ class SimulationTabConfig(BaseModel):
             3, bet_when_remaining_seconds
         )
         values["strategy_input"] = str(values.get("strategy_input") or "")[:500]
+        raw_inputs = values.get("strategy_inputs") or {}
+        if not isinstance(raw_inputs, dict):
+            raw_inputs = {}
+        inputs = {
+            str(key): str(value or "")[:500]
+            for key, value in raw_inputs.items()
+            if str(key) in _STRATEGY_IDS
+        }
+        if values["strategy_input"] and values["strategy_id"] not in inputs:
+            inputs[values["strategy_id"]] = values["strategy_input"]
+        values["strategy_inputs"] = inputs
+        values["strategy_input"] = inputs.get(
+            values["strategy_id"], values["strategy_input"]
+        )
         if values.get("mode") not in TAB_MODES:
             values["mode"] = "simulation"
         return SimulationTabConfig.model_validate(values)
@@ -282,6 +311,8 @@ def decision_for_strategy_tab(
     source: str = "",
     schedule_round_index: int = 0,
     statistical_runtime=None,
+    major_minor_history: str = "",
+    pool_totals: dict[str, object] | None = None,
 ) -> StrategyDecision:
     """Evaluate one tab without granting it execution authority."""
 
@@ -307,7 +338,9 @@ def decision_for_strategy_tab(
             history,
             schedule_round_index=schedule_round_index,
             runtime_state=statistical_runtime,
-            strategy_input=tab.strategy_input,
+            strategy_input=tab.input_for_strategy(),
+            major_minor_history=major_minor_history,
+            pool_totals=pool_totals,
         )
     return StrategyDecision.skip(
         strategy_id=tab.strategy_id,
@@ -324,6 +357,8 @@ def simulate_strategy_tab(
     skip_tie: bool,
     disabled_patterns: frozenset[str] = frozenset(),
     pattern_lengths: dict[str, int] | None = None,
+    major_minor_history: str = "",
+    pool_totals: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     """Replay completed rounds for one tab; this function cannot place a bet."""
 
@@ -342,7 +377,7 @@ def simulate_strategy_tab(
     result_outcomes: list[str] = []
     schedule_round_index = 0
     statistical_runtime = create_statistical_runtime(
-        tab.strategy_id, history[:1], seed=tab.id, strategy_input=tab.strategy_input
+        tab.strategy_id, history[:1], seed=tab.id, strategy_input=tab.input_for_strategy()
     )
 
     # Each evaluation at index i is a virtual bet whose known result is history[i].
@@ -395,6 +430,8 @@ def simulate_strategy_tab(
         pattern_lengths=lengths,
         schedule_round_index=schedule_round_index,
         statistical_runtime=statistical_runtime,
+        major_minor_history=major_minor_history,
+        pool_totals=pool_totals,
     )
     quote = manager.quote()
     risk = risk_manager.evaluate(RiskContext(
@@ -451,6 +488,8 @@ def strategy_tabs_to_overlay(
     skip_tie: bool,
     disabled_patterns: frozenset[str] = frozenset(),
     pattern_lengths: dict[str, int] | None = None,
+    major_minor_history: str = "",
+    pool_totals: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     cfg = config.normalized()
     return {
@@ -466,6 +505,7 @@ def strategy_tabs_to_overlay(
             {**tab.model_dump(), "status": simulate_strategy_tab(
                 tab, history, skip_tie=skip_tie,
                 disabled_patterns=disabled_patterns, pattern_lengths=pattern_lengths,
+                major_minor_history=major_minor_history, pool_totals=pool_totals,
             )}
             for tab in cfg.tabs
         ],

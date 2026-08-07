@@ -21,10 +21,14 @@ def health(request):
 def dashboard(request):
     profile = ChecklistProfile.objects.filter(is_active=True).first()
     latest = ScanRun.objects.first()
+    latest_successful = ScanRun.objects.filter(
+        status__in=[ScanRun.STATUS_COMPLETED, ScanRun.STATUS_WARNINGS]
+    ).first()
     notifications = Notification.objects.all()[:8]
     return Response({
         "profile": ChecklistProfileSerializer(profile).data if profile else None,
         "latest_run": ScanRunSerializer(latest).data if latest else None,
+        "latest_successful_run": ScanRunSerializer(latest_successful).data if latest_successful else None,
         "notifications": NotificationSerializer(notifications, many=True).data,
     })
 

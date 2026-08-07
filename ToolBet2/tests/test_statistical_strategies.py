@@ -109,11 +109,69 @@ class StatisticalStrategyTests(unittest.TestCase):
     def test_major_minor_fails_closed_without_pool_data(self):
         for strategy_id in ("sequence_major_minor", "pattern_major_minor"):
             with self.subTest(strategy_id=strategy_id):
-                decision = evaluate_statistical_strategy(strategy_id, sides("BPBP"))
+                decision = evaluate_statistical_strategy(
+                    strategy_id,
+                    sides("BPBP"),
+                    strategy_input="IN" if strategy_id == "sequence_major_minor" else "IN-I",
+                    major_minor_history="IN",
+                )
 
                 self.assertFalse(decision.wants_bet)
-                self.assertFalse(decision.metadata["live_eligible"])
-                self.assertIn("pool", decision.reason)
+                self.assertIn("tổng cược", decision.reason)
+
+    def test_sequence_major_minor_maps_current_pool_at_decision_time(self):
+        decision = evaluate_statistical_strategy(
+            "sequence_major_minor", sides("BP"), strategy_input="IN",
+            pool_totals={"banker": 483300, "player": 272800},
+        )
+        self.assertTrue(decision.wants_bet)
+        self.assertEqual(BetSide.PLAYER, decision.side)
+        self.assertEqual("I", decision.metadata["ni"])
+
+    def test_pattern_major_minor_prefers_longest_suffix_and_keeps_plan_until_settled(self):
+        runtime = create_statistical_runtime(
+            "pattern_major_minor", sides("BP"), strategy_input="N-I; IN-NI"
+        )
+        decision = evaluate_statistical_strategy(
+            "pattern_major_minor", sides("BP"), runtime_state=runtime,
+            strategy_input="N-I; IN-NI", major_minor_history="IN",
+            pool_totals={"banker": 100, "player": 200},
+        )
+        self.assertEqual(BetSide.PLAYER, decision.side)
+        self.assertEqual("N", decision.metadata["ni"])
+        advance_statistical_runtime("pattern_major_minor", runtime, sides("BPP"), won=True)
+        self.assertEqual("I", runtime.planned[0])
+
+    def test_pattern_major_minor_i_i_n_n_means_follow_previous_majority(self):
+        runtime = create_statistical_runtime(
+            "pattern_major_minor", sides("BP"), strategy_input="I-I;N-N"
+        )
+        decision_i = evaluate_statistical_strategy(
+            "pattern_major_minor",
+            sides("BP"),
+            runtime_state=runtime,
+            strategy_input="I-I;N-N",
+            major_minor_history="I",
+            pool_totals={"banker": 100, "player": 200},
+        )
+        self.assertTrue(decision_i.wants_bet)
+        self.assertEqual("I", decision_i.metadata["ni"])
+        self.assertEqual(BetSide.BANKER, decision_i.side)
+
+        runtime = create_statistical_runtime(
+            "pattern_major_minor", sides("BP"), strategy_input="I-I;N-N"
+        )
+        decision_n = evaluate_statistical_strategy(
+            "pattern_major_minor",
+            sides("BP"),
+            runtime_state=runtime,
+            strategy_input="I-I;N-N",
+            major_minor_history="N",
+            pool_totals={"banker": 100, "player": 200},
+        )
+        self.assertTrue(decision_n.wants_bet)
+        self.assertEqual("N", decision_n.metadata["ni"])
+        self.assertEqual(BetSide.PLAYER, decision_n.side)
 
     def test_new_strategy_runs_through_existing_simulation_pipeline(self):
         tab = SimulationTabConfig(

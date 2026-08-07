@@ -11,36 +11,11 @@
 - Status: Confirmed.
 - Cần test lại: cancel giữa mỗi step, cancel khi external HTTP đang chờ, status cuối cùng.
 
-## Nút “Tạm dừng” không có hành vi
-
-- Triệu chứng: dashboard hiển thị nút `Tạm dừng` nhưng không có `onClick`, API pause/resume cũng chưa có.
-- Liên quan: `frontend/src/App.tsx` — `Dashboard()`; model có `STATUS_PAUSED` nhưng backend không expose action.
-- Status: Confirmed.
-
-## “Xem kết quả” ở bước 6 khởi chạy một Scan Run mới
-
-- Triệu chứng: StepCard bước 6 hiển thị `Xem kết quả` nhưng dùng cùng callback `onRun`, gọi `start([INVESTMENT_RESULTS])`.
-- Backend mở rộng prerequisite đến sequence 6, vì vậy action này chạy lại toàn bộ sáu bước thay vì chỉ mở kết quả.
-- Liên quan: `frontend/src/App.tsx` — `StepCard()`, `Dashboard()`; `backend/scanner/tasks.py` — `create_scan_run()`.
-- Status: Confirmed.
-
-## Các checkbox trong modal chạy tổng không ảnh hưởng request
-
-- Triệu chứng: người dùng có thể bật/tắt “Quét ngay dữ liệu mới nhất”, “Tự động tiếp tục”, “Thông báo”, “Chỉ hiện BUY_SETUP”, nhưng tất cả là uncontrolled `defaultChecked` và `onStart()` không đọc giá trị.
-- Liên quan: `frontend/src/App.tsx` — `StartModal()`; `frontend/src/api.ts` — `startScan()`.
-- Status: Confirmed.
-
 ## Đổi interval schedule không cập nhật ngay next_run_at
 
 - Triệu chứng: khi schedule đã có `next_run_at`, PATCH `interval_minutes` không tính lại lần chạy kế tiếp. Chu kỳ mới chỉ có hiệu lực sau lần dispatch kế tiếp.
 - Nguyên nhân: `update_step_schedule()` chỉ tạo `next_run_at` khi trường này đang null.
 - Liên quan: `backend/scanner/views.py` — `update_step_schedule()`.
-- Status: Confirmed.
-
-## Link “Xem” candidate không điều hướng
-
-- Triệu chứng: bảng hiển thị anchor `Xem` nhưng không có href hoặc click handler; route chi tiết cũng đang `ComingSoon`.
-- Liên quan: `frontend/src/App.tsx` — `CandidateTable()`, `Shell()`.
 - Status: Confirmed.
 
 ## Các exclusion bật trong config nhưng không được áp dụng
@@ -62,7 +37,35 @@ Không có bug đang điều tra được ghi nhận trong source hoặc tài li
 
 # Fixed Bugs
 
-Không tìm thấy lịch sử bug đã fix có đủ bằng chứng để ghi vào tài liệu này.
+## Dashboard actions/link giả và trạng thái scan không rõ ràng
+
+- Sửa: nút `Tạm dừng` bị vô hiệu hóa kèm tooltip vì backend chưa có pause/resume; các checkbox không có request semantics đã được bỏ khỏi modal; `Xem kết quả` chỉ cuộn đến khu vực kết quả, không gọi API tạo Scan Run; chi tiết coin được vô hiệu hóa kèm tooltip khi route chưa sẵn sàng.
+- Sửa: `COMPLETED_WITH_WARNINGS` hiển thị là `Hoàn tất có cảnh báo`; progress hiển thị số cảnh báo/lỗi và notification được gộp theo nội dung.
+- Sửa bổ sung: bước `FAILED` được tính là đã kết thúc; milestone cảnh báo dùng màu cam; latest run failed không che kết quả thành công gần nhất; HTTP 429 được rút gọn ở UI nhưng raw error vẫn giữ nguyên trong `ScanRun.error_message`/notification.
+- Xác minh (2026-08-06): kiểm tra DOM/dashboard local xác nhận các control giả bị vô hiệu hóa hoặc không còn hiển thị; số `ScanRun` trước/sau khi bấm `Xem kết quả` giữ nguyên.
+- Status: Fixed and browser-verified.
+
+## Frontend Vite type declaration missing
+
+- Triệu chứng: `npm run typecheck` và `npm run build` fail với `TS2339: Property 'env' does not exist on type 'ImportMeta'` tại `frontend/src/api.ts`.
+- Sửa: thêm `frontend/src/vite-env.d.ts` tham chiếu `vite/client`.
+- Xác minh (2026-08-06): `npm run typecheck` và `npm run build` trong container frontend pass.
+- Status: Fixed and build-verified.
+
+## Milestone bỏ qua bước hoàn tất có cảnh báo
+
+- Triệu chứng: progress bar hiển thị 6/6, nhưng chỉ milestone có trạng thái chính xác `COMPLETED` được tô hoàn tất; các bước `COMPLETED_WITH_WARNINGS` trông như bị bỏ qua.
+- Bằng chứng: run ngày 2026-08-06 hoàn tất tuần tự sáu bước, trong đó bước 2–6 là `COMPLETED_WITH_WARNINGS`; `frontend/src/App.tsx` chỉ kiểm tra `status === 'COMPLETED'`.
+- Sửa: milestone nay coi cả `COMPLETED` và `COMPLETED_WITH_WARNINGS` là hoàn tất.
+- Status: Fixed; source-verified.
+
+## Worker không consume queue mặc định của Celery
+
+- Triệu chứng: `POST /api/scan-runs/start/` tạo `ScanRun` ở `QUEUED`, nhưng cả sáu step giữ `WAITING`; các lần bấm tiếp theo nhận HTTP 409.
+- Bằng chứng: worker chỉ consume `default,fast,crawl`, trong khi Redis có 281 task ở queue mặc định `celery`; `celery inspect active_queues` không có `celery`.
+- Sửa: worker trong `docker-compose.yml` hiện consume `celery,default,fast,crawl`.
+- Xác minh runtime (2026-08-06): worker nhận `scanner.tasks.run_scan`; run đã kẹt chuyển `COMPLETED`, `progress=100`, và sáu step hoàn tất/có cảnh báo theo baseline.
+- Status: Fixed and runtime-verified.
 
 # Known Risks / Fragile Areas
 
@@ -82,7 +85,8 @@ Không tìm thấy lịch sử bug đã fix có đủ bằng chứng để ghi v
 
 - CoinGecko/Binance rate limit hoặc schema change làm toàn step/run fail.
 - Không có fallback/retry trong `PublicMarketClient._get()`.
-- Status: Known operational risk.
+- Bằng chứng runtime (2026-08-06): hai run gần nhất fail tại Universe Scan vì CoinGecko trả `429 Too Many Requests` cho `/api/v3/coins/markets`.
+- Status: Known operational risk; chưa sửa trong phạm vi dashboard.
 
 ## REST API không yêu cầu authentication
 

@@ -153,6 +153,10 @@ class AeSexyCollector:
         self._ssot_catchup_task: asyncio.Task | None = None
         self._last_bet_phase: dict[str, Any] = {}
         self._last_pool_trace_key: tuple[Any, ...] = ()
+        self._latest_pool_by_table: dict[int, dict[str, Any]] = {}
+        self._pool_by_round: dict[tuple[int, int, int], dict[str, Any]] = {}
+        self._major_minor_by_table_shoe: dict[tuple[int, int], str] = {}
+        self._major_minor_recorded_rounds: dict[tuple[int, int], set[int]] = {}
         self._last_cuoc_mo_logged: bool = False
         self._http_fetch_interval: float = 8.0
         self.poll_error_streak: int = 0
@@ -548,6 +552,7 @@ class AeSexyCollector:
             self._last_game_round[tid] = game_round
             self._pending_winner_round.pop(tid, None)
         if await self._dispatch_history_update("increment", trial, source, force=True):
+            self._record_major_minor_result(tid, game_round, side)
             from src.models import SIDE_LABEL
 
             ket_qua(
@@ -701,6 +706,7 @@ class AeSexyCollector:
         new_shoe = int(road.get("gameShoe") or 0)
         cached = self._http_roads.get(tid)
         if cached and new_shoe and cached.get("game_shoe") and new_shoe != cached.get("game_shoe"):
+            self._reset_major_minor_shoe(tid, new_shoe)
             self._road_by_table[tid] = []
             self._last_stamp_by_table[tid] = 0
             self._last_stats_total[tid] = 0
@@ -1247,6 +1253,123 @@ class AeSexyCollector:
             meta["game_round"] = bead_index + 1
         return meta
 
+    def latest_pool_totals(self, table_name: str) -> dict[str, int] | None:
+        """Return a short-lived, direct-DOM Player/Banker pool snapshot."""
+
+        now = time.monotonic()
+        for tid in table_name_to_ids(table_name):
+            pool = self._latest_pool_by_table.get(tid)
+            if not pool or now - float(pool.get("captured_at") or 0) > 8.0:
+                continue
+            try:
+                banker, player = int(pool["banker"]), int(pool["player"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if banker > 0 and player > 0:
+                return {"banker": banker, "player": player}
+        return None
+
+    def major_minor_history(self, table_name: str) -> str:
+        """I/N observations collected only from resolved rounds of this shoe."""
+
+        for tid in table_name_to_ids(table_name):
+            shoe = int(self._last_game_shoe.get(tid) or 0)
+            if shoe:
+                return self._major_minor_by_table_shoe.get((tid, shoe), "")
+        return ""
+
+    def _pool_for_round(self, tid: int, shoe: int, game_round: int) -> dict[str, Any] | None:
+        """Find the locked pre-result pool without crossing a shoe boundary."""
+
+        if shoe:
+            exact = self._pool_by_round.get((tid, shoe, game_round))
+            if exact:
+                return exact
+        # Provider messages can deliver the shoe after the pool snapshot. Use
+        # only a same-round snapshot; never fall back to an adjacent round.
+        candidates = [
+            pool
+            for (pool_tid, pool_shoe, pool_round), pool in self._pool_by_round.items()
+            if pool_tid == tid
+            and pool_round == game_round
+            and (not shoe or pool_shoe == shoe)
+        ]
+        if candidates:
+            return max(candidates, key=lambda pool: float(pool.get("captured_at") or 0))
+        return None
+
+    def _reset_major_minor_shoe(self, tid: int, shoe: int) -> None:
+        """Drop I/N and locked-pool state when the provider starts a new shoe."""
+
+        for key in list(self._major_minor_by_table_shoe):
+            if key[0] == tid and key[1] != shoe:
+                self._major_minor_by_table_shoe.pop(key, None)
+        for key in list(self._major_minor_recorded_rounds):
+            if key[0] == tid and key[1] != shoe:
+                self._major_minor_recorded_rounds.pop(key, None)
+        for key in list(self._pool_by_round):
+            if key[0] == tid and key[1] != shoe:
+                self._pool_by_round.pop(key, None)
+        self._latest_pool_by_table.pop(tid, None)
+
+    def _record_major_minor_result(
+        self,
+        tid: int,
+        game_round: int,
+        side: BetSide,
+        *,
+        source: str = "result",
+    ) -> None:
+        if side not in (BetSide.BANKER, BetSide.PLAYER) or not game_round:
+            return
+        shoe = int(self._last_game_shoe.get(tid) or 0)
+        pool = self._pool_for_round(tid, shoe, game_round)
+        if not pool:
+            logger.warning(
+                "[NI_POOL_SKIP] table=%s shoe=%s round=%s source=%s reason=missing_pre_result_pool",
+                self.table_name or tid,
+                shoe or "?",
+                game_round,
+                source,
+            )
+            return
+        pool_shoe = int(pool.get("game_shoe") or shoe or 0)
+        key = (tid, pool_shoe)
+        recorded = self._major_minor_recorded_rounds.setdefault(key, set())
+        if game_round in recorded:
+            return
+        banker, player = int(pool["banker"]), int(pool["player"])
+        if banker <= 0 or player <= 0:
+            logger.warning(
+                "[NI_POOL_SKIP] table=%s shoe=%s round=%s source=%s reason=invalid_pre_result_pool banker=%s player=%s",
+                self.table_name or tid,
+                pool_shoe or "?",
+                game_round,
+                source,
+                banker,
+                player,
+            )
+            return
+        ni = "N" if (
+            (side == BetSide.BANKER and banker >= player)
+            or (side == BetSide.PLAYER and player >= banker)
+        ) else "I"
+        history = (self._major_minor_by_table_shoe.get(key, "") + ni)[-120:]
+        self._major_minor_by_table_shoe[key] = history
+        recorded.add(game_round)
+        logger.info(
+            "[NI_POOL_RESULT] table=%s shoe=%s round=%s source=%s result=%s ni=%s banker=%s player=%s history=%s",
+            self.table_name or tid,
+            pool_shoe or "?",
+            game_round,
+            source,
+            side.value,
+            ni,
+            banker,
+            player,
+            history,
+        )
+
     def is_shuffle_active(self, table_name: str = "") -> bool:
         """True khi ban dang xao bai — khong dat cuoc."""
         name = table_name or self.table_name
@@ -1586,6 +1709,18 @@ class AeSexyCollector:
             return False
         self._last_key = key
         self.state.history = list(history)
+        # Bootstrap/catch-up paths do not pass through _apply_round_result.
+        # Reconcile only newly appended rounds here so I/N follows the same
+        # result boundary as the authoritative table history.
+        if prev_len > 0 and len(history) > prev_len and self.table_name:
+            for tid in table_name_to_ids(self.table_name):
+                for game_round, side in enumerate(history[prev_len:], start=prev_len + 1):
+                    self._record_major_minor_result(
+                        tid,
+                        game_round,
+                        side,
+                        source=f"{source}-history-delta",
+                    )
         if self.table_name and history:
             self._sync_stats_from_history(self.table_name, history)
         if len(history) > prev_len:
@@ -1727,6 +1862,7 @@ class AeSexyCollector:
             prev_shoe = int(prev.get("game_shoe") or 0) if prev else 0
             if prev and new_shoe and prev_shoe and new_shoe != prev_shoe:
                 logger.info("Shoe moi HTTP table %s: %s -> %s", tid, prev_shoe, new_shoe)
+                self._reset_major_minor_shoe(tid, new_shoe)
                 self._road_by_table[tid] = []
                 self._last_stamp_by_table[tid] = 0
                 self._last_stats_total[tid] = 0
@@ -1989,10 +2125,26 @@ class AeSexyCollector:
             pools = {}
         player_pool = pools.get("player") if isinstance(pools, dict) else {}
         banker_pool = pools.get("banker") if isinstance(pools, dict) else {}
+        player_value = player_pool.get("value") if isinstance(player_pool, dict) else None
+        banker_value = banker_pool.get("value") if isinstance(banker_pool, dict) else None
+        if isinstance(player_value, int) and isinstance(banker_value, int) and player_value > 0 and banker_value > 0:
+            pool = {
+                "player": player_value,
+                "banker": banker_value,
+                "source": pools.get("source", "dom_pool_info_money"),
+                "captured_at": time.monotonic(),
+                "table_name": self.table_name,
+                "game_round": game_round + 1 if game_round else 0,
+            }
+            for tid in table_name_to_ids(self.table_name):
+                shoe = int(self._last_game_shoe.get(tid) or 0)
+                self._latest_pool_by_table[tid] = dict(pool, game_shoe=shoe)
+                if shoe and pool["game_round"]:
+                    self._pool_by_round[(tid, shoe, int(pool["game_round"]))] = dict(pool, game_shoe=shoe)
         pool_key = (
             game_round,
-            player_pool.get("value") if isinstance(player_pool, dict) else None,
-            banker_pool.get("value") if isinstance(banker_pool, dict) else None,
+            player_value,
+            banker_value,
         )
         if pool_key != self._last_pool_trace_key:
             self._last_pool_trace_key = pool_key

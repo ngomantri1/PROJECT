@@ -58,6 +58,7 @@ ui:
 tool_auth:
   enabled: true
   account_store_path: "data/tool_accounts.json"
+  remembered_credentials_path: "data/tool_login.bin"
   bootstrap_username: "toolbet"
   bootstrap_password: "toolbet"
   session_timeout_minutes: 480
@@ -66,12 +67,23 @@ tool_auth:
 # Khi bật, Tool Login xác thực qua API và mọi cược thật cần capability live_bet.
 license:
   enabled: false
+  # signed = ToolBet license server; baccarat_chrome_agent2 = GitHub + Worker lease.
+  provider: "signed"
   api_url: "http://127.0.0.1:8765"
   public_key_path: "data/license_public.pem"
   cache_path: "data/license_session.bin"
   timeout_seconds: 8
   grace_minutes: 60
   refresh_before_minutes: 5
+  github_raw_base_url: "https://raw.githubusercontent.com"
+  github_owner: "ngomantri1"
+  github_repo: "licenses"
+  github_branch: "main"
+  github_license_path: "auto"
+  lease_base_url: "https://net88.ngomantri1.workers.dev/lease/auto"
+  lease_app_id: "BaccaratChromeAgent"
+  heartbeat_seconds: 600
+  reference_client_id_path: "data/reference_license_client_id.txt"
 live_execution:
   # disabled = virtual only; pilot = finite lease; production = no pilot lease.
   # Every real mode still checks Tool/license, Risk, pending and journal.

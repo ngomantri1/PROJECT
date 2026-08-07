@@ -14,6 +14,7 @@ data/toolbet.db-*
 data/cdp_profile/
 data/license_session.bin
 data/license_public.pem
+data/tool_login.bin
 server_data/
 
 # Generated resource baselines

@@ -135,10 +135,6 @@ Liên quan: `frontend/src/App.tsx` — `Shell()`, `ComingSoon()`.
 
 - Clone, update, activate, reset, snapshot immutability và checksum/version.
 
-## Confirmed Testing Need — Frontend build
-
-- `npm run typecheck` và `npm run build` chưa được xác nhận trong môi trường tạo tài liệu.
-
 # Suggested Improvements
 
 Các mục dưới đây là đề xuất, không phải yêu cầu đã được xác nhận:

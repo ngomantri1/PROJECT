@@ -42,36 +42,36 @@ INSTALL_SCRIPT = """
         position: fixed; inset: 0; z-index: 2147483646;
         display: flex; align-items: center; justify-content: center;
         font-family: "Segoe UI", Tahoma, sans-serif;
-        background:
-          radial-gradient(ellipse at 20% 10%, rgba(40, 90, 70, 0.45), transparent 50%),
-          radial-gradient(ellipse at 80% 90%, rgba(30, 50, 80, 0.4), transparent 45%),
-          linear-gradient(160deg, #0f1419 0%, #1a2420 45%, #121820 100%);
-        color: #e8efe9;
+        background: linear-gradient(135deg, #edf3fa, #dbe6f2);
+        color: #102033;
       }
       #toolbet-login-panel .tb-box {
         width: min(420px, 92vw);
-        padding: 28px 28px 22px;
-        border: 1px solid rgba(180, 210, 190, 0.18);
-        background: rgba(18, 26, 22, 0.92);
-        box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+        box-sizing: border-box;
+        padding: 28px;
+        border: 0;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 18px 55px rgba(28, 50, 79, 0.18);
       }
       #toolbet-login-panel .tb-brand {
-        font-size: 22px; font-weight: 700; letter-spacing: 0.04em;
-        color: #9fd4b0; margin: 0 0 6px;
+        font-size: 24px; font-weight: 700; letter-spacing: 0;
+        color: #102033; margin: 0 0 10px;
       }
       #toolbet-login-panel .tb-sub {
-        margin: 0 0 22px; font-size: 13px; color: #9aaba0; line-height: 1.4;
+        margin: 0 0 22px; font-size: 15px; color: #607086; line-height: 1.45;
       }
       #toolbet-login-panel label {
-        display: block; font-size: 12px; color: #b7c8bc; margin: 0 0 6px;
+        display: block; font-size: 12px; color: #1769dd; margin: 0 0 6px;
+        font-weight: 700; text-transform: uppercase;
       }
-      #toolbet-login-panel .tb-field { margin-bottom: 14px; }
+      #toolbet-login-panel .tb-field { margin-bottom: 16px; }
       #toolbet-login-panel input,
       #toolbet-login-panel select {
         width: 100%; box-sizing: border-box;
-        padding: 10px 12px; font-size: 14px;
-        border: 1px solid rgba(180, 210, 190, 0.28);
-        background: rgba(8, 12, 10, 0.75); color: #eef6f0;
+        padding: 11px 12px; font-size: 15px;
+        border: 1px solid #c8d2df; border-radius: 6px;
+        background: #fff; color: #102033;
         outline: none;
       }
       #toolbet-login-panel select {
@@ -79,47 +79,47 @@ INSTALL_SCRIPT = """
         appearance: auto;
       }
       #toolbet-login-panel select option {
-        background: #1a2420; color: #eef6f0;
+        background: #fff; color: #102033;
       }
       #toolbet-login-panel input:focus,
       #toolbet-login-panel select:focus {
-        border-color: #6fbf8a;
+        outline: 2px solid #9fc5ff; border-color: #2878e8;
       }
       #toolbet-login-panel .tb-hint {
-        margin-top: 6px; font-size: 11px; color: #7f9488;
+        margin-top: 6px; font-size: 11px; color: #607086;
       }
       #toolbet-login-panel .tb-err {
         min-height: 18px; margin: 4px 0 10px;
-        font-size: 12px; color: #ff9b9b;
+        font-size: 12px; color: #d13232;
       }
       #toolbet-login-panel button {
-        width: 100%; padding: 11px 14px; margin-top: 4px;
-        border: 1px solid #5ea876; background: #2d6b45;
-        color: #f3fff7; font-size: 15px; font-weight: 600; cursor: pointer;
+        width: 100%; padding: 12px 14px; margin-top: 4px;
+        border: 0; border-radius: 9px; background: #2878e8;
+        color: #fff; font-size: 16px; font-weight: 700; cursor: pointer;
       }
-      #toolbet-login-panel button:hover { background: #358352; }
+      #toolbet-login-panel button:hover { background: #216bd3; }
       #toolbet-login-panel button:disabled {
         opacity: 0.55; cursor: wait;
       }
     </style>
     <div class="tb-box">
-      <div class="tb-brand">ToolBet</div>
-      <p class="tb-sub">Chon web duoc ho tro, nhap tai khoan / mat khau truoc khi vao trang va sanh.</p>
+      <div class="tb-brand">Baccarat Sexy (Telegram: @minoauto)</div>
+      <p class="tb-sub">Chọn web được hỗ trợ, nhập tài khoản / mật khẩu trước khi vào trang và sảnh</p>
       <div class="tb-field">
-        <label for="tb-web">Web</label>
+        <label for="tb-web">Trang web</label>
         <select id="tb-web">${optionsHtml}</select>
-        <div class="tb-hint">Chi cac web trong danh sach moi duoc he thong ho tro.</div>
+        <div class="tb-hint">Chỉ các web trong danh sách mới được hệ thống hỗ trợ</div>
       </div>
       <div class="tb-field">
-        <label for="tb-user">Tai khoan</label>
-        <input id="tb-user" type="text" autocomplete="username" placeholder="Tai khoan" />
+        <label for="tb-user">Tài khoản</label>
+        <input id="tb-user" type="text" autocomplete="username" placeholder="Tài khoản" />
       </div>
       <div class="tb-field">
-        <label for="tb-pass">Mat khau</label>
-        <input id="tb-pass" type="password" autocomplete="current-password" placeholder="Mat khau" />
+        <label for="tb-pass">Mật khẩu</label>
+        <input id="tb-pass" type="password" autocomplete="current-password" placeholder="Mật khẩu" />
       </div>
       <div class="tb-err" id="tb-err"></div>
-      <button id="tb-go" type="button">Vao web &amp; sanh</button>
+      <button id="tb-go" type="button">Vào web &amp; sảnh</button>
     </div>
   `;
   document.documentElement.appendChild(root);
@@ -155,29 +155,29 @@ INSTALL_SCRIPT = """
       password: pass.value || '',
     };
     if (!payload.site_id) {
-      err.textContent = 'Chon web.';
+      err.textContent = 'Chọn trang web.';
       web.focus();
       return;
     }
     if (!payload.username || !payload.password) {
-      err.textContent = 'Nhap day du tai khoan va mat khau.';
+      err.textContent = 'Nhập đầy đủ tài khoản và mật khẩu.';
       return;
     }
     go.disabled = true;
-    go.textContent = 'Dang luu...';
+    go.textContent = 'Đang lưu...';
     try {
       const res = await window.toolbetSubmitLogin(payload);
       if (!res || !res.ok) {
-        err.textContent = (res && res.error) || 'Khong luu duoc.';
+        err.textContent = (res && res.error) || 'Không lưu được.';
         go.disabled = false;
-        go.textContent = 'Vao web & sanh';
+        go.textContent = 'Vào web & sảnh';
         return;
       }
-      go.textContent = 'Da luu — dang vao...';
+      go.textContent = 'Đã lưu — đang vào...';
     } catch (e) {
       err.textContent = String(e && e.message ? e.message : e);
       go.disabled = false;
-      go.textContent = 'Vao web & sanh';
+      go.textContent = 'Vào web & sảnh';
     }
   }
 
@@ -214,7 +214,7 @@ async def _ensure_panel_page(page: Page) -> Page:
     if not url or url in ("about:blank", "chrome://newtab/", "chrome://new-tab-page/"):
         await page.set_content(
             "<!doctype html><html><head><meta charset='utf-8'>"
-            "<title>ToolBet Login</title></head><body></body></html>",
+            "<title>Baccarat Sexy Login</title></head><body></body></html>",
             wait_until="domcontentloaded",
         )
     return page

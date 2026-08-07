@@ -36,18 +36,17 @@ STATISTICAL_STRATEGIES = (
     StrategySpec("top10_pattern", "Top10 tích lũy (khởi từ 50 B/P)", "top10-pattern-follow"),
     StrategySpec("parity_hotback", "Chuỗi cầu B/P hay về", "seq-cl-hotback"),
     StrategySpec(
-        "sequence_major_minor", "Chuỗi cầu I/N tự nhập", "seq-ni", False,
-        "Collector hiện tại chưa cung cấp pool Banker/Player và chuỗi N/I",
+        "sequence_major_minor", "Chuỗi cầu I/N tự nhập", "seq-ni",
     ),
     StrategySpec(
-        "pattern_major_minor", "Thế cầu I/N tự nhập", "pattern-ni", False,
-        "Collector hiện tại chưa cung cấp pool Banker/Player và chuỗi N/I",
+        "pattern_major_minor", "Thế cầu I/N tự nhập", "pattern-ni",
     ),
 )
 SPEC_BY_ID = {item.id: item for item in STATISTICAL_STRATEGIES}
 SCHEDULE_STRATEGY_IDS = frozenset({"time_sliced_hedge", "dual_schedule_hedge"})
 STATEFUL_STRATEGY_IDS = frozenset({
     "sequence_follow", "pattern_follow", "random_side",
+    "sequence_major_minor", "pattern_major_minor",
     "ensemble_majority", "online_ngram", "expert_panel",
     "top10_pattern", "parity_hotback",
 })
@@ -132,6 +131,7 @@ class SequenceFollowRuntime:
 class PatternFollowRuntime:
     patterns: list[tuple[str, str]]
     planned: deque[str] = field(default_factory=deque)
+    matched_lhs: str = ""
 
 
 @dataclass(slots=True)
@@ -169,6 +169,48 @@ def _pattern_pairs(value: str) -> list[tuple[str, str]]:
         if lhs and rhs:
             pairs.append((lhs, rhs))
     return sorted(pairs, key=lambda item: len(item[0]), reverse=True)
+
+
+def _ni_chars(value: str) -> str:
+    """Normalize an operator I/N sequence; whitespace is the only separator."""
+
+    raw = str(value or "").upper()
+    if any(not (char.isspace() or char in "IN") for char in raw):
+        return ""
+    return "".join(char for char in raw if char in "IN")
+
+
+def _ni_pattern_pairs(value: str) -> list[tuple[str, str]]:
+    normalized = (
+        str(value or "").replace("->", "-").replace("→", "-")
+        .replace("–", "-").replace("—", "-")
+    )
+    pairs: list[tuple[str, str]] = []
+    for part in normalized.replace("\r", "\n").replace(";", "\n").replace("|", "\n").replace(",", "\n").split("\n"):
+        fields = [field.strip() for field in part.split("-") if field.strip()]
+        if len(fields) != 2:
+            continue
+        lhs, rhs = _ni_chars(fields[0]), _ni_chars(fields[1])
+        if lhs and rhs and len(lhs) <= 20:
+            pairs.append((lhs, rhs))
+    return sorted(pairs, key=lambda item: len(item[0]), reverse=True)
+
+
+def _ni_to_pick(value: str, pool_totals: dict[str, object] | None) -> str | None:
+    """Map N/I to a physical side from the current verified table pools."""
+
+    try:
+        banker = int((pool_totals or {}).get("banker") or 0)
+        player = int((pool_totals or {}).get("player") or 0)
+    except (TypeError, ValueError):
+        return None
+    if banker <= 0 or player <= 0:
+        return None
+    if value == "N":
+        return "B" if banker >= player else "P"
+    if value == "I":
+        return "B" if banker < player else "P"
+    return None
 
 
 def _ai_stat(seq: str, minimum_support: int = 1) -> tuple[str, float, int, int]:
@@ -573,6 +615,10 @@ def create_statistical_runtime(
         return SequenceFollowRuntime(sequence=_bp_chars(strategy_input))
     if strategy_id == "pattern_follow":
         return PatternFollowRuntime(patterns=_pattern_pairs(strategy_input))
+    if strategy_id == "sequence_major_minor":
+        return SequenceFollowRuntime(sequence=_ni_chars(strategy_input))
+    if strategy_id == "pattern_major_minor":
+        return PatternFollowRuntime(patterns=_ni_pattern_pairs(strategy_input))
     if strategy_id == "random_side":
         return RandomSideRuntime(random=Random(seed))
     if strategy_id == "ensemble_majority":
@@ -633,13 +679,15 @@ def advance_statistical_runtime(
     """Apply exactly one settled task result to a per-tab runtime state."""
 
     seq = _seq(history)
-    if strategy_id == "sequence_follow" and isinstance(runtime, SequenceFollowRuntime):
+    if strategy_id in {"sequence_follow", "sequence_major_minor"} and isinstance(runtime, SequenceFollowRuntime):
         if runtime.sequence:
             runtime.index = (runtime.index + 1) % len(runtime.sequence)
         return
-    if strategy_id == "pattern_follow" and isinstance(runtime, PatternFollowRuntime):
+    if strategy_id in {"pattern_follow", "pattern_major_minor"} and isinstance(runtime, PatternFollowRuntime):
         if runtime.planned:
             runtime.planned.popleft()
+        if not runtime.planned:
+            runtime.matched_lhs = ""
         return
     if strategy_id == "random_side" and isinstance(runtime, RandomSideRuntime):
         runtime.planned = ""
@@ -778,6 +826,8 @@ def evaluate_statistical_strategy(
     schedule_round_index: int = 0,
     runtime_state: object | None = None,
     strategy_input: str = "",
+    major_minor_history: str = "",
+    pool_totals: dict[str, object] | None = None,
 ) -> StrategyDecision:
     spec = SPEC_BY_ID[strategy_id]
     seq = _seq(history)
@@ -830,6 +880,57 @@ def evaluate_statistical_strategy(
         pick = runtime.planned[0]
         confidence, reason = .5, f"Thế cầu, còn {len(runtime.planned)} bước"
         metadata["runtime_stateful"] = isinstance(runtime_state, PatternFollowRuntime)
+    elif strategy_id == "sequence_major_minor":
+        runtime = runtime_state if isinstance(runtime_state, SequenceFollowRuntime) else create_statistical_runtime(
+            strategy_id, history, strategy_input=strategy_input
+        )
+        if len(runtime.sequence) < 2:
+            return StrategyDecision.skip(
+                strategy_id=strategy_id, strategy_name=spec.label,
+                reason="Chưa nhập chuỗi I/N hợp lệ (2–100 ký tự)", history_size=len(history),
+            )
+        ni = runtime.sequence[runtime.index]
+        pick = _ni_to_pick(ni, pool_totals)
+        if pick is None:
+            return StrategyDecision.skip(
+                strategy_id=strategy_id, strategy_name=spec.label,
+                reason="Chưa có tổng cược Banker/Player hợp lệ", history_size=len(history),
+            )
+        confidence, reason = .5, f"Chuỗi I/N, vị trí={runtime.index + 1}/{len(runtime.sequence)}; chọn {ni}"
+        metadata.update({"runtime_stateful": isinstance(runtime_state, SequenceFollowRuntime), "ni": ni})
+    elif strategy_id == "pattern_major_minor":
+        runtime = runtime_state if isinstance(runtime_state, PatternFollowRuntime) else create_statistical_runtime(
+            strategy_id, history, strategy_input=strategy_input
+        )
+        if not runtime.patterns:
+            return StrategyDecision.skip(
+                strategy_id=strategy_id, strategy_name=spec.label,
+                reason="Chưa nhập thế cầu I/N hợp lệ (ví dụ INN-I; NN-NI)", history_size=len(history),
+            )
+        ni_seq = "".join(char for char in str(major_minor_history or "").upper() if char in "IN")
+        if runtime.planned and runtime.matched_lhs and not ni_seq.endswith(runtime.matched_lhs):
+            runtime.planned.clear()
+            runtime.matched_lhs = ""
+        if not runtime.planned:
+            for lhs, rhs in runtime.patterns:
+                if ni_seq.endswith(lhs):
+                    runtime.planned.extend(rhs)
+                    runtime.matched_lhs = lhs
+                    break
+        if not runtime.planned:
+            return StrategyDecision.skip(
+                strategy_id=strategy_id, strategy_name=spec.label,
+                reason="Chưa khớp thế cầu I/N", history_size=len(history),
+            )
+        ni = runtime.planned[0]
+        pick = _ni_to_pick(ni, pool_totals)
+        if pick is None:
+            return StrategyDecision.skip(
+                strategy_id=strategy_id, strategy_name=spec.label,
+                reason="Chưa có tổng cược Banker/Player hợp lệ", history_size=len(history),
+            )
+        confidence, reason = .5, f"Thế I/N '{runtime.matched_lhs}', còn {len(runtime.planned)} bước; chọn {ni}"
+        metadata.update({"runtime_stateful": isinstance(runtime_state, PatternFollowRuntime), "ni": ni, "matched_lhs": runtime.matched_lhs})
     elif strategy_id == "random_side":
         runtime = runtime_state if isinstance(runtime_state, RandomSideRuntime) else create_statistical_runtime(
             strategy_id, history

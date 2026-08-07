@@ -175,8 +175,8 @@ Source: `frontend/src/App.tsx` — `Dashboard.load()`.
 
 - Frontend polling dashboard mỗi 4 giây.
 - Không có push realtime.
-- `latest_run` là `ScanRun.objects.first()` theo ordering `-created_at`.
-- UI lấy step/candidate từ latest run.
+- `latest_run` là `ScanRun.objects.first()` theo ordering `-created_at`; `latest_successful_run` là run gần nhất có status `COMPLETED` hoặc `COMPLETED_WITH_WARNINGS`.
+- UI lấy tiến trình lỗi/đang chạy từ `latest_run`. Khi latest run fail, UI chỉ dùng `latest_successful_run` dưới nhãn kết quả thành công gần nhất, không thay thế dữ liệu của run mới.
 
 ## 5. Profile Update Flow
 

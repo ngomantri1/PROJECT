@@ -114,3 +114,30 @@ alive until that result is resolved and persisted, then exits the Game session.
   `refresh_until`.
 - Invalid signature, device mismatch, explicit revoke and capability mismatch
   fail closed.
+
+## 6. BaccaratChromeAgent2 compatibility provider
+
+When the operational license is managed by the existing BaccaratChromeAgent2
+deployment, ToolBet can use the same GitHub records and Cloudflare Worker
+single-device lease:
+
+```yaml
+license:
+  enabled: true
+  provider: "baccarat_chrome_agent2"
+  github_raw_base_url: "https://raw.githubusercontent.com"
+  github_owner: "ngomantri1"
+  github_repo: "licenses"
+  github_branch: "main"
+  github_license_path: "auto"
+  lease_base_url: "https://net88.ngomantri1.workers.dev/lease/auto"
+  lease_app_id: "BaccaratChromeAgent"
+  heartbeat_seconds: 600
+```
+
+The client reads `auto/{username}.json` (`exp` and `pass`), acquires the
+account lease, sends heartbeats, and releases it on logout. Passwords,
+session/client identifiers and the one-way device fingerprint remain in
+memory only. This provider is fail-closed: loss of the Worker lease or an
+expired GitHub record blocks `live_bet`; it does not use the signed-license
+offline grace path.

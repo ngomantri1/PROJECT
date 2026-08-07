@@ -13,6 +13,51 @@
   };
   const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
   const money = value => number(value).toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+  const licenseCountdownText = expiresAt => {
+    const expiry = new Date(String(expiresAt || ""));
+    if (!Number.isFinite(expiry.getTime())) return { text: "", expired: false };
+    const remaining = expiry.getTime() - Date.now();
+    if (remaining <= 0) return { text: "License đã hết hạn", expired: true };
+    const totalSeconds = Math.floor(remaining / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = value => String(value).padStart(2, "0");
+    const remainingLabel = days > 0
+      ? `${days} ngày ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+      : `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    return {
+      text: `Còn lại: ${remainingLabel} | Hết hạn: ${expiry.toLocaleString("vi-VN")}`,
+      expired: false,
+    };
+  };
+  const updateLicenseCountdown = (root, license = null) => {
+    const local = window.__toolbetUiLocal = window.__toolbetUiLocal || {};
+    if (license !== null) {
+      // Start/Stop and journal snapshots may carry a partial license object.
+      // Never replace a known expiry with an empty value; only a real expiry
+      // timestamp is allowed to update the countdown source.
+      const expiresAt = license && license.expires_at;
+      if (expiresAt) local.licenseExpiresAt = String(expiresAt);
+    }
+    const node = root?.querySelector?.('[data-bind="license-countdown"]');
+    if (!node) return;
+    const view = licenseCountdownText(local.licenseExpiresAt);
+    node.textContent = view.text;
+    node.classList.toggle("expired", view.expired);
+    if (!local.licenseCountdownTimer) {
+      local.licenseCountdownTimer = window.setInterval(() => {
+        const currentRoot = document.getElementById(ROOT_ID);
+        if (!currentRoot || !currentRoot.isConnected) {
+          window.clearInterval(local.licenseCountdownTimer);
+          local.licenseCountdownTimer = null;
+          return;
+        }
+        updateLicenseCountdown(currentRoot);
+      }, 1000);
+    }
+  };
   const sideLabel = side => ({ player: "Tay con", banker: "Nhà cái", tie: "Hòa" }[side] || "—");
   const MODE_LABELS = {
     simulation: "MÔ PHỎNG/TEST",
@@ -260,6 +305,7 @@
         auto_reset_on_nonnegative_pnl: selected.auto_reset_on_nonnegative_pnl,
         bet_when_remaining_seconds: selected.bet_when_remaining_seconds,
         strategy_input: selected.strategy_input,
+        strategy_inputs: selected.strategy_inputs || {},
       },
       strategies: strategyTabs.strategies || [],
       moneyManagers: strategyTabs.money_managers || [],
@@ -690,7 +736,7 @@
     add.disabled = tabs.length >= 5;
     add.addEventListener("click", () => {
       const id = (crypto.randomUUID ? crypto.randomUUID() : `tab-${Date.now()}`).replaceAll("-", "");
-      const next = { id, name: `Chiến lược ${tabs.length + 1}`, enabled: true, strategy_id: "follow_last", strategy_input: "", stakes: [0,100,110,120,130], progression_mode: "loss_up_win_reset", money_manager_id: "IncreaseWhenLose", stake_chains: [], stop_loss: 0, take_profit: 0, auto_reset_on_nonnegative_pnl: false, bet_when_remaining_seconds: 10, mode: "live" };
+      const next = { id, name: `Chiến lược ${tabs.length + 1}`, enabled: true, strategy_id: "follow_last", strategy_input: "", strategy_inputs: {}, stakes: [0,100,110,120,130], progression_mode: "loss_up_win_reset", money_manager_id: "IncreaseWhenLose", stake_chains: [], stop_loss: 0, take_profit: 0, auto_reset_on_nonnegative_pnl: false, bet_when_remaining_seconds: 10, mode: "live" };
       saveTabs([...tabs, next], id, null, true);
     });
     tabsBar.append(add); shell.append(tabsBar);
@@ -718,11 +764,42 @@
     const stakesText = draft?.stakes_text ?? (
       selectedManagerId === "MultiChain" ? stakeChainsText : (selected.stakes || []).join("-")
     );
-    grid.append(
-      field("Chiến lược", select("tbv2-strategy", (state.strategy_tabs || {}).strategies || [], draft?.strategy_id ?? selected.strategy_id)),
+    const activeStrategyId = draft?.strategy_id ?? selected.strategy_id;
+    const strategyInputValues = {
+      ...(selected.strategy_inputs || {}),
+      ...(draft?.strategy_inputs || {}),
+    };
+    if (draft?.strategy_input !== undefined && strategyInputValues[activeStrategyId] === undefined) {
+      strategyInputValues[activeStrategyId] = draft.strategy_input;
+    }
+    const strategyInputLabels = {
+      sequence_follow: "Chuỗi B/P (ví dụ B-P-P)",
+      pattern_follow: "Thế B/P (ví dụ BPP-BBP; PP-P)",
+      sequence_major_minor: "Chuỗi I/N (ví dụ I-N-N)",
+      pattern_major_minor: "Thế I/N (ví dụ INN-I; NN-NI)",
+    };
+    const customInputStrategyIds = new Set([
+      "sequence_follow",
+      "pattern_follow",
+      "sequence_major_minor",
+      "pattern_major_minor",
+    ]);
+    const hasCustomStrategyInput = customInputStrategyIds.has(activeStrategyId);
+    const strategyInputField = field(
+      strategyInputLabels[activeStrategyId] || "Tham số chiến lược",
+      textarea("tbv2-strategy-input", strategyInputValues[activeStrategyId] ?? "")
+    );
+    strategyInputField.hidden = !hasCustomStrategyInput;
+    strategyInputField.style.display = hasCustomStrategyInput ? "" : "none";
+    strategyInputField.classList.add("tbv2-field-wide");
+    const configFields = [
+      field("Chiến lược", select("tbv2-strategy", (state.strategy_tabs || {}).strategies || [], activeStrategyId)),
       field("Quản lý vốn", select("tbv2-progression",
         (state.strategy_tabs || {}).money_managers || [],
         draft?.money_manager_id ?? selected.money_manager_id ?? "IncreaseWhenLose")),
+    ];
+    configFields.push(strategyInputField);
+    configFields.push(
       field("Chuỗi tiền", input("tbv2-stakes",
         draft?.stakes_text ?? ((selected.money_manager_id === "MultiChain"
           ? (selected.stake_chains || [selected.stakes || []]).map(chain => chain.join("-")).join("; ")
@@ -735,23 +812,35 @@
       field("Cắt lãi", input("tbv2-tp", draft?.take_profit ?? selected.take_profit ?? 0, "number")),
       field("Cắt lỗ", input("tbv2-sl", draft?.stop_loss ?? selected.stop_loss ?? 0, "number"))
     );
+    grid.append(...configFields);
     const betWhenRemainingInput = grid.querySelector("#tbv2-bet-when-remaining");
     betWhenRemainingInput.closest(".tbv2-field").classList.add("tbv2-field-wide");
     betWhenRemainingInput.min = "3";
     betWhenRemainingInput.step = "1";
     betWhenRemainingInput.title = "Chỉ đặt khi đồng hồ còn từ 3 giây đến số giây này.";
-    const activeStrategyId = draft?.strategy_id ?? selected.strategy_id;
-    const strategyInputLabels = {
-      sequence_follow: "Chuỗi B/P (ví dụ B-P-P)",
-      pattern_follow: "Thế B/P (ví dụ BPP-BBP; PP-P)",
-    };
-    if (strategyInputLabels[activeStrategyId]) {
-      grid.append(field(
-        strategyInputLabels[activeStrategyId],
-        input("tbv2-strategy-input", draft?.strategy_input ?? selected.strategy_input ?? "")
-      ));
-    }
     configCard.append(grid);
+    const strategySelect = grid.querySelector("#tbv2-strategy");
+    const strategyInput = grid.querySelector("#tbv2-strategy-input");
+    if (strategyInput) {
+      strategyInput.rows = 2;
+      strategyInput.title = "Có thể nhập nhiều dòng; mỗi dòng là một mẫu/chuỗi riêng.";
+      bindValueTooltip(strategyInput);
+    }
+    const updateStrategyInputEditor = strategyId => {
+      if (!strategyInput || !strategyInputField) return;
+      const label = strategyInputLabels[strategyId];
+      const visible = customInputStrategyIds.has(strategyId);
+      strategyInputField.hidden = !visible;
+      strategyInputField.style.display = visible ? "" : "none";
+      if (!label) return;
+      strategyInputField.querySelector(".tbv2-label").textContent = label;
+      strategyInput.value = strategyInputValues[strategyId] || "";
+    };
+    strategySelect?.addEventListener("change", () => {
+      strategyInputValues[activeStrategyId] = strategyInput?.value || "";
+      updateStrategyInputEditor(strategySelect.value);
+      rememberDraft();
+    });
     let stakesInput = grid.querySelector("#tbv2-stakes");
     const stakesField = stakesInput.closest(".tbv2-field");
     stakesField.classList.add("tbv2-field-wide");
@@ -809,8 +898,18 @@
       { tab_id: selected.id, running: !runEnabled },
       lifecycleFeedback
     ));
-    lifecycleActions.append(toggle, simulationOnly, lifecycleFeedback);
+    const licenseCountdown = el("div", "tbv2-license-countdown");
+    licenseCountdown.dataset.bind = "license-countdown";
+    // The expiry countdown occupies the old lifecycle-status line.  Keep the
+    // feedback node detached so the user no longer sees the generic running
+    // sentence; command errors can still update that node for diagnostics.
+    lifecycleActions.append(toggle, simulationOnly, licenseCountdown);
     configCard.append(lifecycleActions);
+    // Do not erase the last valid lease timestamp when a partial runtime
+    // snapshot omits `license`.  Some journal/region updates intentionally
+    // carry only strategy data; the countdown must remain visible throughout.
+    const hasLicenseSnapshot = Object.prototype.hasOwnProperty.call(state, "license");
+    updateLicenseCountdown(root, hasLicenseSnapshot ? state.license : null);
     const managerSelect = configCard.querySelector("#tbv2-progression");
     stakesInput = configCard.querySelector("#tbv2-stakes");
     managerSelect.addEventListener("change", () => {
@@ -858,6 +957,7 @@
         name: selected.name,
         strategy_id: currentDraft.strategy_id,
         strategy_input: currentDraft.strategy_input,
+        strategy_inputs: currentDraft.strategy_inputs || {},
         money_manager_id: managerId,
         stakes: chains[0].slice(),
         stake_chains: managerId === "MultiChain" ? chains : [],
@@ -902,6 +1002,11 @@
       window.__toolbetUiLocal.drafts[selected.id] = {
         strategy_id: root.querySelector("#tbv2-strategy").value,
         strategy_input: root.querySelector("#tbv2-strategy-input")?.value ?? (selected.strategy_input ?? ""),
+        strategy_inputs: {
+          ...(selected.strategy_inputs || {}),
+          ...strategyInputValues,
+          [root.querySelector("#tbv2-strategy").value]: root.querySelector("#tbv2-strategy-input")?.value ?? "",
+        },
         money_manager_id: managerSelect.value,
         stakes_text: stakesInput.value,
         take_profit: root.querySelector("#tbv2-tp").value,
@@ -1134,6 +1239,8 @@
           : `Chiến lược này đang chạy. ${liveTabs} tab ở chế độ live; tab mô phỏng không click chip.`)
         : "Chiến lược này đang dừng."
     );
+    const hasLicenseSnapshot = Object.prototype.hasOwnProperty.call(state, "license");
+    updateLicenseCountdown(root, hasLicenseSnapshot ? state.license : null);
     const liveView = liveStatusView(state);
     const liveStatus = setBoundText(
       root,

@@ -253,6 +253,7 @@ class StrategyTabRecord(Base):
     auto_reset_on_nonnegative_pnl: Mapped[int] = mapped_column(Integer, default=0)
     bet_when_remaining_seconds: Mapped[int] = mapped_column(Integer, default=10)
     strategy_input: Mapped[str] = mapped_column(Text, default="")
+    strategy_inputs_json: Mapped[str] = mapped_column(Text, default="{}")
     mode: Mapped[str] = mapped_column(String(24), default="simulation", index=True)
     shadow_evaluations: Mapped[int] = mapped_column(Integer, default=0)
     shadow_matches: Mapped[int] = mapped_column(Integer, default=0)
@@ -461,6 +462,10 @@ def _migrate_schema(engine) -> None:
             (
                 "strategy_input",
                 "ALTER TABLE strategy_tabs ADD COLUMN strategy_input TEXT DEFAULT ''",
+            ),
+            (
+                "strategy_inputs_json",
+                "ALTER TABLE strategy_tabs ADD COLUMN strategy_inputs_json TEXT DEFAULT '{}'",
             ),
         ):
             if col not in tab_cols:

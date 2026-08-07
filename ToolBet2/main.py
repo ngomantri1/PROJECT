@@ -34,6 +34,7 @@ from src.database import RoundRecord, init_db
 from src.db_store import GameDataStore
 from src.login_panel import prompt_login_panel
 from src.license_client import HttpLicenseBackend, LicenseService
+from src.reference_license import ReferenceLicenseService
 from src.tool_auth import ToolAuthService
 from src.tool_login_panel import prompt_tool_login_panel
 from src.ui_contracts import UiCommand, UiCommandType
@@ -166,25 +167,40 @@ class HistoryWatcher:
         self.page: Page | None = None
         license_service = None
         if self.config.license.enabled:
-            public_key_path = Path(self.config.license.public_key_path)
-            if not public_key_path.exists():
-                raise RuntimeError(
-                    f"Thiếu license public key: {public_key_path}"
-                )
-            license_service = LicenseService(
-                HttpLicenseBackend(
-                    self.config.license.api_url,
+            if self.config.license.provider == "baccarat_chrome_agent2":
+                license_service = ReferenceLicenseService(
+                    github_raw_base_url=self.config.license.github_raw_base_url,
+                    github_owner=self.config.license.github_owner,
+                    github_repo=self.config.license.github_repo,
+                    github_branch=self.config.license.github_branch,
+                    github_license_path=self.config.license.github_license_path,
+                    lease_base_url=self.config.license.lease_base_url,
+                    app_id=self.config.license.lease_app_id,
                     timeout_seconds=self.config.license.timeout_seconds,
-                ),
-                public_key_pem=public_key_path.read_bytes(),
-                cache_path=self.config.license.cache_path,
-                grace_minutes=self.config.license.grace_minutes,
-                refresh_before_minutes=(
-                    self.config.license.refresh_before_minutes
-                ),
-            )
+                    heartbeat_seconds=self.config.license.heartbeat_seconds,
+                    client_id_path=self.config.license.reference_client_id_path,
+                )
+            else:
+                public_key_path = Path(self.config.license.public_key_path)
+                if not public_key_path.exists():
+                    raise RuntimeError(
+                        f"Thiếu license public key: {public_key_path}"
+                    )
+                license_service = LicenseService(
+                    HttpLicenseBackend(
+                        self.config.license.api_url,
+                        timeout_seconds=self.config.license.timeout_seconds,
+                    ),
+                    public_key_pem=public_key_path.read_bytes(),
+                    cache_path=self.config.license.cache_path,
+                    grace_minutes=self.config.license.grace_minutes,
+                    refresh_before_minutes=(
+                        self.config.license.refresh_before_minutes
+                    ),
+                )
         self.tool_auth = ToolAuthService(
             store_path=self.config.tool_auth.account_store_path,
+            remembered_credentials_path=self.config.tool_auth.remembered_credentials_path,
             bootstrap_username=self.config.tool_auth.bootstrap_username,
             bootstrap_password=self.config.tool_auth.bootstrap_password,
             session_timeout_minutes=self.config.tool_auth.session_timeout_minutes,
@@ -1614,12 +1630,21 @@ class HistoryWatcher:
         return data
 
     def _strategy_tabs_raw_payload(self) -> dict:
+        table_name = self._effective_table_name()
         return strategy_tabs_to_overlay(
             self.config.strategy_tabs,
             list(self.state.history or []),
             skip_tie=self.config.game.skip_tie,
             disabled_patterns=disabled_pattern_ids(self._pattern_enabled),
             pattern_lengths=self._pattern_lengths,
+            major_minor_history=(
+                self.ae_collector.major_minor_history(table_name)
+                if self.ae_collector and table_name else ""
+            ),
+            pool_totals=(
+                self.ae_collector.latest_pool_totals(table_name)
+                if self.ae_collector and table_name else None
+            ),
         )
 
     def _overlay_strategy_tabs_payload(self, *, record_runtime: bool = True) -> dict:
@@ -1729,6 +1754,7 @@ class HistoryWatcher:
             page,
             stakes=self.config.betting.stakes,
             allow_early_host=allow_early_host,
+            license_status=self.tool_auth.license_status(),
         )
 
     async def _install_early_workspace_overlay(self, page: Page, *, stage: str) -> bool:
@@ -1821,6 +1847,14 @@ class HistoryWatcher:
         if not tabs:
             return []
         source_allowed = not source or source in BET_TRIGGER_SOURCES
+        major_minor_history = (
+            self.ae_collector.major_minor_history(table_name)
+            if self.ae_collector else ""
+        )
+        pool_totals = (
+            self.ae_collector.latest_pool_totals(table_name)
+            if self.ae_collector else None
+        )
         decisions = []
         for tab in tabs:
             manager = self._live_money_managers.get(tab.id)
@@ -1859,6 +1893,8 @@ class HistoryWatcher:
                     ),
                     pattern_lengths=self._pattern_lengths,
                     daily_profit=self._live_run_limits.status_for(tab.id).profit,
+                    major_minor_history=major_minor_history,
+                    pool_totals=pool_totals,
                     limit_hit=self._live_run_limits.status_for(tab.id).limit_hit,
                 )
             if (
@@ -4075,6 +4111,9 @@ class HistoryWatcher:
                 return
 
         logger.info("OK - Da login")
+        # Keep Tool/Game login compact; expand only once credentials are
+        # accepted and the flow is about to enter the casino lobby/game.
+        await self.browser_mgr.maximize_window()
         self.store.register_hall()
 
         # Neu phase nham "loading" nhung da thay luoi ban → coi la sanh, click ngay

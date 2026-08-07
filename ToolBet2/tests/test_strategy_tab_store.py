@@ -89,6 +89,26 @@ class StrategyTabStoreTests(unittest.TestCase):
         )
         self.assertEqual([25, 50, 100], after_site_update.tabs[0].stakes)
 
+    def test_four_manual_strategy_inputs_are_persisted_independently(self):
+        tab = SimulationTabConfig(
+            id="manual",
+            strategy_id="pattern_major_minor",
+            strategy_input="I-I;N-N",
+            strategy_inputs={
+                "sequence_major_minor": "I-N",
+                "pattern_major_minor": "I-I;N-N",
+                "sequence_follow": "B-P-P",
+                "pattern_follow": "BPP-BBP",
+            },
+        )
+        self.store.save_config(StrategyTabsConfig(selected_tab_id="manual", tabs=[tab]))
+        loaded = self.store.load_or_import(StrategyTabsConfig())
+        values = loaded.tabs[0].strategy_inputs
+        self.assertEqual("I-N", values["sequence_major_minor"])
+        self.assertEqual("I-I;N-N", values["pattern_major_minor"])
+        self.assertEqual("B-P-P", values["sequence_follow"])
+        self.assertEqual("BPP-BBP", values["pattern_follow"])
+
     def test_workspace_rehydrates_sqlite_only_when_overlay_is_installed(self):
         saved = StrategyTabsConfig(
             selected_tab_id="saved",

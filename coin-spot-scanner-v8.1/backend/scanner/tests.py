@@ -1,4 +1,6 @@
 from django.test import TestCase
+from rest_framework.test import APIClient
+from .models import ChecklistProfile, ScanRun
 from .services import checksum_json, default_config, depth_metrics
 
 class IntegrityTests(TestCase):
@@ -19,3 +21,27 @@ class IntegrityTests(TestCase):
 
     def test_checksum_is_stable(self):
         self.assertEqual(checksum_json({"a":1,"b":2}), checksum_json({"b":2,"a":1}))
+
+    def test_dashboard_keeps_latest_successful_run_separate_from_failed_run(self):
+        profile = ChecklistProfile.objects.create(
+            name="Test profile", slug="test-profile", config=default_config(), is_active=True
+        )
+        successful = ScanRun.objects.create(profile=profile, profile_snapshot=profile.config, status=ScanRun.STATUS_COMPLETED)
+        failed = ScanRun.objects.create(profile=profile, profile_snapshot=profile.config, status=ScanRun.STATUS_FAILED)
+
+        response = APIClient().get("/api/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["latest_run"]["id"], str(failed.id))
+        self.assertEqual(response.data["latest_successful_run"]["id"], str(successful.id))
+
+    def test_dashboard_returns_no_successful_run_when_only_failed_runs_exist(self):
+        profile = ChecklistProfile.objects.create(
+            name="Failed profile", slug="failed-profile", config=default_config(), is_active=True
+        )
+        ScanRun.objects.create(profile=profile, profile_snapshot=profile.config, status=ScanRun.STATUS_FAILED)
+
+        response = APIClient().get("/api/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["latest_successful_run"])

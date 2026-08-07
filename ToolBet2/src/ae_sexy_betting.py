@@ -130,9 +130,9 @@ _BET_PHASE_BODY = """
   };
 """
 
-# Diagnostic-only DOM probe.  It deliberately returns the raw nearby text as
-# well as the parsed value so pool data can be validated across real rounds
-# before any I/N strategy is permitted to consume it.
+# Pool totals are rendered by the provider in dedicated elements.  Do not
+# inspect betting-zone ancestors here: those also contain B/P/T roadmap text
+# and odds, which can be mistaken for money (for example, "4 B").
 _BET_POOL_TRACE_BODY = r"""
   const visible = (el) => {
     if (!el) return false;
@@ -155,62 +155,19 @@ _BET_POOL_TRACE_BODY = r"""
     if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(raw)) return Number(raw.replace(/\./g, '').replace(',', '.'));
     return null;
   };
-  const stakeIn = (text) => {
-    const source = compact(text);
-    const re = /\d+(?:[.,]\d+)?\s*[KMB]\b|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{1,3}(?:\.\d{3})+(?:,\d+)?/ig;
-    let best = null, match;
-    while ((match = re.exec(source))) {
-      const token = compact(match[0]);
-      const before = source[match.index - 1] || '';
-      const after = source[match.index + token.length] || '';
-      if (before === ':' || after === ':') continue; // odds, e.g. 1:1
-      const value = money(token);
-      if (!(value > 0)) continue;
-      const score = (/^[\d.,]+\s*[KMB]$/i.test(token) ? 1e12 : 0) + value;
-      if (!best || score > best.score) best = { value, token, score };
-    }
-    return best ? { value: best.value, token: best.token } : null;
-  };
-  const sideInfo = (side, ids, labels) => {
-    const candidates = [];
-    const add = (node, source) => {
-      if (!node || !visible(node)) return;
-      const text = compact(node.innerText || node.textContent || '');
-      const stake = stakeIn(text);
-      if (!stake) return;
-      candidates.push({ ...stake, source, text: text.slice(0, 220) });
-    };
-    for (const id of ids) {
-      const zone = document.getElementById(id);
-      if (!zone) continue;
-      add(zone, `#${id}`);
-      let node = zone.parentElement;
-      for (let depth = 1; node && depth <= 4; depth += 1, node = node.parentElement) {
-        add(node, `#${id}:parent${depth}`);
-      }
-    }
-    for (const element of [...document.querySelectorAll('div,span,p,b,strong,label')]) {
-      if (!visible(element)) continue;
-      const text = compact(element.innerText || element.textContent || '');
-      if (text.length > 90 || !labels.test(text)) continue;
-      add(element, 'label');
-      add(element.parentElement, 'label:parent');
-    }
-    candidates.sort((a, b) => b.value - a.value || a.source.length - b.source.length);
-    const best = candidates[0] || null;
+  const sideInfo = (side, selector) => {
+    const element = document.querySelector(selector);
+    const raw = compact(element?.innerText || element?.textContent || '');
+    const value = money(raw);
     return {
-      side,
-      value: best ? best.value : null,
-      token: best ? best.token : '',
-      source: best ? best.source : '',
-      raw: best ? best.text : '',
-      candidates: candidates.slice(0, 4),
+      side, value: value && value > 0 ? value : null, token: raw,
+      source: selector, raw, visible: visible(element),
     };
   };
   return {
-    source: 'dom_bet_ui',
-    player: sideInfo('player', ['chipBoxPlayer', 'betBoxPlayer'], /(?:tay\s*con|player)/i),
-    banker: sideInfo('banker', ['chipBoxBanker', 'betBoxBanker'], /(?:nha\s*cai|banker)/i),
+    source: 'dom_pool_info_money',
+    player: sideInfo('player', '#playerInfoMoney'),
+    banker: sideInfo('banker', '#bankerInfoMoney'),
   };
 """
 

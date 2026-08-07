@@ -364,6 +364,12 @@ def inspect_license_readiness(
     errors: list[str] = []
     if not license_cfg.get("enabled"):
         return ("Pilot tiền thật yêu cầu license.enabled=true",)
+    if str(license_cfg.get("provider") or "signed").strip() == "baccarat_chrome_agent2":
+        for key in ("github_raw_base_url", "lease_base_url"):
+            parsed = urlparse(str(license_cfg.get(key) or ""))
+            if parsed.scheme.lower() != "https" or not parsed.netloc:
+                errors.append(f"Pilot tiền thật yêu cầu license.{key} HTTPS production")
+        return tuple(errors)
     api_url = str(license_cfg.get("api_url") or "").strip()
     parsed = urlparse(api_url)
     if parsed.scheme.lower() != "https" or not parsed.netloc:

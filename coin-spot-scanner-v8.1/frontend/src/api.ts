@@ -1,4 +1,4 @@
-import type { DashboardData, Profile, ScanRun, StepSchedule } from './types'
+import type { DashboardData, HealthStatus, Profile, ScanRun, StepSchedule } from './types'
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 async function request<T>(path:string, options?:RequestInit):Promise<T>{
   const response = await fetch(`${API}${path}`, {headers:{'Content-Type':'application/json', ...(options?.headers||{})}, ...options})
@@ -7,6 +7,7 @@ async function request<T>(path:string, options?:RequestInit):Promise<T>{
   return data as T
 }
 export const api = {
+  health:()=>request<HealthStatus>('/health/'),
   dashboard:()=>request<DashboardData>('/dashboard/'),
   startScan:(profileId?:number, requestedSteps?:string[])=>request<ScanRun>('/scan-runs/start/',{method:'POST',body:JSON.stringify({profile_id:profileId,requested_steps:requestedSteps})}),
   scan:(id:string)=>request<ScanRun>(`/scan-runs/${id}/`),

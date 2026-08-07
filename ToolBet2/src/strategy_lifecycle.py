@@ -123,16 +123,16 @@ class StrategyLifecycleService:
         if (
             current is None
             or current[0] != tab.strategy_id
-            or current[1] != tab.strategy_input
+            or current[1] != tab.input_for_strategy()
         ):
             runtime = create_statistical_runtime(
                 tab.strategy_id,
                 history,
                 seed=tab.id,
-                strategy_input=tab.strategy_input,
+                strategy_input=tab.input_for_strategy(),
             )
             self._statistical_runtime_by_tab[tab.id] = (
-                tab.strategy_id, tab.strategy_input, runtime
+                tab.strategy_id, tab.input_for_strategy(), runtime
             )
             return runtime
         return current[2]
@@ -183,6 +183,11 @@ class StrategyLifecycleService:
             take_profit=row.take_profit,
             auto_reset_on_nonnegative_pnl=bool(row.auto_reset_on_nonnegative_pnl),
             strategy_input=row.strategy_input or "",
+            strategy_inputs=(
+                json.loads(getattr(row, "strategy_inputs_json", "{}") or "{}")
+                if getattr(row, "strategy_inputs_json", None)
+                else {}
+            ),
             mode=row.mode or "simulation",
         ).normalized()
 
@@ -421,6 +426,8 @@ class StrategyLifecycleService:
         pattern_lengths: dict[str, int] | None = None,
         daily_profit: float = 0.0,
         limit_hit: str = "",
+        major_minor_history: str = "",
+        pool_totals: dict[str, object] | None = None,
     ) -> TabAuthorityDecision:
         schedule_round_index = self._schedule_round_index(tab)
         statistical_runtime = self._statistical_runtime(tab, history)
@@ -434,6 +441,8 @@ class StrategyLifecycleService:
             source=source,
             schedule_round_index=schedule_round_index,
             statistical_runtime=statistical_runtime,
+            major_minor_history=major_minor_history,
+            pool_totals=pool_totals,
         )
         money = (
             money_quote

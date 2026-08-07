@@ -96,21 +96,32 @@ class ToolAuthConfig(BaseModel):
 
     enabled: bool = True
     account_store_path: str = "data/tool_accounts.json"
+    remembered_credentials_path: str = "data/tool_login.bin"
     bootstrap_username: str = "toolbet"
     bootstrap_password: str = "toolbet"
     session_timeout_minutes: int = Field(default=480, ge=1, le=1440)
 
 
 class LicenseConfig(BaseModel):
-    """Remote signed-license client. Private signing keys never belong here."""
+    """Remote license client; provider selects signed or reference lease mode."""
 
     enabled: bool = False
+    provider: Literal["signed", "baccarat_chrome_agent2"] = "signed"
     api_url: str = "http://127.0.0.1:8765"
     public_key_path: str = "data/license_public.pem"
     cache_path: str = "data/license_session.bin"
     timeout_seconds: float = Field(default=8.0, ge=1.0, le=60.0)
     grace_minutes: int = Field(default=60, ge=0, le=1440)
     refresh_before_minutes: int = Field(default=5, ge=1, le=60)
+    github_raw_base_url: str = "https://raw.githubusercontent.com"
+    github_owner: str = "ngomantri1"
+    github_repo: str = "licenses"
+    github_branch: str = "main"
+    github_license_path: str = "auto"
+    lease_base_url: str = "https://net88.ngomantri1.workers.dev/lease/auto"
+    lease_app_id: str = "BaccaratChromeAgent"
+    heartbeat_seconds: int = Field(default=600, ge=15, le=600)
+    reference_client_id_path: str = "data/reference_license_client_id.txt"
 
 
 class LiveExecutionConfig(BaseModel):

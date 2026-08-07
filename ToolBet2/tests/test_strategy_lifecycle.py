@@ -133,14 +133,14 @@ class StrategyLifecycleServiceTests(unittest.TestCase):
         self.assertEqual("simulation", status["mode"])
         self.assertEqual("Browser disconnected", status["demote_reason"])
 
-    def test_strategy_without_pool_data_cannot_be_set_live(self):
+    def test_major_minor_strategy_can_be_set_live_but_fails_closed_without_pool(self):
         for strategy_id in ("sequence_major_minor", "pattern_major_minor"):
             with self.subTest(strategy_id=strategy_id):
                 config = self.store.load_or_import(StrategyTabsConfig())
                 config.tabs[0].strategy_id = strategy_id
                 self.store.save_config(config)
-                with self.assertRaisesRegex(ValueError, "chưa đủ dữ liệu"):
-                    self.lifecycle.set_live("one", live=True)
+                status = self.lifecycle.set_live("one", live=True)
+                self.assertEqual("live", status["mode"])
 
 
 class FakeStore:

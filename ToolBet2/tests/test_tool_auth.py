@@ -16,6 +16,7 @@ class ToolAuthServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             auth = ToolAuthService(
                 store_path=Path(temp) / "accounts.json",
+                remembered_credentials_path=Path(temp) / "login.bin",
                 bootstrap_username="operator",
                 bootstrap_password="secret-pass",
             )
@@ -70,6 +71,7 @@ class ToolLoginPanelBrowserTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_login_stays_before_game_login_until_authenticated(self):
         auth = ToolAuthService(
             store_path=Path(self.temp.name) / "accounts.json",
+            remembered_credentials_path=Path(self.temp.name) / "login.bin",
             bootstrap_username="operator",
             bootstrap_password="secret-pass",
         )
