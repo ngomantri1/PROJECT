@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any
 import json
 import math
+import random
 import statistics
+import time
 import httpx
 from django.conf import settings
 
@@ -29,15 +31,33 @@ class PublicMarketClient:
     def __init__(self):
         self.headers = {"User-Agent": settings.USER_AGENT, "Accept": "application/json"}
         self.timeout = settings.HTTP_TIMEOUT_SECONDS
+        self.request_stats = {"attempts": 0, "retries": 0, "errors": 0}
 
     def _get(self, url: str, params: dict | None = None) -> Any:
-        try:
-            with httpx.Client(timeout=self.timeout, headers=self.headers, follow_redirects=True) as client:
-                response = client.get(url, params=params)
-                response.raise_for_status()
-                return response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise DataSourceError(f"Không lấy được dữ liệu từ {url}: {exc}") from exc
+        max_attempts = max(1, settings.HTTP_MAX_RETRIES)
+        for attempt in range(max_attempts):
+            self.request_stats["attempts"] += 1
+            try:
+                with httpx.Client(timeout=self.timeout, headers=self.headers, follow_redirects=True) as client:
+                    response = client.get(url, params=params)
+                    response.raise_for_status()
+                    payload = response.json()
+                    if payload is None:
+                        raise ValueError("Empty JSON payload")
+                    return payload
+            except (httpx.HTTPError, ValueError) as exc:
+                status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                retryable = isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError, ValueError)) or status_code in {408, 418, 429} or (status_code is not None and status_code >= 500)
+                if not retryable or attempt >= max_attempts - 1:
+                    self.request_stats["errors"] += 1
+                    raise DataSourceError(f"Data source request failed for {url}: {exc}") from exc
+                self.request_stats["retries"] += 1
+                retry_after = getattr(getattr(exc, "response", None), "headers", {}).get("Retry-After")
+                try:
+                    delay = float(retry_after) if retry_after is not None else 0.25 * (2 ** attempt) + random.uniform(0, 0.1)
+                except (TypeError, ValueError):
+                    delay = 0.25 * (2 ** attempt) + random.uniform(0, 0.1)
+                time.sleep(min(delay, settings.HTTP_MAX_RETRY_DELAY_SECONDS))
 
     def coingecko_markets(self, top_count: int) -> list[dict]:
         rows: list[dict] = []

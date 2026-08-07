@@ -11,6 +11,8 @@
 
 # Current Work
 
+Market Regime v1 đang được triển khai: step 2 tạo payload evidence 9 nhóm, completeness động và UI panel chi tiết; các nhóm chưa có nguồn lịch sử vẫn giữ UNKNOWN/PROVISIONAL.
+
 No active work item is evidenced inside this project. The parent worktree has unrelated modified and untracked paths; preserve them. `docs/PHASE_STATUS.md` lists the next implementation areas.
 
 # Recently Changed
@@ -24,10 +26,12 @@ No commit history or project-local change record is available to establish a rel
 # Active Areas
 
 - `backend/scanner/orchestrator.py`: scan pipeline and validation gate.
+- `backend/scanner/market_regime.py`: pure calculations, closed-candle validation and 9-group evidence.
 - `backend/scanner/services.py`: public market clients and baseline calculations.
 - `backend/scanner/tasks.py`: Celery task dispatch and scan-run construction.
 - `backend/rules/v8_1/defaults.json`: locked V8.1 configuration.
 - `frontend/src/App.tsx`: current UI shell, dashboard, modal, and settings.
+- `frontend/src/types.ts` and `frontend/src/styles.css`: Market Regime payload contract and responsive evidence panel.
 
 # Current Known Problems
 

@@ -1,9 +1,14 @@
 from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from django.db import transaction
 from django.utils import timezone
 from .models import Candidate, Notification, ScanRun, ScanStepRun, StepSchedule
+from .market_regime import (
+    analyze_breadth_and_volume, analyze_eth_btc, analyze_global, analyze_kline_group,
+    classify_regime, compute_completeness, evidence, iso_time, universe_hash,
+)
 from .services import (
     DataSourceError, PublicMarketClient, STEP_DEFINITIONS, depth_metrics,
     excluded_token, kline_summary, provisional_quality, valid_binance_usdt_symbols,
@@ -132,19 +137,79 @@ class ScanOrchestrator:
         return {"message":f"Đã tạo research pool gồm {len(created)} coin", "universe_accounting":accounting}, False
 
     def step_market_regime(self, step):
-        btc_d1 = kline_summary(self.client.binance_klines("BTCUSDT", "1d"))
-        btc_4h = kline_summary(self.client.binance_klines("BTCUSDT", "4h"))
-        eth_d1 = kline_summary(self.client.binance_klines("ETHUSDT", "1d"))
-        eth_4h = kline_summary(self.client.binance_klines("ETHUSDT", "4h"))
-        global_data = self.client.coingecko_global()
-        positive = sum([btc_d1["above_sma20"], btc_4h["above_sma20"], eth_d1["above_sma20"], eth_4h["above_sma20"]])
-        regime = "THUẬN LỢI" if positive >= 4 else "TRUNG TÍNH" if positive >= 2 else "XẤU"
-        payload = {"message":f"Market Regime: {regime} — PROVISIONAL", "regime":regime,"status":"PROVISIONAL","confidence":"MEDIUM","completeness":"5/9","btc_d1":btc_d1,"btc_4h":btc_4h,"eth_d1":eth_d1,"eth_4h":eth_4h,"btc_dominance":global_data.get("market_cap_percentage",{}).get("btc"),"missing":["ETH/BTC trend","TOTAL3/proxy","breadth MA20","alt volume 7D"]}
+        fetched_at = timezone.now()
+
+        def fetch(symbol, interval, limit=220):
+            try:
+                return self.client.binance_klines(symbol, interval, limit), None
+            except DataSourceError as exc:
+                return [], str(exc)
+
+        btc_d1_rows, btc_d1_error = fetch("BTCUSDT", "1d")
+        btc_4h_rows, btc_4h_error = fetch("BTCUSDT", "4h")
+        eth_d1_rows, eth_d1_error = fetch("ETHUSDT", "1d")
+        eth_4h_rows, eth_4h_error = fetch("ETHUSDT", "4h")
+        try:
+            global_data = self.client.coingecko_global()
+            global_error = None
+        except DataSourceError as exc:
+            global_data, global_error = {}, str(exc)
+
+        market_cfg = {"freshness_seconds": 6 * 60 * 60, "batch_concurrency": 4, **self.config.get("market_regime", {})}
+        groups = {
+            "btc_d1": analyze_kline_group("BTC D1", btc_d1_rows, provider="Binance", endpoint="/api/v3/klines", symbol="BTCUSDT", fetched_at=fetched_at, freshness_limit=int(market_cfg["freshness_seconds"])),
+            "btc_4h": analyze_kline_group("BTC 4H", btc_4h_rows, provider="Binance", endpoint="/api/v3/klines", symbol="BTCUSDT", fetched_at=fetched_at, freshness_limit=int(market_cfg["freshness_seconds"])),
+            "eth_d1_4h": evidence("ETH D1/4H", value={"d1": eth_d1_rows, "4h": eth_4h_rows}, signal="UNKNOWN", status="UNKNOWN", provider="Binance", endpoint="/api/v3/klines", symbols=["ETHUSDT"], fetched_at=iso_time(fetched_at)),
+        }
+        eth_group = groups["eth_d1_4h"]
+        eth_d1_evidence = analyze_kline_group("ETH D1", eth_d1_rows, provider="Binance", endpoint="/api/v3/klines", symbol="ETHUSDT", fetched_at=fetched_at, freshness_limit=int(market_cfg["freshness_seconds"]))
+        eth_4h_evidence = analyze_kline_group("ETH 4H", eth_4h_rows, provider="Binance", endpoint="/api/v3/klines", symbol="ETHUSDT", fetched_at=fetched_at, freshness_limit=int(market_cfg["freshness_seconds"]))
+        eth_statuses = {eth_d1_evidence["status"], eth_4h_evidence["status"]}
+        eth_signals = {eth_d1_evidence["signal"], eth_4h_evidence["signal"]}
+        eth_group.update({"value": {"d1": eth_d1_evidence, "4h": eth_4h_evidence}, "signal": "CONFLICT" if {"BULLISH", "BEARISH"}.issubset(eth_signals) else next(iter(eth_signals)) if len(eth_signals) == 1 else "UNKNOWN", "status": "CONFLICT" if {"BULLISH", "BEARISH"}.issubset(eth_signals) else "PASS" if eth_statuses == {"PASS"} else "UNKNOWN"})
+        if eth_d1_error or eth_4h_error:
+            eth_group["error"] = eth_d1_error or eth_4h_error
+        btc_dom, total3 = analyze_global(global_data, fetched_at=fetched_at)
+        if global_error:
+            btc_dom["error"] = global_error
+            btc_dom["status"] = "UNKNOWN"
+            total3["error"] = global_error
+            total3["status"] = "UNKNOWN"
+        groups["btc_dominance"], groups["total3_proxy"] = btc_dom, total3
+        eth_btc_d1, eth_btc_d1_error = fetch("ETHBTC", "1d")
+        eth_btc_4h, eth_btc_4h_error = fetch("ETHBTC", "4h")
+        groups["eth_btc"] = analyze_eth_btc(eth_btc_d1, eth_btc_4h, fetched_at=fetched_at)
+        if eth_btc_d1_error or eth_btc_4h_error:
+            groups["eth_btc"]["error"] = eth_btc_d1_error or eth_btc_4h_error
+
+        candidates = list(Candidate.objects.filter(scan_run=self.run, stage="RESEARCH_POOL").exclude(symbol__in=["BTC", "ETH"]).order_by("rank"))
+        dataset, fetch_errors = {}, []
+        with ThreadPoolExecutor(max_workers=max(1, min(int(market_cfg["batch_concurrency"]), 5))) as pool:
+            futures = {pool.submit(self.client.binance_klines, candidate.binance_pair, "1d", 30): candidate.binance_pair for candidate in candidates if candidate.binance_pair}
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    dataset[symbol] = future.result()
+                except DataSourceError as exc:
+                    fetch_errors.append({"symbol": symbol, "error": str(exc)})
+        breadth, volume = analyze_breadth_and_volume(dataset, fetched_at=fetched_at)
+        breadth["notes"] = fetch_errors[:20] + breadth.get("notes", [])
+        volume["notes"] = fetch_errors[:20] + volume.get("notes", [])
+        groups["breadth_ma20"], groups["alt_volume_7d"] = breadth, volume
+        groups["macro_event_risk"] = evidence("Macro/event risk", signal="UNKNOWN", status="UNKNOWN", notes=["Chưa có manual evidence override hoặc provider được cấu hình"])
+        completeness = compute_completeness(groups)
+        regime, reasons = classify_regime(groups, completeness)
+        payload = {
+            "schema_version": "market_regime.v1", "regime": regime, "status": completeness["status"], "confidence": completeness["confidence"],
+            "generated_at": iso_time(fetched_at), "universe": {"basis": "CURRENT_SCAN_RESEARCH_POOL", "count": len(candidates), "eligible_count": len(dataset), "universe_hash": universe_hash([candidate.binance_pair for candidate in candidates])},
+            "completeness": completeness, "groups": groups, "hard_rules": reasons, "provider_stats": {"binance_symbols": len(dataset), "binance_errors": len(fetch_errors), **getattr(self.client, "request_stats", {})},
+        }
+        payload["message"] = f"Market Regime: {regime} — {payload['status']} ({completeness['pass_count']}/{completeness['total_count']})"
         results = dict(self.run.results)
         results["market_regime"] = payload
         self.run.results = results
         self.run.save(update_fields=["results"])
-        return payload, True
+        return payload, payload["status"] != "FINAL"
 
     def step_research_shortlist(self, step):
         count = int(self.config["universe"]["research_shortlist_count"])
@@ -214,4 +279,8 @@ class ScanOrchestrator:
             errors.append("Universe Accounting chưa đầy đủ")
         if buy_setup > 0:
             errors.append("Baseline không cho phép BUY_SETUP khi unlock chưa được xác minh")
-        return {"passed":not errors,"errors":errors,"warnings":["Product/unlock evidence chưa hoàn thiện","Entry Score NOT_SCORED"],"validated_mode":"FULL_SCAN_RESEARCH","summary":"Không có BUY_SETUP hợp lệ; giữ 100% USDT.","critical_fields":critical}
+        market_regime = self.run.results.get("market_regime", {})
+        warnings = ["Product/unlock evidence chưa hoàn thiện", "Entry Score NOT_SCORED"]
+        if market_regime.get("status") != "FINAL":
+            warnings.append(f"Market Regime {market_regime.get('status', 'UNKNOWN')}: thiếu hoặc chưa xác minh đủ evidence")
+        return {"passed":not errors,"errors":errors,"warnings":warnings,"validated_mode":"FULL_SCAN_RESEARCH","summary":"Không có BUY_SETUP hợp lệ; giữ 100% USDT.","critical_fields":critical,"execution_block_reason": "Market Regime chưa FINAL" if market_regime.get("status") != "FINAL" else None}

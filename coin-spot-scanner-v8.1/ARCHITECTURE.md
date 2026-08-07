@@ -253,6 +253,8 @@ Source: `frontend/src/App.tsx` — `Dashboard.load()`.
 - `ScanRunViewSet.cancel()`.
 - `update_step_schedule()`.
 
+`backend/scanner/market_regime.py` owns pure Market Regime v1 calculations. Step 2 fetches BTC/ETH/ETHBTC/global evidence and bounded D1 batches for the current research pool, then persists the same payload in `ScanStepRun.payload` and `ScanRun.results["market_regime"]`. The frontend renders the payload without recomputing business rules.
+
 `frontend/src/App.tsx`
 - `Shell()`.
 - `Dashboard()`.

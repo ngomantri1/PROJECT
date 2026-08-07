@@ -3,7 +3,7 @@ import { Alert, App as AntApp, Avatar, Button, Card, Drawer, Empty, Form, InputN
 import { AppstoreOutlined, BarChartOutlined, CaretRightOutlined, CheckCircleOutlined, ExclamationCircleOutlined, FileTextOutlined, HomeOutlined, InfoCircleOutlined, PauseOutlined, PlayCircleOutlined, ReloadOutlined, SafetyCertificateOutlined, SettingOutlined, UnorderedListOutlined, WarningOutlined } from '@ant-design/icons'
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
-import type { Candidate, DashboardData, Notification, Policy, Profile, ScanRun, StepSchedule } from './types'
+import type { Candidate, DashboardData, MarketRegimeEvidence, MarketRegimePayload, Notification, Policy, Profile, ScanRun, StepSchedule } from './types'
 
 const { Header, Sider, Content } = Layout
 
@@ -184,6 +184,7 @@ function Dashboard() {
     </main>
     <aside>
       <QuickDecision latestRun={run} resultRun={resultRun} decision={decision} regime={regime} counters={resultCounters} nextAction={resultRun?.validation?.warnings?.[0]} />
+      <MarketRegimePanel regime={resultRun?.results?.market_regime} />
       <Card title="Thông báo" extra={<Button type="link" onClick={() => setNotificationOpen(true)}>Xem toàn bộ</Button>}><NotificationList notifications={groupedNotifications.slice(0, 4)} /></Card>
     </aside></div>
     <Drawer title="Thông báo" open={notificationOpen} onClose={() => setNotificationOpen(false)}><NotificationList notifications={groupedNotifications} /></Drawer>
@@ -207,7 +208,7 @@ function StepCard({ schedule, runStep, disabled, onChange, onRun, onViewResults,
   </Card>
 }
 
-function QuickDecision({ latestRun, resultRun, decision, regime, counters, nextAction }: { latestRun: ScanRun | null | undefined; resultRun: ScanRun | null; decision: any; regime: any; counters: Record<string, number>; nextAction?: string }) {
+function QuickDecision({ latestRun, resultRun, decision, regime, counters, nextAction }: { latestRun: ScanRun | null | undefined; resultRun: ScanRun | null; decision: any; regime: MarketRegimePayload | undefined; counters: Record<string, number>; nextAction?: string }) {
   const statement = decision?.statement || 'Chưa đủ dữ liệu để kết luận'
   const usdt = decision?.usdt_pct
   return <Card title="Kết quả nhanh" className="quick-card">
@@ -220,6 +221,37 @@ function QuickDecision({ latestRun, resultRun, decision, regime, counters, nextA
     <div className="metrics">{[['Universe', counters.initial_count], ['Binance hợp lệ', counters.binance_spot_eligible], ['Research Shortlist', counters.research_shortlist], ['Execution Verification', counters.execution_verification], ['BUY_SETUP', counters.buy_setup]].map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><strong>{typeof value === 'number' ? value : '—'}</strong></div>)}</div>
     <Alert type="warning" showIcon icon={<WarningOutlined />} message={nextAction || 'Chưa có hành động tiếp theo từ lần quét gần nhất.'} />
     </>}
+  </Card>
+}
+
+const evidenceLabels: Record<string, string> = {
+  btc_d1: 'BTC D1', btc_4h: 'BTC 4H', eth_d1_4h: 'ETH D1/4H', btc_dominance: 'BTC Dominance',
+  eth_btc: 'ETH/BTC', total3_proxy: 'TOTAL3 proxy', breadth_ma20: 'Breadth MA20', alt_volume_7d: 'Alt Volume 7D', macro_event_risk: 'Macro/event risk',
+}
+
+function evidenceTagColor(status: string) {
+  return status === 'PASS' ? 'success' : status === 'CONFLICT' ? 'error' : status === 'STALE' ? 'warning' : 'default'
+}
+
+function evidenceValue(evidence: MarketRegimeEvidence) {
+  if (typeof evidence.value === 'number') return String(evidence.value)
+  if (evidence.value === null || evidence.value === undefined) return '—'
+  if (evidence.value.breadth_pct !== undefined) return `${Number(evidence.value.breadth_pct).toFixed(1)}% trên MA20`
+  if (evidence.value.latest_vs_previous_7d_ratio !== undefined) return `x${Number(evidence.value.latest_vs_previous_7d_ratio).toFixed(2)} vs TB 7D`
+  if (evidence.value.total3_proxy_usd !== undefined) return `${Number(evidence.value.total3_proxy_usd).toLocaleString('en-US')} USD`
+  if (evidence.value.btc_pct !== undefined) return `BTC ${Number(evidence.value.btc_pct).toFixed(2)}%`
+  return evidence.signal || 'UNKNOWN'
+}
+
+function MarketRegimePanel({ regime }: { regime?: MarketRegimePayload }) {
+  if (!regime?.groups) return <Card title="Market Regime evidence"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có payload Market Regime v1" /></Card>
+  const completeness = regime.completeness
+  const missing = [...(completeness.missing || []), ...(completeness.stale || []), ...(completeness.conflict || [])]
+  return <Card title="Market Regime evidence" className="market-regime-panel">
+    <div className="regime-panel-summary"><div><strong>{regime.regime}</strong><small>{regime.status} · Confidence {regime.confidence}</small></div><Tag color={regime.status === 'FINAL' ? 'success' : 'warning'}>{completeness.pass_count}/{completeness.total_count} PASS</Tag></div>
+    <div className="regime-panel-meta"><span>Universe: {regime.universe.count} · hợp lệ: {regime.universe.eligible_count}</span><span>Generated: {formatDate(regime.generated_at)}</span></div>
+    {missing.length > 0 && <Alert type="warning" showIcon message="Evidence còn thiếu/chưa xác minh" description={missing.map(key => evidenceLabels[key] || key).join(' · ')} />}
+    <details className="regime-details"><summary>Xem 9 nhóm evidence</summary><div className="market-regime-table-wrap"><table className="market-regime-table"><thead><tr><th>Nhóm</th><th>Signal</th><th>Status</th><th>Source</th><th>Observed</th><th>Ghi chú</th></tr></thead><tbody>{Object.entries(regime.groups).map(([key, item]) => <tr key={key}><td>{evidenceLabels[key] || item.label}</td><td>{evidenceValue(item)}</td><td><Tag color={evidenceTagColor(item.status)}>{item.status}</Tag></td><td>{item.source?.provider || '—'}</td><td>{formatDate(item.observed_at)}</td><td>{item.error || item.notes?.[0] || '—'}</td></tr>)}</tbody></table></div></details>
   </Card>
 }
 

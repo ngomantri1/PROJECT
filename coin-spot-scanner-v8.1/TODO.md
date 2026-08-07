@@ -1,5 +1,10 @@
 # TODO.md
 
+## Market Regime v1 follow-up
+
+- Add approved historical adapters for BTC dominance, TOTAL3/proxy and macro event risk before marking those groups PASS.
+- Add fixture coverage for provider rate-limit retry and full orchestrator payload persistence.
+
 Chỉ các mục có bằng chứng từ source, README, `docs/PHASE_STATUS.md` hoặc UI hiện tại được ghi là **Confirmed TODO**.
 
 # High Priority

@@ -69,6 +69,12 @@ Không có bug đang điều tra được ghi nhận trong source hoặc tài li
 
 # Known Risks / Fragile Areas
 
+## Market Regime evidence completeness
+
+- Previous step 2 output hard-coded `5/9` and did not expose per-group missing evidence.
+- Current implementation uses dynamic 9-group completeness and explicit UNKNOWN/STALE/CONFLICT statuses. BTC dominance/TOTAL3 history and macro risk remain UNKNOWN until an approved source is configured.
+- Status: Fixed for transparency; source coverage remains an operational limitation.
+
 ## Symbol-only asset mapping
 
 - CoinGecko → Binance map hiện chỉ dựa `symbol.upper()`/base asset.
@@ -84,7 +90,7 @@ Không có bug đang điều tra được ghi nhận trong source hoặc tài li
 ## Public API availability
 
 - CoinGecko/Binance rate limit hoặc schema change làm toàn step/run fail.
-- Không có fallback/retry trong `PublicMarketClient._get()`.
+- PublicMarketClient now has bounded retry/backoff for network, 429 and 5xx responses; provider schema/history gaps remain explicit rather than synthesized.
 - Bằng chứng runtime (2026-08-06): hai run gần nhất fail tại Universe Scan vì CoinGecko trả `429 Too Many Requests` cho `/api/v3/coins/markets`.
 - Status: Known operational risk; chưa sửa trong phạm vi dashboard.
 

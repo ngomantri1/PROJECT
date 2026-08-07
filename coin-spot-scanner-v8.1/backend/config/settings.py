@@ -87,4 +87,6 @@ CELERY_BEAT_SCHEDULE = {
 COINGECKO_BASE_URL = os.getenv("COINGECKO_BASE_URL", "https://api.coingecko.com/api/v3")
 BINANCE_BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
 HTTP_TIMEOUT_SECONDS = float(os.getenv("HTTP_TIMEOUT_SECONDS", "25"))
+HTTP_MAX_RETRIES = int(os.getenv("HTTP_MAX_RETRIES", "3"))
+HTTP_MAX_RETRY_DELAY_SECONDS = float(os.getenv("HTTP_MAX_RETRY_DELAY_SECONDS", "5"))
 USER_AGENT = os.getenv("USER_AGENT", "CoinSpotScannerV8.1-Educational/0.1")
