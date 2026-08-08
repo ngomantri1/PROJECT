@@ -105,11 +105,14 @@ Settings UI
 2. `PublicMarketClient.binance_exchange_info()` lấy pair Binance.
 3. `valid_binance_usdt_symbols()` tạo map base asset → symbol info.
 4. `excluded_token()` và MC/volume filters loại candidate.
-5. `provisional_quality()` tạo Quality Range proxy.
-6. Candidate được bulk insert với `stage=RESEARCH_POOL`.
-7. Counters được ghi vào `ScanRun.counters` làm Universe Accounting sơ bộ.
+5. `research_prefilter()` tạo priority metadata từ MC/volume/FDV/MC/circulating/volume-to-MC và áp các supply Hard Rule có thể xác minh. Đây không phải Quality Score.
+6. Candidate được bulk insert với `stage=RESEARCH_POOL`, `quality_status=NOT_SCORED`.
+7. `step_research_shortlist()` sắp xếp theo prefilter priority và chọn candidate nghiên cứu tiếp; Product/Token Value evidence chưa có nên không gọi đây là Quality ranking.
+8. Counters được ghi vào `ScanRun.counters` làm Universe Accounting sơ bộ.
 
 ## Market regime data
+
+Current implementation (verified in `backend/scanner/market_regime.py` and `step_market_regime()`): payload `market_regime.v1` contains nine evidence groups, closed-candle validation, dynamic completeness and provider/retry statistics. BTC/ETH/ETHBTC klines and a bounded D1 batch for the current research pool feed the calculation; CoinGecko global is currently snapshot-only. `ScanStepRun.payload` and `ScanRun.results["market_regime"]` receive the same payload. The legacy four-condition description below is historical and must not be used as the current contract.
 
 1. Lấy BTC/ETH `1d` và `4h` klines.
 2. `kline_summary()` tính SMA/ATR.
@@ -226,7 +229,8 @@ Source: `frontend/src/App.tsx` — `Dashboard.load()`.
 - `excluded_token()`.
 - `kline_summary()`.
 - `depth_metrics()`.
-- `provisional_quality()`.
+- `research_prefilter()` — cheap evidence gate/prioritization only; not V8.1 Quality scoring.
+- `provisional_quality()` — compatibility wrapper returning no numeric Quality score.
 
 `backend/scanner/orchestrator.py`
 - `ScanOrchestrator.execute()`.
@@ -274,3 +278,32 @@ Source: `frontend/src/App.tsx` — `Dashboard.load()`.
 - `total_scan_policy` được persist và hiển thị nhưng chưa điều khiển cache/freshness trong orchestrator.
 - UI routes ngoài `/` và `/settings` hiện trỏ đến `ComingSoon`.
 - REST API hiện `AllowAny`; không giả định production security đã hoàn thành.
+
+
+## Research Evidence Priority v1
+
+```text
+Research Pool
+  ↓
+market/tokenomics prefilter
+  ↓
+Binance /api/v3/ticker/24hr (bulk)
+  + DefiLlama /protocols, /v2/chains, /overview/fees, /overview/dexs
+  ↓
+exact CoinGecko ID / unique symbol+name reconciliation
+  ↓
+Product activity E0–E2 + Binance structural-liquidity evidence + valuation peer proxy
+  ↓
+RESEARCH_EVIDENCE_PRIORITY
+  ↓
+15 Research Shortlist
+```
+
+This ordering is not a V8.1 Quality Score. DefiLlama protocol activity is never reused as Token Value Capture. Provider failures degrade to `PREFILTER_ONLY_FALLBACK` instead of failing the scan.
+
+## Verified lifecycle and persistence semantics (2026-08-08)
+
+- Full scope executes B1-B6 and ends at 100% workflow progress; warnings do not convert the run to a false success.
+- A B4-only request records explicit scope B4, prerequisite scope B1-B3, B5/B6 `SKIPPED`, status `PARTIAL_COMPLETED`, workflow progress 67%, and processing progress 100%.
+- Research provider error details are persisted in step payload `provider_status`; `ScanStepRun.message` is a compact summary guarded by the model max length of 300.
+- Forced DefiLlama outage was runtime-verified in run `e6d8fa5e-6b99-49dc-acd9-ac575b59fc15`: B3 remained `COMPLETED_WITH_WARNINGS`, produced `PREFILTER_ONLY_FALLBACK`, recorded five unavailable sources, and the full pipeline continued to B6 with shortlist count 15 and no `BUY_SETUP`.

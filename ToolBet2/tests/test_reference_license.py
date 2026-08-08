@@ -33,6 +33,7 @@ class ReferenceLicenseTests(unittest.TestCase):
 
     def test_login_acquires_and_allows_live(self):
         service = self.make_service()
+        self.assertEqual(self.now, service.current_time())
         lease = service.login("alice", "secret")
         self.assertEqual("alice", lease.username)
         self.assertTrue(service.decision("live_bet").allowed)

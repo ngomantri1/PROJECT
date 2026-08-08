@@ -50,6 +50,32 @@ class GameDataStore:
         drop = [k for k in self._reserved_rounds if k and k[0] == table.id]
         for key in drop:
             self._reserved_rounds.pop(key, None)
+
+    def get_last_confirmed_table(self) -> str:
+        """Load the last TABLE_READY table for this provider/hall."""
+        session = self.session_factory()
+        try:
+            hall = session.get(HallRecord, self.hall_id)
+            return str(hall.last_confirmed_table or "") if hall else ""
+        finally:
+            session.close()
+
+    def save_last_confirmed_table(self, table_name: str) -> None:
+        """Persist only a room-confirmed table; never call for a click intent."""
+        value = str(table_name or "").strip()
+        if not value:
+            return
+        self.register_hall()
+        session = self.session_factory()
+        try:
+            hall = session.get(HallRecord, self.hall_id)
+            if hall is None:
+                return
+            hall.last_confirmed_table = value
+            hall.updated_at = datetime.now()
+            session.commit()
+        finally:
+            session.close()
     def register_hall(self) -> HallRecord:
         now = datetime.now()
         session = self.session_factory()

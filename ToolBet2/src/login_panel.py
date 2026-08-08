@@ -20,6 +20,7 @@ class LoginFormResult:
     username: str
     password: str
     site_id: str = ""
+    remember: bool = False
 
 
 INSTALL_SCRIPT = """
@@ -92,6 +93,8 @@ INSTALL_SCRIPT = """
         min-height: 18px; margin: 4px 0 10px;
         font-size: 12px; color: #d13232;
       }
+      #toolbet-login-panel .tb-remember { display:flex; align-items:center; gap:8px; margin:0 0 14px; font-size:12px; color:#607086; text-transform:none; font-weight:400; }
+      #toolbet-login-panel .tb-remember input { width:16px; height:16px; }
       #toolbet-login-panel button {
         width: 100%; padding: 12px 14px; margin-top: 4px;
         border: 0; border-radius: 9px; background: #2878e8;
@@ -118,6 +121,7 @@ INSTALL_SCRIPT = """
         <label for="tb-pass">Mật khẩu</label>
         <input id="tb-pass" type="password" autocomplete="current-password" placeholder="Mật khẩu" />
       </div>
+      <label class="tb-remember"><input id="tb-remember" type="checkbox" /> Ghi nhớ tài khoản trên thiết bị này</label>
       <div class="tb-err" id="tb-err"></div>
       <button id="tb-go" type="button">Vào web &amp; sảnh</button>
     </div>
@@ -127,6 +131,7 @@ INSTALL_SCRIPT = """
   const web = root.querySelector('#tb-web');
   const user = root.querySelector('#tb-user');
   const pass = root.querySelector('#tb-pass');
+  const remember = root.querySelector('#tb-remember');
   const err = root.querySelector('#tb-err');
   const go = root.querySelector('#tb-go');
 
@@ -153,6 +158,7 @@ INSTALL_SCRIPT = """
       site_id: (web.value || '').trim(),
       username: (user.value || '').trim(),
       password: pass.value || '',
+      remember: Boolean(remember && remember.checked),
     };
     if (!payload.site_id) {
       err.textContent = 'Chọn trang web.';
@@ -246,6 +252,7 @@ async def prompt_login_panel(
                 username=user,
                 password=pwd,
                 site_id=site.info.id,
+                remember=bool(payload.get("remember")),
             )
             if not future.done():
                 future.set_result(result)

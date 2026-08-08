@@ -13,6 +13,8 @@ UI_PROTOCOL_VERSION = 1
 class UiScreen(str, Enum):
     TOOL_LOGIN = "tool_login"
     GAME_LOGIN = "game_login"
+    SELECT_TABLE = "select_table"
+    CHANGE_TABLE = "change_table"
     WORKSPACE = "workspace"
 
 
@@ -33,6 +35,8 @@ class UiCommandType(str, Enum):
     RESET_TAB_STATISTICS = "reset_tab_statistics"
     QUERY_HISTORY = "query_history"
     UPDATE_SETTINGS = "update_settings"
+    SELECT_TABLE = "select_table"
+    CHANGE_TABLE = "change_table"
 
 
 class UiSnapshot(BaseModel):

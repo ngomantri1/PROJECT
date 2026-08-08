@@ -132,16 +132,20 @@ async def show_game_overlay(page: Page) -> bool:
 
 async def ensure_game_overlay_visible(page: Page) -> bool:
     """Dam bao iframe game hien thi — goi sau khi click Vao choi."""
-    await show_game_overlay(page)
-    loc = page.locator("#iframe_game")
-    if not await loc.count():
-        return False
     try:
+        await show_game_overlay(page)
+        loc = page.locator("#iframe_game")
+        if not await loc.count():
+            return False
         await loc.scroll_into_view_if_needed(timeout=3000)
-    except Exception:
-        pass
-    box = await loc.bounding_box()
-    return bool(box and box.get("width", 0) > 80 and box.get("height", 0) > 80)
+        box = await loc.bounding_box()
+        return bool(box and box.get("width", 0) > 80 and box.get("height", 0) > 80)
+    except Exception as exc:
+        message = str(exc or "").lower()
+        if "targetclosed" in type(exc).__name__.lower() or "has been closed" in message:
+            logger.warning("Bo qua hien overlay — page/context da dong")
+            return False
+        raise
 
 
 async def get_game_iframe(page: Page) -> Frame | None:

@@ -96,6 +96,7 @@ def launch_chrome_cdp(cdp_url: str, profile_dir: Path | None = None) -> bool:
         chrome,
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile}",
+        "--start-maximized",
         "--no-first-run",
         "--no-default-browser-check",
         "about:blank",
@@ -210,6 +211,11 @@ class BrowserManager:
 
         await self._set_cdp_window_bounds(window_state="maximized")
 
+    async def ensure_maximized(self) -> None:
+        """Idempotent startup/reconnect maximize hook."""
+
+        await self.maximize_window()
+
     async def start(self) -> BrowserContext:
         self._playwright = await async_playwright().start()
 
@@ -235,9 +241,7 @@ class BrowserManager:
                             self._context = await self._browser.new_context()
                         self._owns_browser = False
                         self.cdp_url = url
-                        await self._set_cdp_window_bounds(
-                            window_state="normal", width=520, height=900
-                        )
+                        await self.ensure_maximized()
                         logger.info("Đã kết nối Chrome qua CDP: %s", url)
                         return self._context
                     except Exception as e:
@@ -326,7 +330,7 @@ class BrowserManager:
                     else:
                         self._context = await self._browser.new_context()
                     self._owns_browser = False
-                    await self._set_cdp_window_bounds(window_state="maximized")
+                    await self.ensure_maximized()
                     logger.info(
                         "Da ket noi lai Chrome CDP (lan %d): %s",
                         attempt,

@@ -1,16 +1,16 @@
 #toolbet-ui-v2 {
-  --tbv2-bg: #eef2f6;
-  --tbv2-surface: #ffffff;
-  --tbv2-border: #dfe5ec;
-  --tbv2-text: #172033;
-  --tbv2-muted: #718096;
-  --tbv2-primary: #1478f2;
-  --tbv2-primary-soft: #eaf3ff;
-  --tbv2-success: #159a5b;
-  --tbv2-warning: #e58c13;
-  --tbv2-danger: #df3f4f;
+  --tbv2-bg: #08111f;
+  --tbv2-surface: #0f1b2d;
+  --tbv2-border: #27364d;
+  --tbv2-text: #f4f7fb;
+  --tbv2-muted: #8fa2ba;
+  --tbv2-primary: #2878ff;
+  --tbv2-primary-soft: #142238;
+  --tbv2-success: #32c96b;
+  --tbv2-warning: #f3b13f;
+  --tbv2-danger: #ef5364;
   --tbv2-radius: 13px;
-  color-scheme: light;
+  color-scheme: dark;
   color: var(--tbv2-text);
   font-family: "Segoe UI", system-ui, sans-serif;
 }

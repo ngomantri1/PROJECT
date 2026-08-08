@@ -427,3 +427,5 @@ FodyWeavers.xsd
 /ToolBet2/data
 /ToolBet2/data
 !/ToolBet2/tests/golden_vectors/*.json
+/coin-spot-scanner-v8.1/export_step2_context_20260808
+/ToolBet2/tests

@@ -1,8 +1,8 @@
-#toolbet-ui-v2.tbv2-runtime { position:fixed; top:10px; left:10px; z-index:2147483645; width:min(455px,calc(100vw - 20px)); height:calc(100vh - 20px); box-sizing:border-box; pointer-events:auto; }
+#toolbet-ui-v2.tbv2-runtime { position:fixed; top:14px; right:14px; left:auto; z-index:2147483645; width:min(455px,calc(100vw - 28px)); height:calc(100vh - 28px); box-sizing:border-box; pointer-events:auto; }
 #toolbet-ui-v2 * { box-sizing:border-box; }
 #toolbet-ui-v2 button,#toolbet-ui-v2 input,#toolbet-ui-v2 select { font:inherit; }
-#toolbet-ui-v2 .tbv2-shell { height:100%; display:flex; flex-direction:column; overflow:hidden; border:1px solid #cbd5e1; border-radius:16px; background:var(--tbv2-bg); box-shadow:0 18px 55px rgba(15,23,42,.28); }
-#toolbet-ui-v2 .tbv2-header { position:relative; display:flex; align-items:center; justify-content:space-between; padding:14px 50px 11px 16px; background:#fff; border-bottom:1px solid var(--tbv2-border); cursor:grab; user-select:none; touch-action:none; }
+#toolbet-ui-v2 .tbv2-shell { height:100%; display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--tbv2-border); border-radius:16px; background:var(--tbv2-bg); box-shadow:0 18px 55px rgba(0,0,0,.42); }
+#toolbet-ui-v2 .tbv2-header { position:relative; display:flex; align-items:center; justify-content:space-between; padding:14px 50px 11px 16px; background:var(--tbv2-surface); border-bottom:1px solid var(--tbv2-border); cursor:grab; user-select:none; touch-action:none; }
 #toolbet-ui-v2 .tbv2-header.tbv2-dragging { cursor:grabbing; }
 #toolbet-ui-v2 .tbv2-brand { display:flex; flex-direction:column; gap:2px; } #toolbet-ui-v2 .tbv2-brand strong{font-size:18px;color:#111827}
 #toolbet-ui-v2 .tbv2-header-actions{position:absolute;top:0;right:0;display:flex;align-items:center;justify-content:center;min-width:0}
@@ -66,4 +66,24 @@
 #toolbet-ui-v2 .tbv2-history-pager{flex-wrap:nowrap;gap:6px;margin-top:10px;padding-top:9px;border-top:1px solid #edf1f6}#toolbet-ui-v2 .tbv2-history-pager .tbv2-secondary{display:flex;align-items:center;justify-content:center;width:32px;min-width:32px;height:32px;padding:0;border-radius:7px;font-size:20px;font-weight:400;line-height:1}#toolbet-ui-v2 .tbv2-history-pager .tbv2-message{flex:1;min-width:0;margin:0;white-space:nowrap;text-align:center;font-variant-numeric:tabular-nums}#toolbet-ui-v2 .tbv2-history-pager #tbv2-history-page-size{flex:0 0 72px;width:72px;min-height:32px;height:32px;padding:5px 23px 5px 7px;font-size:11px}@media (max-width:360px){#toolbet-ui-v2 .tbv2-history-pager .tbv2-message{font-size:10px}#toolbet-ui-v2 .tbv2-history-pager #tbv2-history-page-size{flex-basis:66px;width:66px}}
 #toolbet-ui-v2 .tbv2-history-newer{display:block;width:100%;margin-top:7px;padding:5px 8px;border:1px solid #b9dcff;border-radius:7px;background:#edf7ff;color:#1677d2;font-size:11px;font-weight:700;cursor:pointer}#toolbet-ui-v2 .tbv2-history-newer:hover{background:#dff0ff}#toolbet-ui-v2 .tbv2-bet-row-new td{animation:tbv2-bet-row-flash .85s ease-out}#toolbet-ui-v2 .tbv2-bet-row-updated .tbv2-bet-outcome,#toolbet-ui-v2 .tbv2-bet-row-updated .tbv2-bet-pnl{animation:tbv2-bet-cell-flash .8s ease-out}@keyframes tbv2-bet-row-flash{0%{background:#dff1ff}100%{background:transparent}}@keyframes tbv2-bet-cell-flash{0%{background:#fff4cf}100%{background:transparent}}@media (prefers-reduced-motion:reduce){#toolbet-ui-v2 .tbv2-bet-row-new td,#toolbet-ui-v2 .tbv2-bet-row-updated .tbv2-bet-outcome,#toolbet-ui-v2 .tbv2-bet-row-updated .tbv2-bet-pnl{animation:none}}
 @media (max-width:700px){#toolbet-ui-v2.tbv2-runtime{inset:0;width:100vw;height:100vh}#toolbet-ui-v2 .tbv2-header{cursor:default}#toolbet-ui-v2 .tbv2-shell{border-radius:0;border:0}#toolbet-ui-v2 .tbv2-form-grid{grid-template-columns:1fr}}
-@media (min-width:1600px){#toolbet-ui-v2.tbv2-runtime{width:480px;top:14px;left:14px;height:calc(100vh - 28px);bottom:14px}#toolbet-ui-v2 .tbv2-scroll{padding:14px}}
+@media (min-width:1600px){#toolbet-ui-v2.tbv2-runtime{width:480px;top:14px;right:14px;left:auto;height:calc(100vh - 28px);bottom:14px}#toolbet-ui-v2 .tbv2-scroll{padding:14px}}
+
+/* V2 dark workspace surface; casino DOM/iframe remains untouched. */
+#toolbet-ui-v2 .tbv2-tabs,
+#toolbet-ui-v2 .tbv2-tab,
+#toolbet-ui-v2 .tbv2-tab-add { background:var(--tbv2-surface); color:var(--tbv2-text); border-color:var(--tbv2-border); }
+#toolbet-ui-v2 .tbv2-card,
+#toolbet-ui-v2 .tbv2-stat,
+#toolbet-ui-v2 .tbv2-reason,
+#toolbet-ui-v2 .tbv2-live-status { background:var(--tbv2-surface); border-color:var(--tbv2-border); color:var(--tbv2-text); }
+#toolbet-ui-v2 .tbv2-input { background:#142238; border-color:var(--tbv2-border); color:var(--tbv2-text); }
+#toolbet-ui-v2 .tbv2-secondary { background:#142238; border-color:var(--tbv2-border); color:var(--tbv2-text); }
+#toolbet-ui-v2 .tbv2-history-table th { background:#142238; color:#9fc2ff; }
+#toolbet-ui-v2 .tbv2-history-table td { border-color:var(--tbv2-border); }
+#toolbet-ui-v2 .tbv2-change-table{min-height:30px;padding:6px 9px;margin-right:36px;font-size:11px;}
+#toolbet-ui-v2 .tbv2-table-selection{padding:10px 12px;}
+#toolbet-ui-v2 .tbv2-table-selection[hidden]{display:none;}
+#toolbet-ui-v2 .tbv2-table-countdown{color:var(--tbv2-warning);font-size:11px;font-weight:700;}
+#toolbet-ui-v2 .tbv2-table-options{display:flex;gap:6px;flex-wrap:wrap;}
+#toolbet-ui-v2 .tbv2-table-options button{min-width:64px;padding:6px 8px;font-size:11px;}
+#toolbet-ui-v2 .tbv2-table-options button.active{border-color:var(--tbv2-primary);box-shadow:0 0 0 1px var(--tbv2-primary);}

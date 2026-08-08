@@ -75,6 +75,17 @@ class ChecklistProfileViewSet(viewsets.ModelViewSet):
         profile.save()
         return Response(ChecklistProfileSerializer(profile).data)
 
+class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
+    """Persistent notification history, newest first, bounded for the local dashboard."""
+    serializer_class = NotificationSerializer
+
+    def get_queryset(self):
+        try:
+            limit = min(max(int(self.request.query_params.get("limit", 200)), 1), 200)
+        except (TypeError, ValueError):
+            limit = 200
+        return Notification.objects.select_related("scan_run").all()[:limit]
+
 class ScanRunViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ScanRun.objects.select_related("profile").prefetch_related("steps","candidates")
     serializer_class = ScanRunSerializer

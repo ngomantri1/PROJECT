@@ -1292,21 +1292,26 @@ _GET_TABLE_SCREEN_POS_BODY = """
 
 _HIDE_OVERLAY_JS = """() => {
   // Chi tat click — KHONG an panel (tranh nhay mat tool moi lan cuoc)
-  for (const id of ['toolbet-overlay', 'toolbet-overlay-left', 'toolbet-overlay-center']) {
+  for (const id of ['toolbet-overlay', 'toolbet-overlay-left', 'toolbet-overlay-center', 'toolbet-ui-v2']) {
     const ov = document.getElementById(id);
     if (!ov) continue;
+    if (!ov.dataset.toolbetPrevPointerEvents) {
+      ov.dataset.toolbetPrevPointerEvents = ov.style.pointerEvents || '__unset__';
+    }
     ov.style.pointerEvents = 'none';
   }
 }"""
 
 _RESTORE_OVERLAY_JS = """() => {
   // Chi panel tuong tac — center van none de khong chan ban cuoc
-  const left = document.getElementById('toolbet-overlay-left');
-  const right = document.getElementById('toolbet-overlay');
-  if (left) left.style.pointerEvents = 'auto';
-  if (right) right.style.pointerEvents = 'auto';
-  const center = document.getElementById('toolbet-overlay-center');
-  if (center) center.style.pointerEvents = 'none';
+  for (const id of ['toolbet-overlay', 'toolbet-overlay-left', 'toolbet-overlay-center', 'toolbet-ui-v2']) {
+    const ov = document.getElementById(id);
+    if (!ov) continue;
+    const previous = ov.dataset.toolbetPrevPointerEvents;
+    if (previous === '__unset__') ov.style.removeProperty('pointer-events');
+    else if (previous != null) ov.style.pointerEvents = previous;
+    delete ov.dataset.toolbetPrevPointerEvents;
+  }
 }"""
 
 
@@ -1718,8 +1723,6 @@ _CLICK_TABLE_IN_HALL_BODY = """
         if (!card) continue;
         card.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         card.click();
-        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: doc.defaultView });
-        card.dispatchEvent(evt);
         const r = card.getBoundingClientRect();
         return { ok: true, method: 'click', w: r.width, h: r.height, name: 'C' + padded };
       }
@@ -1729,8 +1732,6 @@ _CLICK_TABLE_IN_HALL_BODY = """
   if (!card) return { err: 'no_card' };
   card.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
   card.click();
-  const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: doc.defaultView });
-  card.dispatchEvent(evt);
   const r = card.getBoundingClientRect();
   return { ok: true, method: 'click', w: r.width, h: r.height, name: 'C' + padded };
 """
@@ -1780,8 +1781,6 @@ _CLICK_TABLE_IN_DOC_BODY = """
         if (!card) continue;
         card.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         card.click();
-        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-        card.dispatchEvent(evt);
         const r = card.getBoundingClientRect();
         return { ok: true, method: 'doc-click', w: r.width, h: r.height };
       }
@@ -1791,8 +1790,6 @@ _CLICK_TABLE_IN_DOC_BODY = """
   if (!card) return { err: 'no_card' };
   card.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
   card.click();
-  const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-  card.dispatchEvent(evt);
   const r = card.getBoundingClientRect();
   return { ok: true, method: 'doc-click', w: r.width, h: r.height };
 """

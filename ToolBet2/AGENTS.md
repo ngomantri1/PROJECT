@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> File này là chỉ dẫn bắt buộc cho mọi AI coding làm việc trong phạm vi repository.  
+> File này là chỉ dẫn bắt buộc cho mọi AI coding làm việc trong phạm vi repository.
 > Giữ file ngắn, ổn định và không biến thành changelog, backlog hoặc tài liệu kiến trúc dài.
 
 ## Project

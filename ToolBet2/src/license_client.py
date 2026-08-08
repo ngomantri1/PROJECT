@@ -187,6 +187,10 @@ class LicenseService:
     def last_error(self) -> str:
         return self._last_error
 
+    def current_time(self) -> datetime:
+        """Return the clock used for lease validation and test fixtures."""
+        return self._now()
+
     def _validate_envelope(self, raw: dict) -> tuple[SignedLease, LicenseLease]:
         signed = SignedLease.from_dict(raw)
         lease = verify_signed_lease(signed, self.public_key_pem)

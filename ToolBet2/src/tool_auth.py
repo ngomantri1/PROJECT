@@ -105,6 +105,10 @@ class ToolAuthService:
     def session(self) -> ToolSession | None:
         return self._session if self.is_authenticated() else None
 
+    def _auth_now(self) -> datetime:
+        now = self._license.current_time() if self._license else datetime.now()
+        return now.astimezone().replace(tzinfo=None) if now.tzinfo else now
+
     def _read_store(self) -> dict:
         if not self._store_path.exists():
             return {"version": 1, "accounts": {}}
@@ -198,7 +202,7 @@ class ToolAuthService:
 
     def is_authenticated(self) -> bool:
         local_valid = bool(
-            self._session and self._session.expires_at > datetime.now()
+            self._session and self._session.expires_at > self._auth_now()
         )
         if not local_valid:
             return False
@@ -208,7 +212,7 @@ class ToolAuthService:
         if self._session is None:
             return False
         if self._license is None:
-            return self._session.expires_at > datetime.now()
+            return self._session.expires_at > self._auth_now()
         return self._license.decision(capability).allowed
 
     def license_status(self) -> dict:

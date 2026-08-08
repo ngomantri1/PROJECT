@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 class ChecklistProfile(models.Model):
@@ -48,9 +49,10 @@ class ScanRun(models.Model):
     STATUS_PAUSED = "PAUSED"
     STATUS_COMPLETED = "COMPLETED"
     STATUS_WARNINGS = "COMPLETED_WITH_WARNINGS"
+    STATUS_PARTIAL = "PARTIAL_COMPLETED"
     STATUS_FAILED = "FAILED"
     STATUS_CANCELLED = "CANCELLED"
-    STATUS_CHOICES = [(x, x) for x in [STATUS_QUEUED, STATUS_RUNNING, STATUS_PAUSED, STATUS_COMPLETED, STATUS_WARNINGS, STATUS_FAILED, STATUS_CANCELLED]]
+    STATUS_CHOICES = [(x, x) for x in [STATUS_QUEUED, STATUS_RUNNING, STATUS_PAUSED, STATUS_COMPLETED, STATUS_WARNINGS, STATUS_PARTIAL, STATUS_FAILED, STATUS_CANCELLED]]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     profile = models.ForeignKey(ChecklistProfile, on_delete=models.PROTECT, related_name="scan_runs")
@@ -132,8 +134,87 @@ class Notification(models.Model):
     title = models.CharField(max_length=180)
     message = models.TextField(blank=True)
     scan_run = models.ForeignKey(ScanRun, null=True, blank=True, on_delete=models.CASCADE, related_name="notifications")
+    step_key = models.CharField(max_length=40, blank=True)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
+
+class MarketRegimeGlobalSnapshot(models.Model):
+    provider = models.CharField(max_length=40)
+    observed_at = models.DateTimeField()
+    fetched_at = models.DateTimeField()
+    btc_dominance_pct = models.DecimalField(max_digits=8, decimal_places=4)
+    eth_dominance_pct = models.DecimalField(max_digits=8, decimal_places=4, null=True, blank=True)
+    total_market_cap_usd = models.DecimalField(max_digits=30, decimal_places=4)
+    total3_proxy_usd = models.DecimalField(max_digits=30, decimal_places=4, null=True, blank=True)
+    source_endpoint = models.CharField(max_length=255)
+    payload_hash = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["provider", "observed_at"], name="market_regime_provider_observed_unique")]
+        indexes = [models.Index(fields=["provider", "observed_at"])]
+
+class UnlockOfficialSchedule(models.Model):
+    coingecko_id = models.CharField(max_length=160, db_index=True)
+    symbol = models.CharField(max_length=30)
+    project_name = models.CharField(max_length=160)
+    chain = models.CharField(max_length=80, blank=True)
+    contract = models.CharField(max_length=180, blank=True)
+    source_url = models.URLField(max_length=500)
+    source_domain = models.CharField(max_length=120, blank=True)
+    source_type = models.CharField(max_length=48, default="OFFICIAL_DOCS")
+    source_family = models.CharField(max_length=48, default="PROJECT_OFFICIAL")
+    upstream_provider = models.CharField(max_length=80, blank=True)
+    source_title = models.CharField(max_length=240, blank=True)
+    verified_at = models.DateTimeField()
+    coverage_start = models.DateTimeField(null=True, blank=True)
+    coverage_end = models.DateTimeField(null=True, blank=True)
+    is_complete_schedule = models.BooleanField(default=False)
+    verification_state = models.CharField(max_length=24, default="NEEDS_REVIEW")
+    evidence_type = models.CharField(max_length=32, default="OFFICIAL_SCHEDULE")
+    confidence = models.CharField(max_length=16, default="MEDIUM")
+    parser_version = models.CharField(max_length=32, blank=True)
+    payload_hash = models.CharField(max_length=64, blank=True)
+    schema_version = models.CharField(max_length=32, default="unlock.v1")
+    schedule_payload = models.JSONField(default=dict)
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["coingecko_id", "is_active"]), models.Index(fields=["contract", "is_active"])]
+
+    def clean(self):
+        if self.coverage_start and self.coverage_end and self.coverage_end < self.coverage_start:
+            raise ValidationError({"coverage_end": "coverage_end must not precede coverage_start"})
+        if self.verification_state in {"MANUAL_VERIFIED", "AUTO_VERIFIED"} and not self.source_url:
+            raise ValidationError({"source_url": "Verified schedules require a source URL"})
+        payload = self.schedule_payload if isinstance(self.schedule_payload, dict) else {}
+        if not payload.get("schema_version"):
+            raise ValidationError({"schedule_payload": "schedule_payload.schema_version is required"})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+class UnlockProviderSnapshot(models.Model):
+    identity_key = models.CharField(max_length=240)
+    provider = models.CharField(max_length=64)
+    provider_asset_id = models.CharField(max_length=180, blank=True)
+    status = models.CharField(max_length=24)
+    evidence_type = models.CharField(max_length=32, blank=True)
+    confidence = models.CharField(max_length=16, blank=True)
+    source_url = models.URLField(max_length=500, blank=True)
+    observed_at = models.DateTimeField(null=True, blank=True)
+    fetched_at = models.DateTimeField()
+    expires_at = models.DateTimeField(null=True, blank=True)
+    parser_version = models.CharField(max_length=32, default="unlock.v1")
+    payload_hash = models.CharField(max_length=64, blank=True)
+    normalized_payload = models.JSONField(default=dict)
+    error_code = models.CharField(max_length=80, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["identity_key", "provider", "fetched_at"]), models.Index(fields=["expires_at"])]

@@ -269,6 +269,130 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
+    async def test_table_selection_and_change_table_commands_use_bridge(self):
+        received = []
+
+        async def ui_command(command):
+            received.append(command)
+            return {"ok": True}
+
+        await self.page.expose_function("toolbetUiCommand", ui_command)
+        tab = {"id": "tab-1", "name": "Chiến lược 1", "status": {}}
+        workspace = {
+            "selected_tab_id": "tab-1",
+            "strategies": list(SIMULATION_STRATEGIES),
+            "money_managers": list(MONEY_MANAGER_OPTIONS),
+            "tabs": [tab],
+        }
+        snapshot = UiSnapshot(
+            revision=1,
+            state={
+                "runtime_session_id": "table-selection-session",
+                "strategy_tabs": workspace,
+                "table_selection": {
+                    "phase": "waiting_manual",
+                    "available_tables": ["Baccarat C03", "Baccarat C09"],
+                    "deadline_epoch_ms": 0,
+                },
+            },
+            tabs=[tab],
+        )
+        runtime = BrowserUiRuntime(enabled=True)
+        self.assertTrue(await runtime.install(self.page, snapshot))
+        table_button = self.page.locator('[data-table-name="Baccarat C09"]')
+        self.assertEqual(
+            1,
+            await table_button.count(),
+            await self.page.locator("#tbv2-table-selection").inner_html(),
+        )
+
+        await self.page.locator('[data-table-name="Baccarat C09"]').click()
+        self.assertEqual("select_table", received[-1]["type"])
+        self.assertEqual("Baccarat C09", received[-1]["payload"]["table_name"])
+
+        await self.page.locator(".tbv2-change-table").click()
+        self.assertEqual("change_table", received[-1]["type"])
+
+    async def test_manual_table_picker_remains_clickable_during_workspace_loading(self):
+        tab = {"id": "tab-1", "name": "Chiến lược 1", "status": {}}
+        workspace = {
+            "selected_tab_id": "tab-1",
+            "strategies": list(SIMULATION_STRATEGIES),
+            "money_managers": list(MONEY_MANAGER_OPTIONS),
+            "tabs": [tab],
+        }
+        snapshot = UiSnapshot(
+            revision=1,
+            state={
+                "runtime_session_id": "table-selection-loading",
+                "workspace_loading": True,
+                "strategy_tabs": workspace,
+                "table_selection": {
+                    "phase": "waiting_manual",
+                    "available_tables": ["Baccarat C07"],
+                },
+            },
+            tabs=[tab],
+        )
+        runtime = BrowserUiRuntime(enabled=True)
+        self.assertTrue(await runtime.install(self.page, snapshot))
+        self.assertFalse(await self.page.locator(".tbv2-loading-cover").is_visible())
+        self.assertFalse(
+            await self.page.locator('[data-table-name="Baccarat C07"]').is_disabled()
+        )
+        self.assertFalse(
+            await self.page.locator(".tbv2-scroll").evaluate("node => node.inert")
+        )
+
+    async def test_table_selection_waiting_countdown_hides_after_ready(self):
+        tab = {"id": "tab-1", "name": "Chiến lược 1", "status": {}}
+        workspace = {
+            "selected_tab_id": "tab-1",
+            "strategies": list(SIMULATION_STRATEGIES),
+            "money_managers": list(MONEY_MANAGER_OPTIONS),
+            "tabs": [tab],
+        }
+        waiting = UiSnapshot(
+            revision=1,
+            state={
+                "runtime_session_id": "table-selection-countdown",
+                "strategy_tabs": workspace,
+                "table_selection": {
+                    "phase": "waiting_manual",
+                    "available_tables": ["Baccarat C03"],
+                    "deadline_epoch_ms": 4102444800000,
+                },
+            },
+            tabs=[tab],
+        )
+        runtime = BrowserUiRuntime(enabled=True)
+        self.assertTrue(await runtime.install(self.page, waiting))
+        card = self.page.locator("#tbv2-table-selection")
+        self.assertTrue(await card.is_visible())
+        self.assertIn("Còn", await card.locator('[data-bind="table-countdown"]').inner_text())
+        self.assertFalse(
+            await card.locator('[data-table-name="Baccarat C03"]').is_disabled()
+        )
+
+        ready = UiSnapshot(
+            revision=2,
+            state={
+                **waiting.state,
+                "table_selection": {
+                    "phase": "ready",
+                    "message": "Đã vào Baccarat C03",
+                    "available_tables": ["Baccarat C03"],
+                },
+            },
+            tabs=[tab],
+        )
+        self.assertTrue(await runtime.update(self.page, ready))
+        self.assertTrue(await card.is_visible())
+        self.assertIn("Đã vào", await card.locator('[data-bind="table-selection-message"]').inner_text())
+        self.assertTrue(
+            await card.locator('[data-table-name="Baccarat C03"]').is_disabled()
+        )
+
     async def test_tab_selection_is_immediate_and_does_not_save_workspace(self):
         first = {
             "id": "tab-1",
@@ -771,10 +895,10 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
 
         await self.page.mouse.move(header["x"] + 30, header["y"] + 20)
         await self.page.mouse.down()
-        await self.page.mouse.move(header["x"] + 260, header["y"] + 20)
+        await self.page.mouse.move(header["x"] - 200, header["y"] + 20)
         await self.page.mouse.up()
         moved = await self.page.locator("#toolbet-ui-v2").bounding_box()
-        self.assertGreater(moved["x"], before["x"] + 100)
+        self.assertLess(moved["x"], before["x"] - 100)
 
         self.assertTrue(await runtime.update(self.page, snapshot))
         after_update = await self.page.locator("#toolbet-ui-v2").bounding_box()
@@ -782,7 +906,7 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
 
         await self.page.locator(".tbv2-brand").dblclick()
         reset = await self.page.locator("#toolbet-ui-v2").bounding_box()
-        self.assertAlmostEqual(10, reset["x"], delta=1)
+        self.assertAlmostEqual(811, reset["x"], delta=1)
 
     async def test_table_history_stays_visible_during_same_table_empty_snapshot(self):
         tab = {"id": "tab-1", "name": "Chiến lược 1", "status": {}}
@@ -1135,7 +1259,7 @@ class BrowserUiRuntimeFixtureTests(unittest.IsolatedAsyncioTestCase):
         runtime = BrowserUiRuntime(enabled=True)
         self.assertTrue(await runtime.install(self.page, snapshot))
         self.assertEqual(
-            ["tbv2-run-toggle", "tbv2-simulation-only", None],
+            ["tbv2-run-toggle", "tbv2-simulation-only", None, None],
             await self.page.locator(".tbv2-run-actions > *").evaluate_all(
                 "nodes => nodes.map(node => node.id || node.querySelector('input')?.id)"
             ),

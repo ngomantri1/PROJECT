@@ -27,6 +27,7 @@ class HallRecord(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
     provider: Mapped[str] = mapped_column(String(32), default="")
+    last_confirmed_table: Mapped[str] = mapped_column(String(128), default="")
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
@@ -365,6 +366,13 @@ class StrategyMoneyConfigRecord(Base):
 def _migrate_schema(engine) -> None:
     """Them cot moi cho DB cu (SQLite ALTER TABLE)."""
     insp = inspect(engine)
+    if "halls" in insp.get_table_names():
+        hall_cols = {c["name"] for c in insp.get_columns("halls")}
+        if "last_confirmed_table" not in hall_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE halls ADD COLUMN last_confirmed_table VARCHAR(128) DEFAULT ''"
+                ))
     if "strategy_tab_runtime" in insp.get_table_names():
         runtime_cols = {
             column["name"] for column in insp.get_columns("strategy_tab_runtime")

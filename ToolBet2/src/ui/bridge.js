@@ -311,10 +311,14 @@
       moneyManagers: strategyTabs.money_managers || [],
       lifecycleMode: lifecycle.mode || selected.mode || "simulation",
       license: state.license || {},
+      tableSelection: {
+        phase: state.table_selection?.phase || "",
+        available: state.table_selection?.available_tables || [],
+      },
     });
   };
 
-  const setWorkspaceLoading = (root, loading) => {
+  const setWorkspaceLoading = (root, loading, tableSelection = {}) => {
     const local = window.__toolbetUiLocal;
     const cover = root.querySelector(".tbv2-loading-cover");
     const tabsBar = root.querySelector(".tbv2-tabs");
@@ -323,15 +327,19 @@
 
     const wasLoading = !!local.workspaceLoading;
     local.workspaceLoading = !!loading;
+    const manualTableSelection = !!loading && tableSelection?.phase === "waiting_manual";
     root.classList.toggle("tbv2-workspace-loading", !!loading);
     root.dataset.workspaceLoading = String(!!loading);
     tabsBar.inert = !!loading;
     tabsBar.setAttribute("aria-busy", String(!!loading));
-    scroll.setAttribute("aria-busy", String(!!loading));
+    scroll.setAttribute("aria-busy", String(!!loading && !manualTableSelection));
     [...scroll.children].forEach(node => {
-      if (node !== cover) node.inert = !!loading;
+      if (node !== cover) node.inert = !!loading && !manualTableSelection;
     });
-    cover.hidden = !loading;
+    // The table picker is the recovery path while the first history snapshot
+    // is still loading; the loading cover must not swallow its clicks.
+    cover.hidden = !loading || manualTableSelection;
+    cover.style.pointerEvents = manualTableSelection ? "none" : "";
 
     if (!loading) {
       if (local.workspaceLoadingTimer) clearTimeout(local.workspaceLoadingTimer);
@@ -443,6 +451,57 @@
       }
       return false;
     }
+  };
+
+  const tableSelectionRemaining = selection => {
+    const deadline = Number(selection?.deadline_epoch_ms || 0);
+    return deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) : 0;
+  };
+  const tableSelectionCommand = async (type, payload, message) => {
+    try {
+      const result = await window.ToolBetUi.dispatch({
+        version: 1,
+        command_id: crypto.randomUUID ? crypto.randomUUID().replaceAll("-", "") : `table${Date.now()}`,
+        type,
+        payload: payload || {},
+      });
+      if (!result || !result.ok) throw new Error((result && result.error) || "Lệnh chọn bàn thất bại");
+      if (message) { message.classList.remove("error"); message.textContent = "Đang xác nhận bàn thực tế…"; }
+      return true;
+    } catch (error) {
+      if (message) { message.classList.add("error"); message.textContent = String(error?.message || error); }
+      return false;
+    }
+  };
+  const updateTableSelectionRegion = (root, state) => {
+    const card = root?.querySelector?.("#tbv2-table-selection");
+    if (!card) return;
+    const selection = state?.table_selection || {};
+    const phase = String(selection.phase || "idle");
+    const waiting = phase === "waiting_manual";
+    card.hidden = !waiting && !selection.error && !selection.message;
+    const countdown = card.querySelector('[data-bind="table-countdown"]');
+    if (countdown) {
+      const remaining = tableSelectionRemaining(selection);
+      countdown.textContent = waiting ? `Còn ${remaining}s để chọn bàn` : (selection.message || phase);
+    }
+    const feedback = card.querySelector('[data-bind="table-selection-message"]');
+    if (feedback) feedback.textContent = selection.error || selection.message || "";
+    card.querySelectorAll("button[data-table-name]").forEach(button => {
+      button.disabled = !waiting || !!selection.pending_table;
+      button.classList.toggle("active", button.dataset.tableName === selection.pending_table);
+    });
+  };
+  const startTableSelectionCountdown = root => {
+    const local = window.__toolbetUiLocal;
+    if (local.tableSelectionTimer) return;
+    local.tableSelectionTimer = window.setInterval(() => {
+      const currentRoot = document.getElementById(ROOT_ID);
+      if (!currentRoot?.isConnected) {
+        window.clearInterval(local.tableSelectionTimer); local.tableSelectionTimer = null; return;
+      }
+      updateTableSelectionRegion(currentRoot, window.__toolbetUiSnapshot?.state || {});
+    }, 250);
   };
 
   const loadHistoryPage = async (tabId, page, pageSize) => {
@@ -622,6 +681,12 @@
     const brand = el("div", "tbv2-brand"); brand.append(el("strong", "", "Baccarat Sexy Casino (Telegram: @minoauto)"));
     const activeMode = ((selected.lifecycle || {}).mode || selected.mode || "simulation");
     const headerActions = el("div", "tbv2-header-actions");
+    const changeTable = el("button", "tbv2-secondary tbv2-change-table", "Đổi bàn");
+    changeTable.type = "button";
+    changeTable.addEventListener("click", async () => {
+      await tableSelectionCommand("change_table", {}, root.querySelector('[data-bind="table-selection-message"]'));
+    });
+    headerActions.append(changeTable);
     const license = state.license || {};
     if (license.status) {
       const licenseBadge = el(
@@ -742,6 +807,36 @@
     tabsBar.append(add); shell.append(tabsBar);
 
     const scroll = el("div", "tbv2-scroll"); shell.append(scroll);
+    const selection = state.table_selection || {};
+    const tableCard = el("section", "tbv2-card tbv2-table-selection");
+    tableCard.id = "tbv2-table-selection";
+    const tableTitle = el("div", "tbv2-card-head");
+    tableTitle.append(el("strong", "", "Chọn bàn"));
+    const countdown = el("span", "tbv2-table-countdown");
+    countdown.dataset.bind = "table-countdown";
+    tableTitle.append(countdown);
+    tableCard.append(tableTitle);
+    const tableMessage = el("div", "tbv2-message");
+    tableMessage.dataset.bind = "table-selection-message";
+    tableCard.append(tableMessage);
+    const tableButtons = el("div", "tbv2-table-options");
+    (selection.available_tables || []).forEach(tableName => {
+      const button = el("button", "tbv2-secondary", String(tableName).replace(/^Baccarat\\s+/i, ""));
+      button.type = "button";
+      button.dataset.tableName = tableName;
+      button.addEventListener("click", async () => {
+        await tableSelectionCommand(
+          "select_table",
+          { table_name: tableName },
+          tableMessage,
+        );
+      });
+      tableButtons.append(button);
+    });
+    tableCard.append(tableButtons);
+    scroll.append(tableCard);
+    updateTableSelectionRegion(root, state);
+    startTableSelectionCountdown(root);
     const isSimulationOnly = (draft?.mode ?? activeMode) !== "live";
     const configCard = el("section", "tbv2-card tbv2-config-card");
     const executionBadge = el(
@@ -903,7 +998,7 @@
     // The expiry countdown occupies the old lifecycle-status line.  Keep the
     // feedback node detached so the user no longer sees the generic running
     // sentence; command errors can still update that node for diagnostics.
-    lifecycleActions.append(toggle, simulationOnly, licenseCountdown);
+    lifecycleActions.append(toggle, simulationOnly, licenseCountdown, lifecycleFeedback);
     configCard.append(lifecycleActions);
     // Do not erase the last valid lease timestamp when a partial runtime
     // snapshot omits `license`.  Some journal/region updates intentionally
@@ -1152,7 +1247,7 @@
     loadingCover.querySelector(".tbv2-loading-message")
       .setAttribute("data-bind", "workspace-loading-message");
     scroll.append(loadingCover);
-    setWorkspaceLoading(root, !!state.workspace_loading);
+    setWorkspaceLoading(root, !!state.workspace_loading, state.table_selection || {});
     scroll.scrollTop = firstPanelMount ? 0 : previousScrollTop;
     scrollTrace("scroll_assigned", {
       scroll_top: scroll.scrollTop,
@@ -1207,7 +1302,8 @@
     const status = selected.status || {};
     const current = status.current || {};
     const risk = current.risk || {};
-    setWorkspaceLoading(root, !!state.workspace_loading);
+    setWorkspaceLoading(root, !!state.workspace_loading, state.table_selection || {});
+    updateTableSelectionRegion(root, state);
 
     const liveTabs = (snapshot.tabs || []).filter(tab => (
       (tab.lifecycle || {}).mode || tab.mode

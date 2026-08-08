@@ -1,5 +1,10 @@
 # Kế hoạch xây dựng lại giao diện và nghiệp vụ ToolBet2
 
+> **Tài liệu lịch sử/milestone.** Đây là kế hoạch và trạng thái tại các phase
+> trước, không phải nguồn mô tả runtime hiện tại. Đối chiếu
+> [CURRENT_STATE.md](CURRENT_STATE.md), [ARCHITECTURE.md](ARCHITECTURE.md) và
+> [BUSINESS_RULES.md](BUSINESS_RULES.md) trước khi sửa code.
+
 ## 1. Cách hiểu chính xác
 
 `BaccaratChromeAgent2` chỉ là bản tham chiếu về hình ảnh, cách bố trí và nghiệp vụ.

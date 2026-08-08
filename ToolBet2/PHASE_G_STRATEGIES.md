@@ -1,5 +1,10 @@
 # Giai đoạn G — Chiến lược AI/thống kê
 
+> **Tài liệu milestone.** Nội dung port/kiểm thử chiến lược được giữ để truy
+> vết quyết định; trạng thái hiện tại phải lấy từ source/test và
+> [CURRENT_STATE.md](CURRENT_STATE.md), không lấy các dòng trạng thái cũ ở đây
+> làm bằng chứng hoàn thành.
+
 ## Phạm vi đã nối
 
 Các chiến lược dưới đây chạy qua cùng `StrategyDecision`. Chúng dùng được trong

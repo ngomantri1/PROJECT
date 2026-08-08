@@ -5,221 +5,171 @@ from hashlib import sha256
 import json
 from typing import Any, Iterable
 
-
-GROUP_KEYS = (
-    "btc_d1", "btc_4h", "eth_d1_4h", "btc_dominance", "eth_btc",
-    "total3_proxy", "breadth_ma20", "alt_volume_7d", "macro_event_risk",
-)
+GROUP_KEYS = ("btc_d1", "btc_4h", "eth_d1_4h", "btc_dominance", "eth_btc", "total3_proxy", "breadth_ma20", "alt_volume_7d", "macro_event_risk")
 CORE_GROUP_KEYS = GROUP_KEYS[:8]
+DEFAULT_THRESHOLDS = {"trend_slope_pct": 0.15, "breadth_min_coverage_pct": 60.0, "volume_min_coverage_pct": 60.0, "freshness_seconds": {"4h": 21600, "1d": 108000, "global_daily": 129600}, "history_min_points": 50, "history_request_points": 90, "batch_concurrency": 4}
 
-DEFAULT_THRESHOLDS = {
-    "trend_slope_pct": 0.15,
-    "breadth_min_coverage_pct": 60.0,
-    "volume_min_coverage_pct": 60.0,
-    "freshness_seconds": {"kline": 60 * 60 * 6, "global": 60 * 60 * 24},
-    "batch_concurrency": 4,
-}
+def utc_now() -> datetime: return datetime.now(timezone.utc)
+def iso_time(value: datetime | None = None) -> str: return (value or utc_now()).astimezone(timezone.utc).isoformat()
 
+def freshness_limit(config: dict, timeframe: str) -> int:
+    """Read v2 freshness while keeping legacy scalar snapshots safe for daily candles."""
+    value = config.get("freshness_seconds", DEFAULT_THRESHOLDS["freshness_seconds"])
+    if isinstance(value, dict):
+        aliases = {"1d": ("1d", "daily", "kline"), "4h": ("4h", "kline"), "global_daily": ("global_daily", "global")}
+        for key in aliases.get(timeframe, (timeframe,)):
+            if value.get(key) is not None: return int(value[key])
+    # A legacy 6h scalar was only appropriate for intraday data.
+    return int(DEFAULT_THRESHOLDS["freshness_seconds"].get(timeframe, value if isinstance(value, (int, float)) else 21600))
 
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def iso_time(value: datetime | None = None) -> str:
-    return (value or utc_now()).astimezone(timezone.utc).isoformat()
-
-
-def evidence(label: str, *, value: Any = None, signal: str = "UNKNOWN", status: str = "UNKNOWN",
-             provider: str | None = None, endpoint: str | None = None, symbols: list[str] | None = None,
-             observed_at: str | None = None, fetched_at: str | None = None,
-             freshness_seconds: int | None = None, error: str | None = None,
-             notes: list[str] | None = None) -> dict:
-    return {
-        "label": label,
-        "value": value,
-        "signal": signal,
-        "status": status,
-        "source": {"provider": provider, "endpoint": endpoint, "symbols": symbols or []},
-        "observed_at": observed_at,
-        "fetched_at": fetched_at,
-        "freshness_seconds": freshness_seconds,
-        "error": error,
-        "notes": notes or [],
-    }
-
+def evidence(label: str, *, value: Any = None, signal: str = "UNKNOWN", status: str = "UNKNOWN", provider: str | None = None, endpoint: str | None = None, symbols: list[str] | None = None, observed_at: str | None = None, fetched_at: str | None = None, freshness_seconds: int | None = None, error: str | None = None, notes: list[Any] | None = None) -> dict:
+    return {"label": label, "value": value, "signal": signal, "status": status, "source": {"provider": provider, "endpoint": endpoint, "symbols": symbols or []}, "observed_at": observed_at, "fetched_at": fetched_at, "freshness_seconds": freshness_seconds, "error": error, "notes": notes or []}
 
 def parse_closed_klines(rows: Any, *, now: datetime | None = None) -> list[dict]:
-    """Validate Binance kline rows and exclude the currently open candle."""
-    if not isinstance(rows, list):
-        raise ValueError("Kline payload is not a list")
-    now_ms = int((now or utc_now()).timestamp() * 1000)
-    parsed = []
+    if not isinstance(rows, list): raise ValueError("Kline payload is not a list")
+    now_ms, parsed = int((now or utc_now()).timestamp() * 1000), []
     for row in rows:
-        if not isinstance(row, (list, tuple)) or len(row) < 7:
-            continue
+        if not isinstance(row, (list, tuple)) or len(row) < 8: continue
         try:
-            open_time = int(row[0])
-            close_time = int(row[6])
-            values = {"open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": float(row[5])}
-        except (TypeError, ValueError):
-            continue
-        if close_time > now_ms or values["close"] <= 0 or values["high"] <= 0:
-            continue
-        parsed.append({"open_time": open_time, "close_time": close_time, **values})
+            values = {"open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "base_volume": float(row[5]), "quote_volume": float(row[7])}
+            open_time, close_time = int(row[0]), int(row[6])
+        except (TypeError, ValueError): continue
+        if close_time <= now_ms and values["close"] > 0 and values["high"] > 0:
+            parsed.append({"open_time": open_time, "close_time": close_time, **values})
     return parsed
 
-
-def _sma(values: list[float], period: int) -> float | None:
-    return sum(values[-period:]) / period if len(values) >= period else None
-
+def _sma(values: list[float], period: int) -> float | None: return sum(values[-period:]) / period if len(values) >= period else None
 
 def _signal_from_series(values: list[float], *, slope_threshold_pct: float = 0.15) -> tuple[str, dict]:
-    if len(values) < 50:
-        return "UNKNOWN", {"reason": "INSUFFICIENT_CLOSED_KLINES", "count": len(values)}
-    last = values[-1]
-    ma20, ma50 = _sma(values, 20), _sma(values, 50)
-    previous = values[-min(20, len(values))]
+    if len(values) < 50: return "UNKNOWN", {"reason": "INSUFFICIENT_HISTORY", "count": len(values)}
+    last, ma20, ma50, previous = values[-1], _sma(values, 20), _sma(values, 50), values[-20]
     slope_pct = ((last - previous) / abs(previous) * 100) if previous else None
-    if ma20 is None or ma50 is None or slope_pct is None:
-        return "UNKNOWN", {"reason": "INSUFFICIENT_INDICATORS"}
-    if last > ma20 >= ma50 and slope_pct >= slope_threshold_pct:
-        signal = "BULLISH"
-    elif last < ma20 <= ma50 and slope_pct <= -slope_threshold_pct:
-        signal = "BEARISH"
-    else:
-        signal = "NEUTRAL"
+    if ma20 is None or ma50 is None or slope_pct is None: return "UNKNOWN", {"reason": "INSUFFICIENT_INDICATORS"}
+    signal = "BULLISH" if last > ma20 >= ma50 and slope_pct >= slope_threshold_pct else "BEARISH" if last < ma20 <= ma50 and slope_pct <= -slope_threshold_pct else "NEUTRAL"
     return signal, {"last": last, "ma20": ma20, "ma50": ma50, "slope_pct": slope_pct, "count": len(values)}
 
-
-def analyze_kline_group(label: str, rows: Any, *, provider: str, endpoint: str, symbol: str,
-                        fetched_at: datetime | None = None, freshness_limit: int = 21600) -> dict:
+def analyze_kline_group(label: str, rows: Any, *, provider: str, endpoint: str, symbol: str, fetched_at: datetime | None = None, freshness_limit: int = 21600) -> dict:
     fetched = fetched_at or utc_now()
-    try:
-        candles = parse_closed_klines(rows, now=fetched)
-    except ValueError as exc:
-        return evidence(label, provider=provider, endpoint=endpoint, symbols=[symbol], fetched_at=iso_time(fetched), error=str(exc))
-    values = [row["close"] for row in candles]
-    signal, value = _signal_from_series(values)
+    try: candles = parse_closed_klines(rows, now=fetched)
+    except ValueError as exc: return evidence(label, provider=provider, endpoint=endpoint, symbols=[symbol], fetched_at=iso_time(fetched), error=str(exc))
+    signal, value = _signal_from_series([x["close"] for x in candles])
     observed = candles[-1]["close_time"] / 1000 if candles else None
-    freshness = int(fetched.timestamp() - observed) if observed else None
-    status = "UNKNOWN" if signal == "UNKNOWN" else "PASS" if freshness is not None and freshness <= freshness_limit else "STALE" if freshness is not None else "UNKNOWN"
-    return evidence(label, value={"analysis": value, "closed_candles": len(candles)}, signal=signal, status=status,
-                    provider=provider, endpoint=endpoint, symbols=[symbol], observed_at=iso_time(datetime.fromtimestamp(observed, timezone.utc)) if observed else None,
-                    fetched_at=iso_time(fetched), freshness_seconds=freshness,
-                    notes=[] if status == "PASS" else ["Chỉ dùng nến đã đóng", "Thiếu hoặc stale dữ liệu"])
+    age = int(fetched.timestamp() - observed) if observed else None
+    status = "UNKNOWN" if signal == "UNKNOWN" else "PASS" if age is not None and age <= freshness_limit else "STALE"
+    return evidence(label, value={"analysis": value, "closed_candles": len(candles)}, signal=signal, status=status, provider=provider, endpoint=endpoint, symbols=[symbol], observed_at=iso_time(datetime.fromtimestamp(observed, timezone.utc)) if observed else None, fetched_at=iso_time(fetched), freshness_seconds=age, notes=[] if status == "PASS" else ["Chỉ dùng nến đã đóng", "Thiếu hoặc stale dữ liệu"])
 
-
-def analyze_eth_btc(d1_rows: Any, h4_rows: Any, *, fetched_at: datetime | None = None) -> dict:
-    fetched = fetched_at or utc_now()
-    results = [analyze_kline_group("ETH/BTC D1", d1_rows, provider="Binance", endpoint="/api/v3/klines", symbol="ETHBTC", fetched_at=fetched),
-               analyze_kline_group("ETH/BTC 4H", h4_rows, provider="Binance", endpoint="/api/v3/klines", symbol="ETHBTC", fetched_at=fetched)]
-    signals = {item["signal"] for item in results if item["status"] == "PASS"}
-    if len(signals) > 1 and {"BULLISH", "BEARISH"}.issubset(signals):
-        signal, status = "CONFLICT", "CONFLICT"
-    elif not signals:
-        signal, status = "UNKNOWN", "UNKNOWN"
+def combine_timeframe_evidence(label: str, d1: dict, h4: dict, *, provider: str = "Binance", symbol: str = "") -> dict:
+    if d1["status"] != "PASS" or h4["status"] != "PASS": signal, status = "UNKNOWN", "UNKNOWN"
     else:
-        signal, status = next(iter(signals)), "PASS" if all(item["status"] == "PASS" for item in results) else "UNKNOWN"
-    return evidence("ETH/BTC trend", value={"d1": results[0], "4h": results[1]}, signal=signal, status=status,
-                    provider="Binance", endpoint="/api/v3/klines", symbols=["ETHBTC"], fetched_at=iso_time(fetched),
-                    notes=["D1 và 4H được đánh giá riêng"])
+        pair = (d1["signal"], h4["signal"])
+        if pair == ("BULLISH", "BULLISH"): signal, status = "BULLISH", "PASS"
+        elif pair == ("BEARISH", "BEARISH"): signal, status = "BEARISH", "PASS"
+        elif pair == ("NEUTRAL", "NEUTRAL"): signal, status = "NEUTRAL", "PASS"
+        elif "NEUTRAL" in pair: signal, status = "NEUTRAL", "PASS"
+        else: signal, status = "CONFLICT", "CONFLICT"
+    return evidence(label, value={"d1": d1, "4h": h4}, signal=signal, status=status, provider=provider, endpoint="/api/v3/klines", symbols=[symbol] if symbol else [], fetched_at=d1.get("fetched_at"), notes=["D1 và 4H được đánh giá theo ma trận deterministic"])
 
-
-def analyze_global(data: Any, *, fetched_at: datetime | None = None) -> tuple[dict, dict]:
+def analyze_eth_btc(d1_rows: Any, h4_rows: Any, *, fetched_at: datetime | None = None, d1_freshness: int = 108000, h4_freshness: int = 21600) -> dict:
     fetched = fetched_at or utc_now()
-    if not isinstance(data, dict):
-        unknown = evidence("BTC Dominance", provider="CoinGecko", endpoint="/global", fetched_at=iso_time(fetched), error="Global payload is not an object")
-        return unknown, unknown.copy()
-    dominance = data.get("market_cap_percentage", {})
-    total_cap = data.get("total_market_cap", {}).get("usd") if isinstance(data.get("total_market_cap"), dict) else None
-    btc = dominance.get("btc") if isinstance(dominance, dict) else None
-    eth = dominance.get("eth") if isinstance(dominance, dict) else None
-    try:
-        btc, eth, total_cap = float(btc), float(eth), float(total_cap)
-        if not (0 <= btc <= 100 and 0 <= eth <= 100 and btc + eth <= 100 and total_cap > 0):
-            raise ValueError("Invalid dominance or total market cap")
-    except (TypeError, ValueError):
-        error = evidence("BTC Dominance", provider="CoinGecko", endpoint="/global", fetched_at=iso_time(fetched), error="Invalid dominance/market cap schema")
-        return error, error.copy()
-    dominance_evidence = evidence("BTC Dominance", value={"btc_pct": btc, "eth_pct": eth}, signal="UNKNOWN", status="UNKNOWN",
-                                   provider="CoinGecko", endpoint="/global", symbols=[], fetched_at=iso_time(fetched),
-                                   notes=["Chỉ có snapshot; chưa có history để xác định trend"])
-    total3 = total_cap * (1 - (btc + eth) / 100)
-    total3_evidence = evidence("TOTAL3 proxy", value={"total_market_cap_usd": total_cap, "btc_dominance_pct": btc, "eth_dominance_pct": eth,
-                                                       "total3_proxy_usd": total3, "formula": "total_market_cap_usd × (1 - BTC.D - ETH.D)"},
-                                signal="UNKNOWN", status="UNKNOWN", provider="CoinGecko", endpoint="/global", fetched_at=iso_time(fetched),
-                                notes=["TOTAL3_PROXY là snapshot; chưa có historical trend"])
-    return dominance_evidence, total3_evidence
+    d1 = analyze_kline_group("ETH/BTC D1", d1_rows, provider="Binance", endpoint="/api/v3/klines", symbol="ETHBTC", fetched_at=fetched, freshness_limit=d1_freshness)
+    h4 = analyze_kline_group("ETH/BTC 4H", h4_rows, provider="Binance", endpoint="/api/v3/klines", symbol="ETHBTC", fetched_at=fetched, freshness_limit=h4_freshness)
+    return combine_timeframe_evidence("ETH/BTC trend", d1, h4, symbol="ETHBTC")
 
+def total3_proxy(total_cap: float, btc: float, eth: float) -> float: return total_cap * (1 - btc / 100 - eth / 100)
 
-def analyze_breadth_and_volume(dataset: dict[str, list], *, fetched_at: datetime | None = None,
-                               min_coverage_pct: float = 60.0) -> tuple[dict, dict]:
-    fetched = fetched_at or utc_now()
-    valid, above, volumes = 0, 0, []
-    errors = []
-    for symbol, rows in dataset.items():
+def parse_cmc_history(rows: Any) -> list[dict]:
+    """Strictly parse CMC points; no entitlement or schema is treated as history."""
+    if not isinstance(rows, list): return []
+    points = []
+    for row in rows:
         try:
-            candles = parse_closed_klines(rows, now=fetched)
-        except ValueError as exc:
-            errors.append({"symbol": symbol, "error": str(exc)})
+            quote = row["quote"]["USD"]
+            observed = datetime.fromisoformat(str(row["timestamp"]).replace("Z", "+00:00"))
+            btc, eth, total = float(row["btc_dominance"]), float(row["eth_dominance"]), float(quote["total_market_cap"])
+            if not (0 <= btc <= 100 and 0 <= eth <= 100 and btc + eth <= 100 and total > 0): raise ValueError()
+            points.append({"provider": "CoinMarketCap", "observed_at": observed.astimezone(timezone.utc), "btc_dominance_pct": btc, "eth_dominance_pct": eth, "total_market_cap_usd": total, "total3_proxy_usd": total3_proxy(total, btc, eth), "source_endpoint": "/v1/global-metrics/quotes/historical"})
+        except (KeyError, TypeError, ValueError):
             continue
-        closes = [row["close"] for row in candles]
+    return points
+
+def analyze_global(data: Any, *, fetched_at: datetime | None = None, provider: str = "CoinGecko", endpoint: str = "/global") -> tuple[dict, dict, dict | None]:
+    fetched = fetched_at or utc_now()
+    try:
+        dominance, cap = data["market_cap_percentage"], data["total_market_cap"]["usd"]
+        btc, eth, cap = float(dominance["btc"]), float(dominance["eth"]), float(cap)
+        observed = datetime.fromtimestamp(float(data.get("updated_at")), timezone.utc) if data.get("updated_at") else fetched
+        if not 0 <= btc <= 100 or not 0 <= eth <= 100 or btc + eth > 100 or cap <= 0: raise ValueError()
+    except (KeyError, TypeError, ValueError):
+        unknown = evidence("BTC Dominance", provider=provider, endpoint=endpoint, fetched_at=iso_time(fetched), error="Invalid global snapshot schema")
+        return unknown, evidence("TOTAL3 proxy", provider=provider, endpoint=endpoint, fetched_at=iso_time(fetched), error="Invalid global snapshot schema"), None
+    point = {"provider": provider, "observed_at": observed, "btc_dominance_pct": btc, "eth_dominance_pct": eth, "total_market_cap_usd": cap, "total3_proxy_usd": total3_proxy(cap, btc, eth), "source_endpoint": endpoint}
+    common = {"provider": provider, "endpoint": endpoint, "fetched_at": iso_time(fetched), "observed_at": iso_time(observed)}
+    return evidence("BTC Dominance", value={"btc_pct": btc, "eth_pct": eth}, signal="UNKNOWN", **common, notes=["Snapshot đã lưu; trend yêu cầu lịch sử cùng provider"]), evidence("TOTAL3_PROXY", value={**point, "formula": "total_market_cap_usd × (1 - BTC.D - ETH.D)"}, signal="UNKNOWN", **common, notes=["TOTAL3_PROXY, không phải TradingView TOTAL3"]), point
+
+def analyze_coinpaprika_global(data: Any, *, fetched_at: datetime | None = None) -> tuple[dict, dict, dict | None]:
+    fetched = fetched_at or utc_now()
+    try:
+        btc, cap = float(data["bitcoin_dominance_percentage"]), float(data["market_cap_usd"])
+        observed = datetime.fromisoformat(str(data["last_updated"]).replace("Z", "+00:00")).astimezone(timezone.utc)
+        if not 0 <= btc <= 100 or cap <= 0: raise ValueError()
+    except (KeyError, TypeError, ValueError):
+        unknown = evidence("BTC Dominance", provider="CoinPaprika", endpoint="/global", fetched_at=iso_time(fetched), error="Invalid CoinPaprika global schema")
+        return unknown, evidence("TOTAL3_PROXY", provider="CoinPaprika", endpoint="/global", fetched_at=iso_time(fetched), error="ETH dominance unavailable"), None
+    point = {"provider": "CoinPaprika", "observed_at": observed, "btc_dominance_pct": btc, "eth_dominance_pct": None, "total_market_cap_usd": cap, "total3_proxy_usd": None, "source_endpoint": "/global"}
+    return evidence("BTC Dominance", value={"btc_pct": btc}, signal="UNKNOWN", provider="CoinPaprika", endpoint="/global", observed_at=iso_time(observed), fetched_at=iso_time(fetched), notes=["CoinPaprika không cung cấp ETH.D; chỉ dùng BTC.D"]), evidence("TOTAL3_PROXY", provider="CoinPaprika", endpoint="/global", observed_at=iso_time(observed), fetched_at=iso_time(fetched), error="Không có ETH dominance để tính TOTAL3_PROXY"), point
+
+def analyze_history(label: str, points: list[dict], field: str, *, provider: str, freshness: int, min_points: int = 50, fetched_at: datetime | None = None, alt_perspective: bool = False) -> dict:
+    """Resample to one deterministic UTC point per provider day before analysis."""
+    fetched = fetched_at or utc_now()
+    daily = {}
+    for point in sorted(points, key=lambda item: item["observed_at"]):
+        observed = point["observed_at"].astimezone(timezone.utc)
+        if point.get(field) is not None:
+            daily[observed.date()] = {**point, "observed_at": observed}
+    ordered = [daily[key] for key in sorted(daily)]
+    values = [float(point[field]) for point in ordered]
+    if len(values) < min_points:
+        signal, value = "UNKNOWN", {"reason": "INSUFFICIENT_DAILY_HISTORY", "count": len(values), "min_points": min_points}
+    else:
+        signal, value = _signal_from_series(values)
+    latest = ordered[-1]["observed_at"] if ordered else None
+    age = int((fetched - latest).total_seconds()) if latest else None
+    status = "UNKNOWN" if signal == "UNKNOWN" else "PASS" if age is not None and age <= freshness else "STALE"
+    raw = {"BULLISH": "RISING", "BEARISH": "FALLING", "NEUTRAL": "FLAT", "UNKNOWN": "UNKNOWN"}[signal]
+    normalized = {"RISING": "BEARISH", "FALLING": "BULLISH", "FLAT": "NEUTRAL", "UNKNOWN": "UNKNOWN"}[raw] if alt_perspective else signal
+    value.update({"trend": raw if alt_perspective else signal, "history_points": len(values)})
+    if alt_perspective: value["signal_perspective"] = "ALTCOIN"
+    return evidence(label, value=value, signal=normalized, status=status, provider=provider, endpoint="local-history", observed_at=iso_time(latest) if latest else None, fetched_at=iso_time(fetched), freshness_seconds=age, notes=["Chỉ dùng lịch sử cùng provider"])
+
+def analyze_breadth_and_volume(dataset: dict[str, list], *, eligible_symbols: Iterable[str] | None = None, fetched_at: datetime | None = None, breadth_min_coverage_pct: float = 60.0, volume_min_coverage_pct: float = 60.0) -> tuple[dict, dict]:
+    fetched, requested = fetched_at or utc_now(), list(dict.fromkeys(eligible_symbols or dataset.keys()))
+    valid_breadth = above = valid_volume = 0; ratios = []; errors = []
+    for symbol in requested:
+        try: candles = parse_closed_klines(dataset.get(symbol, []), now=fetched)
+        except ValueError as exc: errors.append({"symbol": symbol, "error": str(exc)}); continue
+        closes = [x["close"] for x in candles]
         if len(closes) >= 20:
-            valid += 1
-            if closes[-1] > _sma(closes, 20):
-                above += 1
+            valid_breadth += 1; above += closes[-1] > _sma(closes, 20)
         if len(candles) >= 8:
-            daily = [row["volume"] for row in candles[-8:]]
-            volumes.append({"symbol": symbol, "latest_closed": daily[-1], "previous_7_avg": sum(daily[:-1]) / 7})
-    coverage = (valid / len(dataset) * 100) if dataset else 0
-    breadth_pct = (above / valid * 100) if valid else None
-    breadth_status = "PASS" if valid and coverage >= min_coverage_pct else "UNKNOWN"
-    breadth_signal = "BULLISH" if breadth_pct is not None and breadth_pct >= 60 else "BEARISH" if breadth_pct is not None and breadth_pct < 40 else "NEUTRAL" if breadth_pct is not None else "UNKNOWN"
-    breadth = evidence("Breadth MA20", value={"above_ma20": above, "valid": valid, "eligible": len(dataset), "breadth_pct": breadth_pct, "coverage_pct": coverage},
-                        signal=breadth_signal, status=breadth_status, provider="Binance", endpoint="/api/v3/klines", symbols=list(dataset), fetched_at=iso_time(fetched),
-                        notes=errors[:20] + (["Coverage dưới ngưỡng"] if breadth_status != "PASS" else []))
-    ratios = [(row["latest_closed"] / row["previous_7_avg"]) for row in volumes if row["previous_7_avg"] > 0]
+            quote = [x["quote_volume"] for x in candles[-8:]]
+            if sum(quote[:-1]) > 0: valid_volume += 1; ratios.append(quote[-1] / (sum(quote[:-1]) / 7))
+    count, fetched_count = len(requested), len(dataset)
+    def coverage(n): return n / count * 100 if count else 0
+    breadth_pct = above / valid_breadth * 100 if valid_breadth else None
+    breadth = evidence("Breadth MA20", value={"requested": count, "fetched": fetched_count, "valid": valid_breadth, "failed": max(0, count - valid_breadth), "eligible": count, "above_ma20": above, "breadth_pct": breadth_pct, "coverage_pct": coverage(valid_breadth)}, signal="BULLISH" if breadth_pct is not None and breadth_pct >= 60 else "BEARISH" if breadth_pct is not None and breadth_pct < 40 else "NEUTRAL" if breadth_pct is not None else "UNKNOWN", status="PASS" if valid_breadth and coverage(valid_breadth) >= breadth_min_coverage_pct else "UNKNOWN", provider="Binance", endpoint="/api/v3/klines", symbols=requested, fetched_at=iso_time(fetched), notes=errors[:20])
     ratio = sum(ratios) / len(ratios) if ratios else None
-    volume_signal = "BULLISH" if ratio is not None and ratio >= 1.1 else "BEARISH" if ratio is not None and ratio <= 0.9 else "NEUTRAL" if ratio is not None else "UNKNOWN"
-    volume_status = "PASS" if ratios and len(ratios) / len(dataset or {"_": []}) * 100 >= min_coverage_pct else "UNKNOWN"
-    volume = evidence("Alt Volume 7D", value={"sample_count": len(ratios), "eligible": len(dataset), "coverage_pct": (len(ratios) / len(dataset) * 100 if dataset else 0), "latest_vs_previous_7d_ratio": ratio},
-                       signal=volume_signal, status=volume_status, provider="Binance", endpoint="/api/v3/klines", symbols=list(dataset), fetched_at=iso_time(fetched), notes=errors[:20])
+    volume = evidence("Alt Volume 7D", value={"requested": count, "fetched": fetched_count, "valid": valid_volume, "sample_count": len(ratios), "failed": max(0, count - valid_volume), "eligible": count, "coverage_pct": coverage(valid_volume), "latest_vs_previous_7d_ratio": ratio, "volume_unit": "USDT_QUOTE_NOTIONAL"}, signal="BULLISH" if ratio is not None and ratio >= 1.1 else "BEARISH" if ratio is not None and ratio <= .9 else "NEUTRAL" if ratio is not None else "UNKNOWN", status="PASS" if ratios and coverage(valid_volume) >= volume_min_coverage_pct else "UNKNOWN", provider="Binance", endpoint="/api/v3/klines", symbols=requested, fetched_at=iso_time(fetched), notes=errors[:20])
     return breadth, volume
 
-
 def compute_completeness(groups: dict[str, dict]) -> dict:
-    pass_count = sum(group.get("status") == "PASS" for group in groups.values())
-    missing = [key for key, group in groups.items() if group.get("status") == "UNKNOWN"]
-    stale = [key for key, group in groups.items() if group.get("status") == "STALE"]
-    conflict = [key for key, group in groups.items() if group.get("status") == "CONFLICT"]
-    core_missing = [key for key in CORE_GROUP_KEYS if groups.get(key, {}).get("status") != "PASS"]
-    if not core_missing and all(groups.get(key, {}).get("status") == "PASS" for key in GROUP_KEYS):
-        status, confidence = "FINAL", "HIGH"
-    elif not core_missing and groups.get("macro_event_risk", {}).get("status") == "UNKNOWN":
-        status, confidence = "FINAL", "MEDIUM"
-    elif len(core_missing) >= 3:
-        status, confidence = "PROVISIONAL", "LOW"
-    else:
-        status, confidence = "PROVISIONAL", "MEDIUM"
-    return {"pass_count": pass_count, "total_count": len(GROUP_KEYS), "percentage": round(pass_count / len(GROUP_KEYS) * 100, 2),
-            "missing": missing, "stale": stale, "conflict": conflict, "core_missing": core_missing, "status": status, "confidence": confidence}
-
+    passed = sum(x.get("status") == "PASS" for x in groups.values()); missing = [k for k,x in groups.items() if x.get("status") == "UNKNOWN"]; stale = [k for k,x in groups.items() if x.get("status") == "STALE"]; conflict = [k for k,x in groups.items() if x.get("status") == "CONFLICT"]; core = [k for k in CORE_GROUP_KEYS if groups.get(k, {}).get("status") != "PASS"]
+    status, confidence = ("FINAL", "HIGH") if not core and not missing else ("FINAL", "MEDIUM") if not core and missing == ["macro_event_risk"] else ("PROVISIONAL", "LOW") if len(core) >= 3 else ("PROVISIONAL", "MEDIUM")
+    return {"pass_count": passed, "total_count": len(GROUP_KEYS), "percentage": round(passed / len(GROUP_KEYS) * 100, 2), "missing": missing, "stale": stale, "conflict": conflict, "core_missing": core, "status": status, "confidence": confidence}
 
 def classify_regime(groups: dict[str, dict], completeness: dict) -> tuple[str, list[str]]:
-    signals = [groups[key].get("signal") for key in CORE_GROUP_KEYS]
-    reasons = []
-    if groups.get("btc_d1", {}).get("signal") == "BEARISH" and groups.get("btc_4h", {}).get("signal") == "BEARISH":
-        return "XẤU", ["BTC D1 và 4H cùng bearish"]
-    if groups.get("btc_dominance", {}).get("signal") == "BEARISH" and groups.get("eth_btc", {}).get("signal") == "BEARISH":
-        return "XẤU", ["BTC.D và ETH/BTC cùng bất lợi"]
-    bullish = signals.count("BULLISH")
-    bearish = signals.count("BEARISH")
-    if completeness["core_missing"] or groups.get("total3_proxy", {}).get("status") != "PASS":
-        reasons.append("Thiếu hoặc chưa xác minh đủ nhóm core")
-    if bearish > bullish or bullish < 4:
-        return "TRUNG TÍNH", reasons + [f"Tín hiệu bullish/bearish: {bullish}/{bearish}"]
-    return "THUẬN LỢI", reasons + [f"Tín hiệu bullish/bearish: {bullish}/{bearish}"]
+    if groups.get("btc_d1", {}).get("signal") == groups.get("btc_4h", {}).get("signal") == "BEARISH": return "XẤU", ["BTC D1 và 4H cùng bearish"]
+    if groups.get("btc_dominance", {}).get("signal") == groups.get("eth_btc", {}).get("signal") == "BEARISH": return "XẤU", ["BTC.D tăng và ETH/BTC giảm bất lợi cho altcoin"]
+    signals = [groups[k].get("signal") for k in CORE_GROUP_KEYS]; bullish, bearish = signals.count("BULLISH"), signals.count("BEARISH")
+    return ("TRUNG TÍNH" if completeness["core_missing"] or bearish > bullish or bullish < 4 else "THUẬN LỢI", (["Thiếu hoặc chưa xác minh đủ nhóm core"] if completeness["core_missing"] else []) + [f"Tín hiệu bullish/bearish: {bullish}/{bearish}"])
 
-
-def universe_hash(symbols: Iterable[str]) -> str:
-    return sha256(json.dumps(sorted(set(symbols)), separators=(",", ":")).encode()).hexdigest()[:16]
+def universe_hash(symbols: Iterable[str]) -> str: return sha256(json.dumps(sorted(set(symbols)), separators=(",", ":")).encode()).hexdigest()[:16]

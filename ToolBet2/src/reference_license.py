@@ -180,6 +180,10 @@ class ReferenceLicenseService:
     def last_error(self) -> str:
         return self._last_error
 
+    def current_time(self) -> datetime:
+        """Return the clock used for lease validation and test fixtures."""
+        return self._now()
+
     def _license_url(self, username: str) -> str:
         return "/".join((self.github_base, self.github_owner, self.github_repo, self.github_branch, self.github_path, f"{quote(username, safe='')}.json"))
 

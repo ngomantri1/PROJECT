@@ -81,11 +81,23 @@ CELERY_BEAT_SCHEDULE = {
     "dispatch-due-schedules-every-minute": {
         "task": "scanner.tasks.dispatch_due_schedules",
         "schedule": 60.0,
-    }
+    },
+    "refresh-public-unlock-evidence-every-six-hours": {
+        "task": "scanner.tasks.refresh_unlock_web_evidence",
+        "schedule": 21600.0,
+        "options": {"queue": "crawl"},
+    },
 }
 
 COINGECKO_BASE_URL = os.getenv("COINGECKO_BASE_URL", "https://api.coingecko.com/api/v3")
-BINANCE_BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
+BINANCE_BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")  # legacy compatibility
+BINANCE_MARKET_DATA_BASE_URLS = [x.strip().rstrip("/") for x in os.getenv("BINANCE_MARKET_DATA_BASE_URLS", "https://data-api.binance.vision,https://api.binance.com,https://api-gcp.binance.com").split(",") if x.strip()]
+COINPAPRIKA_BASE_URL = os.getenv("COINPAPRIKA_BASE_URL", "https://api.coinpaprika.com/v1")
+DEFILLAMA_BASE_URL = os.getenv("DEFILLAMA_BASE_URL", "https://api.llama.fi").rstrip("/")
+RESEARCH_DEFILLAMA_ENABLED = os.getenv("RESEARCH_DEFILLAMA_ENABLED", "true").lower() == "true"
+CMC_BASE_URL = os.getenv("CMC_BASE_URL", "https://pro-api.coinmarketcap.com")
+CMC_API_KEY = os.getenv("CMC_API_KEY", "")
+CMC_HISTORICAL_ENABLED = os.getenv("CMC_HISTORICAL_ENABLED", "true").lower() == "true"
 HTTP_TIMEOUT_SECONDS = float(os.getenv("HTTP_TIMEOUT_SECONDS", "25"))
 HTTP_MAX_RETRIES = int(os.getenv("HTTP_MAX_RETRIES", "3"))
 HTTP_MAX_RETRY_DELAY_SECONDS = float(os.getenv("HTTP_MAX_RETRY_DELAY_SECONDS", "5"))

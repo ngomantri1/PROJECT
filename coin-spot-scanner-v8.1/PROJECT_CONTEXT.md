@@ -21,8 +21,9 @@ Bản hiện tại là `0.1.0-baseline`, được mô tả trong `VERSION.json` 
 - Scheduler theo từng bước bằng Celery Beat.
 - Cấu hình V8.1 mặc định và clone profile tùy chỉnh.
 - Universe Scan từ CoinGecko + kiểm tra Binance Spot/USDT.
-- Market Regime sơ bộ từ BTC/ETH D1/4H và CoinGecko Global.
-- Research Shortlist sơ bộ.
+- Market Regime v1 từ BTC/ETH/ETHBTC D1/4H, CoinGecko Global snapshot và batch Breadth/Volume; thiếu historical evidence vẫn giữ UNKNOWN/PROVISIONAL.
+- Research Shortlist dùng Research Evidence Priority V1; đây là lựa chọn ưu tiên nghiên cứu, không phải Quality ranking hoàn chỉnh. Khi provider research unavailable, dùng `PREFILTER_ONLY_FALLBACK`.
+- Runtime verification 2026-08-08 xác nhận cả provider bình thường và forced DefiLlama failure; provider failure chỉ làm thiếu evidence thành `UNKNOWN`/`NOT_SCORED`, không tạo `BUY_SETUP`.
 - Execution Verification cơ bản bằng Binance depth và kline.
 - Integrity Gate ép `BUY_SETUP = 0` khi dữ liệu critical thiếu.
 - Lưu Scan Run, Step Run, Candidate và Notification.
@@ -67,14 +68,20 @@ Bản hiện tại là `0.1.0-baseline`, được mô tả trong `VERSION.json` 
 6. Celery task `scanner.tasks.run_scan` gọi `ScanOrchestrator.execute()`.
 7. Orchestrator chạy tuần tự các handler từ Universe đến Investment Results.
 8. Kết quả được lưu trong PostgreSQL và frontend hiển thị qua polling.
-9. Validation Gate luôn trả mode `FULL_SCAN_RESEARCH` trong baseline hiện tại.
+9. Validation Gate giữ `FULL_SCAN_EXECUTION` khi đủ điều kiện; nếu critical evidence chưa đủ thì downgrade về `FULL_SCAN_RESEARCH` và ghi rõ lý do.
 
 # Stable Domain Decisions
 
 - The product is a research and screening tool; it does not place trades.
 - A `BUY_SETUP` is prohibited until all critical execution data is present and no Hard Rule blocks it.
 - A scan run captures a profile snapshot so later profile changes do not rewrite historical run inputs.
-- Quality, Entry, and Opportunity scores are separate concepts; the baseline currently exposes only a provisional Quality range.
+- Quality, Entry, and Opportunity scores are separate concepts. Research Evidence Priority không phải Quality ranking; Quality vẫn `NOT_SCORED` khi thiếu nhóm evidence critical.
+
+# Verified current behavior (2026-08-08)
+
+- Full scan executes B1-B6; partial B4-only runs B1-B4 and records B5/B6 as `SKIPPED` with `PARTIAL_COMPLETED`.
+- DefiLlama is a secondary provider. Its error details remain auditable in `provider_status`; unavailable sources degrade evidence without failing the full scan.
+- Quality/Entry/Opportunity remain `NOT_SCORED` when critical evidence is missing, and `BUY_SETUP=0` with 100% USDT is preserved.
 
 # Important Components
 
@@ -94,7 +101,7 @@ Bản hiện tại là `0.1.0-baseline`, được mô tả trong `VERSION.json` 
 - `excluded_token()`: loại stablecoin, wrapped token và leveraged token theo logic hiện tại.
 - `kline_summary()`: SMA20/50/200 và ATR14.
 - `depth_metrics()`: spread, depth và slippage mua.
-- `provisional_quality()`: Quality Range proxy của baseline.
+- `research_prefilter()` và `backend/scanner/research.py`: Research Evidence Priority; không tạo numeric Quality từ MC/volume/FDV hoặc partial protocol metrics.
 
 `backend/scanner/orchestrator.py`
 - `ScanOrchestrator.execute()`: chạy sáu bước tuần tự.

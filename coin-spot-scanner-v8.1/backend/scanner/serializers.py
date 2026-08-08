@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Candidate, ChecklistProfile, Notification, ScanRun, ScanStepRun, StepSchedule
+from .services import STEP_DEFINITIONS
 
 class StepScheduleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -56,9 +57,27 @@ class ScanRunSerializer(serializers.ModelSerializer):
     profile_name = serializers.CharField(source="profile.name", read_only=True)
     class Meta:
         model = ScanRun
-        fields = ["id","profile","profile_name","mode_requested","mode_validated","status","current_step","progress","counters","results","validation","error_message","started_at","finished_at","created_at","steps","candidates"]
+        fields = ["id","profile","profile_name","requested_steps","mode_requested","mode_validated","status","current_step","progress","counters","results","validation","error_message","started_at","finished_at","created_at","steps","candidates"]
 
 class NotificationSerializer(serializers.ModelSerializer):
+    step_sequence = serializers.SerializerMethodField()
+    step_label = serializers.SerializerMethodField()
+
+    def get_step_sequence(self, notification):
+        if not notification.step_key:
+            return None
+        return next((sequence for sequence, key, _label in STEP_DEFINITIONS if key == notification.step_key), None)
+
+    def get_step_label(self, notification):
+        if notification.step_key:
+            return next((label for _sequence, key, label in STEP_DEFINITIONS if key == notification.step_key), notification.step_key)
+        if notification.scan_run_id:
+            steps = notification.scan_run.requested_steps or []
+            sequences = [sequence for sequence, key, _label in STEP_DEFINITIONS if key in steps]
+            if sequences:
+                return f"Tổng kết B{min(sequences)}–B{max(sequences)}"
+        return "Tổng kết"
+
     class Meta:
         model = Notification
         fields = "__all__"

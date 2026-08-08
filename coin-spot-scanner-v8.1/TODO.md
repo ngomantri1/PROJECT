@@ -4,6 +4,7 @@
 
 - Add approved historical adapters for BTC dominance, TOTAL3/proxy and macro event risk before marking those groups PASS.
 - Add fixture coverage for provider rate-limit retry and full orchestrator payload persistence.
+- Add per-source URL discovery only after a documented public page contract is verified; until then the crawler requires explicit whitelisted URLs and returns `UNKNOWN` when a page is dynamic/unparseable.
 
 Chỉ các mục có bằng chứng từ source, README, `docs/PHASE_STATUS.md` hoặc UI hiện tại được ghi là **Confirmed TODO**.
 
@@ -12,15 +13,23 @@ Chỉ các mục có bằng chứng từ source, README, `docs/PHASE_STATUS.md` 
 ## Confirmed TODO — Unlock multi-source collector
 
 - Xây adapter unlock 7D/30D/90D, conflict handling và Selenium worker khi cần JavaScript.
-- Hiện `step_execution_verification()` hard-code unlock `UNKNOWN`.
+- Runtime candidate có thể vẫn `UNKNOWN` khi schedule/provider coverage chưa đủ; source đã có Unlock service/provider foundation và không được coi UNKNOWN là PASS.
 - Liên quan: `backend/scanner/orchestrator.py`, `backend/scanner/services.py`.
-- Status: Pending.
+- Status: Core official-schedule workflow implemented; optional multi-source providers remain pending until contract and credentials are verified.
 
 ## Confirmed TODO — Product metrics và Token Value Capture
 
-- Tạo adapter theo ngành và evidence engine; hiện Quality chỉ là proxy MC/volume/FDV.
-- Liên quan: `backend/scanner/services.py` — `provisional_quality()`.
-- Status: Pending.
+- Hoàn thiện adapter theo ngành và evidence engine để `RESEARCH_SHORTLIST` có thể trở thành Quality ranking đúng V8.1.
+- Đã có Research Evidence v1: Binance 24H quote volume + DefiLlama public protocol/chain/fees/DEX, exact CoinGecko ID mapping ưu tiên, ambiguous mapping không tự ghép.
+- Còn thiếu full Product rubric (users/retention/integrations theo ngành), Token Value Capture, official/corroborated E3/E4 evidence và coverage cho non-DeFi/non-chain sectors. Quality vẫn `NOT_SCORED`.
+- Liên quan: `backend/scanner/research.py`, `backend/scanner/services.py`, `backend/scanner/orchestrator.py`.
+- Status: Partial — Research Evidence Priority implemented; full Quality engine pending.
+
+## Verified completed — Research Provider Fallback V1.1
+
+- Message persistence guard keeps `ScanStepRun.message` within the model `max_length=300`.
+- Multiple DefiLlama failures degrade Bước 3 to `COMPLETED_WITH_WARNINGS` with `PREFILTER_ONLY_FALLBACK`; detailed errors remain in `provider_status`.
+- Full-scan runtime verification passed on 2026-08-08 in normal run `e1015994-a1ba-4750-8162-d861b6d9196b` and forced-failure run `e6d8fa5e-6b99-49dc-acd9-ac575b59fc15`; remaining work is provider coverage expansion, not the fallback bug.
 
 ## Confirmed TODO — Technical execution engine
 

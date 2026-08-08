@@ -37,7 +37,14 @@ from src.license_client import HttpLicenseBackend, LicenseService
 from src.reference_license import ReferenceLicenseService
 from src.tool_auth import ToolAuthService
 from src.tool_login_panel import prompt_tool_login_panel
+from src.game_session_probe import ExistingGameSession, prompt_existing_game_session
 from src.ui_contracts import UiCommand, UiCommandType
+from src.table_selection import (
+    TableSelectionController,
+    TableSelectionPhase,
+    TableSelectionSource,
+    TableSelectionState,
+)
 from src.ae_sexy import (
     PHASE_LABEL,
     PHASE_LOBBY,
@@ -161,6 +168,14 @@ class HistoryWatcher:
             self.config.strategy_tabs
         )
         self.state = TableState()
+        last_confirmed = self.store.get_last_confirmed_table()
+        self.table_selection = TableSelectionController(
+            TableSelectionState(
+                preferred_table=(self.config.game.table_name or "").strip(),
+                active_table="",
+                last_confirmed_table=last_confirmed,
+            )
+        )
         self.browser_mgr = BrowserManager(cdp_url=self.config.site.cdp_url)
         self.collector: TrafficCollector | None = None
         self.ae_collector: AeSexyCollector | None = None
@@ -266,6 +281,7 @@ class HistoryWatcher:
         self.overlay.set_strategy_tabs_handler(self._handle_save_strategy_tabs)
         self.overlay.set_strategy_history_handler(self._handle_load_strategy_history)
         self.overlay.set_ui_command_handler(self._handle_ui_command)
+        self.overlay.set_table_selection(self._table_selection_snapshot())
         # Live take-profit/stop-loss belongs to each strategy tab and is
         # process-local.  Legacy YAML/day-P&L limits must not stop Live tabs.
         self.betting_session = BettingSession(
@@ -422,6 +438,11 @@ class HistoryWatcher:
             except PermissionError as exc:
                 return {"ok": False, "error": str(exc)}
             return {"ok": True, "data": {"screen": "game_login"}}
+        if command.type == UiCommandType.CHANGE_TABLE:
+            return await self._handle_change_table_command()
+        if command.type == UiCommandType.SELECT_TABLE:
+            table_name = str(command.payload.get("table_name") or "").strip()
+            return await self._handle_select_table_command(table_name)
         if command.type == UiCommandType.SET_TAB_MODE:
             tab_id = str(command.payload.get("tab_id") or "")
             live = bool(command.payload.get("live"))
@@ -467,6 +488,7 @@ class HistoryWatcher:
                 }
             except ValueError as exc:
                 return {"ok": False, "error": str(exc)}
+
         if command.type == UiCommandType.SET_RUN_STATE:
             running = bool(command.payload.get("running"))
             tab_id = str(command.payload.get("tab_id") or "")
@@ -661,6 +683,93 @@ class HistoryWatcher:
             )
             return {"ok": True, "data": {"tab_id": tab_id, **status}}
         return {"ok": False, "error": "Lệnh UI chưa được hỗ trợ"}
+
+    async def _handle_change_table_command(self) -> dict:
+        if self._enter_click_pending or self.auto_bettor.is_busy:
+            return {"ok": False, "error": "Đang có thao tác vật lý chưa hoàn tất"}
+        if self.betting_session.state.pending is not None:
+            return {"ok": False, "error": "Còn pending bet chưa an toàn để đổi bàn"}
+        if self._run_enabled:
+            self._handle_set_run_enabled(False, tab_id=self._running_tab_id)
+        if not self.table_selection.begin_operator_change(unsafe=False):
+            return {"ok": False, "error": self.table_selection.state.message}
+        page = self.page
+        if page is None or page.is_closed():
+            self.table_selection.abort_operator_change("no valid game page")
+            self._publish_table_selection()
+            return {"ok": False, "error": "Chưa có tab Game hợp lệ"}
+        try:
+            table = self._effective_table_name()
+            from src.ae_sexy import go_ae_sexy_lobby
+
+            # Operator change may leave an active room; normal recovery keeps
+            # that room intact, so explicitly navigate to the provider lobby.
+            if not await go_ae_sexy_lobby(page, force=True):
+                self.table_selection.abort_operator_change("lobby unavailable")
+                self._publish_table_selection()
+                return {"ok": False, "error": "Không mở được lobby để đổi bàn"}
+            if not await wait_for_ae_sexy_lobby(page, timeout_sec=30, table_name=table):
+                self.table_selection.abort_operator_change("lobby not ready")
+                self._publish_table_selection()
+                return {"ok": False, "error": "Lobby is not ready for table change"}
+            self.table_selection.lobby_ready(time.monotonic())
+            tables = await list_ae_sexy_tables(page)
+            candidates = lobby_table_candidates(table, tables)
+            self.table_selection.set_available_tables([name for name, _ in candidates])
+            self._publish_table_selection()
+            return {"ok": True, "data": self._table_selection_snapshot()}
+        except Exception as exc:
+            self.table_selection.abort_operator_change(str(exc))
+            self._publish_table_selection()
+            return {"ok": False, "error": str(exc)}
+
+    async def _handle_select_table_command(self, table_name: str) -> dict:
+        if not table_name:
+            return {"ok": False, "error": "Thiếu tên bàn"}
+        if self._enter_click_pending or self.auto_bettor.is_busy:
+            return {"ok": False, "error": "Đang có thao tác vật lý chưa hoàn tất"}
+        if self.betting_session.state.pending is not None:
+            return {"ok": False, "error": "Còn pending bet chưa an toàn để đổi bàn"}
+        if not self.table_selection.request(
+            table_name, source=TableSelectionSource.OPERATOR
+        ):
+            return {"ok": False, "error": self.table_selection.state.message or "Không thể chọn bàn"}
+        self._publish_table_selection()
+        page = self.page
+        if page is None or page.is_closed():
+            self.table_selection.abort_operator_change("no valid game page")
+            self._publish_table_selection()
+            return {"ok": False, "error": "Chưa có tab Game hợp lệ"}
+        try:
+            in_room, ready = await self._attempt_table_entry(page, table_name)
+            if not in_room or not ready:
+                self.table_selection.candidate_failed(
+                    f"Bàn {table_name} chưa đạt TABLE_READY"
+                )
+                self._publish_table_selection()
+                return {"ok": False, "error": self.table_selection.state.error}
+            actual = await self._detect_runtime_table(page) or table_name
+            if not await self._is_table_ready(page, actual):
+                self.table_selection.candidate_failed(
+                    f"Bàn thực tế {actual} chưa đạt TABLE_READY"
+                )
+                self._publish_table_selection()
+                return {"ok": False, "error": self.table_selection.state.error}
+            self.table_selection.confirm_ready(actual)
+            self._apply_runtime_table(actual, reason="operator")
+            self.store.register_active_table(actual)
+            self.store.save_last_confirmed_table(actual)
+            if self.ae_collector:
+                self.ae_collector.set_in_room(True)
+                self.ae_collector.set_table_ready(True)
+                await self._reload_table_history(page, actual)
+            self._recover_urgent = False
+            self._publish_table_selection()
+            return {"ok": True, "data": self._table_selection_snapshot()}
+        except Exception as exc:
+            self.table_selection.abort_operator_change(str(exc))
+            self._publish_table_selection()
+            return {"ok": False, "error": str(exc)}
 
     async def _arm_current_history_after_start(self) -> bool:
         """Use the loaded table history immediately after an explicit Start."""
@@ -1089,6 +1198,12 @@ class HistoryWatcher:
             return False
 
     def _on_need_enter_table(self, reason: str) -> None:
+        if not self.table_selection.recovery_allowed():
+            logger.info(
+                "Bo qua CAN_CLICK trong cua so chon ban thu cong - cho operator chon ban (%s)",
+                reason,
+            )
+            return
         """Collector: dang o sanh — CLICK NGAY, khong chi set flag cho watch 3s."""
         if getattr(self, "_enter_click_pending", False):
             return
@@ -1156,6 +1271,54 @@ class HistoryWatcher:
             (self.state.table_name or self.config.game.table_name or "").strip()
             or "Baccarat C01"
         )
+
+    async def _enter_ae_sexy_hall_resilient(
+        self, page: Page, wanted: str
+    ) -> tuple[bool, Page]:
+        """Enter AE SEXY without reusing a page closed during iframe startup."""
+        current = page
+        for attempt in range(1, 3):
+            try:
+                return await enter_ae_sexy_hall(current, wanted), current
+            except Exception as exc:
+                if not _is_target_closed_exc(exc):
+                    raise
+                logger.warning(
+                    "Page AE SEXY bi dong khi vao sanh (lan %d/2) — ket noi lai CDP: %s",
+                    attempt,
+                    exc,
+                )
+                try:
+                    ctx = await self.browser_mgr.ensure_connected(force=True)
+                    self._ctx = ctx
+                    current = await self.browser_mgr.resolve_game_page(
+                        self.config.site.url, wanted
+                    )
+                    self.page = current
+                except Exception as reconnect_exc:
+                    logger.error(
+                        "Khong resolve lai duoc page AE SEXY sau TargetClosed: %s",
+                        reconnect_exc,
+                    )
+                    return False, current
+        return False, current
+
+    def _table_selection_snapshot(self) -> dict[str, Any]:
+        return self.table_selection.snapshot(
+            time.monotonic(), wall_time=time.time()
+        )
+
+    def _publish_table_selection(self) -> None:
+        self.overlay.set_table_selection(self._table_selection_snapshot())
+        page = self.page
+        if not page or page.is_closed():
+            return
+        try:
+            asyncio.get_running_loop().create_task(
+                self.overlay.refresh_ui_snapshot(page)
+            )
+        except RuntimeError:
+            pass
 
     async def _detect_runtime_table(self, page: Page) -> str:
         """Phat hien ban dang mo — DOM > probe > WS gan nhat."""
@@ -1306,6 +1469,12 @@ class HistoryWatcher:
         self, ctx, page: Page, target_name: str, *, feed_len: int = 0
     ) -> Page:
         """Tu dong vao lai ban khi bi day ve sanh."""
+        if not self.table_selection.recovery_allowed():
+            self._recover_urgent = False
+            logger.info(
+                "Bo qua recovery trong cua so chon ban thu cong - cho operator chon ban"
+            )
+            return page
         table = self._effective_table_name() or target_name
         # Xac nhan lai — tranh false lobby (hall an) khi dang cuoc trong ban
         if not await self._is_stuck_in_lobby(page, table):
@@ -1313,6 +1482,18 @@ class HistoryWatcher:
                 self.ae_collector.set_in_room(True)
             self._recover_urgent = False
             logger.info("Van trong ban %s — bo qua click sanh (false lobby)", table)
+            return page
+        if self.table_selection.state.operator_change_active:
+            self.table_selection.lobby_ready(time.monotonic())
+            try:
+                tables = await list_ae_sexy_tables(page)
+                candidates = lobby_table_candidates(table, tables)
+                self.table_selection.set_available_tables([name for name, _ in candidates])
+            except Exception as exc:
+                self.table_selection.state.error = str(exc)
+            self._recover_urgent = False
+            self._publish_table_selection()
+            logger.info("Dang o lobby do operator doi ban — khong recovery ve %s", table)
             return page
         if self.ae_collector:
             self.ae_collector.set_in_room(False)
@@ -3591,17 +3772,28 @@ class HistoryWatcher:
             if not (room_table and probe_in_room(probe, "")):
                 return False
 
-        self._apply_runtime_table(target_name, reason="continue_in_room")
+        self.table_selection.request(
+            target_name, source=TableSelectionSource.STARTUP_DETECTED
+        )
         await self._install_early_workspace_overlay(page, stage="startup_in_room")
         logger.info("Da o trong ban %s — bo qua sanh/web", target_name)
-        self.store.register_active_table(target_name)
         if self.ae_collector:
             self.ae_collector.reset_for_table(target_name)
             ready = await wait_for_ae_sexy_table_ready(page, target_name, timeout_sec=45)
             self.ae_collector.set_in_room(True)
             self.ae_collector.set_table_ready(ready)
             if ready:
+                self.table_selection.confirm_ready(target_name)
+                self._apply_runtime_table(target_name, reason="continue_in_room")
+                self.store.register_active_table(target_name)
+                self.store.save_last_confirmed_table(target_name)
+                self._publish_table_selection()
                 logger.info("[TABLE_READY] table=%s", target_name)
+            else:
+                self.table_selection.candidate_failed(
+                    f"Room chưa đạt TABLE_READY cho {target_name}"
+                )
+                self._publish_table_selection()
             await self.ae_collector.inject_hook_frames(page)
             if not ready:
                 logger.warning(
@@ -3724,6 +3916,31 @@ class HistoryWatcher:
             wanted = DEFAULT_TABLE_NAME
 
         await self._install_early_workspace_overlay(page, stage="startup_lobby")
+
+        # A stale/slow phase probe can classify an already-open room as lobby.
+        # Reconcile the visible room before using last_confirmed/config fallback;
+        # the confirmed room is authoritative and must not be replaced by an
+        # old persisted preference (for example C07 on screen vs saved C01).
+        existing_room = normalize_baccarat_table_name(
+            (await detect_room_table_name(page) or "").strip()
+        )
+        if existing_room:
+            try:
+                if await is_ae_sexy_in_room(page, existing_room, self.ae_collector):
+                    logger.info(
+                        "[TABLE_ENTRY_RECONCILE] room=%s overrides requested=%s; skip lobby click",
+                        existing_room,
+                        wanted or "-",
+                    )
+                    return await self._continue_in_room(ctx, page, existing_room)
+            except Exception as exc:
+                logger.debug(
+                    "[TABLE_ENTRY_RECONCILE] room probe failed for %s: %s",
+                    existing_room,
+                    exc,
+                )
+
+        self.table_selection.lobby_ready(time.monotonic())
         logger.info("[TABLE_ENTRY_BEGIN] table=%s", wanted)
         await scroll_ae_sexy_lobby(page)
         tables = await list_ae_sexy_tables(page)
@@ -3733,6 +3950,8 @@ class HistoryWatcher:
             tables = await list_ae_sexy_tables(page)
 
         candidates = lobby_table_candidates(wanted, tables)
+        self.table_selection.set_available_tables([name for name, _ in candidates])
+        self._publish_table_selection()
         if tables:
             logger.info("Doc sanh AE SEXY: %d ban — %s", len(tables), ", ".join(tables))
             self.store.sync_table_names(tables)
@@ -3762,6 +3981,90 @@ class HistoryWatcher:
         ready = False
         stats: dict = {}
 
+        # Manual-first startup: UI commands can run while this bounded wait
+        # yields to the event loop.  Only timeout enters the auto fallback.
+        while (
+            self.table_selection.state.phase != TableSelectionPhase.READY
+            and self.table_selection.state.manual_deadline_monotonic is not None
+            and (
+                time.monotonic() < self.table_selection.state.manual_deadline_monotonic
+                or self.table_selection.state.phase == TableSelectionPhase.AUTO_ENTERING
+            )
+        ):
+            if (
+                self.table_selection.state.phase == TableSelectionPhase.READY
+                and self.table_selection.state.active_table
+            ):
+                break
+            await asyncio.sleep(0.25)
+
+        if (
+            self.table_selection.state.phase == TableSelectionPhase.READY
+            and self.table_selection.state.active_table
+        ):
+            target_name = self.table_selection.state.active_table
+            pick_reason = "operator"
+            in_room = True
+            ready = True
+        elif not self.table_selection.state.auto_enter_enabled:
+            self.table_selection.state.message = "Đã hết thời gian chọn bàn; tự động đang tắt"
+            self._publish_table_selection()
+            return False
+        else:
+            # Last confirmed is preferred at timeout, then configured/candidate
+            # fallback.  It remains only an intent until the room confirms it.
+            timeout_target = self.table_selection.timeout_target(
+                last_confirmed=self.table_selection.state.last_confirmed_table,
+                config_default=wanted,
+                fallback=target_name,
+            )
+            if timeout_target:
+                ordered = [(timeout_target, "last_confirmed")]
+                ordered.extend(
+                    item for item in candidates if item[0] != timeout_target
+                )
+                candidates = ordered
+                target_name, pick_reason = candidates[0]
+
+        # The provider may already have moved the browser into a different
+        # room while the manual window was open.  Reconcile that room before
+        # applying the persisted last_confirmed fallback (for example C07 on
+        # screen while SQLite still contains C04).
+        if not ready:
+            detected_room = normalize_baccarat_table_name(
+                (await detect_room_table_name(page) or "").strip()
+            )
+            if detected_room:
+                try:
+                    detected_in_room = await is_ae_sexy_in_room(
+                        page, detected_room, self.ae_collector
+                    )
+                    detected_ready = (
+                        detected_in_room
+                        and await self._is_table_ready(page, detected_room)
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "[TABLE_ENTRY_RECONCILE] room probe failed for %s: %s",
+                        detected_room,
+                        exc,
+                    )
+                    detected_ready = False
+                if detected_ready:
+                    target_name = detected_room
+                    pick_reason = "detected_room"
+                    in_room = True
+                    ready = True
+                    logger.info(
+                        "[TABLE_ENTRY_RECONCILE] room=%s overrides timeout fallback",
+                        detected_room,
+                    )
+
+        # A confirmed operator/provider room must not be followed by another
+        # automatic candidate click in the same lobby pass.
+        if ready:
+            candidates = []
+
         for candidate_name, reason in candidates:
             if reason == "fallback_c02":
                 logger.warning(
@@ -3784,6 +4087,15 @@ class HistoryWatcher:
                 )
 
             logger.info("Vao ban: %s (%s)", candidate_name, describe_table_pick(reason))
+            self.table_selection.request(
+                candidate_name,
+                source=(
+                    TableSelectionSource.CONFIG_DEFAULT
+                    if reason in {"preferred", "preferred_blind", "default"}
+                    else TableSelectionSource.AUTO_FALLBACK
+                ),
+            )
+            self._publish_table_selection()
             in_room, ready = await self._attempt_table_entry(page, candidate_name)
             target_name = candidate_name
             pick_reason = reason
@@ -3791,6 +4103,10 @@ class HistoryWatcher:
             if ready:
                 logger.info("[TABLE_READY] table=%s", candidate_name)
                 break
+            self.table_selection.candidate_failed(
+                f"TABLE_READY chưa xác nhận cho {candidate_name}"
+            )
+            self._publish_table_selection()
 
         if not ready:
             logger.warning(
@@ -3798,8 +4114,16 @@ class HistoryWatcher:
                 target_name,
             )
 
-        self._apply_runtime_table(target_name, reason=pick_reason)
-        self.store.register_active_table(target_name, stats=stats or None)
+        if not ready:
+            if self.ae_collector:
+                self.ae_collector.set_in_room(False)
+                self.ae_collector.set_table_ready(False)
+            self.table_selection.candidate_failed("Không có bàn đạt TABLE_READY")
+            self._publish_table_selection()
+            # A candidate/click is not table authority.  Persist and activate
+            # only after the resolved room reaches TABLE_READY.
+            return False
+
         if self.ae_collector:
             self.ae_collector.reset_for_table(target_name)
             from src.ae_sexy_state import probe_in_room, probe_table_ready
@@ -3828,6 +4152,16 @@ class HistoryWatcher:
                         len(final_probe.lobby_tables),
                         target_name,
                     )
+            if ready and in_room:
+                self.table_selection.confirm_ready(target_name)
+                self._apply_runtime_table(target_name, reason=pick_reason)
+                self.store.register_active_table(target_name, stats=stats or None)
+                self.store.save_last_confirmed_table(target_name)
+                self._publish_table_selection()
+            else:
+                self.table_selection.candidate_failed(
+                    f"Room chưa đạt TABLE_READY cho {target_name}"
+                )
             self.ae_collector.bind_page(page)
             self.ae_collector.set_in_room(in_room)
             self.ae_collector.set_table_ready(ready)
@@ -3889,6 +4223,11 @@ class HistoryWatcher:
                         self.ae_collector.set_in_room(True)
                         self.ae_collector.set_table_ready(ready)
                         if ready:
+                            self.table_selection.confirm_ready(target_name)
+                            self._apply_runtime_table(target_name, reason=pick_reason)
+                            self.store.register_active_table(target_name, stats=stats or None)
+                            self.store.save_last_confirmed_table(target_name)
+                            self._publish_table_selection()
                             await self.ae_collector.inject_hook_frames(page)
                             await self.ae_collector.fetch_http_history(page, target_name)
                             from src.ae_sexy_bead import _prepare_room_view
@@ -3904,6 +4243,13 @@ class HistoryWatcher:
                         self._recover_urgent = False
                         break
                     await asyncio.sleep(2)
+
+        else:
+            # A non-collector test/adapter still needs an explicit authority
+            # transition, but only after the entry guard returned ready.
+            self.table_selection.confirm_ready(target_name)
+            self._apply_runtime_table(target_name, reason=pick_reason)
+            self.store.register_active_table(target_name, stats=stats or None)
 
         logger.info("=" * 50)
         logger.info(
@@ -3921,6 +4267,8 @@ class HistoryWatcher:
 
     async def run(self):
         ctx = await self.browser_mgr.start()
+        # Maximize before any Tool/Game authentication UI is shown.
+        await self.browser_mgr.ensure_maximized()
 
         # Lay tab bat ky de hien Tool Login truoc khi duoc phep vao web/sanh.
         panel_page = None
@@ -3947,17 +4295,36 @@ class HistoryWatcher:
 
         phase_probe = await detect_ae_sexy_phase(panel_page, preferred)
         already_in_game = phase_probe in (PHASE_ROOM, PHASE_LOBBY, PHASE_LOADING)
+        continue_existing_session = False
         if already_in_game:
+            existing_table = ""
+            try:
+                existing_table = await self._detect_runtime_table(panel_page)
+            except Exception:
+                existing_table = ""
+            choice = await prompt_existing_game_session(
+                panel_page,
+                ExistingGameSession(
+                    found=True,
+                    site_url=self.config.site.url,
+                    phase=phase_probe,
+                    table_name=existing_table,
+                ),
+            )
+            continue_existing_session = choice == "continue"
             logger.info(
                 "Phat hien dang trong game (%s) — van hien panel de chon web/TK neu can doi",
                 phase_probe,
             )
 
-        # Chi hien Game Login sau khi Tool session da hop le.
-        creds = load_credentials(site=self.config.site.url)
-        form = await self.change_game_account(panel_page)
-        save_credentials(form.username, form.password, site=form.site_id)
-        self.config = update_site_url(form.site_url)
+        # Chi hien Game Login sau khi Tool session da hop le.  A valid
+        # existing AE SEXY page continues without replacing its session.
+        form = None
+        if not continue_existing_session:
+            form = await self.change_game_account(panel_page)
+            if form.remember:
+                save_credentials(form.username, form.password, site=form.site_id)
+            self.config = update_site_url(form.site_url)
         # update_site_url() returns a fresh AppConfig read from YAML.  Strategy
         # tabs, including their money manager and stake chains, are SQLite-owned
         # after the first import and must not be replaced by YAML defaults here.
@@ -3967,8 +4334,10 @@ class HistoryWatcher:
         self.browser_mgr.cdp_url = self.config.site.cdp_url
         from src.sites import set_active_site
 
-        active = set_active_site(form.site_id or form.site_url)
-        creds = load_credentials(site=form.site_id)
+        active = set_active_site(
+            (form.site_id or form.site_url) if form is not None else self.config.site.url
+        )
+        creds = load_credentials(site=active.info.id)
         logger.info(
             "Da luu thong tin Game: site=%s (%s) web=%s",
             active.info.id,
@@ -4236,7 +4605,19 @@ class HistoryWatcher:
                 return
 
         # Tu trang web casino -> vao sanh
-        if not await enter_ae_sexy_hall(page, wanted):
+        entered_hall, page = await self._enter_ae_sexy_hall_resilient(page, wanted)
+        self.page = page
+        if not entered_hall:
+            try:
+                page_closed = page.is_closed()
+            except Exception:
+                page_closed = True
+            if page_closed or not self.browser_mgr.is_connected():
+                logger.error(
+                    "Khong vao duoc sanh AE SEXY: page/context da dong sau reconnect"
+                )
+                await self.browser_mgr.stop()
+                return
             # goGame bi chan "Vui long dang nhap truoc" — login lai roi thu
             if not await is_logged_in(page):
                 logger.warning(
@@ -4250,7 +4631,13 @@ class HistoryWatcher:
                         max_retries=_LOGIN_FAIL_STOP,
                         site_url=self.config.site.url,
                     )
-                    if ok_login and await enter_ae_sexy_hall(page, wanted):
+                    entered_after_login = False
+                    if ok_login:
+                        entered_after_login, page = await self._enter_ae_sexy_hall_resilient(
+                            page, wanted
+                        )
+                        self.page = page
+                    if ok_login and entered_after_login:
                         page = await self.browser_mgr.resolve_game_page(
                             self.config.site.url, wanted
                         )

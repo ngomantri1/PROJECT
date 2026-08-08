@@ -1,4 +1,4 @@
-import type { DashboardData, HealthStatus, Profile, ScanRun, StepSchedule } from './types'
+import type { DashboardData, HealthStatus, Notification, Profile, ScanRun, StepSchedule } from './types'
 const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
 async function request<T>(path:string, options?:RequestInit):Promise<T>{
   const response = await fetch(`${API}${path}`, {headers:{'Content-Type':'application/json', ...(options?.headers||{})}, ...options})
@@ -9,7 +9,8 @@ async function request<T>(path:string, options?:RequestInit):Promise<T>{
 export const api = {
   health:()=>request<HealthStatus>('/health/'),
   dashboard:()=>request<DashboardData>('/dashboard/'),
-  startScan:(profileId?:number, requestedSteps?:string[])=>request<ScanRun>('/scan-runs/start/',{method:'POST',body:JSON.stringify({profile_id:profileId,requested_steps:requestedSteps})}),
+  notifications:(limit=200)=>request<Notification[]>(`/notifications/?limit=${limit}`),
+  startScan:(profileId?:number, requestedSteps?:string[], mode?:string)=>request<ScanRun>('/scan-runs/start/',{method:'POST',body:JSON.stringify({profile_id:profileId,requested_steps:requestedSteps,mode})}),
   scan:(id:string)=>request<ScanRun>(`/scan-runs/${id}/`),
   profiles:()=>request<Profile[]>('/profiles/'),
   updateProfile:(id:number, data:any)=>request<Profile>(`/profiles/${id}/`,{method:'PATCH',body:JSON.stringify(data)}),

@@ -25,6 +25,7 @@ const policyOptions = [
 const statusMeta: Record<string, { color: string; label: string }> = {
   COMPLETED: { color: 'success', label: 'Hoàn tất' },
   COMPLETED_WITH_WARNINGS: { color: 'warning', label: 'Hoàn tất có cảnh báo' },
+  PARTIAL_COMPLETED: { color: 'warning', label: 'Hoàn tất một phần' },
   RUNNING: { color: 'processing', label: 'Đang chạy' },
   WAITING: { color: 'default', label: 'Chờ chạy' },
   QUEUED: { color: 'processing', label: 'Đang chờ hàng đợi' },
@@ -38,9 +39,6 @@ function isCompleted(status?: string) {
   return status === 'COMPLETED' || status === 'COMPLETED_WITH_WARNINGS'
 }
 
-function isFinished(status?: string) {
-  return isCompleted(status) || status === 'FAILED' || status === 'SKIPPED' || status === 'CANCELLED'
-}
 
 function statusTag(status?: string) {
   const meta = statusMeta[status || 'WAITING'] || statusMeta.WAITING
@@ -129,33 +127,41 @@ function Dashboard() {
   const [modal, setModal] = useState(false)
   const [starting, setStarting] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([])
   const load = async () => {
-    try { setData(await api.dashboard()) } catch (error: any) { message.error(error.message) } finally { setLoading(false) }
+    try { const [dashboard, history] = await Promise.all([api.dashboard(), api.notifications()]); setData(dashboard); setNotifications(history) } catch (error: any) { message.error(error.message) } finally { setLoading(false) }
   }
   useEffect(() => { load(); const timer = setInterval(load, 4000); return () => clearInterval(timer) }, [])
   const start = async (requestedSteps?: string[]) => {
     if (!data?.profile) return
     setStarting(true)
-    try { await api.startScan(data.profile.id, requestedSteps); message.success('Đã đưa quy trình vào hàng đợi'); setModal(false); await load() } catch (error: any) { message.error(error.message) } finally { setStarting(false) }
+    const maxSequence = requestedSteps?.length
+      ? Math.max(...requestedSteps.map(key => steps.findIndex(step => step.key === key) + 1).filter(Boolean))
+      : 6
+    const mode = requestedSteps?.length && maxSequence < 6 ? 'FULL_SCAN_RESEARCH' : 'FULL_SCAN_EXECUTION'
+    try { await api.startScan(data.profile.id, requestedSteps, mode); message.success('Đã đưa quy trình vào hàng đợi'); setModal(false); await load() } catch (error: any) { message.error(error.message) } finally { setStarting(false) }
   }
+  const run = data?.latest_run
+  useEffect(() => {
+    if (!run?.current_step || run.status !== 'RUNNING') return
+    document.getElementById(`step-card-${run.current_step}`)?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+  }, [run?.current_step, run?.status])
   if (loading && !data) return <div className="dashboard-skeleton"><Skeleton active paragraph={{ rows: 12 }} /></div>
 
-  const run = data?.latest_run
   const latestFailed = run?.status === 'FAILED'
   const resultRun: ScanRun | null = latestFailed ? data?.latest_successful_run || null : run || null
   const runSteps = run?.steps || []
   const resultCounters = resultRun?.counters || {}
-  const candidates = (resultRun?.candidates || []).filter(candidate => ['RESEARCH_SHORTLIST', 'EXECUTION_VERIFICATION'].includes(candidate.stage)).sort((a, b) => a.rank - b.rank).slice(0, 8)
+  const candidates = (resultRun?.candidates || []).filter(candidate => ['RESEARCH_SHORTLIST', 'EXECUTION_VERIFICATION'].includes(candidate.stage)).sort((a, b) => a.rank - b.rank)
   const warningCount = runSteps.filter(step => step.status === 'COMPLETED_WITH_WARNINGS').length
   const errorCount = runSteps.filter(step => step.status === 'FAILED').length
   const completedCount = runSteps.filter(step => isCompleted(step.status)).length
-  const finishedCount = runSteps.filter(step => isFinished(step.status)).length
+  const skippedCount = runSteps.filter(step => step.status === 'SKIPPED').length
   const waitingCount = runSteps.filter(step => step.status === 'WAITING').length
   const failedStep = runSteps.find(step => step.status === 'FAILED')?.step_key || run?.current_step
   const hasResults = Boolean(resultRun?.results?.ranking?.length || resultRun?.results?.executive_decision)
   const decision = resultRun?.results?.executive_decision
   const regime = resultRun?.results?.market_regime
-  const groupedNotifications = groupNotifications(data?.notifications || [])
   const scrollToResults = () => document.getElementById('research-shortlist')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   return <AntApp>
@@ -169,25 +175,27 @@ function Dashboard() {
         <Alert type="info" showIcon icon={<InfoCircleOutlined />} message="Hệ thống thực hiện tuần tự 6 bước. Khi thiếu dữ liệu critical, kết quả bị hạ trạng thái thay vì tạo BUY_SETUP giả." style={{ marginTop: 14 }} />
       </Card>
 
-      <Card title="Quy trình tự động" className="pipeline-card"><div className="pipeline">{(data?.profile?.step_schedules || []).map(schedule => {
+      <Card title="Quy trình tự động" className="pipeline-card"><div className={`pipeline ${run?.status === 'RUNNING' ? 'has-active-step' : ''}`}>{(data?.profile?.step_schedules || []).map(schedule => {
         const runStep = runSteps.find(step => step.step_key === schedule.step_key)
         return <StepCard key={schedule.id} schedule={schedule} runStep={runStep} disabled={starting || run?.status === 'RUNNING'} onChange={async patch => { await api.updateSchedule(schedule.id, patch); await load() }} onRun={() => start([schedule.step_key])} onViewResults={scrollToResults} hasResults={hasResults} />
       })}</div></Card>
 
-      <Card title={<div className="progress-title"><div><span>Tiến trình quét tổng</span><small>{finishedCount}/6 bước đã kết thúc</small></div><div className="progress-summary">{latestFailed && <Tag color="error">Quét thất bại</Tag>}{warningCount > 0 && <Tag color="warning">Hoàn tất có cảnh báo</Tag>}{completedCount > 0 && <span>{completedCount} hoàn tất</span>}{warningCount > 0 && <span>{warningCount} cảnh báo</span>}{errorCount > 0 && <Tag color="error">{errorCount} lỗi</Tag>}{waitingCount > 0 && <span>{waitingCount} chờ</span>}</div></div>}>
+      <Card title={<div className="progress-title"><div><span>Tiến trình pipeline</span><small>{completedCount}/6 bước đã chạy{skippedCount > 0 ? ` · ${skippedCount} bước chưa chạy` : ''}</small></div><div className="progress-summary">{latestFailed && <Tag color="error">Quét thất bại</Tag>}{run?.status === 'PARTIAL_COMPLETED' && <Tag color="warning">Hoàn tất một phần</Tag>}{warningCount > 0 && <Tag color="warning">{warningCount} bước có cảnh báo</Tag>}{completedCount > 0 && <span>{completedCount} đã xử lý</span>}{skippedCount > 0 && <span>{skippedCount} bỏ qua</span>}{errorCount > 0 && <Tag color="error">{errorCount} lỗi</Tag>}{waitingCount > 0 && <span>{waitingCount} chờ</span>}</div></div>}>
         <Progress percent={run?.progress || 0} status={run?.status === 'FAILED' ? 'exception' : run?.status === 'RUNNING' ? 'active' : 'normal'} />
+        {run?.validation?.mode_downgraded && <Alert style={{ marginBottom: 12 }} type="warning" showIcon message={`Mode thực tế: ${run.mode_validated}`} description={run.validation.downgrade_reason || run.validation.execution_block_reason || 'Execution Gate chưa đạt.'} />}
+        {run?.status === 'PARTIAL_COMPLETED' && <Alert style={{ marginBottom: 12 }} type="info" showIcon message="Pipeline chỉ hoàn tất một phần" description={run.validation?.summary || 'Một số bước không thuộc phạm vi lần chạy này.'} />}
         {latestFailed && failedStep && <small className="failure-summary">Dừng tại bước {steps.findIndex(step => step.key === failedStep) + 1 || runSteps.find(step => step.step_key === failedStep)?.sequence || '—'} — {steps.find(step => step.key === failedStep)?.title || failedStep}</small>}
         <div className="milestones">{steps.map((step, index) => { const current = runSteps.find(item => item.step_key === step.key); const state = current?.status === 'COMPLETED_WITH_WARNINGS' ? 'warning' : isCompleted(current?.status) ? 'done' : current?.status === 'RUNNING' ? 'active' : current?.status === 'FAILED' ? 'failed' : current?.status === 'STALE' ? 'stale' : current?.status === 'SKIPPED' ? 'skipped' : current?.status === 'PAUSED' ? 'paused' : ''; return <div key={step.key} className={`milestone ${state}`}><b>{index + 1}</b><span>{step.title}</span></div> })}</div>
       </Card>
 
-      <Card id="research-shortlist" title={latestFailed && resultRun ? 'Research Shortlist — Kết quả thành công gần nhất' : 'Research Shortlist'} extra={resultRun ? <Tag>{resultRun.mode_validated}</Tag> : null}><CandidateTable rows={candidates} /></Card>
+      <Card id="research-shortlist" title={latestFailed && resultRun ? 'Research Shortlist — Kết quả thành công gần nhất' : 'Research Shortlist — Evidence priority, chưa phải Quality ranking'} extra={resultRun ? <Tag>{resultRun.mode_validated}</Tag> : null}><CandidateTable rows={candidates} /></Card>
     </main>
     <aside>
-      <QuickDecision latestRun={run} resultRun={resultRun} decision={decision} regime={regime} counters={resultCounters} nextAction={resultRun?.validation?.warnings?.[0]} />
+      <QuickDecision latestRun={run} resultRun={resultRun} decision={decision} regime={regime} counters={resultCounters} nextAction={resultRun?.validation?.execution_block_reason || resultRun?.validation?.warnings?.[0]} />
       <MarketRegimePanel regime={resultRun?.results?.market_regime} />
-      <Card title="Thông báo" extra={<Button type="link" onClick={() => setNotificationOpen(true)}>Xem toàn bộ</Button>}><NotificationList notifications={groupedNotifications.slice(0, 4)} /></Card>
+      <Card title="Thông báo" extra={<Button type="link" onClick={() => setNotificationOpen(true)}>Xem toàn bộ</Button>}><NotificationList notifications={notifications.slice(0, 4)} /></Card>
     </aside></div>
-    <Drawer title="Thông báo" open={notificationOpen} onClose={() => setNotificationOpen(false)}><NotificationList notifications={groupedNotifications} /></Drawer>
+    <Drawer title={`Lịch sử thông báo · ${notifications.length} bản ghi`} open={notificationOpen} onClose={() => setNotificationOpen(false)}><NotificationList notifications={notifications} /></Drawer>
     <StartModal open={modal} loading={starting} onCancel={() => setModal(false)} onStart={() => start()} />
   </AntApp>
 }
@@ -195,7 +203,7 @@ function Dashboard() {
 function StepCard({ schedule, runStep, disabled, onChange, onRun, onViewResults, hasResults }: { schedule: StepSchedule; runStep: any; disabled: boolean; onChange: (patch: Partial<StepSchedule>) => void; onRun: () => void; onViewResults: () => void; hasResults: boolean }) {
   const definition = steps.find(step => step.key === schedule.step_key)
   const viewResults = schedule.step_key === 'INVESTMENT_RESULTS'
-  return <Card size="small" className={`step-card ${runStep?.status === 'RUNNING' ? 'running' : ''}`}>
+  return <Card id={`step-card-${schedule.step_key}`} size="small" className={`step-card ${runStep?.status === 'RUNNING' ? 'running' : ''}`}>
     <div className="step-head"><span className="step-number">{schedule.sequence}</span><div><strong>{definition?.title}</strong><small>{definition?.description}</small></div></div>
     {statusTag(runStep?.status)}
     <div className="field-row"><span>Tự động theo lịch</span><Switch size="small" checked={schedule.auto_enabled} disabled={disabled} onChange={value => onChange({ auto_enabled: value })} /></div>
@@ -239,17 +247,17 @@ function evidenceValue(evidence: MarketRegimeEvidence) {
   if (evidence.value.breadth_pct !== undefined) return `${Number(evidence.value.breadth_pct).toFixed(1)}% trên MA20`
   if (evidence.value.latest_vs_previous_7d_ratio !== undefined) return `x${Number(evidence.value.latest_vs_previous_7d_ratio).toFixed(2)} vs TB 7D`
   if (evidence.value.total3_proxy_usd !== undefined) return `${Number(evidence.value.total3_proxy_usd).toLocaleString('en-US')} USD`
-  if (evidence.value.btc_pct !== undefined) return `BTC ${Number(evidence.value.btc_pct).toFixed(2)}%`
+  if (evidence.value.btc_pct !== undefined) return `BTC ${Number(evidence.value.btc_pct).toFixed(2)}%${evidence.value.trend ? ` · ${evidence.value.trend} → ${evidence.signal === 'BEARISH' ? 'bất lợi alt' : evidence.signal === 'BULLISH' ? 'hỗ trợ alt' : 'trung tính'}` : ''}`
   return evidence.signal || 'UNKNOWN'
 }
 
 function MarketRegimePanel({ regime }: { regime?: MarketRegimePayload }) {
-  if (!regime?.groups) return <Card title="Market Regime evidence"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có payload Market Regime v1" /></Card>
+  if (!regime?.groups) return <Card title="Market Regime evidence"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có payload Market Regime" /></Card>
   const completeness = regime.completeness
   const missing = [...(completeness.missing || []), ...(completeness.stale || []), ...(completeness.conflict || [])]
   return <Card title="Market Regime evidence" className="market-regime-panel">
     <div className="regime-panel-summary"><div><strong>{regime.regime}</strong><small>{regime.status} · Confidence {regime.confidence}</small></div><Tag color={regime.status === 'FINAL' ? 'success' : 'warning'}>{completeness.pass_count}/{completeness.total_count} PASS</Tag></div>
-    <div className="regime-panel-meta"><span>Universe: {regime.universe.count} · hợp lệ: {regime.universe.eligible_count}</span><span>Generated: {formatDate(regime.generated_at)}</span></div>
+    <div className="regime-panel-meta"><span>Universe: {regime.universe.count} · requested: {regime.universe.requested_count ?? regime.universe.eligible_count} · fetched: {regime.universe.fetched_count ?? '—'}</span><span>Generated: {formatDate(regime.generated_at)}</span></div>
     {missing.length > 0 && <Alert type="warning" showIcon message="Evidence còn thiếu/chưa xác minh" description={missing.map(key => evidenceLabels[key] || key).join(' · ')} />}
     <details className="regime-details"><summary>Xem 9 nhóm evidence</summary><div className="market-regime-table-wrap"><table className="market-regime-table"><thead><tr><th>Nhóm</th><th>Signal</th><th>Status</th><th>Source</th><th>Observed</th><th>Ghi chú</th></tr></thead><tbody>{Object.entries(regime.groups).map(([key, item]) => <tr key={key}><td>{evidenceLabels[key] || item.label}</td><td>{evidenceValue(item)}</td><td><Tag color={evidenceTagColor(item.status)}>{item.status}</Tag></td><td>{item.source?.provider || '—'}</td><td>{formatDate(item.observed_at)}</td><td>{item.error || item.notes?.[0] || '—'}</td></tr>)}</tbody></table></div></details>
   </Card>
@@ -257,10 +265,17 @@ function MarketRegimePanel({ regime }: { regime?: MarketRegimePayload }) {
 
 function candidateReason(candidate: Candidate) {
   const execution = candidate.details?.execution
+  const qualityMissing = candidate.quality_status === 'NOT_SCORED'
   if (candidate.entry_status === 'NOT_SCORED' && execution) {
     const missing = ['unlock', 'stop', 'rr'].filter(key => key === 'unlock' ? execution.unlock?.status !== 'PASS' : execution[key] == null)
     const labels: Record<string, string> = { unlock: 'Unlock', stop: 'Stop', rr: 'RR' }
-    return missing.length ? `Thiếu ${missing.map(key => labels[key]).join(', ')}` : 'Entry chưa được chấm điểm'
+    const entryReason = missing.length ? `Entry thiếu ${missing.map(key => labels[key]).join(', ')}` : 'Entry chưa được chấm'
+    return qualityMissing ? `Quality chưa chấm; ${entryReason}` : entryReason
+  }
+  if (qualityMissing) {
+    const product = candidate.details?.research_evidence?.product
+    if (product?.status === 'PASS') return `Đã có Product evidence ${product.evidence_level}; còn thiếu Token Value/Unlock/full Valuation/Moat/Team/Catalyst để chấm Quality`
+    return 'Chưa có đủ Product/Token Value/Unlock/Valuation evidence để chấm Quality'
   }
   if (candidate.quality_status === 'RANGE') return 'Quality đang ở trạng thái RANGE'
   return candidate.risk_codes?.[0] || 'Chưa đủ dữ liệu'
@@ -270,7 +285,8 @@ function CandidateTable({ rows }: { rows: Candidate[] }) {
   const columns: any = [
     { title: 'Hạng', dataIndex: 'rank', width: 64 },
     { title: 'Coin', render: (_: any, row: Candidate) => <div><b>{row.symbol}</b><small>{row.binance_pair || '—'}</small></div> },
-    { title: 'Quality', render: (_: any, row: Candidate) => <div><Tag color={row.quality_status === 'FINAL' ? 'success' : row.quality_status === 'PROVISIONAL' ? 'warning' : row.quality_status === 'RANGE' ? 'blue' : 'default'}>{row.quality_score_low && row.quality_score_high ? `${Number(row.quality_score_low).toFixed(0)}–${Number(row.quality_score_high).toFixed(0)}` : '—'}</Tag><small>{friendlyCode(row.quality_status)} · {row.quality_status}</small></div> },
+    { title: 'Ưu tiên nghiên cứu', width: 185, render: (_: any, row: Candidate) => { const e = row.details?.research_evidence; const p = row.details?.research_prefilter; if (e) { const product = e.product?.evidence_level || 'E0'; const binanceVol = e.structural_liquidity?.binance_quote_volume_24h_usd; return <div><Tag color={e.priority_tier === 'EVIDENCE_A' ? 'success' : e.priority_tier === 'EVIDENCE_B' ? 'blue' : 'default'}>{e.priority_tier}</Tag><small>Product {product} · Binance {binanceVol != null ? `$${Number(binanceVol / 1_000_000).toFixed(1)}M` : 'UNKNOWN'}</small>{p && <small>{p.fdv_band} · {p.circulating_band} · {p.market_cap_priority}</small>}</div> } return p ? <div><Tag color={p.market_cap_priority === 'PRIORITY_A' ? 'success' : p.market_cap_priority === 'SUPPLEMENTARY' ? 'blue' : 'default'}>{p.market_cap_priority}</Tag><small>{p.fdv_band} · {p.circulating_band} · {p.liquidity_band}</small></div> : '—' } },
+    { title: 'Quality', render: (_: any, row: Candidate) => <div><Tag color={row.quality_status === 'FINAL' ? 'success' : row.quality_status === 'PROVISIONAL' ? 'warning' : row.quality_status === 'RANGE' ? 'blue' : 'default'}>{row.quality_score_low && row.quality_score_high ? `${Number(row.quality_score_low).toFixed(0)}–${Number(row.quality_score_high).toFixed(0)}` : 'Chưa chấm'}</Tag><small>{friendlyCode(row.quality_status)} · {row.quality_status}</small></div> },
     { title: 'Entry', render: (_: any, row: Candidate) => <Tooltip title="Chưa đủ dữ liệu execution để chấm Entry"><div><Tag>{friendlyCode(row.entry_status)}</Tag><small>{row.entry_status}</small></div></Tooltip> },
     { title: 'Opportunity', render: (_: any, row: Candidate) => row.opportunity_score ?? '—' },
     { title: 'Action', render: (_: any, row: Candidate) => <Tooltip title={row.action}><Tag color={row.action === 'BLOCKED' ? 'error' : 'warning'}>{friendlyCode(row.action)}</Tag></Tooltip> },
@@ -280,20 +296,9 @@ function CandidateTable({ rows }: { rows: Candidate[] }) {
   return rows.length ? <Table rowKey="id" size="small" scroll={{ x: 900 }} pagination={false} columns={columns} dataSource={rows} /> : <Empty description="Chưa có Research Shortlist" />
 }
 
-function groupNotifications(notifications: Notification[]) {
-  const groups = new Map<string, Notification & { count: number }>()
-  notifications.forEach(notification => {
-    const key = `${notification.level}|${notification.title}|${notification.message}`
-    const current = groups.get(key)
-    if (current) current.count += 1
-    else groups.set(key, { ...notification, count: 1 })
-  })
-  return [...groups.values()]
-}
-
-function NotificationList({ notifications }: { notifications: Array<Notification & { count: number }> }) {
+function NotificationList({ notifications }: { notifications: Notification[] }) {
   if (!notifications.length) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có thông báo" />
-  return <div>{notifications.map(notification => { const display = notificationDisplay(notification); return <div className={`notification ${notification.level.toLowerCase()}`} key={`${notification.id}-${notification.title}`}><b>{notification.level === 'SUCCESS' ? <CheckCircleOutlined /> : notification.level === 'WARNING' ? <WarningOutlined /> : notification.level === 'ERROR' ? <ExclamationCircleOutlined /> : <InfoCircleOutlined />} {display.title}</b><span>{display.message}</span>{display.code && <Tooltip title={display.raw}><Tag>{display.code} · Xem chi tiết kỹ thuật</Tag></Tooltip>}{notification.count > 1 && <small>{notification.count} lần tương tự</small>}<small>{formatDate(notification.created_at)}</small></div> })}</div>
+  return <div>{notifications.map(notification => { const display = notificationDisplay(notification); const source = notification.step_sequence ? `B${notification.step_sequence} · ${notification.step_label}` : notification.step_label || 'Tổng kết'; return <div className={`notification ${notification.level.toLowerCase()}`} key={`${notification.id}-${notification.title}`}><b>{notification.level === 'SUCCESS' ? <CheckCircleOutlined /> : notification.level === 'WARNING' ? <WarningOutlined /> : notification.level === 'ERROR' ? <ExclamationCircleOutlined /> : <InfoCircleOutlined />} {display.title}</b><span>{display.message}</span><Tag color={notification.step_sequence ? 'blue' : 'default'}>{source}</Tag>{display.code && <Tooltip title={display.raw}><Tag>{display.code} · Xem chi tiết kỹ thuật</Tag></Tooltip>}<small>{formatDate(notification.created_at)}</small></div> })}</div>
 }
 
 function StartModal({ open, loading, onCancel, onStart }: { open: boolean; loading: boolean; onCancel: () => void; onStart: () => void }) {

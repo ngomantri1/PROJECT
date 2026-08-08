@@ -26,7 +26,7 @@ Tài liệu này mô tả **rule đang tồn tại trong source 0.1.0**, không 
 - Rule: `FULL_SCAN` requires Universe Accounting; Hard Rules override scores; Quality, Entry, and Opportunity remain separate and score status must be explicit.
 - Evidence: `docs/specification/00_CONTEXT_V8_1.md`; `defaults.json`; `Candidate` score/status fields; `_validation_gate()`.
 - Status: Confirmed: User/Document; Enforced: partial baseline; Covered: no direct regression test.
-- Gap: the baseline only calculates a `RANGE` Quality proxy and always validates its output as `FULL_SCAN_RESEARCH`.
+- Current behavior: Research Evidence Priority is separate from Quality; Quality remains `NOT_SCORED` until critical groups are complete. Validation dynamically keeps `FULL_SCAN_EXECUTION` or downgrades to `FULL_SCAN_RESEARCH`.
 
 ## Quy trình sáu bước
 
@@ -105,24 +105,27 @@ Decision hiện tại:
 - 2–3 positive → `TRUNG TÍNH`.
 - 0–1 positive → `XẤU`.
 
-Kết quả luôn `PROVISIONAL`, Confidence `MEDIUM`, completeness `5/9` và ghi thiếu ETH/BTC, TOTAL3/proxy, breadth MA20, alt volume 7D.
+Kết quả có trạng thái/completeness động theo evidence thực tế; một runtime gần đây là `TRUNG TÍNH`, `PROVISIONAL`, `Confidence MEDIUM`, `6/9 PASS`, còn thiếu BTC Dominance, TOTAL3/proxy và Macro/event risk. Đây không phải invariant cố định.
 
 Source: `backend/scanner/orchestrator.py` — `step_market_regime()`.
 
 ## Research Shortlist
 
-- Chọn tối đa `research_shortlist_count`.
-- Sort theo `quality_score_high` giảm dần, sau đó `volume_24h_usd` giảm dần.
-- Candidate được chuyển từ `RESEARCH_POOL` sang `RESEARCH_SHORTLIST` và rank lại từ 1.
+- Chọn tối đa `research_shortlist_count` candidate từ `RESEARCH_POOL` chưa bị `BLOCKED/EXCLUDE`.
+- Thứ tự là **Research Evidence Priority** (fallback là `PREFILTER_ONLY_FALLBACK`), không phải V8.1 Quality ranking.
+- Prefilter dùng các dữ liệu rẻ và có sẵn: Market Cap bucket, total volume, FDV/MC, circulating %, volume/MC và các Hard Rule supply có thể xác minh từ snapshot.
+- `quality_status` phải giữ `NOT_SCORED` cho đến khi có Product/Usage, Token Value Capture, Unlock, Valuation/Peers và các evidence Quality cần thiết.
+- Không được dùng `quality_weights` hoặc tên cột Quality để hợp thức hóa prefilter proxy.
+- Prefilter không tự tạo `TOK-08` chỉ từ FDV/MC vì rule này còn phụ thuộc trạng thái unlock; FDV/MC >4 được gắn `TOK-07`/deprioritize để Bước 4 xác minh tiếp. Circulating `<15%` có thể xác minh trực tiếp từ snapshot nên bị `BLOCKED` theo `TOK-05`.
 
-Source: `backend/scanner/orchestrator.py` — `step_research_shortlist()`.
+Source: `backend/scanner/services.py` — `research_prefilter()`; `backend/scanner/orchestrator.py` — `step_universe_scan()`, `step_research_shortlist()`.
 
 ## Execution Verification
 
 - Chọn tối đa `execution_verification_count` coin đầu shortlist.
 - Lấy Binance depth, D1 và 4H.
 - Lưu orderbook metrics và kline summaries.
-- Unlock luôn `UNKNOWN` với reason “Chưa cấu hình adapter unlock đa nguồn”.
+- Unlock có architecture/provider foundation; runtime candidate vẫn có thể `UNKNOWN` khi coverage/provider chưa đủ.
 - Stop và RR là `None`.
 - Entry status là `NOT_SCORED`; action là `WATCH_ONLY`.
 
@@ -174,8 +177,7 @@ Gate hiện tại:
 
 - Báo lỗi nếu không có `initial_count` trong counters.
 - Báo lỗi nếu baseline có `buy_setup > 0`.
-- Luôn trả `validated_mode=FULL_SCAN_RESEARCH`.
-- Luôn cảnh báo Product/unlock evidence chưa hoàn thiện và Entry NOT_SCORED.
+- Trả `validated_mode` động: downgrade về `FULL_SCAN_RESEARCH` khi Execution Gate chưa đạt; Product/unlock/stop/RR thiếu vẫn giữ các trạng thái trung thực và chặn BUY_SETUP.
 
 Source: `backend/scanner/orchestrator.py` — `_validation_gate()`.
 
@@ -208,19 +210,25 @@ Source: `backend/scanner/services.py` — `true_range()`, `atr_from_klines()`.
 
 Source: `backend/scanner/services.py` — `depth_metrics()`.
 
-## Provisional Quality Range
+## Research Prefilter — không phải Quality Score
 
-Đây là proxy baseline, không phải Quality Score đầy đủ V8.1:
+Bản hiện tại **không còn tạo numeric Quality Range từ MC/volume/FDV**.
 
-- Market cap fit subscore: 8 trong vùng min → preferred max, ngoài vùng là 6.
-- Liquidity proxy: 8 nếu volume ≥ 2× basic; 7 nếu ≥ basic; còn lại 5.
-- Tokenomics proxy: dựa FDV/MC với các mốc 1.5 và 2.5; không có FDV là 5.
-- Base = `(market_fit×0.30 + liquidity×0.35 + tokenomics×0.35) × 10`.
-- Low = max(35, base - 14).
-- High = min(82, base + 3).
-- Status lưu là `RANGE`.
+`research_prefilter()` chỉ dùng để quyết định thứ tự nghiên cứu tiếp theo dựa trên các rule có thể kiểm tra ngay từ market snapshot:
+- Market Cap priority bucket.
+- Total Spot volume threshold.
+- FDV/MC band.
+- Circulating percentage band.
+- Volume/MC preference.
+- Hard Rule supply có thể xác minh.
 
-Source: `backend/scanner/services.py` — `provisional_quality()`.
+Các trường Product Metrics, Unlock 7D/30D/90D, Token Value Capture, Holder/Treasury, Valuation/Peers, Moat, Team/Security và Catalysts vẫn được ghi là missing. Vì vậy:
+- `quality_score_low = null`.
+- `quality_score_high = null`.
+- `quality_status = NOT_SCORED`.
+- Research rank không được gọi là Investment Grade hoặc Quality ranking.
+
+Source: `backend/scanner/services.py` — `research_prefilter()`, `provisional_quality()` compatibility wrapper.
 
 # State / Status Rules
 
@@ -236,7 +244,7 @@ Source: `backend/scanner/services.py` — `provisional_quality()`.
 
 String mặc định:
 
-- Quality: `NOT_SCORED`, chuyển thành `RANGE` ở Universe step.
+- Quality: `NOT_SCORED`; Universe/Research Prefilter không được tự nâng thành `RANGE` chỉ từ MC/volume/FDV.
 - Entry: `NOT_SCORED`.
 - Opportunity: `NOT_SCORED`.
 
@@ -260,6 +268,15 @@ Status: **Chưa được enforcement đầy đủ**. Orchestrator hiện chạy 
 - Step bị loại khỏi requested steps được đánh `SKIPPED`.
 
 # Data Meaning
+
+# Current lifecycle and research fallback (verified 2026-08-08)
+
+- Full scan runs B1-B6; warnings use `COMPLETED_WITH_WARNINGS`, workflow progress is 100%, and full scope has no skipped steps.
+- A B4-only request runs B1-B3 as prerequisites, marks B5/B6 `SKIPPED`, uses `PARTIAL_COMPLETED`, workflow progress 67%, and processing progress 100%.
+- Research Evidence Priority is a research-selection mode, not a V8.1 Quality ranking. Provider degradation uses `PREFILTER_ONLY_FALLBACK` and keeps missing evidence `UNKNOWN`.
+- DefiLlama provider status/error details remain in `provider_status`; the persisted step message is a compact summary within the model max length.
+- Protocol TVL/fees/revenue/DEX activity never becomes Token Value Capture PASS.
+- Runtime verification 2026-08-08 confirmed that five DefiLlama source failures degrade B3 safely, preserve missing product evidence as `UNKNOWN`, and do not create `BUY_SETUP`.
 
 - `profile_snapshot`: config bất biến của lần scan.
 - `counters`: Universe Accounting và số lượng từng stage.

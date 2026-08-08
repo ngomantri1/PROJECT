@@ -1,0 +1,18 @@
+.step-card.running {
+  position: relative;
+  z-index: 1;
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px #bae0ff, 0 12px 28px rgba(22, 119, 255, .18);
+  transform: translateY(-3px);
+  animation: step-focus-pulse 1.6s ease-in-out infinite;
+}
+
+.pipeline.has-active-step .step-card:not(.running) { opacity: .52; filter: saturate(.7); }
+.step-card { transition: transform .25s ease, box-shadow .25s ease, opacity .25s ease, filter .25s ease; }
+
+@keyframes step-focus-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px #bae0ff, 0 12px 28px rgba(22, 119, 255, .18); }
+  50% { box-shadow: 0 0 0 7px rgba(22, 119, 255, .16), 0 14px 32px rgba(22, 119, 255, .24); }
+}
+
+@media (prefers-reduced-motion: reduce) { .step-card.running { animation: none; } }

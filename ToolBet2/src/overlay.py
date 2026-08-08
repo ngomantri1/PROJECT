@@ -431,6 +431,9 @@ class GameOverlay:
             payload.setdefault("money_managers", list(MONEY_MANAGER_OPTIONS))
         self._strategy_tabs = payload
 
+    def set_table_selection(self, payload: dict[str, Any] | None) -> None:
+        self._table_selection = dict(payload or {})
+
     def set_strategy_tabs_handler(self, handler):
         """handler(payload) saves simulation-only strategy tab settings."""
 
@@ -460,6 +463,7 @@ class GameOverlay:
         # state.strategy_tabs.  Keep the full catalogue in every snapshot,
         # including initial install and DOM re-install snapshots.
         data["strategy_tabs"] = strategy_tabs
+        data.setdefault("table_selection", dict(getattr(self, "_table_selection", {})))
         data["runtime_session_id"] = self._ui_session_id
         tabs = strategy_tabs.get("tabs", [])
         return UiSnapshot(
@@ -468,6 +472,12 @@ class GameOverlay:
             state=data,
             tabs=tabs if isinstance(tabs, list) else [],
         )
+
+    async def refresh_ui_snapshot(self, page: Page) -> bool:
+        """Push lightweight state-only changes without rebuilding the form."""
+        if not page or page.is_closed():
+            return False
+        return await self._ui_runtime.update(page, self._build_ui_snapshot())
 
     async def _expose_fn(self, page: Page, name: str, callback) -> bool:
         """Gan bridge Python↔JS. Uu tien context (moi tab), roi page."""
